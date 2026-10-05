@@ -13,7 +13,7 @@ export type ApiOperation = {
   description: string;
   tags: string[];
   parameters: ApiParameter[];
-  requestBody?: { required: boolean; content: Record<string, { schema: Record<string, unknown> }> };
+  requestBody?: { required: boolean; description?: string; content: Record<string, { schema: Record<string, unknown> }> };
   responses: Record<
     string,
     { description: string; content?: Record<string, { schema: Record<string, unknown> }> }

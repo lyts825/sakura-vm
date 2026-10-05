@@ -26,6 +26,7 @@ export type HttpRequestContract = {
   kind: 'none' | 'json' | 'form' | 'binary';
   required: boolean;
   media?: string;
+  bodylessQuery?: string;
   schema?: z.ZodType;
   query: z.ZodObject;
   headers: z.ZodObject;
@@ -37,22 +38,32 @@ export function wireRequestSchema(
 ): Record<string, unknown> {
   const json = published || (z.toJSONSchema(schema, { io: 'input' }) as Record<string, any>);
   let extensions = false;
+  const jsonExtension = () => {
+    extensions = true;
+    return { $ref: '#/$defs/requestJsonValue' };
+  };
   const visit = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(visit);
+    if (value === true) return jsonExtension();
     if (!value || typeof value !== 'object') return value;
     const part = value as Record<string, unknown>;
-    if (!Object.keys(part).length) {
-      extensions = true;
-      return { $ref: '#/$defs/requestJsonValue' };
+    if (!Object.keys(part).length) return jsonExtension();
+    if (part.not && typeof part.not === 'object' && !Object.keys(part.not).length) return { ...part };
+    const result = { ...part };
+    // Traverse schema positions only: defaults, const values and examples are data.
+    for (const key of ['properties', '$defs', 'patternProperties', 'dependentSchemas']) {
+      const nested = part[key];
+      if (nested && typeof nested === 'object')
+        result[key] = Object.fromEntries(Object.entries(nested).map(([name, property]) => [name, visit(property)]));
     }
-    return Object.fromEntries(
-      Object.entries(part).map(([key, nested]) => [
-        key,
-        ['properties', '$defs', 'patternProperties'].includes(key) && nested && typeof nested === 'object'
-          ? Object.fromEntries(Object.entries(nested).map(([name, property]) => [name, visit(property)]))
-          : visit(nested),
-      ]),
-    );
+    for (const key of ['anyOf', 'oneOf', 'allOf', 'prefixItems'])
+      if (Array.isArray(part[key])) result[key] = part[key].map(visit);
+    for (const key of ['items', 'additionalProperties', 'contains', 'propertyNames', 'not', 'if', 'then', 'else',
+      'unevaluatedProperties', 'unevaluatedItems'])
+      if (part[key] !== undefined) result[key] = visit(part[key]);
+    // Zod's stripping objects accept extra input fields; on the wire those are JSON, never arbitrary JS.
+    if (part.type === 'object' && part.additionalProperties === undefined)
+      result.additionalProperties = jsonExtension();
+    return result;
   };
   const result = visit(json) as Record<string, any>;
   if (extensions) {
@@ -266,10 +277,8 @@ export function requestContract(
     kind,
     required:
       kind !== 'none' &&
-      ![
-        'files.legacy.post.vms.vmId.uploads',
-        'snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore',
-      ].includes(id),
+      id !== 'snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore',
+    ...(id === 'files.legacy.post.vms.vmId.uploads' ? { bodylessQuery: 'id' } : {}),
     ...(kind !== 'none'
       ? {
           media:

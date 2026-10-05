@@ -45,6 +45,7 @@ for (const plugin of PLUGINS) {
       status: contract.statuses[0], statuses: contract.statuses,
       kind: contract.kind, media: contract.media,
       input: { kind: input.kind, required: input.required, ...(input.media ? { media: input.media } : {}),
+        ...(input.bodylessQuery ? { bodylessQuery: input.bodylessQuery } : {}),
         query: z.toJSONSchema(input.query, { io: 'input' }), headers: z.toJSONSchema(input.headers, { io: 'input' }) },
       request: input.schema ? wireRequestSchema(input.schema) : null,
       response: contract.schema ? z.toJSONSchema(contract.schema) : null,

@@ -16,9 +16,28 @@ export function requestUrl(value: string | undefined, port: number): URL | null 
 export const DEFAULT_JSON_REQUEST_BYTES = 1500000;
 const jsonBodies = new WeakMap<IncomingMessage, Promise<{ bytes: number; input: unknown }>>();
 
+export const requestMediaType = (req: Pick<IncomingMessage, 'headers'>) =>
+  req.headers['content-type']?.split(';')[0].trim().toLowerCase();
+export const requestHasBody = (req: Pick<IncomingMessage, 'headers'>) =>
+  Number(req.headers['content-length'] || 0) > 0 || req.headers['transfer-encoding'] !== undefined;
+
+/** Preserve form multiplicity for protocol readers such as the SAML callback. */
+export async function readFormBody(req: IncomingMessage, maxBytes: number) {
+  if (requestMediaType(req) !== 'application/x-www-form-urlencoded')
+    throw new AppError('需要 application/x-www-form-urlencoded 请求', 415);
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > maxBytes) throw new AppError('表单内容过大', 413);
+    chunks.push(chunk);
+  }
+  return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+}
+
 async function consumeJsonBody(req: IncomingMessage, maxBytes: number, signal?: AbortSignal) {
   signal?.throwIfAborted();
-  if (!req.headers['content-type']?.startsWith('application/json'))
+  if (requestMediaType(req) !== 'application/json')
     throw new AppError('需要 application/json 请求', 415);
   const chunks: Buffer[] = [];
   let size = 0;

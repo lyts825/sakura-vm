@@ -1,5 +1,6 @@
 import { services as transfersServices } from '../transfers/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
+import { requestHasBody } from '../../server/http.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as snapshotsServices } from './services.ts';
@@ -175,7 +176,7 @@ export async function route(
     parts[4] &&
     parts[5] === 'restore'
   ) {
-    const input = req.headers['content-type']?.startsWith('application/json')
+    const input = requestHasBody(req)
       ? httpRouteRequests["snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore"]
           .parse(await body(req, signal))
       : { backup: false };

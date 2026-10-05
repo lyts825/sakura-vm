@@ -1,3 +1,15 @@
+/** Query-dependent body modes are shared by admission and both generated clients. */
+export function resolveOperationBody(
+  contract: { kind: 'none' | 'json' | 'form' | 'binary'; required: boolean; bodylessQuery?: string },
+  query: Record<string, unknown> = {},
+): { kind: 'none' | 'json' | 'form' | 'binary'; required: boolean } {
+  const value = contract.bodylessQuery && Object.hasOwn(query, contract.bodylessQuery)
+    ? query[contract.bodylessQuery] : undefined;
+  return value !== undefined && value !== null
+    ? { kind: 'none', required: false }
+    : { kind: contract.kind, required: contract.required };
+}
+
 /** Dependency-free wire encoder; the generated SDK embeds this same implementation. */
 export function encodeOperationBody(
   kind: 'none' | 'json' | 'form' | 'binary',

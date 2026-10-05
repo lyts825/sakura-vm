@@ -16,7 +16,7 @@ import { createMachineApi } from './http-machines.ts';
 import { coreHttpHandlers } from './core-http-handlers.ts';
 import { sendJson as send, writeResponseHead } from './http-response.ts';
 import { DocumentResponseCache } from './document-response-cache.ts';
-import { readJsonBody, requestUrl } from './http.ts';
+import { readFormBody, readJsonBody, requestUrl } from './http.ts';
 
 import { networkFor } from './network/index.ts';
 
@@ -293,16 +293,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     res.end(html);
   };
   const samlPost = async (req: IncomingMessage) => {
-    if (!req.headers['content-type']?.startsWith('application/x-www-form-urlencoded'))
-      throw new AppError('SAML 回调需要表单编码', 415);
-    const chunks: Buffer[] = [];
-    let size = 0;
-    for await (const chunk of req) {
-      size += chunk.length;
-      if (size > 1_500_000) throw new AppError('SAML 响应过大', 413);
-      chunks.push(chunk);
-    }
-    const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+    const form = await readFormBody(req, 1_500_000);
     if (form.getAll('SAMLResponse').length !== 1 || form.getAll('RelayState').length !== 1)
       throw new AppError('SAML 响应缺少唯一的状态与断言', 400);
     return validateOperationInput({

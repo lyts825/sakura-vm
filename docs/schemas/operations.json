@@ -3070,9 +3070,7 @@
               ]
             },
             "options": {
-              "default": {
-                "$ref": "#/$defs/requestJsonValue"
-              },
+              "default": {},
               "type": "object",
               "propertyNames": {
                 "type": "string"
@@ -3117,37 +3115,6 @@
               },
               "additionalProperties": {
                 "$ref": "#/$defs/__schema0"
-              }
-            }
-          ]
-        },
-        "requestJsonValue": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            },
-            {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/requestJsonValue"
-              }
-            },
-            {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {
-                "$ref": "#/$defs/requestJsonValue"
               }
             }
           ]
@@ -13549,9 +13516,7 @@
           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
         },
         "values": {
-          "default": {
-            "$ref": "#/$defs/requestJsonValue"
-          },
+          "default": {},
           "type": "object",
           "propertyNames": {
             "type": "string"
@@ -13564,40 +13529,7 @@
       "required": [
         "id"
       ],
-      "additionalProperties": false,
-      "$defs": {
-        "requestJsonValue": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            },
-            {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/requestJsonValue"
-              }
-            },
-            {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {
-                "$ref": "#/$defs/requestJsonValue"
-              }
-            }
-          ]
-        }
-      }
+      "additionalProperties": false
     },
     "response": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -25108,9 +25040,7 @@
               "type": "boolean"
             },
             "options": {
-              "default": {
-                "$ref": "#/$defs/requestJsonValue"
-              },
+              "default": {},
               "type": "object",
               "propertyNames": {
                 "type": "string"
@@ -25362,9 +25292,7 @@
               "type": "string"
             },
             "options": {
-              "default": {
-                "$ref": "#/$defs/requestJsonValue"
-              },
+              "default": {},
               "type": "object",
               "propertyNames": {
                 "type": "string"
@@ -25391,9 +25319,7 @@
               "type": "string"
             },
             "parameters": {
-              "default": {
-                "$ref": "#/$defs/requestJsonValue"
-              },
+              "default": {},
               "type": "object",
               "propertyNames": {
                 "type": "string"
@@ -25438,37 +25364,6 @@
               },
               "additionalProperties": {
                 "$ref": "#/$defs/__schema0"
-              }
-            }
-          ]
-        },
-        "requestJsonValue": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            },
-            {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/requestJsonValue"
-              }
-            },
-            {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {
-                "$ref": "#/$defs/requestJsonValue"
               }
             }
           ]
@@ -27044,8 +26939,9 @@
     "media": "application/json",
     "input": {
       "kind": "json",
-      "required": false,
+      "required": true,
       "media": "application/json",
+      "bodylessQuery": "id",
       "query": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -46621,9 +46517,7 @@
               "type": "boolean"
             },
             "options": {
-              "default": {
-                "$ref": "#/$defs/requestJsonValue"
-              },
+              "default": {},
               "type": "object",
               "propertyNames": {
                 "type": "string"
@@ -46753,9 +46647,7 @@
               ]
             },
             "options": {
-              "default": {
-                "$ref": "#/$defs/requestJsonValue"
-              },
+              "default": {},
               "type": "object",
               "propertyNames": {
                 "type": "string"
@@ -46884,9 +46776,7 @@
               ]
             },
             "options": {
-              "default": {
-                "$ref": "#/$defs/requestJsonValue"
-              },
+              "default": {},
               "type": "object",
               "propertyNames": {
                 "type": "string"
@@ -46931,37 +46821,6 @@
               },
               "additionalProperties": {
                 "$ref": "#/$defs/__schema0"
-              }
-            }
-          ]
-        },
-        "requestJsonValue": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            },
-            {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/requestJsonValue"
-              }
-            },
-            {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {
-                "$ref": "#/$defs/requestJsonValue"
               }
             }
           ]
@@ -50750,9 +50609,7 @@
               "const": 1
             },
             "resources": {
-              "default": {
-                "$ref": "#/$defs/requestJsonValue"
-              },
+              "default": {},
               "type": "object",
               "properties": {
                 "cpus": {
@@ -50824,7 +50681,10 @@
                     "required": [
                       "host",
                       "guest"
-                    ]
+                    ],
+                    "additionalProperties": {
+                      "$ref": "#/$defs/requestJsonValue"
+                    }
                   }
                 }
               },
@@ -52558,9 +52418,7 @@
           "const": 1
         },
         "resources": {
-          "default": {
-            "$ref": "#/$defs/requestJsonValue"
-          },
+          "default": {},
           "type": "object",
           "properties": {
             "cpus": {
@@ -52632,7 +52490,10 @@
                 "required": [
                   "host",
                   "guest"
-                ]
+                ],
+                "additionalProperties": {
+                  "$ref": "#/$defs/requestJsonValue"
+                }
               }
             }
           },

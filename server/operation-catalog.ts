@@ -199,7 +199,8 @@ export const operationEntries: readonly OperationEntry[] = [
       id: 'core.' + item.id, owner: 'core', method: item.method as OperationDeclaration['method'],
       path: normalize(item.path), ...item.policy,
       contract: coreResponseContracts[item.id] ? 'declared' : 'partial', enabled: true,
-      request: { kind: input.kind, required: input.required, ...(input.media ? { media: input.media } : {}) },
+      request: { kind: input.kind, required: input.required, ...(input.media ? { media: input.media } : {}),
+        ...(input.bodylessQuery ? { bodylessQuery: input.bodylessQuery } : {}) },
     },
     handler: 'core', title: item.title, requestSchema: input.schema, requestContract: input,
     body: input.schema ? wireRequestSchema(input.schema) : undefined,
@@ -216,7 +217,8 @@ export const operationEntries: readonly OperationEntry[] = [
     return {
       declaration: { id, owner: route.owner, method: route.method, path: normalize(route.path), ...route.policy,
         contract: responseContract ? 'declared' : 'partial', enabled: false,
-        request: { kind: input.kind, required: input.required, ...(input.media ? { media: input.media } : {}) } },
+        request: { kind: input.kind, required: input.required, ...(input.media ? { media: input.media } : {}),
+          ...(input.bodylessQuery ? { bodylessQuery: input.bodylessQuery } : {}) } },
       handler: route.handler === 'operation' ? 'plugin-operation' : 'plugin-route',
       title: typed ? route.owner + ' · ' + typed.id : route.owner + ' · ' + route.method + ' ' + route.path,
       requestSchema: input.schema, requestContract: input,
@@ -245,8 +247,19 @@ export function validateOperationEntries(entries: readonly OperationEntry[]) {
     const input = entry.requestContract;
     if (declaration.request.kind !== input.kind || declaration.request.required !== input.required ||
       declaration.request.media !== input.media ||
-      ((input.kind === 'json' || input.kind === 'form') && !input.schema))
+      declaration.request.bodylessQuery !== input.bodylessQuery ||
+      entry.requestSchema !== input.schema ||
+      ((input.kind === 'json' || input.kind === 'form') && (!input.schema || !entry.body)))
       throw new Error('操作输入声明与实际请求协议不一致：' + declaration.id);
+    const expectedMedia = { json: 'application/json', form: 'application/x-www-form-urlencoded',
+      binary: 'application/octet-stream', none: undefined }[input.kind];
+    if (input.media !== expectedMedia ||
+      (input.kind === 'none' && input.required) ||
+      (['none', 'binary'].includes(input.kind) && (input.schema || entry.body)) ||
+      (['GET', 'OPTIONS', 'UPGRADE'].includes(declaration.method) && input.kind !== 'none') ||
+      (input.bodylessQuery && (input.kind !== 'json' || !input.required ||
+        !input.query.shape[input.bodylessQuery]?.isOptional())))
+      throw new Error('操作请求正文协议无效：' + declaration.id);
     const key = declaration.method + ' ' + declaration.path;
     if (keys.has(key) || ids.has(declaration.id)) throw new Error('重复操作声明：' + key);
     if (declaration.method === 'UPGRADE' ? entry.handler !== 'websocket' : entry.handler === 'websocket')

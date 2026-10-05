@@ -101,7 +101,7 @@ const content = z.record(z.string(), z.object({ schema: documentSchema }).strict
 const apiOperation = z.object({
   operationId: z.string(), summary: z.string(), description: z.string(), tags: z.array(z.string()),
   parameters: z.array(z.object({ name: z.string(), in: z.enum(['path', 'query', 'header']), required: z.boolean(), schema: documentSchema, description: z.string().optional() }).strict()),
-  requestBody: z.object({ required: z.boolean(), content }).strict().optional(),
+  requestBody: z.object({ required: z.boolean(), description: z.string().optional(), content }).strict().optional(),
   responses: z.record(z.string(), z.object({ description: z.string(), content: content.optional() }).strict()),
   security: z.array(securityRequirement).optional(), 'x-sakura-enabled': z.boolean(), 'x-sakura-inspectable': z.boolean(),
   'x-sakura-contract': z.enum(['declared', 'partial']), 'x-sakura-operation': operationDeclarationSchema.optional(),

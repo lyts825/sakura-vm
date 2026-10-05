@@ -76,7 +76,9 @@ export function apiDocument(active: Iterable<string>, port: number, catalogVersi
       ...(entry.requestContract?.kind !== 'none'
         ? {
             requestBody: {
-              required: entry.requestContract!.required,
+              required: entry.requestContract!.required && !entry.requestContract!.bodylessQuery,
+              ...(entry.requestContract!.bodylessQuery ? { description:
+                `未提供查询参数 ${entry.requestContract!.bodylessQuery} 时必须发送 JSON 正文；提供该参数时禁止发送正文。` } : {}),
               content: {
                 [entry.requestContract!.media!]: {
                   schema: entry.body || { type: 'string', format: 'binary' },

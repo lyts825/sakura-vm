@@ -1,5 +1,5 @@
 import type { ApiDocument } from '../shared/api-document.ts';
-import { encodeOperationBody } from '../shared/http-transport.ts';
+import { encodeOperationBody, resolveOperationBody } from '../shared/http-transport.ts';
 
 export function generateSdk(document: ApiDocument) {
   const operations = Object.fromEntries(
@@ -15,6 +15,7 @@ export function generateSdk(document: ApiDocument) {
   );
   return (
     `const encodeOperationBody = ${encodeOperationBody.toString()};\n` +
+    `const resolveOperationBody = ${resolveOperationBody.toString()};\n` +
     `export const catalogVersion = ${document['x-sakura-catalog-version'] || 0};\n` +
     `// Generated Sakura ES module. Node.js 22+ or a modern browser. No dependencies.\n// import { SakuraClient } from './sakura-client.mjs';\n// const client = new SakuraClient();\n// const machines = await client.call('core.vms.list');\n// JSON responses are parsed; binary responses return a Response for streaming.\nexport const operations = ${JSON.stringify(operations, null, 2)};\nexport const operationDirectory = [...Object.values(operations).map(operation => operation.policy).filter(Boolean), ...${JSON.stringify(document['x-sakura-operations']?.filter(operation => operation.method === 'UPGRADE') || [])}];\n` +
     String.raw`
@@ -57,13 +58,15 @@ export class SakuraClient {
   async call(operationId, { path: parameters = {}, query = {}, body, binary = false, headers = {}, signal, response: result = 'auto' } = {}) {
     if (!Object.hasOwn(operations, operationId)) throw new Error('Unknown operation: ' + operationId);
     const operation = operations[operationId];
+    const selectedBody = resolveOperationBody(operation.policy?.request || { kind: operation.body || 'none', required: false }, query);
+    if (selectedBody.required && body === undefined) throw new Error('此操作需要请求体');
     const path = operation.path.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, key) => {
       const value = parameters[key];
       if (typeof value !== 'string' || !value || value === '.' || value === '..' || /[\\/\u0000-\u001f]/.test(value)) throw new Error('Invalid path parameter: ' + key);
       return encodeURIComponent(value);
     });
     if (binary && operation.body !== 'binary') throw new Error('Operation does not accept a binary body');
-    return this.request(path, { method: operation.method, query, body, bodyKind: operation.body, headers, signal,
+    return this.request(path, { method: operation.method, query, body, bodyKind: selectedBody.kind, headers, signal,
       response: result === 'auto' ? operation.response || 'auto' : result, authenticated: !operation.public });
   }
   async request(path, { method = 'GET', query = {}, body, binary = false, bodyKind, signal, response: result = 'auto', authenticated = true, headers: suppliedHeaders = {} } = {}) {

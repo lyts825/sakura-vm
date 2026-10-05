@@ -1,6 +1,7 @@
 import { apiPath } from './api-document.ts';
 import {
   operationRoutes,
+  type OperationContractMap,
   type OperationId,
   type OperationRequest,
   type OperationResponse,
@@ -8,13 +9,20 @@ import {
   type OperationQuery,
   type OperationHeaders,
 } from './contracts/api-client.generated.ts';
+import { resolveOperationBody } from './http-transport.ts';
+
+type OperationInput<Id extends OperationId> = OperationContractMap[Id] extends { input: infer Input }
+  ? Input
+  : ({} extends OperationQuery<Id> ? { query?: OperationQuery<Id> } : { query: OperationQuery<Id> }) &
+    (undefined extends OperationRequest<Id> ? { body?: OperationRequest<Id> } : { body: OperationRequest<Id> });
 
 export type OperationOptions<Id extends OperationId> = {
   signal?: AbortSignal;
-} & ({} extends OperationQuery<Id> ? { query?: OperationQuery<Id> } : { query: OperationQuery<Id> }) &
+  query?: OperationQuery<Id>;
+  body?: OperationRequest<Id>;
+} & OperationInput<Id> &
   ({} extends OperationHeaders<Id> ? { headers?: OperationHeaders<Id> } : { headers: OperationHeaders<Id> }) &
-  (keyof OperationPath<Id> extends never ? { path?: OperationPath<Id> } : { path: OperationPath<Id> }) &
-  (undefined extends OperationRequest<Id> ? { body?: OperationRequest<Id> } : { body: OperationRequest<Id> });
+  (keyof OperationPath<Id> extends never ? { path?: OperationPath<Id> } : { path: OperationPath<Id> });
 export type OperationTransport = (
   path: string,
   options: {
@@ -40,6 +48,11 @@ export function createOperationClient(request: OperationTransport) {
   ): Promise<OperationResponse<Id>> => {
     const route = operationRoutes[id];
     const options = arguments_[0];
+    const body = resolveOperationBody({ kind: route.body, required: route.bodyRequired,
+      ...('bodylessQuery' in route ? { bodylessQuery: route.bodylessQuery } : {}) },
+      options?.query as Record<string, unknown>);
+    if (body.required && options?.body === undefined) throw new Error('此操作需要请求体');
+    if (body.kind === 'none' && options?.body !== undefined) throw new Error('此操作不接受请求体');
     const path = apiPath(
       route.path,
       (options?.path || {}) as Record<string, string>,
@@ -52,7 +65,7 @@ export function createOperationClient(request: OperationTransport) {
       signal: options?.signal,
       headers: options?.headers as Record<string, string>,
       transport: route.transport,
-      bodyKind: route.body,
+      bodyKind: body.kind,
       response: route.response,
       authenticated: route.access === 'controller',
       allowLocked: route.session === 'allow-locked',

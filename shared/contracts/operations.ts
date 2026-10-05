@@ -22,7 +22,9 @@ export type OperationPolicy = z.infer<typeof operationPolicySchema>;
 export const operationDeclarationSchema = operationPolicySchema.extend({
   id: z.string(), owner: z.string(), method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'UPGRADE']),
   path: z.string(), contract: z.enum(['declared', 'partial']), enabled: z.boolean(),
-  request: z.object({ kind: z.enum(['none', 'json', 'form', 'binary']), required: z.boolean(), media: z.string().optional() }).strict().optional(),
+  request: z.object({ kind: z.enum(['none', 'json', 'form', 'binary']), required: z.boolean(), media: z.string().optional(),
+    // When this query key is present, the same route accepts no body (for example upload commit).
+    bodylessQuery: z.string().min(1).optional() }).strict().optional(),
   socketContract: socketContractSchema.optional(),
 }).strict();
 export type OperationDeclaration = z.infer<typeof operationDeclarationSchema>;

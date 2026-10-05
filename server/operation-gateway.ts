@@ -10,6 +10,8 @@ import { matchOperationPath } from './plugins/registry.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import { withPluginAuthority } from './plugin-authority.ts';
 import { guardOperationResponse, withOperationResponse } from './operation-response.ts';
+import { resolveOperationBody } from '../shared/http-transport.ts';
+import { requestHasBody, requestMediaType } from './http.ts';
 
 export type OperationBinding = {
   /** Captures credentials and target identity once; reads live authority on every invocation. */
@@ -75,13 +77,12 @@ export class OperationGateway {
     const input = entry.requestContract!;
     input.headers.parse(Object.fromEntries(Object.keys(input.headers.shape).filter(name => req.headers[name] !== undefined)
       .map(name => [name, req.headers[name]])));
-    const hasBody = Number(req.headers['content-length'] || 0) > 0 || req.headers['transfer-encoding'] !== undefined;
-    const uploadCommit = entry.declaration.id === 'files.legacy.post.vms.vmId.uploads' && url.searchParams.has('id');
-    if ((input.kind === 'none' || uploadCommit) && hasBody)
+    const hasBody = requestHasBody(req);
+    const body = resolveOperationBody(input, Object.fromEntries(url.searchParams));
+    if (body.kind === 'none' && hasBody)
       throw new AppError('此操作不接受请求体', 400, 'UNEXPECTED_REQUEST_BODY');
-    if (input.kind !== 'none' && (input.required || hasBody) && !uploadCommit) {
-      const media = req.headers['content-type']?.split(';')[0].trim().toLowerCase();
-      if (media !== input.media) throw new AppError('请求媒体类型不符合契约', 415, 'UNSUPPORTED_MEDIA_TYPE');
+    if (body.kind !== 'none' && (body.required || hasBody)) {
+      if (requestMediaType(req) !== input.media) throw new AppError('请求媒体类型不符合契约', 415, 'UNSUPPORTED_MEDIA_TYPE');
     }
     guardOperationResponse(res, { id: entry.declaration.id, contract: entry.responseContract });
     return await admission.run(() => { handlerEntered = true; return handler(req, res, url, entry); });

@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import type { OperationEntry } from './operation-catalog.ts';
-import { DEFAULT_JSON_REQUEST_BYTES, MAX_TEXT_REQUEST_BYTES, readJsonBody } from './http.ts';
+import { DEFAULT_JSON_REQUEST_BYTES, MAX_TEXT_REQUEST_BYTES, readJsonBody, requestHasBody } from './http.ts';
+import { resolveOperationBody } from '../shared/http-transport.ts';
 import { validateOperationInput } from './operation-gateway.ts';
 import { graphqlLimits } from './graphql-api.ts';
 
@@ -45,9 +46,9 @@ export function operationInputByteLimit(entry: OperationEntry) {
 export async function prepareOperationInput(req: IncomingMessage, entry: OperationEntry,
   options: { maxBytes?: number; signal?: AbortSignal } = {}) {
   if (!entry.declaration.mutating || entry.requestContract?.kind !== 'json') return;
-  const hasBody = Number(req.headers['content-length'] || 0) > 0 || req.headers['transfer-encoding'] !== undefined;
-  if (!entry.requestContract.required && !hasBody) return;
-  if (entry.declaration.id === 'files.legacy.post.vms.vmId.uploads' && new URL(req.url || '/', 'http://localhost').searchParams.has('id')) return;
+  const query = Object.fromEntries(new URL(req.url || '/', 'http://localhost').searchParams);
+  const body = resolveOperationBody(entry.requestContract, query);
+  if (body.kind === 'none' || (!body.required && !requestHasBody(req))) return;
   const input = await readJsonBody(req, options.maxBytes ?? operationInputByteLimit(entry), options.signal);
   return validateOperationInput(input);
 }
