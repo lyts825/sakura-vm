@@ -1,13 +1,13 @@
 import { ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { JobView } from '../../shared/contracts/jobs.ts';
 import type { VMConfig } from '../../shared/contracts/vm.ts';
 import type {
-  ForwardChange,
-  NetworkChange,
   NetworkProfile,
+  NetworkPreview,
+  NetworkView,
   SavedNetworkProfile,
-} from '../../server/network-profiles';
+  ServicesView,
+} from './contracts.ts';
 import '../../src/development.css';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
@@ -17,10 +17,7 @@ import { DependencyDownloadsEditor } from './DependencyDownloadsEditor';
 
 export function ServicesPanel(props: FeatureProps) {
   const { vm, request, refresh } = props;
-  const remote = useRemote<{
-    forwards: (VMConfig['forwards'][number] & { listening: boolean })[];
-    listening: number[];
-  }>(request, `/vms/${vm.id}/services`);
+  const remote = useRemote<ServicesView>(request, `/vms/${vm.id}/services`);
   const [forwards, setForwards] = useState(vm.forwards);
   const forwardsVersion = JSON.stringify(vm.forwards);
   useEffect(() => setForwards(JSON.parse(forwardsVersion)), [vm.id, forwardsVersion]);
@@ -138,15 +135,7 @@ export function NetworkPanel(props: FeatureProps) {
 }
 
 function NetworkEditor({ vm, request, refresh }: FeatureProps) {
-  const remote = useRemote<{
-      config: NetworkProfile;
-      changes: NetworkChange[];
-      forwards?: ForwardChange;
-      dnsBackend?: string;
-      resolverLink?: { before: string; after: string };
-      appliedAt?: string;
-      job: JobView | null;
-    }>(request, `/vms/${vm.id}/network`),
+  const remote = useRemote<NetworkView>(request, `/vms/${vm.id}/network`),
     action = useAction();
   const profiles = useRemote<SavedNetworkProfile[]>(request, '/network-profiles');
   const [selected, setSelected] = useState(''),
@@ -154,13 +143,7 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
     [dnsText, setDnsText] = useState(''),
     [domainText, setDomainText] = useState('');
   const [config, setConfig] = useState<NetworkProfile | null>(null),
-    [preview, setPreview] = useState<{
-      config: NetworkProfile;
-      changes: NetworkChange[];
-      forwards?: ForwardChange;
-      resolverLink?: { before: string; after: string };
-      token: string;
-    } | null>(null);
+    [preview, setPreview] = useState<NetworkPreview | null>(null);
   useEffect(() => {
     if (!config && remote.data) {
       setConfig({

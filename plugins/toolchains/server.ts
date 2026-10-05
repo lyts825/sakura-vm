@@ -1,20 +1,21 @@
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as toolchainsServices } from './services.ts';
+import { services as projectsServices } from '../projects/services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 
 import { Toolchains } from '../../server/toolchains.ts';
 export async function activate(host: PluginContext) {
-  host.provide(toolchainsServices.toolchains, new Toolchains(host.vm, host.workspaces));
+  host.provide(toolchainsServices.toolchains, new Toolchains(host.vm, host.use(projectsServices.workspaces)));
 }
 export async function route(
   this: PluginContext,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -26,12 +27,13 @@ export async function route(
   this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'tools') {
+      const toolchains = this.use(toolchainsServices.toolchains);
       if (req.method === 'GET') {
-        send(await this.toolchains.view(id, signal));
+        send(await toolchains.view(id, signal));
         return true;
       }
       if (req.method === 'POST') {
-        send(await this.toolchains.install(id, await body(req)), 202);
+        send(await toolchains.install(id, await body(req, signal)), 202);
         return true;
       }
     }
@@ -40,7 +42,7 @@ export async function route(
 }
 
 /** Exact implemented HTTP operations; declarations alone never publish a handler. */
-export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+export const httpHandlers: Record<string, PluginRoute> = {
   "legacy.get.vms.vmId.tools": route,
   "legacy.post.vms.vmId.tools": route,
 };

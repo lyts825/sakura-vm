@@ -1,20 +1,23 @@
+import { services as projectsServices } from '../projects/services.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as serviceHealthServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 
 import { ServiceHealth } from '../../server/service-health.ts';
 export async function activate(host: PluginContext) {
-  host.provide(serviceHealthServices.health, new ServiceHealth(host.vm, host.workspaces));
+  const health = host.provide(serviceHealthServices.health,
+    new ServiceHealth(host.vm, host.use(projectsServices.workspaces), { deferInitialization: true }));
+  health.init();
 }
 export async function route(
   this: PluginContext,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -26,7 +29,7 @@ export async function route(
   this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'health' && req.method === 'GET') {
-      send(await this.health.view(id));
+      send(await this.use(serviceHealthServices.health).view(id));
       return true;
     }
   }

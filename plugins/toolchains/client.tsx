@@ -1,4 +1,4 @@
-import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared';
@@ -6,10 +6,8 @@ import '../../src/features.css';
 import { stopped } from '../../src/guest-state';
 
 export function ToolsPanel({ vm, request }: FeatureProps) {
-  const remote = useRemote<{
-      tools: { id: string; name: string; installed: boolean; version: string; required: boolean }[];
-      job: JobView | null;
-    }>(request, `/vms/${vm.id}/tools`, vm.status === 'running', 10000),
+  const remote = useRemote<OperationResponse<'toolchains.legacy.get.vms.vmId.tools'>>(
+      request, `/vms/${vm.id}/tools`, vm.status === 'running', 10000),
     action = useAction();
   const install = (tools: string[]) =>
     action.run(async (signal) => {

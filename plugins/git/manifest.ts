@@ -10,6 +10,6 @@ export const manifest = definePlugin({
   contributes: {
     routes: [
       {"id":"legacy.get.vms.vmId.git","method":"GET","path":"/api/vms/{vmId}/git","policy":{"access":"controller","roles":["owner","member"],"projectPermission":"read","projectScoped":true,"identity":"fixed-vm","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
-      {"id":"legacy.post.vms.vmId.git","method":"POST","path":"/api/vms/{vmId}/git","policy":{"access":"controller","roles":["owner","member"],"projectPermission":"execute","projectScoped":true,"identity":"fixed-vm","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.post.vms.vmId.git","method":"POST","path":"/api/vms/{vmId}/git","policy":{"access":"controller","roles":["owner","member"],"projectPermission":"execute","projectScoped":true,"identity":"fixed-vm","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":202},
     ], managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [http('/api/vms/:vmId/git', ['GET', 'POST'], true)], tabs: ['git'] },
 });

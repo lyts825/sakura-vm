@@ -1,6 +1,4 @@
-import type { JobView } from '../../shared/contracts/jobs.ts';
-import type { ProjectService } from '../../server/project-services';
-import type { HealthView } from '../../server/service-health';
+import type { HealthView, ServiceHealthPolicy } from './contracts.ts';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, JobLog, useRemote } from '../../src/feature-shared';
@@ -10,8 +8,8 @@ export function HealthEditor({
   value,
   change,
 }: {
-  value?: ProjectService['health'];
-  change: (value: ProjectService['health']) => void;
+  value?: ServiceHealthPolicy;
+  change: (value: ServiceHealthPolicy) => void;
 }) {
   return (
     <details className="feature-card" open={!!value}>
@@ -88,7 +86,7 @@ export function HealthEditor({
 }
 
 export function HealthPanel({ vm, request }: FeatureProps) {
-  const remote = useRemote<{ services: HealthView[]; job: JobView | null }>(
+  const remote = useRemote<HealthView>(
     request,
     `/vms/${vm.id}/health`,
     true,

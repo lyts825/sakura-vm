@@ -12,14 +12,14 @@ import { AppError } from '../../shared/errors.ts';
 export async function activate(host: PluginContext) {
   host.provide(imagesServices.images, new Images());
   host.provide(imagesServices.diskImports, new DiskImports(host.vm));
-  host.registerJobs(host.images.jobs, (job) => host.images.prepare(job.key!));
+  host.registerJobs(host.use(imagesServices.images).jobs, (job) => host.use(imagesServices.images).prepare(job.key!));
 }
 export async function route(
   this: PluginContext,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: (req: IncomingMessage, signal?: AbortSignal) => Promise<any>,
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -44,18 +44,14 @@ export async function route(
   }
   if (parts[1] === 'images') {
     if (parts.length === 2 && req.method === 'GET') {
-      send(this.images.list());
+      send(this.use(imagesServices.images).list());
       return true;
     }
     if (parts.length === 3 && req.method === 'POST') {
-      send(this.images.prepare(parts[2]), 202);
+      send(this.use(imagesServices.images).prepare(parts[2]), 202);
       return true;
     }
   }
-  if (parts[1] !== 'vms' || !parts[2]) return false;
-  const id = parts[2],
-    action = parts[3];
-  this.vm.get(id);
   return false;
 }
 

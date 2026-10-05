@@ -5,15 +5,15 @@ import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
-import type { SecretRotationItem } from '../../server/secret-rotation';
+import type { SecretRotationItem, SecretRotationView, SecretsView } from './contracts.ts';
 
 export function SecretsPanel({ vm, request }: FeatureProps) {
-  const remote = useRemote<{ items: { name: string; updatedAt: string }[] }>(
+  const remote = useRemote<SecretsView>(
       request,
       `/vms/${vm.id}/secrets`,
     ),
     action = useAction();
-  const rotation = useRemote<{ items: SecretRotationItem[] }>(request, `/vms/${vm.id}/secret-rotation`);
+  const rotation = useRemote<SecretRotationView>(request, `/vms/${vm.id}/secret-rotation`);
   const [name, setName] = useState(''),
     [value, setValue] = useState('');
   useEffect(() => {

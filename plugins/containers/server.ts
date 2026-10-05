@@ -1,22 +1,22 @@
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as containersServices } from './services.ts';
+import { services as projectsServices } from '../projects/services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 
 import { Containers } from '../../server/containers.ts';
 
 export async function activate(host: PluginContext) {
-  const m = host.vm;
-  host.provide(containersServices.containers, new Containers(m, host.workspaces));
+  host.provide(containersServices.containers, new Containers(host.vm, host.use(projectsServices.workspaces)));
 }
 export async function route(
   this: PluginContext,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -27,19 +27,20 @@ export async function route(
   this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'containers') {
+      const containers = this.use(containersServices.containers);
       if (req.method === 'GET') {
         send(
           url.searchParams.has('logs')
-            ? await this.containers.logs(id, url.searchParams.get('logs')!, signal)
+            ? await containers.logs(id, url.searchParams.get('logs')!, signal)
             : url.searchParams.has('template')
-              ? await this.containers.templateMetadata(id, url.searchParams.get('template')!,
+              ? await containers.templateMetadata(id, url.searchParams.get('template')!,
                   undefined, signal)
-            : await this.containers.view(id, signal),
+            : await containers.view(id, signal),
         );
         return true;
       }
       if (req.method === 'POST') {
-        send(await this.containers.run(id, await body(req)), 202);
+        send(await containers.run(id, await body(req, signal)), 202);
         return true;
       }
     }
@@ -48,7 +49,7 @@ export async function route(
 }
 
 /** Exact implemented HTTP operations; declarations alone never publish a handler. */
-export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+export const httpHandlers: Record<string, PluginRoute> = {
   "legacy.get.vms.vmId.containers": route,
   "legacy.post.vms.vmId.containers": route,
 };

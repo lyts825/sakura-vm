@@ -4,9 +4,12 @@ import { loaders, validateRegistry } from '../server/plugins/registry.ts';
 import { resolvePlugins } from '../shared/plugin-selection.ts';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 import { syncPluginCatalog } from './sync-plugin-catalog.ts';
+import { assertPluginSourceContracts } from './plugin-source-contracts.ts';
+import { pluginRouteResponses } from '../shared/contracts/plugin-route-responses.ts';
 
 await syncPluginCatalog(true);
 validateRegistry();
+assertPluginSourceContracts(PLUGINS);
 for (const plugin of PLUGINS) {
   const module = await loaders[plugin.id]();
   assert.deepEqual(module.manifest, plugin, `${plugin.id}: manifest and entry point must agree`);
@@ -25,6 +28,10 @@ for (const plugin of PLUGINS) {
   for (const operation of Object.values(module.operations || {})) {
     assert.equal(typeof operation.execute, 'function', `${plugin.id}: missing operation handler`);
     assert.equal(typeof operation.response?.parse, 'function', `${plugin.id}: missing response schema`);
+  }
+  for (const route of plugin.contributes.routes) {
+    const contract = pluginRouteResponses[`${plugin.id}.${route.id}` as keyof typeof pluginRouteResponses];
+    assert.ok(contract?.statuses.some(status => status === route.status), `${plugin.id}.${route.id}: default status differs from public response contract`);
   }
   const customSurface =
     plugin.contributes.pages.length > 0 ||

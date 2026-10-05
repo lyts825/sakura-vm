@@ -1,23 +1,18 @@
 import { useState } from 'react';
-import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { SnapshotMergeView } from './view-types';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import { saveText } from '../../src/export-file';
 
-type MergeView = {
-  branchOrigin?: { sourceVmId: string; snapshotId: string; createdAt: string };
-  sourceName?: string;
-  runs: JobView[];
-  persistenceError?: string;
-};
 type MergeResult = { mode: 'preview' | 'apply'; branchVmId: string; targetVmId: string;
   path: string; applied: string[]; conflicts: string[]; already: string[];
   mergedVmId?: string; checkedAt: string };
+
 
 export function SnapshotMergePanel({ vm, request, refresh }: FeatureProps) {
   const [path, setPath] = useState('/workspace');
   const [partition, setPartition] = useState(0);
   const [name, setName] = useState((vm.name.slice(0, 24) + '-merged').slice(0, 32));
-  const remote = useRemote<MergeView>(request, `/vms/${vm.id}/snapshot-merge`,
+  const remote = useRemote<SnapshotMergeView>(request, `/vms/${vm.id}/snapshot-merge`,
     Boolean(vm.branchOrigin), 2000);
   const job = remote.data?.runs[0];
   const result = useRemote<MergeResult>(request, `/jobs/${job?.id}/result`, Boolean(job?.result), 0);

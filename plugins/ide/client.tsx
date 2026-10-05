@@ -1,22 +1,13 @@
 import { ExternalLink } from 'lucide-react';
 import { useState } from 'react';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
 
 export function IdeConnection({ vm, request }: FeatureProps) {
-  const ide = useRemote<{
-    supported: boolean;
-    vscodeSupported?: boolean;
-    running: boolean;
-    alias: string;
-    command: string;
-    url: string;
-    networkIsolation?: 'host' | 'private';
-    projectScoped?: boolean;
-    sshCommand?: string;
-    runtime?: { present: boolean; running: boolean; valid: boolean; reason: string | null };
-  }>(request, `/vms/${vm.id}/ide`);
+  const ide = useRemote<OperationResponse<'ide.legacy.get.vms.vmId.ide'>>(request, `/vms/${vm.id}/ide`);
+  const scoped = ide.data && 'projectScoped' in ide.data ? ide.data : null;
   const [link, setLink] = useState('');
   const action = useAction();
   return (
@@ -26,7 +17,7 @@ export function IdeConnection({ vm, request }: FeatureProps) {
         {ide.data?.supported ? (
           <>
             <p className="subtle-note">
-              {ide.data.projectScoped
+              {scoped?.projectScoped
                 ? '使用此项目专属的 SSH 服务，编辑器与子进程遵守项目网络设置。停止项目 SSH 会关闭其编辑器和后台进程。'
                 : '连接当前项目目录。首次配置会向本机 SSH 配置添加 Sakura 的 Include，并保留原配置备份。'}
             </p>
@@ -36,7 +27,7 @@ export function IdeConnection({ vm, request }: FeatureProps) {
                 或 Ubuntu。
               </p>
             )}
-            {ide.data.networkIsolation === 'private' && ide.data.vscodeSupported !== false && (
+            {scoped?.networkIsolation === 'private' && ide.data.vscodeSupported !== false && (
               <p className="subtle-note">
                 首次连接请在 VS Code 用户设置中使用
                 <code>"remote.SSH.localServerDownload": "always"</code>， 并关闭 Remote Server Listen On
@@ -48,7 +39,9 @@ export function IdeConnection({ vm, request }: FeatureProps) {
               disabled={action.busy || !ide.data.running}
               onClick={() =>
                 void action.run(async (signal) => {
-                  const result = await request<{ url: string }>(`/vms/${vm.id}/ide`, 'POST', undefined, signal);
+                  const result = await request<OperationResponse<'ide.legacy.post.vms.vmId.ide'>>(
+                    `/vms/${vm.id}/ide`, 'POST', undefined, signal);
+                  signal.throwIfAborted();
                   setLink(result.url);
                   await ide.reload();
                 }, 'SSH 连接配置已更新')
@@ -57,7 +50,7 @@ export function IdeConnection({ vm, request }: FeatureProps) {
               <ExternalLink size={14} />
               {ide.data.vscodeSupported === false ? '配置项目 SSH' : '配置 VS Code 连接'}
             </button>
-            {ide.data.projectScoped && ide.data.runtime?.running && (
+            {scoped?.projectScoped && scoped.runtime.running && (
               <button
                 className="text-button"
                 disabled={action.busy || !ide.data.running}
@@ -65,6 +58,7 @@ export function IdeConnection({ vm, request }: FeatureProps) {
                   if (confirm('停止此项目的 SSH、编辑器及其后台进程？'))
                     void action.run(async (signal) => {
                       await request(`/vms/${vm.id}/ide`, 'POST', { action: 'stop' }, signal);
+                      signal.throwIfAborted();
                       setLink('');
                       await ide.reload();
                     }, '项目 SSH 已停止');
@@ -73,15 +67,15 @@ export function IdeConnection({ vm, request }: FeatureProps) {
                 停止项目 SSH
               </button>
             )}
-            {ide.data.runtime?.reason && <p className="subtle-note">{ide.data.runtime.reason}</p>}
-            {(ide.data.projectScoped ? ide.data.url : link) && (
-              <a className="primary compact" href={ide.data.projectScoped ? ide.data.url : link}>
+            {scoped?.runtime.reason && <p className="subtle-note">{scoped.runtime.reason}</p>}
+            {(scoped?.projectScoped ? ide.data.url : link) && (
+              <a className="primary compact" href={scoped?.projectScoped ? ide.data.url : link}>
                 打开 VS Code
               </a>
             )}
             <p className="muted">也可以在 PowerShell 中运行：</p>
             {ide.data.command && <code className="wrap-code">{ide.data.command}</code>}
-            {ide.data.sshCommand && <code className="wrap-code">{ide.data.sshCommand}</code>}
+            {scoped?.sshCommand && <code className="wrap-code">{scoped.sshCommand}</code>}
           </>
         ) : (
           <p className="muted">

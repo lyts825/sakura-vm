@@ -1,24 +1,15 @@
 import { formatDateTime } from '../../src/localization';
 import { Play, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
 
 export function PipelinePanel({ vm, request }: FeatureProps) {
-  const remote = useRemote<{
-    projectId?: string;
-    pipelines: {
-      id: string;
-      name: string;
-      steps: { name: string; command: string }[];
-      artifacts: string[];
-    }[];
-    runs: any[];
-    job: JobView | null;
-  }>(request, `/vms/${vm.id}/pipelines`, vm.status === 'running', 3000);
+  const remote = useRemote<OperationResponse<'pipelines.legacy.get.vms.vmId.pipelines'>>(
+    request, `/vms/${vm.id}/pipelines`, vm.status === 'running', 3000);
   const action = useAction();
   const [name, setName] = useState('检查与构建');
   const [command, setCommand] = useState('npm test && npm run build');
@@ -92,7 +83,7 @@ export function PipelinePanel({ vm, request }: FeatureProps) {
           <summary>
             {run.name} · {run.status} · {formatDateTime(new Date(run.startedAt))}
           </summary>
-          {run.steps.map((step: any) => (
+          {run.steps.map((step) => (
             <div className="development-row" key={step.name}>
               <span>
                 {step.name} · {step.status}
@@ -101,18 +92,19 @@ export function PipelinePanel({ vm, request }: FeatureProps) {
             </div>
           ))}
           <div className="feature-actions">
-            {run.artifacts.map((a: any) => (
+            {run.artifacts.map((a) => (
               <button
                 className="text-button"
                 key={a.index}
                 onClick={() =>
                   void action.run(async (signal) => {
-                    const { url } = await request<{ url: string }>(
+                    const { url } = await request<OperationResponse<'pipelines.legacy.post.vms.vmId.pipeline-artifact'>>(
                       `/vms/${vm.id}/pipeline-artifact`,
                       'POST',
                       { runId: run.id, index: a.index },
                       signal,
                     );
+                    signal.throwIfAborted();
                     window.open(url, '_blank', 'noopener,noreferrer');
                   })
                 }

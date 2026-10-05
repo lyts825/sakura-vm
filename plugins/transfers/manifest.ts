@@ -9,6 +9,6 @@ export const manifest = definePlugin({
   services: ['downloads'],
   contributes: {
     routes: [
-      {"id":"legacy.post.vms.vmId.download","method":"POST","path":"/api/vms/{vmId}/download","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.post.vms.vmId.download","method":"POST","path":"/api/vms/{vmId}/download","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"route","status":201},
     ], managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [http('/api/vms/:vmId/download', ['POST'])] },
 });

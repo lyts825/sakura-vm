@@ -3,18 +3,8 @@ import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useRemote, Feedback, formatBytes, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
-type Metrics = {
-  cpuPercent: number;
-  memoryUsed: number;
-  memoryTotal: number;
-  diskUsed: number;
-  diskTotal: number;
-  uptime: number;
-  processes: { name: string; memory: number }[];
-  sampledAt: string;
-  networkReceiveBytesPerSecond?: number | null;
-  networkTransmitBytesPerSecond?: number | null;
-};
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
+type Metrics = OperationResponse<'metrics.sample'>;
 export function MetricsPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<Metrics>(request, `/vms/${vm.id}/metrics`, vm.status === 'running');
   const [history, setHistory] = useState<number[]>([]);

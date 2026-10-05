@@ -1,5 +1,4 @@
-import type { DependencyAuthentication } from '../../server/dependency-downloads';
-import type { NetworkProfile } from '../../server/network-profiles';
+import type { DependencyAuthentication, NetworkProfile } from './contracts.ts';
 
 export function DependencyDownloadsEditor({
   value,

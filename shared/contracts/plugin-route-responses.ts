@@ -1998,9 +1998,9 @@ export const gitGetVmsVmIdGitResponseSchema = z.union([
   z
     .object({
       path: z.string(),
-      base: z.object({ mode: z.string(), oid: z.string() }).strict(),
-      ours: z.object({ mode: z.string(), oid: z.string() }).strict(),
-      theirs: z.object({ mode: z.string(), oid: z.string() }).strict(),
+      base: z.object({ mode: z.string(), oid: z.string() }).strict().nullable(),
+      ours: z.object({ mode: z.string(), oid: z.string() }).strict().nullable(),
+      theirs: z.object({ mode: z.string(), oid: z.string() }).strict().nullable(),
       worktree: z.string(),
       expectedIndex: z.string(),
       expectedWorktree: z.string(),

@@ -91,7 +91,7 @@ const journalSchema = z.object({ version: z.literal(1), sessions: z.array(single
   .refine(value => new Set(value.sessions.map(session => session.id)).size === value.sessions.length);
 type Live = NonNullable<ReturnType<Machines['live']['get']>>;
 type Preparation = Awaited<ReturnType<ProjectTerminals['prepare']>>;
-type Options = { rootDirectory?: string; terminals?: Pick<ProjectTerminals, 'prepare' | 'close'>;
+type Options = { deferInitialization?: boolean; rootDirectory?: string; terminals?: Pick<ProjectTerminals, 'prepare' | 'close'>;
   scopes?: Pick<ProjectRunScopes, 'identity'>; identities?: Pick<ProjectIdentities, 'install'>;
   control?: Pick<SingleAppControl, 'install' | 'call' | 'streamCommand' | 'recover' | 'legacy' | 'prepareRun'>;
   nativeBuild?: () => Promise<string>; exitPollMs?: number };
@@ -133,21 +133,37 @@ export class SingleAppWindows {
   private scopes: Pick<ProjectRunScopes, 'identity'>;
   private identities: Pick<ProjectIdentities, 'install'>;
   private control: Pick<SingleAppControl, 'install' | 'call' | 'streamCommand' | 'recover' | 'legacy' | 'prepareRun'>;
+  private initialized = false;
   constructor(private machines: Machines, private workspaces?: WorkspacesV1, private options: Options = {}) {
-    this.terminals = options.terminals || (workspaces ? projectTerminalsFor(machines, workspaces) : undefined);
+    this.terminals = options.terminals;
     this.scopes = options.scopes || new ProjectRunScopes(machines);
     this.identities = options.identities || new ProjectIdentities(machines);
     this.control = options.control || new SingleAppControl(machines);
-    machines.on('change', this.onChange);
-    machines.on('incident-lockdown', this.onLock);
-    this.removeConfigGuard = workspaces?.beforeConfigChange(async (id, previous, next) => {
-      if (previous.directory === next.directory && (previous.networkIsolation || 'host') === (next.networkIsolation || 'host')) return;
-      await this.load(id);
-      await this.sync(id);
-      if ([...this.sessions.values()].some(session => session.vmId === id &&
-          session.projectId === (previous._workspace || 'default') && session.phase !== 'stopped'))
-        throw new AppError('请先停止此项目的单应用窗口并确认原运行清理，再修改目录或网络隔离模式', 409, 'SINGLE_APP_RUNS_MUST_STOP');
-    });
+    if (!options.deferInitialization) this.init();
+  }
+  init() {
+    if (this.closed) throw new AppError('单应用服务已关闭', 503);
+    if (this.initialized) return;
+    try {
+      this.removeConfigGuard = this.workspaces?.beforeConfigChange(async (id, previous, next) => {
+        if (previous.directory === next.directory && (previous.networkIsolation || 'host') === (next.networkIsolation || 'host')) return;
+        await this.load(id);
+        await this.sync(id);
+        if ([...this.sessions.values()].some(session => session.vmId === id &&
+            session.projectId === (previous._workspace || 'default') && session.phase !== 'stopped'))
+          throw new AppError('请先停止此项目的单应用窗口并确认原运行清理，再修改目录或网络隔离模式', 409, 'SINGLE_APP_RUNS_MUST_STOP');
+      });
+      this.machines.on('change', this.onChange);
+      this.machines.on('incident-lockdown', this.onLock);
+      this.terminals ||= this.workspaces ? projectTerminalsFor(this.machines, this.workspaces) : undefined;
+      this.initialized = true;
+    } catch (error) {
+      this.machines.off('change', this.onChange);
+      this.machines.off('incident-lockdown', this.onLock);
+      this.removeConfigGuard?.();
+      this.removeConfigGuard = undefined;
+      throw error;
+    }
   }
   private file(id: string) { return join(this.options.rootDirectory || vmDir(id), 'single-app-runs.json'); }
   private async readJournal(id: string) {

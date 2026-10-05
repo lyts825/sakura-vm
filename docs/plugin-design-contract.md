@@ -1,8 +1,8 @@
 # 插件设计契约与统管层接口
 
-文档版本：**1.0.0**。核对日期：**2026-10-05**。实现基线：应用和内置包 **2.2.0 / `a8d3e8a`**，宿主插件 API **5**，公共服务契约 **V1**。
+文档版本：**1.0.1**。核对日期：**2026-10-05**。当前实现：应用和内置包 **2.2.1**，宿主插件 API **5**，公共服务契约 **V1**。原 1.0.0 文档基线为应用 `2.2.0 / a8d3e8a`。
 
-本契约将当前架构整理为插件开发、宿主扩展和评审可以共同使用的接口规范。本轮交付只修改文档，不新增运行时接口，不改变插件权限、HTTP 路径、数据格式或部署状态。文中的接口块是现有接口的摘录或明确标注的类型投影，省略导入与非相关成员；完整签名以链接的源码为准，不能把宿主内部接口当作插件 SDK。
+本契约将当前架构整理为插件开发、宿主扩展和评审可以共同使用的接口规范。2.2.1 按原契约对齐官方插件引用、前端传输类型、贡献与清理责任；兼容接口、HTTP 路径和数据格式保持原协议，具体实现与验收见 [项目状态](../PROJECT_STATUS.md)。文中的接口块是现有接口的摘录或明确标注的类型投影，省略导入与非相关成员；完整签名以链接的源码为准，不能把宿主内部接口当作插件 SDK。
 
 阅读顺序：先核对第 1–3 节的边界与包协议，再按第 4–22 节查阅所需统管层，最后按第 23–25 节实施与验收。[插件与整合包协议](plugin-protocol.md)保留包结构、选择迁移和生成流程；[架构说明](architecture.md)说明整体调用关系；[交付记录](plugin-system.md)记录历次验收，不作为当前接口清单。
 
@@ -100,12 +100,12 @@ type ResourceIdentity = {
 
 | 版本对象 | 当前值 | 修改规则 |
 | --- | --- | --- |
-| 应用及内置插件/整合包 | `2.2.0` | 沿用应用发行版；本轮不变 |
+| 应用及内置插件/整合包 | `2.2.1` | 沿用应用发行版；兼容重构与修复 |
 | manifest / pack `schemaVersion` | `1` | 声明数据结构版本 |
 | 可信插件 `apiVersion` | `5` | 生命周期、显式操作与服务引用协议 |
 | 用户选择 `schemaVersion` | `3` | 兼容读取选择 V1/V2，修改时写 V3 |
 | 公共服务接口 | `V1` / descriptor `version: 1` | 不兼容接口变更必须另建契约版本 |
-| 本文档 | `1.0.0` | 文档基线，不能用于依赖 `pin()` 或替代 API 版本 |
+| 本文档 | `1.0.1` | 文档版本，不能用于依赖 `pin()` 或替代 API 版本 |
 
 `definePlugin()` 补齐固定字段、空数组和默认时限：激活 30 秒、关闭 10 秒；合法配置范围均为 100–180000 ms。`pin()`、`member()` 使用完整精确版本，不支持范围解析、同插件多版本并存或动态下载官方源码包。缺少选择文件表示基础版，不自动启用已有历史业务。
 
@@ -412,6 +412,8 @@ interface PluginContextPort extends PluginServicePort {
 ```
 
 上下文及能力对象冻结；`instance` 只提供身份信息，不暴露可修改 permissions/phase 的对象。`host.workspaces` 等兼容 getter 仍经同一 Broker，并不绕过直接依赖检查。`require(id)` 只检查声明的自身或依赖已启用，不会启用或下载插件。
+
+仓库内官方插件统一使用 `use(ref)` / `optional(ref)`，服务引用来自本包或直接依赖的 `services.ts`；兼容 getter 保留于 API 5，官方源码门禁拒绝新增使用。宿主在调用 activate 前按 manifest 的服务槽位登记真实清理；插件必须先 provide 再 init。构造函数中可能失败的事件、调度或依赖登记应延后到已受管的初始化阶段，不能让未返回的对象遗留资源。
 
 `activity.exclusive(name, work)` 用于既有宿主互斥流程；它不能替代操作授权、VM 锁、执行作用域或 I/O 预算。`onDispose` 必须在资源存在后及时登记；清理要返回真实完成的 Promise。`capabilities.diagnostics()` 返回本插件作用域的诊断，而非其它插件的私有对象。
 
@@ -1013,6 +1015,8 @@ interface PluginGenerationPort {
 
 浏览器模块与 shared 契约不能直接或间接引入服务端实现和 Node.js 能力。社区扩展只渲染受限表单，不参与可信 client.tsx 加载。
 
+官方插件浏览器文件的类型也使用 `OperationResponse` / `OperationRequest` 或 shared DTO，不从服务端实现推导。跨插件嵌入的有状态面板使用提供者的 `PluginBoundary` 和绑定 request；请求同时保留父消费者的取消责任。上传等直接传输必须合并相关插件原代信号，并在响应提交前再次检查。纯编辑组件可以复用，但贡献表仅声明本包实际导出的入口，不能重复宣称另一个插件的标签。
+
 ### 21.2 操作结果、审计与资源诊断
 
 来源：[OperationResult](../shared/contracts/operation-results.ts)、[OperationResults](../server/operation-results.ts)、[RuntimeTimings](../server/runtime-timings.ts)、[RuntimeDiagnostics](../server/runtime-diagnostics.ts)。
@@ -1122,14 +1126,15 @@ sequenceDiagram
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { CommandPresets } from '../../server/command-presets.ts';
 import { services } from './services.ts';
+import { services as projectsServices } from '../projects/services.ts';
 export { manifest } from './manifest.ts';
 
 export async function activate(host: PluginContext) {
-  host.provide(services.commands, new CommandPresets(host.vm, host.workspaces));
+  host.provide(services.commands, new CommandPresets(host.vm, host.use(projectsServices.workspaces)));
 }
 ```
 
-此示例导入的是本插件拥有的实现；projects 通过声明的直接依赖和受控 `host.workspaces` getter 提供。服务引用必须像原 `services.ts` 一样绑定 `serviceContracts.CommandPresets`；不要使用只有字符串/泛型断言而没有独立契约的新注册。
+此示例导入的是本插件拥有的实现；projects 通过声明的直接依赖和显式公共服务引用提供。服务引用必须像原 `services.ts` 一样绑定 `serviceContracts.CommandPresets`；不要使用只有字符串/泛型断言而没有独立契约的新注册。
 
 ### 24.2 新增插件的交付项
 
@@ -1176,6 +1181,8 @@ npm run architecture:check
 npm run plugins:check
 ```
 
+`plugins:check` 同时执行官方源码检查：跨插件服务引用必须有直接声明、不得导入其它插件的服务端实现、不得读取兼容 getter；浏览器模块使用公共传输类型；pages/tabs/developmentSections 的实际导出键和组件类型须与 manifest 一致；默认成功状态须属于公开响应状态集合。
+
 ### 24.3 兼容与发布
 
 输入扩展必须继续接受旧合法输入，输出必须满足旧调用方的契约；现有方法和 DTO 字段，包括可选字段，不能删除。新增兼容方法和可选字段可以保留 V1；改参数含义、必填要求、返回结构或取消/归属语义时应审查是否需要新服务版本和宿主 API 版本。
@@ -1186,7 +1193,7 @@ npm run plugins:check
 npm run plugins:contracts:freeze -- --release <应用版本> --commit <已验收实现提交>
 ```
 
-审核新基线并提交后再创建应用版本标签；冻结以指定 Git 提交为来源，不读取未提交契约。本次文档基线只使用独立 `plugin-contract-v1.0.0` 标签，不重复冻结应用 2.2.0，不声称发布新宿主 API。
+审核新基线并提交后再创建应用版本标签；冻结以指定 Git 提交为来源，不读取未提交契约。原文档基线保留独立 `plugin-contract-v1.0.0` 标签，2.2.1 文档修订随应用版本管理，不改变宿主 API。
 
 ## 25. 验收要求与明确限制
 
@@ -1194,7 +1201,7 @@ npm run plugins:contracts:freeze -- --release <应用版本> --commit <已验收
 
 | 变更类型 | 最小必要验证 | 通过标准 |
 | --- | --- | --- |
-| 文档与接口说明（本轮） | 源码签名/链接/版本/目录数核对，文档差异，architecture 与 plugins 门禁 | 不杜撰公开接口，不混淆权限面，无陈旧当前值 |
+| 文档与接口说明 | 源码签名/链接/版本/目录数核对，文档差异，architecture 与 plugins 门禁 | 不杜撰公开接口，不混淆权限面，无陈旧当前值 |
 | manifest / ServiceRef | 声明与生成检查、相关依赖/Broker 回归 | 缺依赖、跨槽位、错版本、旧句柄、私有成员均拒绝 |
 | 生命周期 / 清理 | 定向激活失败、取消、清理失败与原代重试 | 没有真实释放证明不归还预算，失败依赖保留 |
 | HTTP/WS | 相关输入/响应/媒体/状态/角色和撤权复现 | 实际载荷与公开契约一致；断开与写出失败可追踪 |

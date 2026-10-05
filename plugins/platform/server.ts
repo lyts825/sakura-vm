@@ -1,3 +1,4 @@
+import { services as projectsServices } from '../projects/services.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as backupsServices } from '../backups/services.ts';
@@ -6,13 +7,11 @@ import { services as secretsServices } from '../secrets/services.ts';
 import { services as platformServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 
 import { NextFeatures } from '../../server/next-features.ts';
 import { ObjectBackup } from '../../server/object-backup.ts';
 import { WireGuardOverlay } from '../../server/wireguard-overlay.ts';
-
-
 
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../shared/errors.ts';
@@ -23,33 +22,33 @@ export const operations: Record<string, PluginOperation> = {
   'browser-ide-link': {
     response: pluginRouteResponses["platform.browser-ide-link"].schema,
     execute(url) {
-      return this.next.browserIdeLink(url.pathname.split('/')[3]);
+      return this.use(platformServices.next).browserIdeLink(url.pathname.split('/')[3]);
     },
   },
   'notebook-link': {
     response: pluginRouteResponses["platform.notebook-link"].schema,
     execute(url) {
-      return this.next.notebookLink(url.pathname.split('/')[3]);
+      return this.use(platformServices.next).notebookLink(url.pathname.split('/')[3]);
     },
   },
 };
 
 export async function activate(host: PluginContext) {
   const m = host.vm;
-  const service = host.provide(platformServices.next, new NextFeatures(m, host.workspaces, host.system, {
+  const service = host.provide(platformServices.next, new NextFeatures(m, host.use(projectsServices.workspaces), host.system, {
     objectBackup: new ObjectBackup(m, () => ({
-    backups: host.optional(backupsServices.backups),
-    bundles: host.optional(snapshotsServices.bundles),
-    secrets: host.optional(secretsServices.secrets),
+      backups: host.optional(backupsServices.backups),
+      bundles: host.optional(snapshotsServices.bundles),
+      secrets: host.optional(secretsServices.secrets),
     })),
     wireGuardOverlay: new WireGuardOverlay(m, () => host.optional(secretsServices.secrets)),
     snapshotMerge: () => host.optional(snapshotsServices.snapshotMerge),
   }));
   await service.init();
-  host.registerJobs(host.next.jobs, (job) => {
+  host.registerJobs(host.use(platformServices.next).jobs, (job) => {
     if (!job.action?.startsWith('next:')) throw new AppError('请回到原功能页面重新执行');
     const featureId = job.action.slice('next:'.length);
-    return retryInProject(host, job, () => Promise.resolve(host.next.action(
+    return retryInProject(host, job, () => Promise.resolve(host.use(platformServices.next).action(
       retryTarget(job), { action: 'run', featureId })));
   });
 }
@@ -58,13 +57,13 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
   const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'next-features' && parts.length === 2 && req.method === 'GET') {
-    send(await this.next.catalog());
+    send(await this.use(platformServices.next).catalog());
     return true;
   }
   if (parts[1] !== 'vms' || !parts[2]) return false;
@@ -74,11 +73,11 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'next-features') {
       if (req.method === 'GET') {
-        send(await this.next.view(id));
+        send(await this.use(platformServices.next).view(id));
         return true;
       }
       if (req.method === 'POST') {
-        send(await this.next.action(id, await body(req), signal), 202);
+        send(await this.use(platformServices.next).action(id, await body(req, signal), signal), 202);
         return true;
       }
     }

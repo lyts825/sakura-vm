@@ -20,30 +20,41 @@ export type PluginTabProps = FeatureProps & {
   configure: () => unknown;
   openFile?: { path: string; revision: number; directory?: boolean };
 };
-type ClientModule = {
-  tabs?: Record<string, ComponentType<PluginTabProps>>;
-  pages?: Record<string, ComponentType<PluginPageProps>>;
-  developmentSections?: Record<string, ComponentType<FeatureProps>>;
+type ClientProps = {
+  tabs: PluginTabProps;
+  pages: PluginPageProps;
+  developmentSections: FeatureProps;
 };
+type ClientModule = { [Kind in keyof ClientProps]?: Record<string, ComponentType<ClientProps[Kind]>> };
 const entries = import.meta.glob<ClientModule>('../plugins/*/client.tsx');
 const components = new Map<string, { lifetime: string; value: ComponentType<any> }>();
 
-function component(owner: string, kind: keyof ClientModule, id: string, lifetime: string) {
-  const key = `${owner}:${kind}:${id}`;
+function cachedComponent<Props extends object>(key: string, lifetime: string,
+  load: () => Promise<{ default: ComponentType<Props> }>): ComponentType<Props> {
   const cached = components.get(key);
   let value = cached?.lifetime === lifetime ? cached.value : undefined;
   if (!value) {
-    value = lazy(async () => {
-      const load = entries[`../plugins/${owner}/client.tsx`];
-      if (!load) throw new Error(`插件 ${owner} 缺少界面入口`);
-      const entry = await load();
-      const Component = entry[kind]?.[id];
-      if (!Component) throw new Error(`插件 ${owner} 缺少界面组件：${id}`);
-      return { default: Component };
-    });
+    value = lazy(load);
     components.set(key, { lifetime, value });
   }
   return value;
+}
+
+/** React.lazy caches rejected imports; a boundary retry needs a fresh lazy object. */
+export function embeddedPluginComponent<Props extends object>(owner: string, id: string, lifetime: string,
+  load: () => Promise<{ default: ComponentType<Props> }>): ComponentType<Props> {
+  return cachedComponent(`${owner}:embedded:${id}`, lifetime, load);
+}
+
+function component<Kind extends keyof ClientProps>(owner: string, kind: Kind, id: string, lifetime: string) {
+  return cachedComponent<ClientProps[Kind]>(`${owner}:${kind}:${id}`, lifetime, async () => {
+    const load = entries[`../plugins/${owner}/client.tsx`];
+    if (!load) throw new Error(`插件 ${owner} 缺少界面入口`);
+    const entry = await load();
+    const Component = entry[kind]?.[id];
+    if (!Component) throw new Error(`插件 ${owner} 缺少界面组件：${id}`);
+    return { default: Component };
+  });
 }
 
 export function PluginTab({ owner, id, ...props }: PluginTabProps & { owner: string; id: string }) {

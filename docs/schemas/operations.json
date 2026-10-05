@@ -27803,52 +27803,73 @@
               "type": "string"
             },
             "base": {
-              "type": "object",
-              "properties": {
-                "mode": {
-                  "type": "string"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string"
+                    },
+                    "oid": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "oid"
+                  ],
+                  "additionalProperties": false
                 },
-                "oid": {
-                  "type": "string"
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "mode",
-                "oid"
-              ],
-              "additionalProperties": false
+              ]
             },
             "ours": {
-              "type": "object",
-              "properties": {
-                "mode": {
-                  "type": "string"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string"
+                    },
+                    "oid": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "oid"
+                  ],
+                  "additionalProperties": false
                 },
-                "oid": {
-                  "type": "string"
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "mode",
-                "oid"
-              ],
-              "additionalProperties": false
+              ]
             },
             "theirs": {
-              "type": "object",
-              "properties": {
-                "mode": {
-                  "type": "string"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string"
+                    },
+                    "oid": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "oid"
+                  ],
+                  "additionalProperties": false
                 },
-                "oid": {
-                  "type": "string"
+                {
+                  "type": "null"
                 }
-              },
-              "required": [
-                "mode",
-                "oid"
-              ],
-              "additionalProperties": false
+              ]
             },
             "worktree": {
               "type": "string"

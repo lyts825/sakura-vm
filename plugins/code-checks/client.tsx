@@ -1,16 +1,10 @@
 import { useEffect, useState } from 'react';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
 
-type Variable = { name: string; value: string; type: string; variablesReference: number };
-type DebugView = {
-  installed: boolean; active: boolean; token?: string;
-  state?: 'starting' | 'running' | 'stopped' | 'terminated' | 'error';
-  path?: string; directory?: string; reason?: string; error?: string; output?: string;
-  needsReview?: boolean; pending?: { token: string; projectId: string; phase: string }[];
-  breakpoints?: { line: number; verified: boolean; message?: string }[];
-  frames?: { id: number; name: string; path: string; line: number; column: number }[];
-  variables?: Variable[]; selectedFrame?: number;
-};
+type DebugView = OperationResponse<'code-checks.legacy.get.vms.vmId.debugger'>;
+type VariableResult = Extract<OperationResponse<'code-checks.legacy.post.vms.vmId.debugger'>, { variables: unknown[] }>;
+type Variable = VariableResult['variables'][number];
 function breakpointLines(text: string) {
   if (!text.trim()) return [];
   const lines = text.split(/[,，\s]+/).map(Number);
@@ -28,22 +22,24 @@ export function DebugPanel({ vmId, request, path, dirty, openPath }: {
   const [stopOnEntry, setStopOnEntry] = useState(false);
   const [expanded, setExpanded] = useState<Record<number, Variable[]>>({});
   const view = remote.data;
-  useEffect(() => setExpanded({}), [view?.state, view?.selectedFrame, view?.frames?.[0]?.line]);
+  const session = view && 'token' in view ? view : null;
+  const details = view && 'variables' in view ? view : null;
+  useEffect(() => setExpanded({}), [session?.token, session?.state, details?.selectedFrame, details?.frames[0]?.line]);
   useEffect(() => {
-    if (view?.token) setBreakpoints((view.breakpoints || []).map((item) => item.line).join(', '));
-  }, [view?.token]);
+    if (details?.token) setBreakpoints(details.breakpoints.map((item) => item.line).join(', '));
+  }, [details?.token]);
   const run = (input: Record<string, unknown>, success: string) => void action.run(async (signal) => {
     await request(`/vms/${vmId}/debugger`, 'POST', input, signal);
     remote.reload();
   }, success);
-  const token = view?.token;
-  const pending = view?.pending || (view?.needsReview && token ? [{ token }] : []);
+  const token = session?.token;
+  const pending = view && 'pending' in view ? view.pending : session?.needsReview && token ? [{ token }] : [];
   return (
     <div className="feature-card">
       <div className="panel-heading"><h4>Python 调试器</h4>
-        <span className="muted">{view?.state || (view?.installed ? '就绪' : '未安装')}</span>
+        <span className="muted">{session?.state || (view?.installed ? '就绪' : '未安装')}</span>
       </div>
-      <Feedback error={action.error || remote.error || view?.error} message={action.message} />
+      <Feedback error={action.error || remote.error || session?.error} message={action.message} />
       {view?.installed === false && <button className="secondary compact" disabled={action.busy}
         onClick={() => run({ action: 'install' }, '调试器已安装')}>
         安装 Python 调试器
@@ -71,12 +67,12 @@ export function DebugPanel({ vmId, request, path, dirty, openPath }: {
         </button>
         {dirty && <p className="subtle-note">保存当前 Python 文件后可启动调试。</p>}
       </>}
-      {view?.active && token && <>
-        <p className="muted">正在调试 {view.path}{view.reason ? ` · ${view.reason}` : ''}</p>
+      {view?.active && token && details && <>
+        <p className="muted">正在调试 {details.path}{details.reason ? ` · ${details.reason}` : ''}</p>
         <div className="feature-actions">
-          {view.state === 'running' && <button className="secondary compact" disabled={action.busy}
+          {details.state === 'running' && <button className="secondary compact" disabled={action.busy}
             onClick={() => run({ action: 'pause', token }, '已请求暂停')}>暂停</button>}
-          {view.state === 'stopped' && <>
+          {details.state === 'stopped' && <>
             <button className="secondary compact" disabled={action.busy}
               onClick={() => run({ action: 'continue', token }, '继续运行')}>继续</button>
             <button className="secondary compact" disabled={action.busy}
@@ -100,26 +96,27 @@ export function DebugPanel({ vmId, request, path, dirty, openPath }: {
               catch (error) { void action.run(async () => { throw error; }); }
             }}>更新断点</button>
         </div>
-        {!!view.breakpoints?.length && <p className="subtle-note">断点：{view.breakpoints.map((item) =>
+        {!!details.breakpoints.length && <p className="subtle-note">断点：{details.breakpoints.map((item) =>
           `${item.line}${item.verified ? ' ✓' : ` 未确认${item.message ? `（${item.message}）` : ''}`}`).join(' · ')}</p>}
-        {view.state === 'stopped' && <div className="feature-grid">
+        {details.state === 'stopped' && <div className="feature-grid">
           <div className="feature-card"><h4>调用栈</h4>
-            {view.frames?.map((frame) => <button key={frame.id} className="text-button"
-              aria-pressed={view.selectedFrame === frame.id}
+            {details.frames.map((frame) => <button key={frame.id} className="text-button"
+              aria-pressed={details.selectedFrame === frame.id}
               onClick={() => {
                 run({ action: 'inspect', token, frameId: frame.id }, '已选中栈帧');
-                if (view.directory && frame.path.startsWith(`${view.directory}/`))
+                if (details.directory && frame.path.startsWith(`${details.directory}/`))
                   void openPath(frame.path, frame.line);
               }}>
               {frame.name} · {frame.path}:{frame.line}
             </button>)}
           </div>
           <div className="feature-card"><h4>变量</h4>
-            {view.variables?.map((item, index) => <div key={`${item.name}:${index}`}>
+            {details.variables.map((item, index) => <div key={`${item.name}:${index}`}>
               {item.variablesReference > 0 ? <button className="text-button" onClick={() =>
                 void action.run(async (signal) => {
-                  const result = await request<{ variables: Variable[] }>(`/vms/${vmId}/debugger`, 'POST',
+                  const result = await request<VariableResult>(`/vms/${vmId}/debugger`, 'POST',
                     { action: 'expand', token, reference: item.variablesReference }, signal);
+                  signal.throwIfAborted();
                   setExpanded((current) => ({ ...current, [item.variablesReference]: result.variables }));
                 })}>
                 {item.name}: {item.value} ({item.type}) ▸
@@ -131,8 +128,8 @@ export function DebugPanel({ vmId, request, path, dirty, openPath }: {
           </div>
         </div>}
       </>}
-      {!!view?.output && <details open={view.state === 'terminated'}><summary>程序输出</summary>
-        <pre className="feature-log">{view.output}</pre>
+      {!!details?.output && <details open={details.state === 'terminated'}><summary>程序输出</summary>
+        <pre className="feature-log">{details.output}</pre>
       </details>}
     </div>
   );

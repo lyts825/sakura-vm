@@ -1,3 +1,4 @@
+import { services as transfersServices } from '../transfers/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -25,7 +26,7 @@ export async function activate(host: PluginContext) {
   const signatures = host.provide(snapshotsServices.signedBundles, new SignedBundles(host.capabilities.metadata.reference('signed-bundles')));
   await signatures.init();
   host.provide(snapshotsServices.bundles, new Bundles(host.vm, signatures, host.system));
-  const golden = host.provide(snapshotsServices.goldenImages, new GoldenImages(host.vm, host.bundles));
+  const golden = host.provide(snapshotsServices.goldenImages, new GoldenImages(host.vm, host.use(snapshotsServices.bundles)));
   host.registerJobs(golden.jobs, () => {
     throw new AppError('请先刷新黄金镜像库核对结果，再明确发起操作', 409);
   });
@@ -38,7 +39,7 @@ export async function activate(host: PluginContext) {
   host.registerJobs(snapshotDiff.jobs, () => {
     throw new AppError('请在快照页选择快照后重新比较', 409);
   });
-  const snapshotMerge = host.provide(snapshotsServices.snapshotMerge, new SnapshotMerge(host.vm, host.bundles));
+  const snapshotMerge = host.provide(snapshotsServices.snapshotMerge, new SnapshotMerge(host.vm, host.use(snapshotsServices.bundles)));
   host.registerJobs(snapshotMerge.jobs, () => {
     throw new AppError('请在快照页核对分支和目标后重新合并', 409);
   });
@@ -125,7 +126,7 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: (req: IncomingMessage, signal?: AbortSignal) => Promise<any>,
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -144,13 +145,13 @@ export async function route(
       send(
         passphrase
           ? await importEncrypted(
-              this.bundles,
+              this.use(snapshotsServices.bundles),
               name,
               req,
               Buffer.from(passphrase, 'base64').toString('utf8'),
               signal,
             )
-          : await this.bundles.importExternal(name, req, signal),
+          : await this.use(snapshotsServices.bundles).importExternal(name, req, signal),
         201,
       );
     });
@@ -162,7 +163,7 @@ export async function route(
   this.vm.get(id);
   if (req.method === 'POST' && parts[3] === 'snapshots' && parts.length === 4) {
     const { name, online, memory } = httpRouteRequests["snapshots.legacy.post.vms.vmId.snapshots"]
-      .parse(await body(req));
+      .parse(await body(req, signal));
     if (memory && !online) throw new AppError('整机状态快照要求运行中的实例', 409);
     return send(await (memory ? this.vm.memorySnapshot(id, name)
       : online ? this.vm.onlineSnapshot(id, name) : this.vm.snapshot(id, name)), 201);
@@ -176,7 +177,7 @@ export async function route(
   ) {
     const input = req.headers['content-type']?.startsWith('application/json')
       ? httpRouteRequests["snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore"]
-          .parse(await body(req))
+          .parse(await body(req, signal))
       : { backup: false };
     return send(await (input.memory ? this.vm.restoreMemory(id, parts[4], input.backup)
       : this.vm.restore(id, parts[4], input.backup)));
@@ -192,7 +193,7 @@ export async function route(
           id,
           parts[4],
           httpRouteRequests["snapshots.legacy.patch.vms.vmId.snapshots.snapshotId"]
-            .parse(await body(req)),
+            .parse(await body(req, signal)),
         ),
       );
       return true;
@@ -200,15 +201,15 @@ export async function route(
   }
   if (parts.length === 4) {
     if (action === 'export' && req.method === 'GET') {
-      await this.downloads.send({ id, type: 'export', name: this.vm.get(id).name + '.sakura' }, res);
+      await this.use(transfersServices.downloads).send({ id, type: 'export', name: this.vm.get(id).name + '.sakura' }, res);
       return true;
     }
   }
   if (parts.length === 4) {
     if (action === 'clone' && req.method === 'POST') {
       const { name, snapshot } = httpRouteRequests["snapshots.legacy.post.vms.vmId.clone"]
-        .parse(await body(req));
-      send(await this.bundles.clone(id, name, snapshot, signal), 201);
+        .parse(await body(req, signal));
+      send(await this.use(snapshotsServices.bundles).clone(id, name, snapshot, signal), 201);
       return true;
     }
   }

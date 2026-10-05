@@ -79,11 +79,23 @@ export class Maintenance {
   private resizeAttempted = new Set<string>();
   private closed = false;
   private ticking?: Promise<void>;
-  private timer: ScheduleHandle;
-  constructor(private machines: Machines) {
-    machines.on('change', this.onChange);
-    this.timer = scheduler.register({ owner: 'plugin:maintenance', label: '磁盘维护检查', intervalMs: 60000,
-      overlap: 'skip', backoff: { initialMs: 60000, maxMs: 600000 }, run: () => this.tick() });
+  private timer?: ScheduleHandle;
+  private initialized = false;
+  constructor(private machines: Machines, options: { deferInitialization?: boolean } = {}) {
+    if (!options.deferInitialization) this.init();
+  }
+  init() {
+    if (this.closed) throw new AppError('磁盘维护服务已关闭', 503);
+    if (this.initialized) return;
+    try {
+      this.machines.on('change', this.onChange);
+      this.timer = scheduler.register({ owner: 'plugin:maintenance', label: '磁盘维护检查', intervalMs: 60000,
+        overlap: 'skip', backoff: { initialMs: 60000, maxMs: 600000 }, run: () => this.tick() });
+      this.initialized = true;
+    } catch (error) {
+      this.machines.off('change', this.onChange);
+      throw error;
+    }
   }
   async storage() {
     const filesystem = await statfs(DATA);
@@ -296,7 +308,7 @@ export class Maintenance {
   async close() {
     this.closed = true;
     this.machines.off('change', this.onChange);
-    await this.timer.close();
+    await this.timer?.close();
     await this.ticking;
     await this.jobs.close();
   }

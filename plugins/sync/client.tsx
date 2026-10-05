@@ -2,10 +2,7 @@ import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { Save, FolderSync as SyncIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { JobView } from '../../shared/contracts/jobs.ts';
-import type { SyncConfig, SyncDecisions, SyncManualMerges, SyncPreview, SyncQueue } from '../../server/sync';
-import type { SyncHistoryView } from '../../server/sync-history';
-import type { SyncWatchView } from '../../server/sync-watch';
+import type { SyncConfig, SyncDecisions, SyncManualMerges, SyncMergeContext, SyncPreview, SyncView } from './view-types';
 import { TimeWindowFields } from '../../src/TimeWindowFields';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
@@ -21,22 +18,12 @@ const driverNames = {
 } as const;
 
 export function SyncPanel({ vm, request }: FeatureProps) {
-  const remote = useRemote<{
-    projectId?: string;
-    config: SyncConfig | null;
-    job: JobView | null;
-    queue?: SyncQueue | null;
-    maintenance?: boolean;
-    history?: SyncHistoryView[];
-    watching?: SyncWatchView | null;
-  }>(request, `/vms/${vm.id}/sync`, true, 2500);
+  const remote = useRemote<SyncView>(request, `/vms/${vm.id}/sync`, true, 2500);
   const [config, setConfig] = useState<SyncConfig>({ host: '', guest: '/workspace/shared', auto: false });
   const [preview, setPreview] = useState<SyncPreview | null>(null),
     [decisions, setDecisions] = useState<SyncDecisions>({}),
     [manualMerges, setManualMerges] = useState<SyncManualMerges>({}),
-    [mergeContext, setMergeContext] = useState<{
-      path: string; token: string; base: string; ours: string; theirs: string;
-    } | null>(null),
+    [mergeContext, setMergeContext] = useState<SyncMergeContext | null>(null),
     [previewQuery, setPreviewQuery] = useState('');
   const [loadedProject, setLoadedProject] = useState('');
   const action = useAction();

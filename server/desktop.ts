@@ -46,8 +46,10 @@ export class Desktops {
   private watchers = new Map<string, { startedAt: string; listeners: Set<() => void> }>();
   private recovery = new Map<string, string>();
   private installed = new Set<string>();
-  constructor(private machines: Machines, private workspaces?: WorkspacesV1, options?: ConstructorParameters<typeof ProjectDesktops>[2]) {
-    this.apps = new SingleAppWindows(machines, workspaces);
+  private initialized = false;
+  constructor(private machines: Machines, private workspaces?: WorkspacesV1,
+    options?: ConstructorParameters<typeof ProjectDesktops>[2] & { deferInitialization?: boolean }) {
+    this.apps = new SingleAppWindows(machines, workspaces, { deferInitialization: true });
     this.bindings = new DesktopBindings(machines);
     this.projectDesktop = workspaces ? new ProjectDesktops(machines, workspaces, { ...options,
       beforeRetire: async (id, proof) => {
@@ -61,10 +63,25 @@ export class Desktops {
     };
     this.clipboard = new X11Clipboard(machines, applicationProject);
     this.waylandClipboard = new WaylandClipboard(machines, applicationProject);
-    machines.on('change', this.onChange);
-    machines.on('incident-lockdown', this.invalidate);
-    this.unguard = workspaces?.beforeConfigChange((id, previous, next) => this.projectDesktop!.beforeChange(id, previous, next));
-    if (workspaces) queueMicrotask(() => { if (!this.closed) this.onChange(); });
+    if (!options?.deferInitialization) this.init();
+  }
+  init() {
+    if (this.closed) throw new AppError('桌面服务已关闭', 503);
+    if (this.initialized) return;
+    try {
+      this.unguard = this.workspaces?.beforeConfigChange((id, previous, next) => this.projectDesktop!.beforeChange(id, previous, next));
+      this.machines.on('change', this.onChange);
+      this.machines.on('incident-lockdown', this.invalidate);
+      this.apps.init();
+      this.initialized = true;
+    } catch (error) {
+      this.machines.off('change', this.onChange);
+      this.machines.off('incident-lockdown', this.invalidate);
+      this.unguard?.();
+      this.unguard = undefined;
+      throw error;
+    }
+    if (this.workspaces) queueMicrotask(() => { if (!this.closed) this.onChange(); });
   }
   private invalidate = (id: string) => {
     const watchers = this.watchers.get(id);

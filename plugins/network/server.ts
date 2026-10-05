@@ -4,9 +4,8 @@ import { sendJson } from '../../server/http-response.ts';
 import { services as networkServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginOperation, PluginRoute } from '../../server/plugin-api.ts';
 
-import { z } from 'zod';
 import { AppError } from '../../shared/errors.ts';
 
 import { NetworkProfiles } from '../../server/network-profiles.ts';
@@ -24,9 +23,9 @@ export async function activate(host: PluginContext) {
   await host.capabilities.metadata.run('certificates', async () => certificates.init());
   const ingress = host.provide(networkServices.ingress, new HttpIngress(m, host.capabilities.metadata.reference('ingress'), certificates, host.networking));
   await ingress.init();
-  await host.provide(networkServices.localAliases, new LocalAliases(() => ingress.aliasNames(),
+  await host.provide(networkServices.localAliases, new LocalAliases(() => host.use(networkServices.ingress).aliasNames(),
     undefined, host.capabilities.metadata.reference('local-aliases'))).init();
-  host.registerJobs(host.network.jobs, () => {
+  host.registerJobs(host.use(networkServices.network).jobs, () => {
     throw new AppError('请在网络配置中重新测试当前设置');
   });
 }
@@ -79,19 +78,19 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
   const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'network-profiles') {
-    if (parts.length === 2 && req.method === 'GET') return send(await this.network.profiles());
+    if (parts.length === 2 && req.method === 'GET') return send(await this.use(networkServices.network).profiles());
     if (parts.length === 2 && req.method === 'POST')
-      return send(await this.network.saveProfile(await body(req)));
+      return send(await this.use(networkServices.network).saveProfile(await body(req, signal)));
     if (parts.length === 2 && req.method === 'DELETE') {
       const { id } = httpRouteRequests["network.legacy.delete.network-profiles"]
-        .parse(await body(req));
-      return send(await this.network.removeProfile(id));
+        .parse(await body(req, signal));
+      return send(await this.use(networkServices.network).removeProfile(id));
     }
     return false;
   }
@@ -102,20 +101,20 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'network') {
       if (req.method === 'GET') {
-        send({ ...(await this.network.state(id)), job: this.network.jobs.view(id) });
+        send({ ...(await this.use(networkServices.network).state(id)), job: this.use(networkServices.network).jobs.view(id) });
         return true;
       }
       if (req.method === 'POST') {
         const input = httpRouteRequests["network.legacy.post.vms.vmId.network"]
-          .parse(await body(req));
+          .parse(await body(req, signal));
         send(
           input.action === 'preview'
-            ? await this.network.preview(id, input.config, signal)
+            ? await this.use(networkServices.network).preview(id, input.config, signal)
             : input.action === 'apply'
-              ? await this.network.apply(id, input.config, input.token || '')
+              ? await this.use(networkServices.network).apply(id, input.config, input.token || '')
               : input.action === 'restore'
-                ? await this.network.restore(id)
-                : this.network.test(id, input.config),
+                ? await this.use(networkServices.network).restore(id)
+                : this.use(networkServices.network).test(id, input.config),
         );
         return true;
       }
@@ -125,7 +124,7 @@ export async function route(
     if (action === 'services') {
       if (req.method === 'PATCH') {
         const { forwards } = httpRouteRequests["network.legacy.patch.vms.vmId.services"]
-          .parse(await body(req));
+          .parse(await body(req, signal));
         send(await this.vm.setForwards(id, forwards));
         return true;
       }

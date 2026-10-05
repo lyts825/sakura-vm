@@ -7,22 +7,20 @@ export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
-import { z } from 'zod';
-
 export async function activate(host: PluginContext) {}
 export async function route(
   this: PluginContext,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: (req: IncomingMessage, signal?: AbortSignal) => Promise<any>,
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
   const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'vms' && parts[2] === 'batch' && parts.length === 3 && req.method === 'POST') {
     const { ids, action } = httpRouteRequests["library.legacy.post.vms.batch"]
-      .parse(await body(req));
+      .parse(await body(req, signal));
     const results = [];
     for (const id of new Set(ids)) {
       signal.throwIfAborted();
@@ -44,7 +42,7 @@ export async function route(
   this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'organization' && req.method === 'PUT') {
-      send(await this.vm.organize(id, await body(req)));
+      send(await this.vm.organize(id, await body(req, signal)));
       return true;
     }
   }

@@ -1,27 +1,27 @@
+import { embeddedPluginComponent } from '../../src/plugin-client';
 import { Plus, Trash2 } from 'lucide-react';
-import { lazy, useEffect, useState } from 'react';
-import type { Project } from '../../server/project-config.ts';
+import { Suspense, useEffect, useState } from 'react';
+import type { Project } from './view-types';
 import type { FeatureProps } from '../../src/feature-shared';
 import { PluginGate } from '../../src/plugin-context';
-const HealthEditor = lazy(() =>
-  import('../service-health/client').then((module) => ({ default: module.HealthEditor })),
-);
-const SecretReferences = lazy(() =>
-  import('../secrets/client').then((module) => ({ default: module.SecretReferences })),
-);
-const IdeConnection = lazy(() =>
-  import('../ide/client').then((module) => ({ default: module.IdeConnection })),
-);
-const RecipeConnection = lazy(() =>
-  import('../recipes/client').then((module) => ({ default: module.RecipeConnection })),
-);
+import { PluginBoundary } from '../../src/plugin-boundary';
+const loadHealthEditor = () =>
+  import('../service-health/client').then((module) => ({ default: module.HealthEditor }));
+const loadSecretReferences = () =>
+  import('../secrets/client').then((module) => ({ default: module.SecretReferences }));
+const loadIdeConnection = () =>
+  import('../ide/client').then((module) => ({ default: module.IdeConnection }));
+const loadRecipeConnection = () =>
+  import('../recipes/client').then((module) => ({ default: module.RecipeConnection }));
 
 export function ServiceEditor({
   project,
   edit,
+  request,
 }: {
   project: Project;
   edit: (patch: Partial<Project>) => void;
+  request: FeatureProps['request'];
 }) {
   const services = project.services || [];
   const change = (index: number, patch: Partial<(typeof services)[number]>) =>
@@ -91,10 +91,24 @@ export function ServiceEditor({
             change={(environment) => change(index, { environment })}
           />
           <PluginGate id="secrets">
-            <SecretReferences value={service.secrets} change={(secrets) => change(index, { secrets })} />
+            <PluginBoundary identity="official:secrets" request={request} label="服务凭据引用">
+              {(_request, lifetime) => {
+                const SecretReferences = embeddedPluginComponent('secrets', `service-secrets-${index}`, lifetime, loadSecretReferences);
+                return <Suspense fallback={<p role="status">正在加载凭据配置…</p>}>
+                  <SecretReferences value={service.secrets} change={(secrets) => change(index, { secrets })} />
+                </Suspense>;
+              }}
+            </PluginBoundary>
           </PluginGate>
           <PluginGate id="service-health">
-            <HealthEditor value={service.health} change={(health) => change(index, { health })} />
+            <PluginBoundary identity="official:service-health" request={request} label="服务健康配置">
+              {(_request, lifetime) => {
+                const HealthEditor = embeddedPluginComponent('service-health', `health-editor-${index}`, lifetime, loadHealthEditor);
+                return <Suspense fallback={<p role="status">正在加载健康配置…</p>}>
+                  <HealthEditor value={service.health} change={(health) => change(index, { health })} />
+                </Suspense>;
+              }}
+            </PluginBoundary>
           </PluginGate>
           <button
             className="text-button danger-text"
@@ -177,10 +191,24 @@ export function ProjectConnections(props: FeatureProps & { applied: (project: Pr
   return (
     <>
       <PluginGate id="ide">
-        <IdeConnection {...props} />
+        <PluginBoundary identity="official:ide" request={props.request} label="IDE 连接">
+          {(scopedRequest, lifetime) => {
+            const IdeConnection = embeddedPluginComponent('ide', 'ide-connection', lifetime, loadIdeConnection);
+            return <Suspense fallback={<p role="status">正在加载 IDE 连接…</p>}>
+              <IdeConnection {...props} request={scopedRequest} />
+            </Suspense>;
+          }}
+        </PluginBoundary>
       </PluginGate>
       <PluginGate id="recipes">
-        <RecipeConnection {...props} />
+        <PluginBoundary identity="official:recipes" request={props.request} label="开发配方">
+          {(scopedRequest, lifetime) => {
+            const RecipeConnection = embeddedPluginComponent('recipes', 'recipe-connection', lifetime, loadRecipeConnection);
+            return <Suspense fallback={<p role="status">正在加载开发配方…</p>}>
+              <RecipeConnection {...props} request={scopedRequest} />
+            </Suspense>;
+          }}
+        </PluginBoundary>
       </PluginGate>
     </>
   );

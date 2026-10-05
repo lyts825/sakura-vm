@@ -1,23 +1,23 @@
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as gitServices } from './services.ts';
+import { services as projectsServices } from '../projects/services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 
 import { GitWorkbench } from '../../server/git-workbench.ts';
 import { MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 
 export async function activate(host: PluginContext) {
-  const m = host.vm;
-  host.provide(gitServices.git, new GitWorkbench(m, host.workspaces));
+  host.provide(gitServices.git, new GitWorkbench(host.vm, host.use(projectsServices.workspaces)));
 }
 export async function route(
   this: PluginContext,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage, signal?: AbortSignal, limit?: number) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -28,25 +28,26 @@ export async function route(
   this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'git') {
+      const git = this.use(gitServices.git);
       if (req.method === 'GET') {
         send(
           url.searchParams.has('choices')
-            ? await this.git.conflictChoices(id, url.searchParams.get('choices')!, signal)
+            ? await git.conflictChoices(id, url.searchParams.get('choices')!, signal)
             : url.searchParams.has('merge')
-            ? await this.git.mergeInputs(id, url.searchParams.get('merge')!, signal)
+            ? await git.mergeInputs(id, url.searchParams.get('merge')!, signal)
             : url.searchParams.has('path')
-              ? await this.git.diff(
+              ? await git.diff(
                   id,
                   url.searchParams.get('path')!,
                   url.searchParams.get('staged') === '1',
                   signal,
                 )
-              : await this.git.view(id, signal),
+              : await git.view(id, signal),
         );
         return true;
       }
       if (req.method === 'POST') {
-        send(await this.git.run(id, await body(req, signal, MAX_TEXT_REQUEST_BYTES)), 202);
+        send(await git.run(id, await body(req, signal, MAX_TEXT_REQUEST_BYTES)), 202);
         return true;
       }
     }
@@ -55,7 +56,7 @@ export async function route(
 }
 
 /** Exact implemented HTTP operations; declarations alone never publish a handler. */
-export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+export const httpHandlers: Record<string, PluginRoute> = {
   "legacy.get.vms.vmId.git": route,
   "legacy.post.vms.vmId.git": route,
 };

@@ -1,25 +1,12 @@
 import { useState } from 'react';
-import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import { formatDateTime } from '../../src/localization';
 import '../../src/features.css';
 
-type RuntimeView = {
-  selected: { node?: string; python?: string };
-  declared: Record<string, string>;
-  actual: Record<string, string>;
-  mismatches: string[];
-  probe: {
-    state: 'unprobed' | 'cached' | 'stale' | 'running' | 'failed';
-    checkedAt: string | null;
-    configVersion: string | null;
-    bootId: string | null;
-    errorCode?: string;
-  };
-  job: JobView | null;
-};
+type RuntimeView = OperationResponse<'runtimes.legacy.get.vms.vmId.runtimes'>;
 
 export function RuntimePanel({ vm, request }: FeatureProps) {
   const remote = useRemote<RuntimeView>(request, `/vms/${vm.id}/runtimes`, vm.status === 'running', 10000);

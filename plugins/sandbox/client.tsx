@@ -2,7 +2,7 @@ import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { Clock, Play, Plus, Shield, Square, TerminalSquare, Trash2 } from 'lucide-react';
 import { Fragment, useState } from 'react';
-import type { SandboxOverview, SandboxView } from '../../server/sandboxes';
+import type { SandboxOverview, SandboxView } from './view-types';
 import type { SandboxArtifact } from '../../shared/sandbox';
 import { saveBlob, saveText } from '../../src/export-file';
 import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared';

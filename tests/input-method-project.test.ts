@@ -27,6 +27,12 @@ function gate() {
   const promise = new Promise<void>(done => { resolve = done; });
   return { promise, resolve };
 }
+function resolveService(this: object, reference: { pluginId: string; key: string }) {
+  const owners: Record<string, string> = { workspaces: 'projects', desktops: 'desktop', jobs: 'desktop',
+    x11Clipboard: 'desktop', waylandClipboard: 'desktop' };
+  assert.equal(reference.pluginId, owners[reference.key]);
+  return Reflect.get(this, reference.key);
+}
 function fixture(t: TestContext) {
   const id = randomUUID(), context = new AsyncLocalStorage<string>();
   let selected = 'alpha';
@@ -45,7 +51,7 @@ function fixture(t: TestContext) {
       signal.throwIfAborted(); calls.push(workspaces.projects.current()); log('安装完成\n');
       return { code: 0, stdout: '', stderr: '' };
     } };
-  const host = { vm: machines, workspaces, jobs, desktops } as unknown as PluginContext;
+  const host = { vm: machines, workspaces, jobs, desktops, use: resolveService, optional: resolveService } as unknown as PluginContext;
   t.after(() => jobs.close());
   return { id, host, desktops, jobs, workspaces, live, calls, select: (project: string) => { selected = project; } };
 }
@@ -100,6 +106,8 @@ test('registered IME retry restores the saved project before capturing its new t
   const scope = new PluginScope();
   const activation = {
     vm: activationMachines,
+    use: resolveService,
+    optional: resolveService,
     capabilities: pluginCapabilities('desktop', activationMachines as never, scope),
     provide: (ref: string | { key: string }, service: unknown) => {
       Reflect.set(activation, typeof ref === 'string' ? ref : ref.key, service);

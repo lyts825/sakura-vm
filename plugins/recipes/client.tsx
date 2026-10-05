@@ -1,16 +1,17 @@
 import { Download } from 'lucide-react';
 import { useState } from 'react';
-import type { Project } from '../../server/project-config.ts';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import { saveText } from '../../src/export-file';
 import type { FeatureProps, Request } from '../../src/feature-shared';
 import { Feedback, useAction } from '../../src/feature-shared';
 import '../../src/features.css';
+type RecipeProject = OperationResponse<'recipes.legacy.put.vms.vmId.recipe'>['project'];
 
 export function RecipeConnection({
   vm,
   request,
   applied,
-}: FeatureProps & { applied: (project: Project) => void }) {
+}: FeatureProps & { applied: (project: RecipeProject) => void }) {
   const [recipe, setRecipe] = useState('');
   const action = useAction();
   return (
@@ -25,8 +26,10 @@ export function RecipeConnection({
             className="secondary compact"
             disabled={action.busy}
             onClick={() =>
-              void action.run(async () => {
-                const result = await request(`/vms/${vm.id}/recipe`);
+              void action.run(async (signal) => {
+                const result = await request<OperationResponse<'recipes.legacy.get.vms.vmId.recipe'>>(
+                  `/vms/${vm.id}/recipe`, 'GET', undefined, signal);
+                signal.throwIfAborted();
                 setRecipe(JSON.stringify(result, null, 2));
                 saveText('sakura.json', result);
               })
@@ -39,8 +42,10 @@ export function RecipeConnection({
             className="secondary compact"
             disabled={action.busy || vm.status !== 'running'}
             onClick={() =>
-              void action.run(async () => {
-                const value = await request(`/vms/${vm.id}/recipe`, 'POST', { action: 'read' });
+              void action.run(async (signal) => {
+                const value = await request<OperationResponse<'recipes.legacy.post.vms.vmId.recipe'>>(
+                  `/vms/${vm.id}/recipe`, 'POST', { action: 'read' }, signal);
+                signal.throwIfAborted();
                 setRecipe(JSON.stringify(value, null, 2));
               }, '已读取项目目录中的 sakura.json')
             }
@@ -52,7 +57,7 @@ export function RecipeConnection({
             disabled={action.busy || vm.status !== 'running'}
             onClick={() =>
               void action.run(
-                () => request(`/vms/${vm.id}/recipe`, 'POST', { action: 'write' }),
+                (signal) => request(`/vms/${vm.id}/recipe`, 'POST', { action: 'write' }, signal),
                 '已在项目目录新建 sakura.json',
               )
             }
@@ -73,8 +78,10 @@ export function RecipeConnection({
           className="primary compact"
           disabled={action.busy || !recipe.trim()}
           onClick={() =>
-            void action.run(async () => {
-              const result = await request<{ project: Project }>(`/vms/${vm.id}/recipe`, 'PUT', JSON.parse(recipe));
+            void action.run(async (signal) => {
+              const result = await request<OperationResponse<'recipes.legacy.put.vms.vmId.recipe'>>(
+                `/vms/${vm.id}/recipe`, 'PUT', JSON.parse(recipe), signal);
+              signal.throwIfAborted();
               applied(result.project);
             }, '项目配置已应用，启动时生效')
           }
@@ -107,9 +114,11 @@ export function RecipeImporter({ request, refresh }: { request: Request; refresh
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file)
-              void action.run(async () => {
+              void action.run(async (signal) => {
                 if (file.size > 1024 ** 2) throw new Error('配置文件不能超过 1 MiB');
-                setRecipe(await file.text());
+                const text = await file.text();
+                signal.throwIfAborted();
+                setRecipe(text);
               });
           }}
         />
@@ -122,8 +131,9 @@ export function RecipeImporter({ request, refresh }: { request: Request; refresh
         className="primary compact"
         disabled={action.busy || !recipe}
         onClick={() =>
-          void action.run(async () => {
-            await request('/recipes', 'POST', { name, recipe: JSON.parse(recipe) });
+          void action.run(async (signal) => {
+            await request('/recipes', 'POST', { name, recipe: JSON.parse(recipe) }, signal);
+            signal.throwIfAborted();
             await refresh();
           }, '环境已创建，可在项目面板准备环境并启动')
         }

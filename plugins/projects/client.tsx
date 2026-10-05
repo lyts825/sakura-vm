@@ -1,21 +1,19 @@
+import { embeddedPluginComponent } from '../../src/plugin-client';
 import { ExternalLink, Play, Save, Square } from 'lucide-react';
-import { lazy, useEffect, useMemo, useState } from 'react';
-import type { JobView } from '../../shared/contracts/jobs.ts';
-import type { Project } from '../../server/project-config.ts';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import type { DirectoryMigrationView, Project, ProjectList, ProjectRuntime, ProjectView } from './view-types';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
 import { PluginGate } from '../../src/plugin-context';
+import { PluginBoundary } from '../../src/plugin-boundary';
 import { executeProjectAction, type ProjectAction } from '../../src/project-action';
 import { workspaceRequest } from '../../src/workspace-request';
 import { TerminalPanel } from '../../src/TerminalPanel';
 import { EnvironmentEditor, ProjectConnections, ServiceEditor } from './editors';
-import type { DirectoryMigrationView } from '../../server/project-directory-migration';
-const HealthPanel = lazy(() =>
-  import('../service-health/client').then((module) => ({ default: module.HealthPanel })),
-);
-const SecretReferences = lazy(() =>
-  import('../secrets/client').then((module) => ({ default: module.SecretReferences })),
-);
+const loadHealthPanel = () =>
+  import('../service-health/client').then((module) => ({ default: module.HealthPanel }));
+const loadSecretReferences = () =>
+  import('../secrets/client').then((module) => ({ default: module.SecretReferences }));
 const serviceStatus = (status: string) =>
   (
     ({
@@ -173,24 +171,19 @@ export function ProjectPanel(props: FeatureProps) {
     () => workspaceRequest(baseRequest, selectedProjectId),
     [baseRequest, selectedProjectId],
   );
-  const remote = useRemote<{ project: Project; projectId?: string; job: JobView | null }>(
+  const remote = useRemote<ProjectView>(
     request,
     `/vms/${vm.id}/project`,
     true,
     2500,
   );
-  const projects = useRemote<{ active: string; projects: { id: string; name: string }[] }>(
+  const projects = useRemote<ProjectList>(
     request,
     `/vms/${vm.id}/projects`,
     true,
     5000,
   );
-  const runtime = useRemote<{
-    status: string;
-    log: string;
-    main?: { status: string };
-    services?: { name: string; status: string; log: string }[];
-  }>(request, `/vms/${vm.id}/project-runtime`, vm.status === 'running');
+  const runtime = useRemote<ProjectRuntime>(request, `/vms/${vm.id}/project-runtime`, vm.status === 'running');
   const [project, setProject] = useState<Project | null>(null),
     [loadedProjectId, setLoadedProjectId] = useState('');
   const [shellProjectId, setShellProjectId] = useState<string | null>(null);
@@ -404,9 +397,16 @@ export function ProjectPanel(props: FeatureProps) {
           </label>
           <EnvironmentEditor value={project.environment} change={(environment) => edit({ environment })} />
           <PluginGate id="secrets">
-            <SecretReferences value={project.secrets} change={(secrets) => edit({ secrets })} />
+            <PluginBoundary identity="official:secrets" request={request} label="凭据引用">
+              {(_request, lifetime) => {
+                const SecretReferences = embeddedPluginComponent('secrets', 'project-secrets', lifetime, loadSecretReferences);
+                return <Suspense fallback={<p role="status">正在加载凭据配置…</p>}>
+                  <SecretReferences value={project.secrets} change={(secrets) => edit({ secrets })} />
+                </Suspense>;
+              }}
+            </PluginBoundary>
           </PluginGate>
-          <ServiceEditor project={project} edit={edit} />
+          <ServiceEditor project={project} edit={edit} request={request} />
           <div className="feature-actions">
             <button
               className="secondary compact"
@@ -511,7 +511,14 @@ export function ProjectPanel(props: FeatureProps) {
         }}
       />
       <PluginGate id="service-health">
-        <HealthPanel {...props} request={request} />
+        <PluginBoundary identity="official:service-health" request={request} label="服务健康">
+          {(scopedRequest, lifetime) => {
+            const HealthPanel = embeddedPluginComponent('service-health', 'health-panel', lifetime, loadHealthPanel);
+            return <Suspense fallback={<p role="status">正在加载服务健康…</p>}>
+              <HealthPanel {...props} request={scopedRequest} />
+            </Suspense>;
+          }}
+        </PluginBoundary>
       </PluginGate>
       {runtime.data?.services?.map((service) => (
         <details className="feature-card" key={service.name}>

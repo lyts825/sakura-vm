@@ -1,3 +1,5 @@
+import { services as transfersServices } from '../transfers/services.ts';
+import { services as migrationServices } from '../migration/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -10,7 +12,7 @@ import { z } from 'zod';
 import { AppError } from '../../shared/errors.ts';
 import { guestPath } from '../../shared/paths.ts';
 import { MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
-import { Files, MAX_TEXT_BYTES, textVersion } from '../../server/files.ts';
+import { Files, textVersion } from '../../server/files.ts';
 import { FileHistory } from '../../server/file-history.ts';
 import { FileLocks } from '../../server/file-locks.ts';
 import { downloadManifest } from '../../server/file-chunks.ts';
@@ -42,50 +44,50 @@ export async function route(
     const path = guestPath(url.searchParams.get('path'));
     return send(
       url.searchParams.has('chunk')
-        ? await this.files.chunk(id, path, Number(url.searchParams.get('chunk')), signal)
-        : await downloadManifest(this.files, id, path, signal),
+        ? await this.use(filesServices.files).chunk(id, path, Number(url.searchParams.get('chunk')), signal)
+        : await downloadManifest(this.use(filesServices.files), id, path, signal),
     );
   }
   if (parts.length === 4 && action === 'file-preview' && req.method === 'GET')
-    return send(await this.files.preview(id, guestPath(url.searchParams.get('path')), signal));
+    return send(await this.use(filesServices.files).preview(id, guestPath(url.searchParams.get('path')), signal));
   if (parts.length === 4 && action === 'file-lock') {
     const path = guestPath(url.searchParams.get('path'));
-    if (req.method === 'GET') return send(this.fileLocks.view(id, path));
+    if (req.method === 'GET') return send(this.use(filesServices.fileLocks).view(id, path));
     if (req.method === 'POST') {
-      const input = httpRouteRequests["files.legacy.post.vms.vmId.file-lock"].parse(await body(req));
-      if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const input = httpRouteRequests["files.legacy.post.vms.vmId.file-lock"].parse(await body(req, signal));
+      if (this.optional(migrationServices.migration)?.blocked) throw new AppError('数据目录迁移维护中', 409);
       if (input.action === 'acquire') {
         if (input.token) throw new AppError('获取文件锁时不能提供旧令牌');
-        return send(await this.fileLocks.acquire(id, path));
+        return send(await this.use(filesServices.fileLocks).acquire(id, path));
       }
       if (!input.token) throw new AppError('需要文件锁令牌');
       return send(input.action === 'renew'
-        ? await this.fileLocks.renew(id, path, input.token)
-        : await this.fileLocks.release(id, path, input.token));
+        ? await this.use(filesServices.fileLocks).renew(id, path, input.token)
+        : await this.use(filesServices.fileLocks).release(id, path, input.token));
     }
   }
   if (parts.length === 4 && action === 'uploads') {
     this.vm.requireUnlocked(id);
-    if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+    if (this.optional(migrationServices.migration)?.blocked) throw new AppError('数据目录迁移维护中', 409);
     const uploadId = url.searchParams.get('id');
     const lockToken = req.headers['x-sakura-file-lock'];
     if (lockToken !== undefined && (typeof lockToken !== 'string' || !z.uuid().safeParse(lockToken).success))
       throw new AppError('文件锁令牌无效');
     if (req.method === 'POST' && !uploadId)
-      return send(await this.files.uploads.create(id, await body(req)), 201);
+      return send(await this.use(filesServices.files).uploads.create(id, await body(req, signal)), 201);
     if (!uploadId) throw new AppError('需要上传会话标识');
-    if (req.method === 'GET') return send(await this.files.uploads.view(id, uploadId));
-    if (req.method === 'DELETE') return send(await this.files.uploads.remove(id, uploadId));
+    if (req.method === 'GET') return send(await this.use(filesServices.files).uploads.view(id, uploadId));
+    if (req.method === 'DELETE') return send(await this.use(filesServices.files).uploads.remove(id, uploadId));
     if (req.method === 'PUT') {
       if (!url.searchParams.has('chunk')) throw new AppError('需要分块索引');
       return send(
-        await this.files.uploads.chunk(id, uploadId, Number(url.searchParams.get('chunk')), req, signal),
+        await this.use(filesServices.files).uploads.chunk(id, uploadId, Number(url.searchParams.get('chunk')), req, signal),
       );
     }
     if (req.method === 'POST') {
-      const session = await this.files.uploads.view(id, uploadId);
-      return send(await this.fileLocks.withMutation(id, [session.path], lockToken,
-        () => this.files.uploads.commit(id, uploadId, signal)));
+      const session = await this.use(filesServices.files).uploads.view(id, uploadId);
+      return send(await this.use(filesServices.fileLocks).withMutation(id, [session.path], lockToken,
+        () => this.use(filesServices.files).uploads.commit(id, uploadId, signal)));
     }
   }
   if (req.method === 'GET' && parts.length === 4 && parts[3] === 'files')
@@ -97,8 +99,8 @@ export async function route(
   if (req.method === 'PUT' && parts.length === 4 && parts[3] === 'file') {
     const value = httpRouteRequests["files.legacy.put.vms.vmId.file"]
       .parse(await body(req, signal, MAX_TEXT_REQUEST_BYTES));
-    if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-    await this.fileLocks.withMutation(id, [guestPath(value.path)], value.lockToken,
+    if (this.optional(migrationServices.migration)?.blocked) throw new AppError('数据目录迁移维护中', 409);
+    await this.use(filesServices.fileLocks).withMutation(id, [guestPath(value.path)], value.lockToken,
       () => this.vm.writeGuestFile(
         id,
         guestPath(value.path),
@@ -112,19 +114,19 @@ export async function route(
     if (action === 'history') {
       if (req.method === 'GET') {
         if (url.searchParams.has('content'))
-          send(await this.history.content(id, url.searchParams.get('content')!));
-        else send({ items: await this.history.list(id, url.searchParams.get('path') || undefined) });
+          send(await this.use(filesServices.history).content(id, url.searchParams.get('content')!));
+        else send({ items: await this.use(filesServices.history).list(id, url.searchParams.get('path') || undefined) });
         return true;
       }
       if (req.method === 'POST') {
         const input = httpRouteRequests["files.legacy.post.vms.vmId.history"]
-          .parse(await body(req));
+          .parse(await body(req, signal));
         if (input.action === 'restore') {
-          const entry = (await this.history.list(id)).find((item) => item.id === input.id);
+          const entry = (await this.use(filesServices.history).list(id)).find((item) => item.id === input.id);
           if (!entry) throw new AppError('历史记录不存在', 404);
-          send(await this.fileLocks.withMutation(id, [entry.path], input.lockToken,
-            () => this.history.restore(id, input.id, input.expectedVersion)));
-        } else send(await this.history.purge(id, input.id));
+          send(await this.use(filesServices.fileLocks).withMutation(id, [entry.path], input.lockToken,
+            () => this.use(filesServices.history).restore(id, input.id, input.expectedVersion)));
+        } else send(await this.use(filesServices.history).purge(id, input.id));
         return true;
       }
     }
@@ -136,12 +138,12 @@ export async function route(
         const lockToken = req.headers['x-sakura-file-lock'];
         if (lockToken !== undefined && (typeof lockToken !== 'string' || !z.uuid().safeParse(lockToken).success))
           throw new AppError('文件锁令牌无效');
-        send(await this.fileLocks.withMutation(id, [path], lockToken,
-          () => this.files.upload(id, path, req, url.searchParams.get('overwrite') === '1', signal)));
+        send(await this.use(filesServices.fileLocks).withMutation(id, [path], lockToken,
+          () => this.use(filesServices.files).upload(id, path, req, url.searchParams.get('overwrite') === '1', signal)));
         return true;
       }
       if (req.method === 'GET') {
-        await this.downloads.send({ id, type: 'file', path, name: posix.basename(path) }, res);
+        await this.use(transfersServices.downloads).send({ id, type: 'file', path, name: posix.basename(path) }, res);
         return true;
       }
     }
@@ -149,10 +151,10 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'file-operation' && req.method === 'POST') {
       const input = httpRouteRequests["files.legacy.post.vms.vmId.file-operation"]
-        .parse(await body(req));
-      send(await this.fileLocks.withMutation(id,
+        .parse(await body(req, signal));
+      send(await this.use(filesServices.fileLocks).withMutation(id,
         [input.path, ...(input.destination ? [input.destination] : [])], input.lockToken,
-        () => this.files.operation(id, input.action, input.path, input.destination, input.recursive)));
+        () => this.use(filesServices.files).operation(id, input.action, input.path, input.destination, input.recursive)));
       return true;
     }
   }

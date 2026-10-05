@@ -2,8 +2,9 @@ import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { Activity, Bell, Compass, HardDrive, Package, Play, Search, ShieldCheck, Wifi } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { ExtendedFeature } from '../../shared/catalogs/engineering.ts';
-import type { AlertConfig, Schedule, MetricPoint, AlertEvent } from '../../server/feature-suite';
+import type { AlertConfig, Schedule, SuiteView } from './contracts.ts';
+import type { ExtendedView } from '../extensions/contracts.ts';
+import type { NextView } from '../platform/contracts.ts';
 import type {
   FeatureCatalogItem,
   ResourcePreset,
@@ -11,15 +12,13 @@ import type {
 } from '../../shared/catalogs/automation.ts';
 import type { JobView } from '../../shared/contracts/jobs.ts';
 import type { VMView } from '../../shared/contracts/vm.ts';
-import type { NextFeature } from '../../shared/catalogs/platform.ts';
-import type { hardwareCompatibility } from '../../server/hardware-compatibility';
+import type { HostHardwareReport } from '../../shared/contracts/hardware-compatibility.ts';
 import { featureReadiness, type FeatureExecutionState } from '../../src/feature-readiness';
 import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';
 import '../../src/features.css';
 import { usePlugin } from '../../src/plugin-context';
 import { workspaceRequest } from '../../src/workspace-request';
 import { CapabilityActionsPanel } from '../../src/CapabilityActionsPanel';
-import type { CapabilityActionView } from '../../shared/capability-actions';
 import { MetricHistory } from '../../src/MetricHistory';
 import { NotificationCenter } from '../../src/NotificationCenter';
 import { UsbHotplugPanel } from '../../src/UsbHotplugPanel';
@@ -39,8 +38,7 @@ function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id
   );
 }
 
-type HardwareReport = Awaited<ReturnType<typeof hardwareCompatibility>>;
-function HardwareMatrix({ report }: { report: HardwareReport }) {
+function HardwareMatrix({ report }: { report: HostHardwareReport }) {
   const rows = [...report.matrix.machines, ...report.matrix.accelerators, ...report.matrix.devices];
   return (
     <section className="feature-card hardware-matrix-report" aria-label="宿主硬件兼容矩阵">
@@ -73,28 +71,7 @@ function HardwareMatrix({ report }: { report: HardwareReport }) {
   );
 }
 
-type FeatureEvent = {
-  id: string;
-  kind: AlertEvent['kind'];
-  message: string;
-  createdAt: string;
-  acknowledged: boolean;
-  jobId?: string;
-  projectId?: string;
-};
 type DiskEntry = { path: string; bytes: number };
-type SuiteView = {
-  capabilities?: CapabilityActionView[];
-  capabilityJobs?: JobView[];
-  projectId?: string;
-  settings: { schedule: Schedule; alerts: AlertConfig; updatedAt: string };
-  history: MetricPoint[];
-  events: FeatureEvent[];
-  job: JobView | null;
-  devJob: JobView | null;
-  presets: Record<ResourcePresetId, ResourcePreset>;
-  features: FeatureCatalogItem[];
-};
 type Props = {
   request: Request;
   vms: VMView[];
@@ -102,54 +79,6 @@ type Props = {
   onSelected: (id: string) => void;
   projectId?: string;
 };
-type ExtendedView = {
-  capabilities?: CapabilityActionView[];
-  projectId?: string;
-  features: ExtendedFeature[];
-  operations: Array<{
-    id: string;
-    name: string;
-    feature: string;
-    example: Record<string, unknown>;
-    note: string;
-    writes: boolean;
-  }>;
-  settings: Record<string, { enabled: boolean; options?: Record<string, unknown>; updatedAt: string }>;
-  executions?: Array<{
-    featureId: string;
-    action: string;
-    ready: boolean;
-    finishedAt: string;
-    result?: { executed?: boolean; reason?: string; message?: string };
-  }>;
-  jobs: JobView[];
-};
-type NextView = {
-  capabilities?: CapabilityActionView[];
-  projectId?: string;
-  features: NextFeature[];
-  settings: Record<string, { enabled: boolean; options?: Record<string, unknown>; updatedAt: string }>;
-  haFailoverMonitor?: { armed: boolean; suspected: boolean; consecutiveFailures: number;
-    observedState: string; observedAt: string; suspectedAt?: string;
-    sampleIntervalSeconds: number } | null;
-  haPromotion?: { remoteVmId: string; snapshotId: string; status: 'fenced' | 'accepted';
-    fencedAt: string; error?: string } | null;
-  haLocalFailover?: { error: string | null } | null;
-  haHostFailover?: { configured: boolean; armed: boolean; phase: string | null;
-    targetVmId: string | null; error: string | null;
-    failback?: 'pending' | 'completed' | null; recoveryHeld?: boolean;
-    statusPending?: boolean } | null;
-  executions?: Array<{
-    featureId: string;
-    action: string;
-    ready: boolean;
-    executed: boolean;
-    finishedAt: string;
-    result?: { reason?: string; message?: string };
-  }>;
-  jobs: JobView[];
-};
-
 const fallbackPresets: Record<ResourcePresetId, ResourcePreset> = {
   light: { name: '轻量命令行', memoryMiB: 512, cpus: 1 },
   development: { name: '日常开发', memoryMiB: 2048, cpus: 2 },
@@ -260,7 +189,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const [extendedOperation, setExtendedOperation] = useState('');
   const [operationParameters, setOperationParameters] = useState('{}');
   const [nextResult, setNextResult] = useState('');
-  const [hardwareReport, setHardwareReport] = useState<HardwareReport | null>(null);
+  const [hardwareReport, setHardwareReport] = useState<HostHardwareReport | null>(null);
   const [nextSearch, setNextSearch] = useState('');
   const [suiteCapability, setSuiteCapability] = useState('');
   const [extendedCapability, setExtendedCapability] = useState('');
@@ -497,7 +426,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const checkNext = (featureId: string) =>
     action.run(async () => {
       if (featureId === 'hardware-compatibility') {
-        const result = await request<HardwareReport>(`/vms/${active.id}/next-features`, 'POST', { action: 'check', featureId });
+        const result = await request<HostHardwareReport>(`/vms/${active.id}/next-features`, 'POST', { action: 'check', featureId });
         setHardwareReport(result);
         setNextResult('');
       } else {

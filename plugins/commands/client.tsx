@@ -1,7 +1,6 @@
 import { Play, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { CommandPreset } from '../../server/command-presets.ts';
-import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import '../../src/development.css';
 import {
   Feedback,
@@ -13,6 +12,8 @@ import {
 } from '../../src/feature-shared';
 import '../../src/features.css';
 import { usePlugins } from '../../src/plugin-context';
+type CommandsView = OperationResponse<'commands.list'>;
+type CommandPreset = CommandsView['presets'][number];
 export function PresetRunner({
   preset,
   id,
@@ -35,6 +36,7 @@ export function PresetRunner({
         e.preventDefault();
         void action.run(async (signal) => {
           await request(`/vms/${id}/commands`, 'POST', { id: preset.id, values }, signal);
+          signal.throwIfAborted();
           executed?.();
         }, '命令已加入任务中心');
       }}
@@ -61,7 +63,7 @@ export function PresetRunner({
 }
 export function CommandsPanel({ vm, request }: FeatureProps) {
   const hasPalette = usePlugins().includes('command-palette');
-  const remote = useRemote<{ projectId?: string; presets: CommandPreset[]; job: JobView | null }>(
+  const remote = useRemote<CommandsView>(
       request,
       `/vms/${vm.id}/commands`,
       true,
@@ -139,6 +141,7 @@ export function CommandsPanel({ vm, request }: FeatureProps) {
                   { id: editing, name, command, parameters: params },
                   signal,
                 );
+                signal.throwIfAborted();
                 setName('');
                 setCommand('');
                 setParameters('');
@@ -194,6 +197,7 @@ export function CommandsPanel({ vm, request }: FeatureProps) {
                 if (confirm(`删除收藏命令 ${preset.name}？`))
                   void action.run(async (signal) => {
                     await request(`/vms/${vm.id}/commands`, 'DELETE', { id: preset.id }, signal);
+                    signal.throwIfAborted();
                     if (selected?.id === preset.id) setSelected(null);
                     remote.reload();
                   });

@@ -1,8 +1,8 @@
 import { deviceProfileSchema, hardwareIssues } from '../shared/hardware.ts';
+import type { HardwareCapabilityRow as Row, HostHardwareReport } from '../shared/contracts/hardware-compatibility.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 
 type Probe = { ok: boolean; output: string; error?: string };
-type Row = { id: string; name: string; available: boolean; evidence: string; reason?: string };
 
 function devices(output: string) {
   return new Set([...output.matchAll(/^name "([a-zA-Z0-9_-]+)"/gm)].map((match) => match[1]));
@@ -25,7 +25,7 @@ async function probe(machines: Machines, args: string[], signal?: AbortSignal): 
 }
 
 /** Reports host QEMU support and the current VM's selected settings; guest drivers remain unverified. */
-export async function hardwareCompatibility(machines: Machines, id: string, signal?: AbortSignal) {
+export async function hardwareCompatibility(machines: Machines, id: string, signal?: AbortSignal): Promise<HostHardwareReport> {
   const vm = machines.get(id);
   const [deviceProbe, accelProbe, machineProbe] = await Promise.all([
     probe(machines, ['-device', 'help'], signal),

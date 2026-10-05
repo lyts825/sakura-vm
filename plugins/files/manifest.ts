@@ -6,7 +6,7 @@ export const manifest = definePlugin({
   description: '文件浏览、上传下载、文本编辑、历史版本与回收站。',
   category: 'workspace',
   requires: [pin('transfers')],
-  optional: [pin('projects'), pin('migration')],
+  optional: [pin('projects'), pin('migration'), pin('code-checks'), pin('project-search'), pin('sync')],
   services: ['files', 'history', 'fileLocks'],
   contributes: {
     routes: [

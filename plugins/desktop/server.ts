@@ -1,48 +1,51 @@
+import { services as projectsServices } from '../projects/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as desktopServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginOperation, PluginRoute } from '../../server/plugin-api.ts';
 import { retryTarget, retryInProject } from '../../server/plugins/retry.ts';
 
-import { z } from 'zod';
 import { AppError } from '../../shared/errors.ts';
 
 import { Desktops } from '../../server/desktop.ts';
-import { singleAppClipboard, singleAppInput, singleAppProgram } from '../../server/single-app-windows.ts';
 import { x11ClipboardRequest } from '../../server/x11-clipboard.ts';
 
 export const operations: Record<string, PluginOperation> = {
   'x11-clipboard-get': { response: pluginRouteResponses["desktop.x11-clipboard-get"].schema, execute(url, _, signal) {
-    return this.desktops.clipboard.view(url.pathname.split('/')[3], signal);
+    return this.use(desktopServices.x11Clipboard).view(url.pathname.split('/')[3], signal);
   } },
   'x11-clipboard-action': { request: x11ClipboardRequest, response: pluginRouteResponses["desktop.x11-clipboard-action"].schema,
-    execute(url, input, signal) { return this.desktops.clipboard.action(url.pathname.split('/')[3], input, signal); } },
+    execute(url, input, signal) { return this.use(desktopServices.x11Clipboard).action(url.pathname.split('/')[3], input, signal); } },
   'wayland-clipboard-get': { response: pluginRouteResponses["desktop.wayland-clipboard-get"].schema, execute(url, _, signal) {
-    return this.desktops.waylandClipboard.view(url.pathname.split('/')[3], signal);
+    return this.use(desktopServices.waylandClipboard).view(url.pathname.split('/')[3], signal);
   } },
   'wayland-clipboard-action': { request: x11ClipboardRequest, response: pluginRouteResponses["desktop.wayland-clipboard-action"].schema,
-    execute(url, input, signal) { return this.desktops.waylandClipboard.action(url.pathname.split('/')[3], input, signal); } },
+    execute(url, input, signal) { return this.use(desktopServices.waylandClipboard).action(url.pathname.split('/')[3], input, signal); } },
 };
 
 export async function activate(host: PluginContext) {
   const m = host.vm;
-  host.provide(desktopServices.desktops, new Desktops(m, host.workspaces));
+  const desktops = host.provide(desktopServices.desktops,
+    new Desktops(m, host.use(projectsServices.workspaces), { deferInitialization: true }));
+  desktops.init();
   host.provide(desktopServices.jobs, host.capabilities.jobs.create('input-method', { historyName: 'input-method' }));
-  host.registerJobs(host.jobs, (job) => retryInProject(host, job, async () => installIme.call(host, retryTarget(job))));
-  const clipboard = host.provide(desktopServices.x11Clipboard, host.desktops.clipboard);
-  host.registerJobs(clipboard.jobs, (job) => clipboard.install(retryTarget(job)));
-  const wayland = host.provide(desktopServices.waylandClipboard, host.desktops.waylandClipboard);
-  host.registerJobs(wayland.jobs, (job) => wayland.install(retryTarget(job)));
+  host.registerJobs(host.use(desktopServices.jobs), (job) => retryInProject(host, job, async () => installIme.call(host, retryTarget(job))));
+  host.provide(desktopServices.x11Clipboard, desktops.clipboard);
+  host.registerJobs(host.use(desktopServices.x11Clipboard).jobs,
+    (job) => host.use(desktopServices.x11Clipboard).install(retryTarget(job)));
+  host.provide(desktopServices.waylandClipboard, desktops.waylandClipboard);
+  host.registerJobs(host.use(desktopServices.waylandClipboard).jobs,
+    (job) => host.use(desktopServices.waylandClipboard).install(retryTarget(job)));
 }
 export async function route(
   this: PluginContext,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -52,37 +55,37 @@ export async function route(
     action = parts[3];
   this.vm.get(id);
   if (parts[3] === 'desktop' && parts.length === 4) {
-    if (req.method === 'GET') return send(await this.desktops.view(id));
+    if (req.method === 'GET') return send(await this.use(desktopServices.desktops).view(id));
     if (req.method === 'POST') {
       const { action, preferences } = httpRouteRequests["desktop.legacy.post.vms.vmId.desktop"]
-        .parse(await body(req));
+        .parse(await body(req, signal));
       if (action === 'stop') {
         if (preferences) throw new AppError('停止桌面不能提交外观设置');
-        return send(await this.desktops.stop(id));
+        return send(await this.use(desktopServices.desktops).stop(id));
       }
-      return send(this.desktops.start(id, action, preferences), 202);
+      return send(this.use(desktopServices.desktops).start(id, action, preferences), 202);
     }
   }
   if (action === 'single-app' && parts.length === 4) {
-    if (req.method === 'GET') return send({ sessions: await this.desktops.apps.list(id),
-      clipboardPolicies: await this.desktops.apps.clipboardPolicies(id) });
+    if (req.method === 'GET') return send({ sessions: await this.use(desktopServices.desktops).apps.list(id),
+      clipboardPolicies: await this.use(desktopServices.desktops).apps.clipboardPolicies(id) });
     if (req.method === 'POST') {
-      const input = httpRouteRequests["desktop.legacy.post.vms.vmId.single-app"].parse(await body(req));
+      const input = httpRouteRequests["desktop.legacy.post.vms.vmId.single-app"].parse(await body(req, signal));
       if (input.action === 'start') {
         const { action: _, ...options } = input;
-        return send(await this.desktops.apps.start(id, options, signal), 201);
+        return send(await this.use(desktopServices.desktops).apps.start(id, options, signal), 201);
       }
-      if (input.action === 'stop') return send(await this.desktops.apps.stop(id, input.id));
+      if (input.action === 'stop') return send(await this.use(desktopServices.desktops).apps.stop(id, input.id));
       if (input.action === 'clipboard-save')
-        return send(await this.desktops.apps.saveClipboardPolicy(id, input.program,
+        return send(await this.use(desktopServices.desktops).apps.saveClipboardPolicy(id, input.program,
           input.clipboard));
-      return send(await this.desktops.apps.removeClipboardPolicy(id, input.program));
+      return send(await this.use(desktopServices.desktops).apps.removeClipboardPolicy(id, input.program));
     }
   }
   if (parts.length === 4) {
     if (action === 'ime') {
       if (req.method === 'GET') {
-        send(this.jobs.view(id));
+        send(this.use(desktopServices.jobs).view(id));
         return true;
       }
       if (req.method === 'POST') {
@@ -96,20 +99,21 @@ export async function route(
 }
 export function installIme(this: PluginContext, id: string) {
   if (this.vm.state(id) !== 'running') throw new AppError('请先启动发行版');
-  const live = this.vm.live.get(id), projectId = this.workspaces?.projects.current(id);
+  const workspaces = this.use(projectsServices.workspaces);
+  const live = this.vm.live.get(id), projectId = workspaces.projects.current(id);
   const original = () => {
     if (!live || this.vm.live.get(id) !== live || this.vm.state(id) !== 'running')
       throw new AppError('原客户机在输入法任务准备期间已改变', 409, 'DESKTOP_SCOPE_CHANGED');
   };
   original();
-  return this.jobs.start(id, async (log, signal) => {
+  return this.use(desktopServices.jobs).start(id, async (log, signal) => {
     const execute = async () => {
       signal.throwIfAborted(); original();
-      const result = await this.desktops.installIme(id, signal, log);
+      const result = await this.use(desktopServices.desktops).installIme(id, signal, log);
       original();
       if (result.code !== 0) throw new AppError(result.stderr || '输入法安装失败', 409);
     };
-    if (projectId && this.workspaces) await this.workspaces.projects.inScope(id, projectId, execute);
+    if (projectId) await workspaces.projects.inScope(id, projectId, execute);
     else await execute();
   }, { title: '安装中文输入法', vmId: id, projectId, action: 'install' });
 }

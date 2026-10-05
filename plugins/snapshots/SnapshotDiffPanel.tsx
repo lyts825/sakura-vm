@@ -1,7 +1,7 @@
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
 import type { SnapshotDiffResult } from '../../shared/snapshot-diff';
-import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { SnapshotDiffView } from './view-types';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import { saveText } from '../../src/export-file';
 
@@ -12,7 +12,7 @@ export function SnapshotDiffPanel({ vm, request }: FeatureProps) {
   const [partition, setPartition] = useState(0);
   const action = useAction();
   const cancellation = useAction();
-  const remote = useRemote<{ runs: JobView[]; persistenceError?: string }>(
+  const remote = useRemote<SnapshotDiffView>(
     request,
     `/vms/${vm.id}/snapshot-diff`,
     !vm.sandbox,

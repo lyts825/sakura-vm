@@ -1,6 +1,7 @@
 import type { PluginContext } from '../plugin-api.ts';
 import type { JobView } from '../../shared/contracts/jobs.ts';
 import { AppError } from '../../shared/errors.ts';
+import { services as projectsServices } from '../../plugins/projects/services.ts';
 
 export function retryTarget(job: JobView) {
   const id = job.vmId || job.key;
@@ -9,7 +10,8 @@ export function retryTarget(job: JobView) {
 }
 export function retryInProject<T>(host: PluginContext, job: JobView, action: () => Promise<T>): Promise<T> {
   const id = retryTarget(job);
-  return host.workspaces?.projects
-    ? host.workspaces.projects.inScope(id, job.projectId || 'default', action)
+  const workspaces = host.optional(projectsServices.workspaces);
+  return workspaces
+    ? workspaces.projects.inScope(id, job.projectId || 'default', action)
     : action();
 }

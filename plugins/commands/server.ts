@@ -1,13 +1,12 @@
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { services as commandsServices } from './services.ts';
+import { services as projectsServices } from '../projects/services.ts';
 export { manifest } from './manifest.ts';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 import { z } from 'zod';
-import { CommandPresets } from '../../server/command-presets.ts';
-import { presetSchema } from '../../server/command-presets.ts';
-import type { PluginOperation } from '../../server/plugin-api.ts';
+import { CommandPresets, presetSchema } from '../../server/command-presets.ts';
 export async function activate(host: PluginContext) {
-  host.provide(commandsServices.commands, new CommandPresets(host.vm, host.workspaces));
+  host.provide(commandsServices.commands, new CommandPresets(host.vm, host.use(projectsServices.workspaces)));
 }
 const idFrom = (url: URL) => url.pathname.split('/')[3];
 
@@ -17,10 +16,12 @@ export const operations: Record<string, PluginOperation> = {
     async execute(url) {
       const id = idFrom(url);
       this.vm.get(id);
+      const workspaces = this.use(projectsServices.workspaces);
+      const commands = this.use(commandsServices.commands);
       return {
-        projectId: this.workspaces.projects.current(id),
-        presets: await this.use(commandsServices.commands).list(id),
-        job: this.commands.jobs.view(this.workspaces.projects.key(id)),
+        projectId: workspaces.projects.current(id),
+        presets: await commands.list(id),
+        job: commands.jobs.view(workspaces.projects.key(id)),
       };
     },
   },

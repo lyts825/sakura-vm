@@ -1,3 +1,6 @@
+import { services as snapshotsServices } from '../snapshots/services.ts';
+import { services as secretsServices } from '../secrets/services.ts';
+import { services as transfersServices } from '../transfers/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -17,12 +20,12 @@ import { backupRecoverySchema } from '../../shared/backup-recovery.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.vm;
-  host.provide(backupsServices.backups, new Backups(m, host.bundles, host.secrets));
-  host.registerJobs(host.backups.jobs, (job) => {
+  host.provide(backupsServices.backups, new Backups(m, host.use(snapshotsServices.bundles), host.use(secretsServices.secrets)));
+  host.registerJobs(host.use(backupsServices.backups).jobs, (job) => {
     if (job.action !== 'run') throw new AppError('请回到原功能页面重新执行');
-    return host.backups.run(retryTarget(job));
+    return host.use(backupsServices.backups).run(retryTarget(job));
   });
-  const recovery = host.provide(backupsServices.backupRecovery, new BackupRecovery(m, host.backups, host.bundles));
+  const recovery = host.provide(backupsServices.backupRecovery, new BackupRecovery(m, host.use(backupsServices.backups), host.use(snapshotsServices.bundles)));
   await recovery.init();
   host.registerJobs(recovery.jobs, () => {
     throw new AppError('请在备份文件恢复面板重新选择备份和文件', 409);
@@ -58,7 +61,7 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: (req: IncomingMessage, signal?: AbortSignal) => Promise<any>,
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -70,12 +73,12 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'backup-download' && req.method === 'POST') {
       const input = httpRouteRequests["backups.legacy.post.vms.vmId.backup-download"]
-        .parse(await body(req));
-      const content = await this.backups.downloadable(id, input.backupId);
+        .parse(await body(req, signal));
+      const content = await this.use(backupsServices.backups).downloadable(id, input.backupId);
       send(
         content.type === 'stream'
-          ? this.downloads.issueStream(id, content)
-          : await this.downloads.issueLocal(id, { path: content.path, name: content.name }),
+          ? this.use(transfersServices.downloads).issueStream(id, content)
+          : await this.use(transfersServices.downloads).issueLocal(id, { path: content.path, name: content.name }),
       );
       return true;
     }
@@ -83,20 +86,20 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'backups') {
       if (req.method === 'GET') {
-        send(await this.backups.view(id));
+        send(await this.use(backupsServices.backups).view(id));
         return true;
       }
       if (req.method === 'PUT') {
-        send(await this.backups.policy(id, await body(req)));
+        send(await this.use(backupsServices.backups).policy(id, await body(req, signal)));
         return true;
       }
       if (req.method === 'POST') {
         const input = httpRouteRequests["backups.legacy.post.vms.vmId.backups"]
-          .parse(await body(req));
-        if (input.action === 'run') send(await this.backups.run(id, input.password), 202);
+          .parse(await body(req, signal));
+        if (input.action === 'run') send(await this.use(backupsServices.backups).run(id, input.password), 202);
         else {
           if (!input.backupId) throw new AppError('请选择备份');
-          send(await this.backups.operate(id, input.backupId, input.action, input.name, input.password));
+          send(await this.use(backupsServices.backups).operate(id, input.backupId, input.action, input.name, input.password));
         }
         return true;
       }

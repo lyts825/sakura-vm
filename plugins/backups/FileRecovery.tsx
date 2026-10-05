@@ -1,8 +1,7 @@
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
-import type { BackupRecord } from '../../server/backups';
-import type { BackupRecovery } from '../../server/backup-recovery';
+import type { BackupRecord, BackupRecoveryView } from './view-types';
 import type { SandboxArtifact } from '../../shared/sandbox';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import { saveBlob, saveText } from '../../src/export-file';
@@ -13,7 +12,7 @@ export function FileRecovery({
   refresh,
   items,
 }: Pick<FeatureProps, 'vm' | 'request' | 'refresh'> & { items: BackupRecord[] }) {
-  const remote = useRemote<ReturnType<BackupRecovery['view']>>(
+  const remote = useRemote<BackupRecoveryView>(
     request,
     `/vms/${vm.id}/backup-recovery`,
     !vm.sandbox,

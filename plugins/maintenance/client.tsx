@@ -1,24 +1,14 @@
 import { formatDateTime } from '../../src/localization';
 import { Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { JobView } from '../../shared/contracts/jobs.ts';
-import type { DiagnosticCheck } from '../../server/maintenance';
-import type { DiskMaintenancePolicy, DiskMaintenanceState } from '../../server/disk-maintenance';
+import type { DiagnosticView, DiskMaintenancePolicy, DiskMaintenanceView, StorageView } from './contracts.ts';
 import { saveText } from '../../src/export-file';
 import type { FeatureProps, Request } from '../../src/feature-shared';
 import { Feedback, formatBytes, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
 
 export function StoragePanel({ request }: { request: Request }) {
-  const remote = useRemote<{
-    total: number;
-    available: number;
-    backupBytes: number;
-    deduplicatedBackups?: { physicalBytes: number; savedBytes: number; orphanBytes: number };
-    warning: string;
-    images: { id: string; name: string; bytes: number }[];
-    machines: { id: string; name: string; bytes: number; snapshots: number }[];
-  }>(request, '/storage');
+  const remote = useRemote<StorageView>(request, '/storage');
   return (
     <div className="feature-card">
       <h3>空间管理</h3>
@@ -67,11 +57,8 @@ export function StoragePanel({ request }: { request: Request }) {
 }
 
 export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
-  const remote = useRemote<{
-    report: { createdAt: string; checks: DiagnosticCheck[]; log: string } | null;
-    job: JobView | null;
-  }>(request, `/vms/${vm.id}/diagnostics`, true, 2500);
-  const disk = useRemote<DiskMaintenanceState & { maintenance: boolean }>(
+  const remote = useRemote<DiagnosticView>(request, `/vms/${vm.id}/diagnostics`, true, 2500);
+  const disk = useRemote<DiskMaintenanceView>(
     request,
     `/vms/${vm.id}/disk-maintenance`,
     true,

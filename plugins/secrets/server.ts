@@ -4,9 +4,8 @@ import { sendJson } from '../../server/http-response.ts';
 import { services as secretsServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 
-import { z } from 'zod';
 
 import { Secrets } from '../../server/secrets.ts';
 
@@ -19,7 +18,7 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -29,23 +28,23 @@ export async function route(
     action = parts[3];
   this.vm.get(id);
   if (parts.length === 4 && action === 'secret-rotation') {
-    if (req.method === 'GET') return send({ items: await this.secrets.rotation(id) });
-    if (req.method === 'PATCH') return send({ items: await this.secrets.setRotation(id, await body(req)) });
+    if (req.method === 'GET') return send({ items: await this.use(secretsServices.secrets).rotation(id) });
+    if (req.method === 'PATCH') return send({ items: await this.use(secretsServices.secrets).setRotation(id, await body(req, signal)) });
   }
   if (parts.length === 4) {
     if (action === 'secrets') {
       if (req.method === 'GET') {
-        send({ items: await this.secrets.list(id) });
+        send({ items: await this.use(secretsServices.secrets).list(id) });
         return true;
       }
       if (req.method === 'PUT') {
-        send(await this.secrets.save(id, await body(req)));
+        send(await this.use(secretsServices.secrets).save(id, await body(req, signal)));
         return true;
       }
       if (req.method === 'DELETE') {
         const input = httpRouteRequests["secrets.legacy.delete.vms.vmId.secrets"]
-          .parse(await body(req));
-        send(await this.secrets.remove(id, input.name));
+          .parse(await body(req, signal));
+        send(await this.use(secretsServices.secrets).remove(id, input.name));
         return true;
       }
     }

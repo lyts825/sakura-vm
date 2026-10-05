@@ -1,9 +1,9 @@
 import { formatDateTime } from '../../src/localization';
 import { GitBranch, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { GitChange } from '../../server/git-workbench';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import type { JobView } from '../../shared/contracts/jobs.ts';
-import { isGitConflict, type GitUpstream } from '../../shared/git';
+import { isGitConflict } from '../../shared/git';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared';
@@ -11,6 +11,11 @@ import '../../src/features.css';
 import { stopped } from '../../src/guest-state';
 import { workspaceRequest } from '../../src/workspace-request';
 import { ThreeWayMerge } from '../../src/ThreeWayMerge';
+type GitResponse = OperationResponse<'git.legacy.get.vms.vmId.git'>;
+type GitView = Extract<GitResponse, { repository: boolean }>;
+type GitDiff = Extract<GitResponse, { diff: string }>;
+type GitMerge = Extract<GitResponse, { base: string }>;
+type GitChoices = Extract<GitResponse, { expectedWorktree: string }>;
 
 export function GitPanel(props: FeatureProps) {
   return <GitWorkspacePanel key={`${props.vm.id}:${props.projectId || 'default'}`} {...props} />;
@@ -18,23 +23,8 @@ export function GitPanel(props: FeatureProps) {
 
 function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps) {
   const request = useMemo(() => workspaceRequest(baseRequest, projectId), [baseRequest, projectId]);
-  const remote = useRemote<{
-    projectId?: string;
-    repository: boolean;
-    error?: string;
-    branch: string;
-    changes: GitChange[];
-    branches: string[];
-    history: { id: string; short: string; subject: string; author: string; date: string }[];
-    remotes?: { name: string; url: string; kind: string }[];
-    divergence?: number[];
-    detached: boolean;
-    hasCommits: boolean;
-    conflicts: string[];
-    operation: string | null;
-    upstream: GitUpstream | null;
-    job: JobView | null;
-  }>(request, `/vms/${vm.id}/git`, vm.status === 'running');
+  const remote = useRemote<GitView>(request, `/vms/${vm.id}/git`, vm.status === 'running');
+  const repository = remote.data && 'branch' in remote.data ? remote.data : null;
   const action = useAction(),
     [message, setMessage] = useState(''),
     [branch, setBranch] = useState(''),
@@ -46,23 +36,8 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
     [targetBranch, setTargetBranch] = useState(''),
     [submittedJob, setSubmittedJob] = useState<JobView | null>(null);
   const [selection, setSelection] = useState<{ path: string; staged: boolean } | null>(null);
-  const [merge, setMerge] = useState<{
-    path: string;
-    base: string;
-    ours: string;
-    theirs: string;
-    expectedVersion: string;
-    expectedIndex: string;
-  } | null>(null);
-  const [choiceContext, setChoiceContext] = useState<{
-    path: string;
-    base: { mode: string; oid: string } | null;
-    ours: { mode: string; oid: string } | null;
-    theirs: { mode: string; oid: string } | null;
-    worktree: string;
-    expectedIndex: string;
-    expectedWorktree: string;
-  } | null>(null);
+  const [merge, setMerge] = useState<GitMerge | null>(null);
+  const [choiceContext, setChoiceContext] = useState<GitChoices | null>(null);
   const [loadedProject, setLoadedProject] = useState('');
   useEffect(() => {
     const projectId = remote.data?.projectId || 'default';
@@ -71,39 +46,39 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
       setSelection(null);
     }
   }, [remote.data, loadedProject]);
-  const diff = useRemote<{ diff: string; truncated: boolean }>(
+  const diff = useRemote<GitDiff>(
     request,
     `/vms/${vm.id}/git?path=${encodeURIComponent(selection?.path || '')}&staged=${selection?.staged ? 1 : 0}`,
     vm.status === 'running' && !!selection,
     5000,
   );
-  const remoteNames = [...new Set(remote.data?.remotes?.map((item) => item.name) || [])];
+  const remoteNames = [...new Set(repository?.remotes?.map((item) => item.name) || [])];
   const namesKey = remoteNames.join('\0');
   useEffect(() => {
     setSelectedRemote((selected) =>
       remoteNames.includes(selected)
         ? selected
-        : remoteNames.includes(remote.data?.upstream?.remote || '')
-          ? remote.data!.upstream!.remote
+        : remoteNames.includes(repository?.upstream?.remote || '')
+          ? repository!.upstream!.remote
           : remoteNames.includes('origin')
             ? 'origin'
             : remoteNames[0] || '',
     );
-  }, [namesKey, remote.data?.upstream?.remote]);
+  }, [namesKey, repository?.upstream?.remote]);
   useEffect(() => {
     setTargetBranch(
-      remote.data?.upstream?.remote === selectedRemote
-        ? remote.data.upstream.branch
-        : remote.data?.detached
+      repository?.upstream?.remote === selectedRemote
+        ? repository.upstream.branch
+        : repository?.detached
           ? ''
-          : remote.data?.branch || '',
+          : repository?.branch || '',
     );
   }, [
     selectedRemote,
-    remote.data?.branch,
-    remote.data?.detached,
-    remote.data?.upstream?.remote,
-    remote.data?.upstream?.branch,
+    repository?.branch,
+    repository?.detached,
+    repository?.upstream?.remote,
+    repository?.upstream?.branch,
   ]);
   const job =
     submittedJob &&
@@ -121,7 +96,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
   }, [job?.id, job?.status, diff.reload]);
   const conflicts = remote.data?.changes.filter(isGitConflict) || [];
   const blocked =
-    !!conflicts.length || !!remote.data?.operation || remote.data?.detached || !remote.data?.hasCommits;
+    !!conflicts.length || !!repository?.operation || repository?.detached || !repository?.hasCommits;
   const hasRemote = remoteNames.includes(selectedRemote);
   const run = (value: unknown) =>
     action.run(async (signal) => {
@@ -147,7 +122,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
         ? stopped
         : remote.data && (
             <>
-              {!remote.data.repository ? (
+              {!repository ? (
                 <div className="feature-card">
                   <p>项目目录还不是 Git 仓库。请先在开发工具中安装 Git。</p>
                   <button
@@ -163,7 +138,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                   <div className="feature-card">
                     <div className="panel-heading">
                       <h4>
-                        <GitBranch size={16} /> {remote.data.branch}
+                        <GitBranch size={16} /> {repository.branch}
                       </h4>
                       <span className="badge">{remote.data.changes.length} 个改动</span>
                     </div>
@@ -178,7 +153,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                           }
                         >
                           <option value="">选择分支</option>
-                          {remote.data.branches.map((name) => (
+                          {repository.branches.map((name) => (
                             <option key={name} value={name}>
                               {name}
                             </option>
@@ -202,7 +177,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                       创建并切换
                     </button>
                   </div>
-                  {(conflicts.length > 0 || remote.data.operation) && (
+                  {(conflicts.length > 0 || repository.operation) && (
                     <div className="feature-card" role="alert">
                       <h4>
                         {conflicts.length
@@ -213,8 +188,8 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                         请编辑冲突文件并暂存解决结果，再在终端完成或中止当前合并 /
                         变基。解决前暂停拉取与推送。
                       </p>
-                      {remote.data.operation && (
-                        <p className="subtle-note">当前状态：{remote.data.operation}</p>
+                      {repository.operation && (
+                        <p className="subtle-note">当前状态：{repository.operation}</p>
                       )}
                       {conflicts.map((change) => (
                         <p key={change.path}>
@@ -223,14 +198,14 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                             disabled={busy}
                             onClick={() =>
                               void action.run(async (signal) => {
-                                setMerge(
-                                  await request(
-                                    `/vms/${vm.id}/git?merge=${encodeURIComponent(change.path)}`,
-                                    'GET',
-                                    undefined,
-                                    signal,
-                                  ),
+                                const result = await request<GitMerge>(
+                                  `/vms/${vm.id}/git?merge=${encodeURIComponent(change.path)}`,
+                                  'GET',
+                                  undefined,
+                                  signal,
                                 );
+                                signal.throwIfAborted();
+                                setMerge(result);
                                 setChoiceContext(null);
                               })
                             }
@@ -240,10 +215,12 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                           <button
                             disabled={busy}
                             onClick={() => void action.run(async (signal) => {
-                              setChoiceContext(await request(
+                              const result = await request<GitChoices>(
                                 `/vms/${vm.id}/git?choices=${encodeURIComponent(change.path)}`,
                                 'GET', undefined, signal,
-                              ));
+                              );
+                              signal.throwIfAborted();
+                              setChoiceContext(result);
                               setMerge(null);
                             })}
                           >
@@ -323,31 +300,31 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                         />
                       </label>
                     </div>
-                    {remote.data.remotes
+                    {repository.remotes
                       ?.filter((item) => item.name === selectedRemote)
                       .map((item) => (
                         <p className="subtle-note" key={`${item.name}:${item.kind}`}>
                           {item.kind === '(push)' ? '推送地址' : '获取地址'}：{item.url}
                         </p>
                       ))}
-                    {remote.data.upstream && (
+                    {repository.upstream && (
                       <p className="subtle-note">
-                        当前上游：{remote.data.upstream.name}
-                        {remote.data.divergence?.length === 2
-                          ? `（落后 ${remote.data.divergence[0]}，领先 ${remote.data.divergence[1]}；基于上次获取）`
+                        当前上游：{repository.upstream.name}
+                        {repository.divergence?.length === 2
+                          ? `（落后 ${repository.divergence[0]}，领先 ${repository.divergence[1]}；基于上次获取）`
                           : ''}
                       </p>
                     )}
-                    {remote.data.divergence?.length === 2 &&
-                      remote.data.divergence.every((count) => count > 0) && (
+                    {repository.divergence?.length === 2 &&
+                      repository.divergence.every((count) => count > 0) && (
                         <p role="alert">
                           本地与上游历史已分叉。请获取更新后在终端手动合并或变基，再重试；快进拉取不会合并分叉。
                         </p>
                       )}
-                    {remote.data.detached ? (
+                    {repository.detached ? (
                       <p className="subtle-note">detached HEAD：请先切换到本地分支再拉取或推送。</p>
                     ) : (
-                      !remote.data.hasCommits && (
+                      !repository.hasCommits && (
                         <p className="subtle-note">请先创建首次提交，再拉取或推送。</p>
                       )
                     )}

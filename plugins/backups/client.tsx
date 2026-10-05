@@ -1,21 +1,13 @@
 import { formatDateTime } from '../../src/localization';
 import { useEffect, useState } from 'react';
-import type { BackupPolicy, BackupRecord } from '../../server/backups';
-import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { BackupPolicy, BackupView } from './view-types';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, formatBytes, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
 import { FileRecovery } from './FileRecovery';
 
 export function BackupPanel({ vm, request, refresh }: FeatureProps) {
-  const remote = useRemote<{
-    policy: BackupPolicy;
-    items: BackupRecord[];
-    bytes: number;
-    job: JobView | null;
-    waitingForShutdown: boolean;
-    maintenance?: boolean;
-  }>(request, `/vms/${vm.id}/backups`, true, 2500);
+  const remote = useRemote<BackupView>(request, `/vms/${vm.id}/backups`, true, 2500);
   const [policy, setPolicy] = useState<BackupPolicy | null>(null),
     action = useAction();
   const [password, setPassword] = useState('');

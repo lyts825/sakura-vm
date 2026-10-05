@@ -1,29 +1,98 @@
 import { Download, Layers, Plus, Upload } from 'lucide-react';
-import { lazy, useRef, useState } from 'react';
-import type { JobView } from '../../shared/contracts/jobs.ts';
+import { Suspense, useRef, useState } from 'react';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated';
 import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';
 import '../../src/features.css';
-import type { PluginPageProps } from '../../src/plugin-client';
+import { embeddedPluginComponent, type PluginPageProps } from '../../src/plugin-client';
 import { PluginGate } from '../../src/plugin-context';
-const GoldenImageLibrary = lazy(() =>
-  import('../snapshots/GoldenImages').then((module) => ({ default: module.GoldenImageLibrary })),
-);
-const SignedBundlesPanel = lazy(() =>
-  import('../snapshots/SignedBundles').then((module) => ({ default: module.SignedBundlesPanel })),
-);
+import { PluginBoundary } from '../../src/plugin-boundary';
+import { pluginGeneration } from '../../src/plugin-generation';
+import { controllerSession } from '../../src/controller-session';
+const loadGoldenImageLibrary = () =>
+  import('../snapshots/GoldenImages').then((module) => ({ default: module.GoldenImageLibrary }));
+const loadSignedBundlesPanel = () =>
+  import('../snapshots/SignedBundles').then((module) => ({ default: module.SignedBundlesPanel }));
 
-export type ImageInfo = {
-  id: 'alpine' | 'debian' | 'debian-arm64' | 'ubuntu';
-  name: string;
-  ready: boolean;
-  minimumMemory: number;
-  minimumDisk: number;
-  job: JobView | null;
-};
+export type ImageInfo = OperationResponse<'images.legacy.get.images'>[number];
+
+function BundleImport({ refresh }: { refresh: () => Promise<unknown> }) {
+  const action = useAction();
+  const [name, setName] = useState('imported-linux');
+  const [password, setPassword] = useState('');
+  const file = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <Feedback error={action.error} message={action.message} />
+      <div className="feature-card">
+          <h3>导入 Sakura 实例</h3>
+          <p>从 .sakura 或 .sakura.enc 文件恢复到新实例，端口转发默认清空。</p>
+          <PluginGate id="backups">
+            <label>
+              加密备份密码
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                maxLength={1024}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="普通备份可留空"
+              />
+            </label>
+          </PluginGate>
+          <div className="inline-form">
+            <input
+              aria-label="导入实例名称"
+              pattern="[a-z][a-z0-9-]*"
+              maxLength={32}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <button
+              className="secondary compact"
+              disabled={action.busy}
+              onClick={() => file.current?.click()}
+            >
+              <Upload size={14} />
+              {action.busy ? '正在处理…' : '选择导出文件'}
+            </button>
+          </div>
+          <input
+            ref={file}
+            type="file"
+            accept=".sakura,.enc"
+            hidden
+            onChange={(e) => {
+              const value = e.target.files?.[0];
+              if (value)
+                void action.run(async (signal) => {
+                  if (value.name.endsWith('.enc') && !password) throw new Error('请输入加密备份密码');
+                  const combined = AbortSignal.any([signal, pluginGeneration.captureIdentity('official:images'),
+                    pluginGeneration.captureIdentity('official:snapshots'),
+                    ...(value.name.endsWith('.enc') ? [pluginGeneration.captureIdentity('official:backups')] : [])]);
+                  combined.throwIfAborted();
+                  await controllerSession.operation('snapshots.legacy.post.import', {
+                    query: { name },
+                    headers: value.name.endsWith('.enc') ? {
+                      'x-sakura-passphrase': btoa(Array.from(new TextEncoder().encode(password), (byte) =>
+                        String.fromCharCode(byte)).join('')),
+                    } : {},
+                    body: value,
+                    signal: combined,
+                  });
+                  combined.throwIfAborted();
+                  setPassword('');
+                  await refresh();
+                }, '实例已导入，可在工作空间启动');
+              e.target.value = '';
+            }}
+          />
+        </div>
+    </>
+  );
+}
 
 export function ImageCatalog({
   request,
-  token,
   refresh,
 }: {
   request: Request;
@@ -32,9 +101,6 @@ export function ImageCatalog({
 }) {
   const remote = useRemote<ImageInfo[]>(request, '/images', true, 2500);
   const action = useAction();
-  const [name, setName] = useState('imported-linux');
-  const [password, setPassword] = useState('');
-  const file = useRef<HTMLInputElement>(null);
   const diskFile = useRef<HTMLInputElement>(null);
   const [diskName, setDiskName] = useState('imported-disk');
   const [diskFormat, setDiskFormat] = useState<'raw' | 'vmdk' | 'vhdx' | 'ova'>('raw');
@@ -134,18 +200,16 @@ export function ImageCatalog({
             if (!/^[a-z][a-z0-9-]{0,31}$/.test(diskName)) throw new Error('实例名称格式不正确');
             if (selected.size > 8 * 1024 ** 3) throw new Error('镜像文件超过 8 GiB');
             if (diskSha256 && !/^[a-f0-9]{64}$/.test(diskSha256)) throw new Error('SHA-256 必须为 64 位十六进制');
-            const query = new URLSearchParams({ name: diskName, format: diskFormat,
-              distro: diskDistro, architecture: diskArchitecture,
-              memoryMiB: String(diskMemory), cpus: String(diskCpus), firmware: diskFirmware });
-            if (diskSha256) query.set('sha256', diskSha256);
-            const response = await fetch(`/api/image-import?${query}`, {
-              method: 'POST',
-              headers: { 'X-Sakura-Token': token, 'Content-Type': 'application/octet-stream' },
+            const combined = AbortSignal.any([signal, pluginGeneration.captureIdentity('official:images')]);
+            combined.throwIfAborted();
+            const result = await controllerSession.operation('images.legacy.post.image-import', {
+              query: { name: diskName, format: diskFormat, distro: diskDistro, architecture: diskArchitecture,
+                memoryMiB: String(diskMemory), cpus: String(diskCpus), firmware: diskFirmware,
+                ...(diskSha256 ? { sha256: diskSha256 } : {}) },
               body: selected,
-              signal,
+              signal: combined,
             });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || '导入失败');
+            combined.throwIfAborted();
             setImportedHash(result.source.sha256);
             await refresh();
           }, '镜像已导入，可在工作空间启动');
@@ -154,77 +218,17 @@ export function ImageCatalog({
         {importedHash && <p className="disk-import-hash">最近导入文件 SHA-256：<code>{importedHash}</code></p>}
       </div>
       <PluginGate id="snapshots">
-        <div className="feature-card">
-          <h3>导入 Sakura 实例</h3>
-          <p>从 .sakura 或 .sakura.enc 文件恢复到新实例，端口转发默认清空。</p>
-          <PluginGate id="backups">
-            <label>
-              加密备份密码
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                maxLength={1024}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="普通备份可留空"
-              />
-            </label>
-          </PluginGate>
-          <div className="inline-form">
-            <input
-              aria-label="导入实例名称"
-              pattern="[a-z][a-z0-9-]*"
-              maxLength={32}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <button
-              className="secondary compact"
-              disabled={action.busy}
-              onClick={() => file.current?.click()}
-            >
-              <Upload size={14} />
-              {action.busy ? '正在处理…' : '选择导出文件'}
-            </button>
-          </div>
-          <input
-            ref={file}
-            type="file"
-            accept=".sakura,.enc"
-            hidden
-            onChange={(e) => {
-              const value = e.target.files?.[0];
-              if (value)
-                void action.run(async (signal) => {
-                  if (value.name.endsWith('.enc') && !password) throw new Error('请输入加密备份密码');
-                  const response = await fetch(`/api/import?name=${encodeURIComponent(name)}`, {
-                    method: 'POST',
-                    headers: {
-                      'X-Sakura-Token': token,
-                      'Content-Type': 'application/octet-stream',
-                      ...(value.name.endsWith('.enc')
-                        ? {
-                            'X-Sakura-Passphrase': btoa(
-                              Array.from(new TextEncoder().encode(password), (byte) =>
-                                String.fromCharCode(byte),
-                              ).join(''),
-                            ),
-                          }
-                        : {}),
-                    },
-                    body: value,
-                    signal,
-                  });
-                  const result = await response.json();
-                  if (!response.ok) throw new Error(result.error);
-                  setPassword('');
-                  await refresh();
-                }, '实例已导入，可在工作空间启动');
-              e.target.value = '';
-            }}
-          />
-        </div>
-        <SignedBundlesPanel request={request} />
+        <PluginBoundary identity="official:snapshots" request={request} label="实例包导入">
+          {() => <BundleImport refresh={refresh} />}
+        </PluginBoundary>
+        <PluginBoundary identity="official:snapshots" request={request} label="实例包签名">
+          {(scopedRequest, lifetime) => {
+            const SignedBundlesPanel = embeddedPluginComponent('snapshots', 'signed-bundles', lifetime, loadSignedBundlesPanel);
+            return <Suspense fallback={<p role="status">正在加载签名设置…</p>}>
+              <SignedBundlesPanel request={scopedRequest} />
+            </Suspense>;
+          }}
+        </PluginBoundary>
       </PluginGate>
     </div>
   );
@@ -244,7 +248,14 @@ function ImagesPage({ request, token, refresh, onCreate, vms }: PluginPageProps)
       </div>
       <ImageCatalog request={request} token={token} refresh={refresh} />
       <PluginGate id="snapshots">
-        <GoldenImageLibrary request={request} refresh={refresh} vms={vms} />
+        <PluginBoundary identity="official:snapshots" request={request} label="黄金镜像库">
+          {(scopedRequest, lifetime) => {
+            const GoldenImageLibrary = embeddedPluginComponent('snapshots', 'golden-images', lifetime, loadGoldenImageLibrary);
+            return <Suspense fallback={<p role="status">正在加载黄金镜像库…</p>}>
+              <GoldenImageLibrary request={scopedRequest} refresh={refresh} vms={vms} />
+            </Suspense>;
+          }}
+        </PluginBoundary>
       </PluginGate>
       <button className="primary" onClick={onCreate}>
         <Plus size={16} />

@@ -1,16 +1,10 @@
 import { useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
 
-type TrustedKey = { name: string; fingerprint: string; publicKey: string };
-type View = {
-  revision: number;
-  requireTrustedOnImport: boolean;
-  localKey: TrustedKey | null;
-  trustedKeys: TrustedKey[];
-};
+import type { SignedBundlesView } from './view-types';
 
 export function SignedBundlesPanel({ request }: { request: Request }) {
-  const remote = useRemote<View>(request, '/signed-bundles', true, 30000);
+  const remote = useRemote<SignedBundlesView>(request, '/signed-bundles', true, 30000);
   const action = useAction();
   const [name, setName] = useState(''),
     [publicKey, setPublicKey] = useState('');

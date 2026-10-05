@@ -186,7 +186,11 @@ async function fixture(t: TestContext) {
   };
   const host = {
     vm: machines,
-    git: service,
+    use(reference: { pluginId: string; key: string }) {
+      assert.equal(reference.pluginId, 'git');
+      assert.equal(reference.key, 'git');
+      return service;
+    },
     jobStores: () => [service.jobs],
     retryHandler: () => undefined,
   } as unknown as PluginContext & Pick<import('../server/plugin-runtime.ts').PluginRuntime, 'jobStores' | 'retryHandler'>;

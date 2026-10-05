@@ -1,3 +1,4 @@
+import { services as projectsServices } from '../projects/services.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as serviceHealthServices } from '../service-health/services.ts';
@@ -7,7 +8,7 @@ import { services as automationServices } from './services.ts';
 import { services as ideServices } from '../ide/services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 
 import { FeatureSuite } from '../../server/feature-suite.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
@@ -15,11 +16,9 @@ import { AppError } from '../../shared/errors.ts';
 import { z } from 'zod';
 
 
-
-
 export async function activate(host: PluginContext) {
   const m = host.vm;
-  host.provide(automationServices.suite, new FeatureSuite(m, host.workspaces, {
+  host.provide(automationServices.suite, new FeatureSuite(m, host.use(projectsServices.workspaces), {
     editor: () => host.optional(ideServices.ide),
     jobs: () => [...host.jobViews()],
     services: (id) => host.optional(serviceHealthServices.health)?.observed(id) || [],
@@ -30,7 +29,7 @@ export async function activate(host: PluginContext) {
       await service.privateDatabase(id, input, signal, log);
     },
   }, {}, host.system));
-  host.registerJobs(host.suite.jobs, (job) => {
+  host.registerJobs(host.use(automationServices.suite).jobs, (job) => {
     const id = retryTarget(job);
     if (job.action?.startsWith('package:')) {
       const [operationValue, ...nameParts] = job.action.slice(8).split(':');
@@ -38,7 +37,7 @@ export async function activate(host: PluginContext) {
         'cache-list', 'cache-prefetch', 'cache-install', 'cache-clear']).parse(operationValue);
       return retryInProject(host, job, () =>
         Promise.resolve(
-          host.suite.package(id, {
+          host.use(automationServices.suite).package(id, {
             operation,
             name: nameParts.join(':') || undefined,
           }),
@@ -69,7 +68,7 @@ export async function activate(host: PluginContext) {
         throw new AppError('此开发任务包含参数，请回到能力中心重新执行');
       const manager = ['prefetch-dependencies', 'install-cached-dependencies'].includes(operation)
         ? z.enum(['npm', 'pip']).parse(managerValue) : undefined;
-      return retryInProject(host, job, () => Promise.resolve(host.suite.dev(id, { operation, manager })));
+      return retryInProject(host, job, () => Promise.resolve(host.use(automationServices.suite).dev(id, { operation, manager })));
     }
     throw new AppError('请回到原功能页面重新执行');
   });
@@ -79,13 +78,13 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
   const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'feature-suite' && parts.length === 2 && req.method === 'GET') {
-    send(await this.suite.catalog());
+    send(await this.use(automationServices.suite).catalog());
     return true;
   }
   if (parts[1] !== 'vms' || !parts[2]) return false;
@@ -103,25 +102,25 @@ export async function route(
         const query = url.searchParams.get('query') || '';
         const page = Number(url.searchParams.get('page') || 1);
         const limit = Number(url.searchParams.get('limit') || 50);
-        return send(await this.suite.packageWorkbench.query(id,
+        return send(await this.use(automationServices.suite).packageWorkbench.query(id,
           { mode, query, page, limit }, signal));
       }
       if (req.method === 'POST')
-        return send(await this.suite.packageWorkbench.action(id, await body(req), signal), 202);
+        return send(await this.use(automationServices.suite).packageWorkbench.action(id, await body(req, signal), signal), 202);
     }
     if (action === 'advanced') {
       if (req.method === 'GET') {
-        send(await this.suite.view(id, Number(url.searchParams.get('limit') || 120)));
+        send(await this.use(automationServices.suite).view(id, Number(url.searchParams.get('limit') || 120)));
         return true;
       }
       if (req.method === 'PUT') {
-        const input = await body(req);
+        const input = await body(req, signal);
         if (input?.schedule || input?.alerts) this.require('automation-scheduler');
-        send(await this.suite.update(id, input));
+        send(await this.use(automationServices.suite).update(id, input));
         return true;
       }
       if (req.method === 'POST') {
-        send(await this.suite.action(id, await body(req), signal), 202);
+        send(await this.use(automationServices.suite).action(id, await body(req, signal), signal), 202);
         return true;
       }
     }

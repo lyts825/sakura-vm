@@ -2,18 +2,21 @@ import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as pipelinesServices } from './services.ts';
+import { services as projectsServices } from '../projects/services.ts';
+import { services as filesServices } from '../files/services.ts';
+import { services as transfersServices } from '../transfers/services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
-import { z } from 'zod';
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 import { Pipelines } from '../../server/pipelines.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../shared/errors.ts';
 export async function activate(host: PluginContext) {
-  host.provide(pipelinesServices.pipelines, new Pipelines(host.vm, host.workspaces, host.files));
-  host.registerJobs(host.pipelines.jobs, (job) => {
+  const pipelines = host.provide(pipelinesServices.pipelines,
+    new Pipelines(host.vm, host.use(projectsServices.workspaces), host.use(filesServices.files)));
+  host.registerJobs(pipelines.jobs, (job) => {
     if (!job.action?.startsWith('run:')) throw new AppError('请回到原功能页面重新执行');
-    return retryInProject(host, job, () => host.pipelines.run(retryTarget(job), job.action!.slice(4)));
+    return retryInProject(host, job, () => host.use(pipelinesServices.pipelines).run(retryTarget(job), job.action!.slice(4)));
   });
 }
 export async function route(
@@ -21,7 +24,7 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -33,34 +36,33 @@ export async function route(
   this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'pipelines') {
+      const pipelines = this.use(pipelinesServices.pipelines);
       if (req.method === 'GET') {
-        send(await this.pipelines.view(id));
+        send(await pipelines.view(id));
         return true;
       }
       if (req.method === 'PUT') {
-        send(await this.pipelines.save(id, await body(req)));
+        send(await pipelines.save(id, await body(req, signal)));
         return true;
       }
       if (req.method === 'DELETE') {
         const input = httpRouteRequests["pipelines.legacy.delete.vms.vmId.pipelines"]
-          .parse(await body(req));
-        send(await this.pipelines.remove(id, input.id));
+          .parse(await body(req, signal));
+        send(await pipelines.remove(id, input.id));
         return true;
       }
       if (req.method === 'POST') {
         const input = httpRouteRequests["pipelines.legacy.post.vms.vmId.pipelines"]
-          .parse(await body(req));
-        send(await this.pipelines.run(id, input.pipelineId), 202);
+          .parse(await body(req, signal));
+        send(await pipelines.run(id, input.pipelineId), 202);
         return true;
       }
     }
-  }
-  if (parts.length === 4) {
     if (action === 'pipeline-artifact' && req.method === 'POST') {
       const input = httpRouteRequests["pipelines.legacy.post.vms.vmId.pipeline-artifact"]
-        .parse(await body(req));
-      const target = await this.pipelines.artifact(id, input.runId, input.index);
-      send(await this.downloads.issueLocal(id, { path: target.file, name: target.name }));
+        .parse(await body(req, signal));
+      const target = await this.use(pipelinesServices.pipelines).artifact(id, input.runId, input.index);
+      send(await this.use(transfersServices.downloads).issueLocal(id, { path: target.file, name: target.name }));
       return true;
     }
   }
@@ -68,7 +70,7 @@ export async function route(
 }
 
 /** Exact implemented HTTP operations; declarations alone never publish a handler. */
-export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+export const httpHandlers: Record<string, PluginRoute> = {
   "legacy.get.vms.vmId.pipelines": route,
   "legacy.put.vms.vmId.pipelines": route,
   "legacy.delete.vms.vmId.pipelines": route,

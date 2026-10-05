@@ -1,13 +1,14 @@
+import { embeddedPluginComponent } from '../../src/plugin-client';
 import { Boxes, Inbox, Play, Save, Square, Star } from 'lucide-react';
-import { lazy, useState } from 'react';
+import { Suspense, useState } from 'react';
 import type { VMView } from '../../shared/contracts/vm.ts';
 import type { Request } from '../../src/feature-shared';
 import { Feedback, formatBytes, useAction } from '../../src/feature-shared';
 import '../../src/features.css';
 import { PluginGate } from '../../src/plugin-context';
-const RecipeImporter = lazy(() =>
-  import('../recipes/client').then((module) => ({ default: module.RecipeImporter })),
-);
+import { PluginBoundary } from '../../src/plugin-boundary';
+const loadRecipeImporter = () =>
+  import('../recipes/client').then((module) => ({ default: module.RecipeImporter }));
 
 export function OrganizationCard({
   vm,
@@ -215,7 +216,14 @@ export function LibraryPanel({
         </div>
       )}
       <PluginGate id="recipes">
-        <RecipeImporter request={request} refresh={refresh} />
+        <PluginBoundary identity="official:recipes" request={request} label="配方导入">
+          {(scopedRequest, lifetime) => {
+            const RecipeImporter = embeddedPluginComponent('recipes', 'recipe-importer', lifetime, loadRecipeImporter);
+            return <Suspense fallback={<p role="status">正在加载配方导入…</p>}>
+              <RecipeImporter request={scopedRequest} refresh={refresh} />
+            </Suspense>;
+          }}
+        </PluginBoundary>
       </PluginGate>
     </div>
   );

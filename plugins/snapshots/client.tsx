@@ -1,18 +1,19 @@
+import { embeddedPluginComponent } from '../../src/plugin-client';
 import { formatDateTime } from '../../src/localization';
 import { Copy, Download, Plus, Trash2 } from 'lucide-react';
-import { lazy, useState } from 'react';
+import { Suspense, useState } from 'react';
 import type { Snapshot } from '../../shared/contracts/vm.ts';
 import { Feedback, download, useAction, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
 import { PluginGate } from '../../src/plugin-context';
+import { PluginBoundary } from '../../src/plugin-boundary';
 import { GoldenImageLibrary } from './GoldenImages';
 import { RescuePanel } from './RescuePanel';
 import { SnapshotDiffPanel } from './SnapshotDiffPanel';
 import { SnapshotMergePanel } from './SnapshotMergePanel';
 import { SignedBundlesPanel } from './SignedBundles';
-const BackupPanel = lazy(() =>
-  import('../backups/client').then((module) => ({ default: module.BackupPanel })),
-);
+const loadBackupPanel = () =>
+  import('../backups/client').then((module) => ({ default: module.BackupPanel }));
 
 export function SnapshotsPanel(props: FeatureProps) {
   const { vm, request, refresh } = props;
@@ -213,7 +214,14 @@ export function SnapshotsPanel(props: FeatureProps) {
       </div>
       <SignedBundlesPanel request={request} />
       <PluginGate id="backups">
-        <BackupPanel {...props} />
+        <PluginBoundary identity="official:backups" request={request} label="备份策略">
+          {(scopedRequest, lifetime) => {
+            const BackupPanel = embeddedPluginComponent('backups', 'backup-panel', lifetime, loadBackupPanel);
+            return <Suspense fallback={<p role="status">正在加载备份策略…</p>}>
+              <BackupPanel {...props} request={scopedRequest} />
+            </Suspense>;
+          }}
+        </PluginBoundary>
       </PluginGate>
       <RescuePanel key={'rescue-' + vm.id} {...props} />
       <GoldenImageLibrary key={vm.id} request={request} refresh={refresh} vms={[vm]} sourceId={vm.id} />

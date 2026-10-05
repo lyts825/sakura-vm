@@ -2,11 +2,10 @@ import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
 import type { VMView } from '../../shared/contracts/vm.ts';
-import type { GoldenImages } from '../../server/golden-images';
+import type { GoldenImagesView } from './view-types';
 import type { GoldenAction, GoldenResult } from '../../shared/golden-images';
 import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';
 
-type View = Awaited<ReturnType<GoldenImages['view']>>;
 export function GoldenImageLibrary({
   request,
   refresh,
@@ -18,7 +17,7 @@ export function GoldenImageLibrary({
   vms: VMView[];
   sourceId?: string;
 }) {
-  const remote = useRemote<View>(request, '/golden-images', true, 2500);
+  const remote = useRemote<GoldenImagesView>(request, '/golden-images', true, 2500);
   const action = useAction();
   const cancellation = useAction();
   const [vmId, setVmId] = useState(sourceId),

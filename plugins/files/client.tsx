@@ -1,22 +1,25 @@
+import { embeddedPluginComponent } from '../../src/plugin-client';
 import { formatDateTime } from '../../src/localization';
 import { ArrowUp, Download, FileText, Folder, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { anyDirty, restoreDrafts, saveDraftResult, type EditorDraft } from '../../src/editor-drafts';
 import { download, Feedback, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
 import { dirtyEdit, registerEditorGuard, type FileEdit } from '../../src/file-editor-state';
 import { PluginGate, usePlugin } from '../../src/plugin-context';
+import { PluginBoundary } from '../../src/plugin-boundary';
+import { pluginGeneration } from '../../src/plugin-generation';
 import { ProjectNavigator } from '../../src/ProjectNavigator';
 import { transferBytes, uploadFiles, type UploadProgress } from '../../src/transfers';
 import { BinaryPreview } from '../../src/BinaryPreview';
 import { ThreeWayMerge } from '../../src/ThreeWayMerge';
 import { clipboardFiles } from '../../src/clipboard-files';
 import { NativeOpenButtons } from '../../src/NativeIntegration';
-import { DebugPanel } from '../code-checks/client';
 import { applyTextEdits, type LspPosition, type LspRange } from '../../shared/language-service';
-const CodeEditor = lazy(() =>
-  import('../../src/CodeEditor').then((module) => ({ default: module.CodeEditor })),
-);
+const loadDebugPanel = () =>
+  import('../code-checks/client').then((module) => ({ default: module.DebugPanel }));
+const loadCodeEditor = () =>
+  import('../../src/CodeEditor').then((module) => ({ default: module.CodeEditor }));
 
 type Entry = { name: string; size: number; directory: boolean; symlink: boolean; modified: number };
 function DraftDialog({
@@ -117,6 +120,8 @@ export function FileBrowser({
   const [diagnosticNote, setDiagnosticNote] = useState('');
   const cursor = useRef<LspPosition>({ line: 0, character: 0 });
   const [languageReady, setLanguageReady] = useState<boolean | null>(null);
+  const languageLifetime = useSyncExternalStore(pluginGeneration.subscribe,
+    () => pluginGeneration.snapshot('official:code-checks'), () => '');
   const [languageError, setLanguageError] = useState('');
   const [languagePending, setLanguagePending] = useState<{ token: string; needsReview: boolean }[]>([]);
   const [languageRefresh, setLanguageRefresh] = useState(0);
@@ -160,7 +165,7 @@ export function FileBrowser({
     ).then((value) => { if (alive) { setLanguageReady(value.installed); setLanguagePending(value.pending || []); } })
       .catch((error) => { if (alive) setLanguageError((error as Error).message); });
     return () => { alive = false; abort.abort(); };
-  }, [edit?.id, edit?.path, vm.id, languagePlugin, languageRefresh]);
+  }, [edit?.id, edit?.path, vm.id, languagePlugin, languageLifetime, languageRefresh]);
   const [leaveKind, setLeaveKind] = useState<'leave' | 'replace' | 'discard' | null>(null);
   const history = useRemote<{
     items: {
@@ -528,10 +533,12 @@ export function FileBrowser({
     >
       <p className="muted">拖入文件即可上传；聚焦此面板后按 Ctrl+V 可粘贴剪贴板中的文件或图片。</p>
       <PluginGate id="project-search">
-        <details className="feature-card project-tree-disclosure" open>
-          <summary>项目文件树与全文搜索</summary>
-          <ProjectNavigator id={vm.id} request={request} open={(path, line) => void openPath(path, line)} />
-        </details>
+        <PluginBoundary identity="official:project-search" request={request} label="项目文件搜索">
+          {(scopedRequest) => <details className="feature-card project-tree-disclosure" open>
+            <summary>项目文件树与全文搜索</summary>
+            <ProjectNavigator id={vm.id} request={scopedRequest} open={(path, line) => void openPath(path, line)} />
+          </details>}
+        </PluginBoundary>
       </PluginGate>
       <div className="file-tools">
         <button
@@ -613,7 +620,9 @@ export function FileBrowser({
       </div>
       <Feedback error={action.error || error || draftError} message={action.message} />
       <PluginGate id="sync">
-        <NativeOpenButtons request={request} vmId={vm.id} projectId={projectId} path={edit?.path || path} />
+        <PluginBoundary identity="official:sync" request={request} label="同步目录入口">
+          {(scopedRequest) => <NativeOpenButtons request={scopedRequest} vmId={vm.id} projectId={projectId} path={edit?.path || path} />}
+        </PluginBoundary>
       </PluginGate>
       {history.data?.items.length ? (
         <details className="feature-card">
@@ -843,17 +852,22 @@ export function FileBrowser({
               onChange={(e) => setEdit({ ...edit, path: e.target.value })}
             />
           </label>
-          <Suspense fallback={<p className="muted">正在加载编辑器…</p>}>
-            <CodeEditor
-              key={edit.id}
-              path={edit.path}
-              value={edit.content}
-              change={(content) => { setEdit({ ...edit, content }); setCompletions([]); setDefinitions([]); }}
-              save={() => void save()}
-              line={line.path === edit.path ? line.number : undefined}
-              positionChange={(position) => { cursor.current = position; }}
-            />
-          </Suspense>
+          <PluginBoundary identity="official:files" request={request} label="文件编辑器">
+            {(_request, lifetime) => {
+              const CodeEditor = embeddedPluginComponent('files', 'code-editor', lifetime, loadCodeEditor);
+              return <Suspense fallback={<p className="muted">正在加载编辑器…</p>}>
+                <CodeEditor
+                  key={edit.id}
+                  path={edit.path}
+                  value={edit.content}
+                  change={(content) => { setEdit({ ...edit, content }); setCompletions([]); setDefinitions([]); }}
+                  save={() => void save()}
+                  line={line.path === edit.path ? line.number : undefined}
+                  positionChange={(position) => { cursor.current = position; }}
+                />
+              </Suspense>;
+            }}
+          </PluginBoundary>
           {/\.(?:[cm]?[jt]sx?|py)$/i.test(edit.path) && (
             <PluginGate id="code-checks">
               <div className="feature-card">
@@ -924,8 +938,15 @@ export function FileBrowser({
             </PluginGate>
           )}
           {/\.py$/i.test(edit.path) && <PluginGate id="code-checks">
-            <DebugPanel vmId={vm.id} request={request} path={edit.path}
-              dirty={!!edit.fresh || dirtyEdit(edit)} openPath={openPath} />
+            <PluginBoundary identity="official:code-checks" request={request} label="Python 调试">
+              {(scopedRequest, lifetime) => {
+                const DebugPanel = embeddedPluginComponent('code-checks', 'debug-panel', lifetime, loadDebugPanel);
+                return <Suspense fallback={<p role="status">正在加载调试面板…</p>}>
+                  <DebugPanel vmId={vm.id} request={scopedRequest} path={edit.path}
+                    dirty={!!edit.fresh || dirtyEdit(edit)} openPath={openPath} />
+                </Suspense>;
+              }}
+            </PluginBoundary>
           </PluginGate>}
           <div className="feature-actions">
             <PluginGate id="code-checks">

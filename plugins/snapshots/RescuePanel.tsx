@@ -2,13 +2,13 @@ import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
 import { DEFAULT_RESCUE_COMMAND } from '../../shared/rescue';
-import type { Rescue } from '../../server/rescue';
+import type { RescueView } from './view-types';
 import type { SandboxArtifact } from '../../shared/sandbox';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import { saveBlob, saveText } from '../../src/export-file';
 
 export function RescuePanel({ vm, request, refresh }: FeatureProps) {
-  const remote = useRemote<ReturnType<Rescue['view']>>(request, `/vms/${vm.id}/rescue`, !vm.sandbox, 2000);
+  const remote = useRemote<RescueView>(request, `/vms/${vm.id}/rescue`, !vm.sandbox, 2000);
   const action = useAction(),
     cancellation = useAction();
   const [command, setCommand] = useState(DEFAULT_RESCUE_COMMAND),

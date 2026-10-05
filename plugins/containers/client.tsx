@@ -1,39 +1,31 @@
 import { Download, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
-import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
 import { stopped } from '../../src/guest-state';
 
-export type DockerItem = Record<string, string>;
-type TemplateInfo = {
-  id: string; version: string; name: string; description: string; documentationURL: string;
-  reference: string; sourceMatched: boolean; projectId: string;
-  imageVariant?: { default: string; choices: string[] };
-  optionalPaths: string[]; files: string[];
-};
+type ContainersResponse = OperationResponse<'containers.legacy.get.vms.vmId.containers'>;
+type ContainersView = Extract<ContainersResponse, { supported: boolean }>;
+type TemplateMetadata = Extract<ContainersResponse, { reference: string }>;
+type TemplateInfo = TemplateMetadata & { projectId: string };
 
 export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
-  const remote = useRemote<{
-      supported: boolean;
-      installed: boolean;
-      available?: boolean;
-      privateNetwork?: boolean;
-      runtime?: {present:boolean;running:boolean;valid:boolean;reason:string|null};
-      error?: string;
-      version?: string;
-      compose?: string;
-      containers: DockerItem[];
-      images: DockerItem[];
-      volumes: DockerItem[];
-      files: string[];
-      devcontainer?: { cliInstalled: boolean; version?: string; files: string[]; error?: string };
-      templates?: { id: string; name: string; description: string }[];
-      job: JobView | null;
-    }>(request, `/vms/${vm.id}/containers`, vm.status === 'running', 8000),
+  const remote = useRemote<ContainersView>(request, `/vms/${vm.id}/containers`, vm.status === 'running', 8000),
     action = useAction();
+  const view = remote.data;
+  const details = view && 'devcontainer' in view ? view : null;
+  const devcontainer = details?.devcontainer;
+  const available = view && 'available' in view ? view.available : false;
+  const privateNetwork = view && 'privateNetwork' in view ? view.privateNetwork : false;
+  const runtime = view && 'runtime' in view ? view.runtime : undefined;
+  const error = view && 'error' in view ? view.error : undefined;
+  const devcontainerError = devcontainer && 'error' in devcontainer ? devcontainer.error : undefined;
+  const version = view && 'version' in view ? view.version : undefined;
+  const compose = view && 'compose' in view ? view.compose : undefined;
+  const devcontainerVersion = devcontainer && 'version' in devcontainer ? devcontainer.version : undefined;
   const [image, setImage] = useState(''),
     [file, setFile] = useState('compose.yaml'),
     [dockerfile, setDockerfile] = useState('Dockerfile'),
@@ -42,7 +34,7 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
     [templateVariant, setTemplateVariant] = useState(''),
     [templateOmit, setTemplateOmit] = useState<string[]>([]),
     [logs, setLogs] = useState('');
-  const output = useRemote<{ log: string }>(
+  const output = useRemote<Extract<ContainersResponse, { log: string }>>(
     request,
     `/vms/${vm.id}/containers?logs=${encodeURIComponent(logs)}`,
     !!logs && vm.status === 'running',
@@ -54,8 +46,9 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
       output.reload();
     });
   const inspectTemplate = () => action.run(async (signal) => {
-    const info = await request<Omit<TemplateInfo, 'projectId'>>(
+    const info = await request<TemplateMetadata>(
       `/vms/${vm.id}/containers?template=${encodeURIComponent(templateId)}`, 'GET', undefined, signal);
+    signal.throwIfAborted();
     setTemplateInfo({ ...info, projectId: projectId || 'default' });
     setTemplateVariant(info.imageVariant?.default || '');
     setTemplateOmit(info.optionalPaths);
@@ -68,13 +61,13 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
       <div className="panel-heading">
         <div>
           <h3>Docker / Compose</h3>
-          <p>{remote.data?.privateNetwork ? '管理所选项目的私有容器和镜像。' : '管理此实例内的容器、镜像和项目。'}</p>
+          <p>{privateNetwork ? '管理所选项目的私有容器和镜像。' : '管理此实例内的容器、镜像和项目。'}</p>
         </div>
         <button className="icon-button" aria-label="刷新容器" onClick={remote.reload}>
           <RefreshCw size={16} />
         </button>
       </div>
-      <Feedback error={action.error || remote.error || output.error || remote.data?.error || remote.data?.devcontainer?.error} />
+      <Feedback error={action.error || remote.error || output.error || error || devcontainerError} />
       {vm.status !== 'running'
         ? stopped
         : remote.data && (
@@ -83,28 +76,28 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
                 <p className="subtle-note">容器面板支持 Debian 和 Ubuntu 实例。</p>
               ) : (
                 <>
-                  {!remote.data.available && (
+                  {!available && (
                     <button
                       className="primary compact"
                       disabled={busy}
-                      onClick={() => void run({ action: remote.data?.privateNetwork && remote.data.installed ? 'start-project-runtime' : 'install' })}
+                      onClick={() => void run({ action: privateNetwork && remote.data?.installed ? 'start-project-runtime' : 'install' })}
                     >
-                      {remote.data.privateNetwork && remote.data.installed ? '启动项目 Docker 环境' : '安装并启动 Docker / Compose'}
+                      {privateNetwork && remote.data.installed ? '启动项目 Docker 环境' : '安装并启动 Docker / Compose'}
                     </button>
                   )}
-                  {remote.data.privateNetwork && remote.data.runtime?.running && (
+                  {privateNetwork && runtime?.running && (
                     <button className="text-button" disabled={busy} onClick={() => {
                       if (confirm('停止此项目的所有容器和 Docker 环境？容器记录与数据卷会保留。'))
                         void run({action:'stop-project-runtime'});
                     }}>停止项目 Docker 环境</button>
                   )}
-                  {remote.data.privateNetwork && (
+                  {privateNetwork && (
                     <p className="subtle-note">容器使用本项目回环网络。Compose 服务需设置 network_mode: host，并使用应用自身的端口；镜像先通过下方入口预取。</p>
                   )}
-                  {remote.data.available && (
+                  {available && (
                     <>
                       <p className="subtle-note">
-                        Docker {remote.data.version} · {remote.data.compose || 'Compose 未安装'}
+                        Docker {version} · {compose || 'Compose 未安装'}
                       </p>
                       <h4>容器</h4>
                       {!remote.data.containers.length && (
@@ -197,19 +190,19 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
                       <div className="feature-card">
                         <h4>Dev Container</h4>
                         <p className="subtle-note">
-                          {remote.data.devcontainer?.cliInstalled
-                            ? `Dev Container CLI ${remote.data.devcontainer.version}`
+                          {devcontainer?.cliInstalled
+                            ? `Dev Container CLI ${devcontainerVersion}`
                             : 'devcontainer.json 需要先安装 Dev Container CLI。'}
                         </p>
-                        {!remote.data.devcontainer?.cliInstalled &&
+                        {!devcontainer?.cliInstalled &&
                           <button className="secondary compact" disabled={busy}
                             onClick={() => void run({ action: 'install-devcontainer-cli' })}>
                             安装 Dev Container CLI
                           </button>}
-                        {(remote.data.devcontainer?.files.some((path) => path.endsWith('devcontainer.json')))
+                        {(devcontainer?.files.some((path) => path.endsWith('devcontainer.json')))
                           ? <div className="feature-actions">
                               <button className="primary compact"
-                                disabled={busy || !remote.data.devcontainer?.cliInstalled}
+                                disabled={busy || !devcontainer?.cliInstalled}
                                 onClick={() => void run({ action: 'devcontainer-up' })}>
                                 按 devcontainer.json 创建或启动
                               </button>
@@ -234,13 +227,13 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
                             setTemplateId(event.target.value);
                             setTemplateInfo(null);
                           }}>
-                            {(remote.data.templates || []).map((template) =>
+                            {(details?.templates || []).map((template) =>
                               <option value={template.id} key={template.id}>{template.name} · {template.description}</option>)}
                           </select>
                         </label>
-                        <button className="secondary compact" disabled={busy || !remote.data.devcontainer?.cliInstalled}
+                        <button className="secondary compact" disabled={busy || !devcontainer?.cliInstalled}
                           onClick={() => void inspectTemplate()}>校验模板来源</button>
-                        {!remote.data.devcontainer?.cliInstalled &&
+                        {!devcontainer?.cliInstalled &&
                           <p className="muted">请先安装上方的 Dev Container CLI。</p>}
                         {selectedTemplate && <>
                           <p>{selectedTemplate.name} · {selectedTemplate.version}</p>
@@ -261,10 +254,10 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
                                 event.target.checked ? current.filter((item) => item !== path) : [...current, path])} />
                             包含可选文件 {path}
                           </label>)}
-                          {(remote.data.devcontainer?.files.length || 0) > 0 &&
+                          {(devcontainer?.files.length || 0) > 0 &&
                             <p className="subtle-note">当前项目已有 Dev Container 或 Dockerfile 文件；请切换到空项目目录再应用模板。</p>}
                           <button className="primary compact"
-                            disabled={busy || !!remote.data.devcontainer?.files.length}
+                            disabled={busy || !!devcontainer?.files.length}
                             onClick={() => void run({ action: 'template-apply', templateId,
                               version: selectedTemplate.version,
                               ...(templateVariant ? { imageVariant: templateVariant } : {}),

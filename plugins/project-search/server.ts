@@ -1,20 +1,21 @@
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as projectSearchServices } from './services.ts';
+import { services as projectsServices } from '../projects/services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 
 import { ProjectFiles } from '../../server/project-files.ts';
 export async function activate(host: PluginContext) {
-  host.provide(projectSearchServices.projectFiles, new ProjectFiles(host.vm, host.workspaces));
+  host.provide(projectSearchServices.projectFiles, new ProjectFiles(host.vm, host.use(projectsServices.workspaces)));
 }
 export async function route(
   this: PluginContext,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  _body: Parameters<PluginRoute>[3],
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -27,13 +28,13 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'project-files' && req.method === 'GET') {
       send(
-        await this.execution.run({ vmId: id, projectId: this.workspaces.projects.current(id), signal },
-          (execution) => this.projectFiles.scan(
-          id,
-          url.searchParams.get('q') || '',
-          url.searchParams.get('content') === '1',
-          execution.signal,
-        )),
+        await this.execution.run({ vmId: id, projectId: this.use(projectsServices.workspaces).projects.current(id), signal },
+          (execution) => this.use(projectSearchServices.projectFiles).scan(
+            id,
+            url.searchParams.get('q') || '',
+            url.searchParams.get('content') === '1',
+            execution.signal,
+          )),
       );
       return true;
     }
@@ -42,7 +43,7 @@ export async function route(
 }
 
 /** Exact implemented HTTP operations; declarations alone never publish a handler. */
-export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+export const httpHandlers: Record<string, PluginRoute> = {
   "legacy.get.vms.vmId.project-files": route,
 };
 

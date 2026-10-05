@@ -37,8 +37,9 @@ export class ServiceHealth {
   private blockedChecks = new Map<string, Set<string>>();
   private pending?: Promise<void>;
   private closed = false;
-  private timer: ScheduleHandle;
-  private removeAction: () => void;
+  private timer?: ScheduleHandle;
+  private removeAction?: () => void;
+  private initialized = false;
   private onChange = () => {
     for (const key of this.states.keys())
       if (!this.machines.live.has(key.split(':')[0])) {
@@ -55,18 +56,32 @@ export class ServiceHealth {
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
+    options: { deferInitialization?: boolean } = {},
   ) {
-    this.timer = scheduler.register({ owner: 'plugin:service-health', label: '项目服务健康检查', intervalMs: 5000,
-      overlap: 'skip', run: async () => {
-      if (!this.pending)
-        this.pending = this.tick()
-          .finally(() => {
-            this.pending = undefined;
-          });
-      await this.pending;
-    } });
-    machines.on('change', this.onChange);
-    this.removeAction = workspaces.beforeAction((id, action, service) => this.expect(id, action, service));
+    if (!options.deferInitialization) this.init();
+  }
+  init() {
+    if (this.closed) throw new AppError('服务健康检查已关闭', 503);
+    if (this.initialized) return;
+    try {
+      this.removeAction = this.workspaces.beforeAction((id, action, service) => this.expect(id, action, service));
+      this.machines.on('change', this.onChange);
+      this.timer = scheduler.register({ owner: 'plugin:service-health', label: '项目服务健康检查', intervalMs: 5000,
+        overlap: 'skip', run: async () => {
+          if (!this.pending)
+            this.pending = this.tick()
+              .finally(() => {
+                this.pending = undefined;
+              });
+          await this.pending;
+        } });
+      this.initialized = true;
+    } catch (error) {
+      this.machines.off('change', this.onChange);
+      this.removeAction?.();
+      this.removeAction = undefined;
+      throw error;
+    }
   }
   async expect(id: string, action: 'start' | 'stop', service?: string) {
     const key = this.workspaces.projects?.key(id) || id;
@@ -285,9 +300,10 @@ export class ServiceHealth {
   async close() {
     this.closed = true;
     this.machines.off('change', this.onChange);
-    this.removeAction();
+    this.removeAction?.();
+    this.removeAction = undefined;
     for (const abort of this.checks.values()) abort.abort();
-    await this.timer.close();
+    await this.timer?.close();
     await this.pending;
     await this.jobs.close();
   }

@@ -1,3 +1,5 @@
+import { services as secretsServices } from '../secrets/services.ts';
+import { services as networkServices } from '../network/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -11,11 +13,7 @@ import { AppError } from '../../shared/errors.ts';
 import { z } from 'zod';
 
 import { Workspaces } from '../../server/workspaces.ts';
-import {
-  ProjectDirectoryMigrations,
-  directoryMigrationApplySchema,
-  directoryMigrationPreviewSchema,
-} from '../../server/project-directory-migration.ts';
+import { ProjectDirectoryMigrations } from '../../server/project-directory-migration.ts';
 
 const directoryMigrations = new WeakMap<PluginContext, ProjectDirectoryMigrations>();
 
@@ -23,21 +21,21 @@ export async function activate(host: PluginContext) {
   const m = host.vm;
   host.provide(projectsServices.workspaces, new Workspaces(m, {
     get secrets() {
-      return host.secrets;
+      return host.optional(secretsServices.secrets);
     },
     get network() {
-      return host.network;
+      return host.optional(networkServices.network);
     },
   }));
-  directoryMigrations.set(host, new ProjectDirectoryMigrations(m, host.workspaces));
+  directoryMigrations.set(host, new ProjectDirectoryMigrations(m, host.use(projectsServices.workspaces)));
   host.onDispose(() => {
     directoryMigrations.delete(host);
   });
-  host.registerJobs(host.workspaces.jobs, (job) => {
+  host.registerJobs(host.use(projectsServices.workspaces).jobs, (job) => {
     if (!job.action) throw new AppError('请回到原功能页面重新执行');
     const [action, service] = job.action.split(':');
     return retryInProject(host, job, () =>
-      host.workspaces.run(
+      host.use(projectsServices.workspaces).run(
         retryTarget(job),
         z.enum(['setup', 'start', 'stop', 'terminal']).parse(action),
         service,
@@ -50,7 +48,7 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: (req: IncomingMessage, signal?: AbortSignal) => Promise<any>,
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -65,7 +63,7 @@ export async function route(
     if (req.method === 'GET') return send(await service.view(id));
     if (req.method === 'POST') {
       const input = httpRouteRequests["projects.legacy.post.vms.vmId.project-directory-migration"]
-        .parse(await body(req));
+        .parse(await body(req, signal));
       return send(
         input.action === 'preview'
           ? await service.preview(id, signal)
@@ -76,18 +74,18 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'projects') {
       if (req.method === 'GET') {
-        send(await this.workspaces.projects.list(id));
+        send(await this.use(projectsServices.workspaces).projects.list(id));
         return true;
       }
       if (req.method === 'POST') {
         const input = httpRouteRequests["projects.legacy.post.vms.vmId.projects"]
-          .parse(await body(req));
+          .parse(await body(req, signal));
         send(
           input.action === 'create'
-            ? await this.workspaces.projects.create(id, input.name, async () => {
-                await this.workspaces.save(id, input.config);
+            ? await this.use(projectsServices.workspaces).projects.create(id, input.name, async () => {
+                await this.use(projectsServices.workspaces).save(id, input.config);
               })
-            : await this.workspaces.projects.update(
+            : await this.use(projectsServices.workspaces).projects.update(
                 id,
                 input.projectId,
                 input.action === 'rename' ? input.name : undefined,
@@ -100,24 +98,24 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'project') {
       if (req.method === 'GET') {
-        send(await this.workspaces.view(id));
+        send(await this.use(projectsServices.workspaces).view(id));
         return true;
       }
       if (req.method === 'PUT') {
-        send(await this.workspaces.save(id, await body(req)));
+        send(await this.use(projectsServices.workspaces).save(id, await body(req, signal)));
         return true;
       }
       if (req.method === 'POST') {
         const input = httpRouteRequests["projects.legacy.post.vms.vmId.project"]
-          .parse(await body(req));
-        send(await this.workspaces.run(id, input.action, input.service), 202);
+          .parse(await body(req, signal));
+        send(await this.use(projectsServices.workspaces).run(id, input.action, input.service), 202);
         return true;
       }
     }
   }
   if (parts.length === 4) {
     if (action === 'project-runtime' && req.method === 'GET') {
-      send(await this.workspaces.runtime(id, signal));
+      send(await this.use(projectsServices.workspaces).runtime(id, signal));
       return true;
     }
   }
