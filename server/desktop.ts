@@ -14,7 +14,7 @@ import {
 import { desktopCommands, imeInstall } from './desktop-guest.ts';
 import { guestTask } from './guest-task.ts';
 import { ReadOnlyRfb } from './readonly-rfb.ts';
-import { SOCKET_CLIENT_BYTES, SOCKET_SERVER_BYTES } from '../shared/contracts/websocket.ts';
+import { closeSocket, SOCKET_CLIENT_BYTES, SOCKET_SERVER_BYTES } from '../shared/contracts/websocket.ts';
 import { SingleAppWindows } from './single-app-windows.ts';
 import { projectPrivateValues } from './workspaces.ts';
 import { DesktopBindings, desktopServiceStop, type DesktopBinding } from './desktop-binding.ts';
@@ -337,7 +337,7 @@ export class Desktops {
       if (!binary || bytes > SOCKET_CLIENT_BYTES) {
         // Destroy before ws's stream listener sees this message; rejected bytes never reach SSH.
         browser?.destroy();
-        socket.close(binary ? 1009 : 1003, binary ? 'Message too large' : 'Binary RFB required');
+        closeSocket(socket, binary ? 'messageTooLarge' : 'binaryRfbRequired');
       }
     };
     socket.prependListener('message', binaryFrame);

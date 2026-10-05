@@ -1,6 +1,21 @@
 /** Conservative JSON Schema conversion: an unsupported or absent shape stays unknown. */
 type Schema = Record<string, any> | boolean;
 type ReferenceResolver = (reference: string) => string | undefined;
+/** Reject unbounded wire values before generating either HTTP or WebSocket clients. */
+export function requireWireShape(schema: unknown, path: string) {
+  if (schema === false) return;
+  if (schema === true || !schema || typeof schema !== 'object') throw new Error('Unbounded wire schema: ' + path);
+  const value = schema as Record<string, any>;
+  if (value.not && typeof value.not === 'object' && Object.keys(value.not).length === 0) return;
+  if (!value.type && !value.$ref && !('const' in value) && !value.enum && !value.anyOf && !value.oneOf && !value.allOf)
+    throw new Error('Missing wire shape: ' + path);
+  for (const key of ['properties', '$defs', 'patternProperties'])
+    for (const [name, nested] of Object.entries(value[key] || {})) requireWireShape(nested, path + '/' + key + '/' + name);
+  for (const key of ['anyOf', 'oneOf', 'allOf', 'prefixItems'])
+    for (const [index, nested] of (value[key] || []).entries()) requireWireShape(nested, path + '/' + key + '/' + index);
+  for (const key of ['items', 'additionalProperties'])
+    if (value[key] !== undefined) requireWireShape(value[key], path + '/' + key);
+}
 export function schemaType(schema: Schema | undefined, root: Schema = schema || {}, references = new Set<string>(), resolveReference?: ReferenceResolver): string {
   if (schema === false) return 'never';
   if (!schema || schema === true) return 'unknown';

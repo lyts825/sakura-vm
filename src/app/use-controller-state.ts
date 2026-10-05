@@ -5,6 +5,7 @@ import { controllerSession, RefreshQueue } from '../controller-session';
 import { watchController } from '../controller-watch';
 import { ResponseOrder } from '../request-order';
 import { pluginGeneration } from '../plugin-generation';
+import { socketPath } from '../../shared/socket-client.ts';
 
 export function useControllerState(setSelectedRaw: Dispatch<SetStateAction<string>>) {
   const [vms, setVms] = useState<VMView[]>([]),
@@ -49,7 +50,8 @@ export function useControllerState(setSelectedRaw: Dispatch<SetStateAction<strin
       window,
       socket: (credential) =>
         new WebSocket(
-          `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/events?token=${encodeURIComponent(credential)}`,
+          `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}` +
+            socketPath('events', {}, { token: credential }),
         ),
     });
     watcher.current = connection;

@@ -1,4 +1,5 @@
 import type RFB from '@novnc/novnc';
+import { socketPath } from '../shared/socket-client.ts';
 import { connectDesktop } from './desktop-connection';
 import { assertClipboardTransfer, installClipboardProtection,
   subscribeClipboardProtection, writeProtectedClipboard } from './clipboard-protection';
@@ -54,7 +55,7 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
     try {
       const { default: RFB } = await import('@novnc/novnc');
       const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${scheme}//${location.host}/ws/${vmId}/desktop?token=${encodeURIComponent(token)}&app=${encodeURIComponent(session.id)}`;
+      const url = `${scheme}//${location.host}` + socketPath('desktop', { vmId }, { token, app: session.id });
       const context = { app: 'desktop' as const, vmId };
       const sessionClipboard = session.clipboard || { copy: true, paste: true };
       document.body.dataset.clipboardApp = 'desktop';

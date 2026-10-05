@@ -1,25 +1,11 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { operationEntries } from '../server/operation-catalog.ts';
-import { schemaTypeRegistry } from './json-schema-types.ts';
+import { requireWireShape as requireShape, schemaTypeRegistry } from './json-schema-types.ts';
 
 const checking = process.argv.includes('--check');
 const entries = operationEntries.filter(entry => entry.declaration.method !== 'UPGRADE');
 const types = schemaTypeRegistry();
-function requireShape(schema: unknown, path: string) {
-  if (schema === false) return;
-  if (schema === true || !schema || typeof schema !== 'object') throw new Error('Unbounded wire schema: ' + path);
-  const value = schema as Record<string, any>;
-  if (value.not && typeof value.not === 'object' && Object.keys(value.not).length === 0) return;
-  if (!value.type && !value.$ref && !('const' in value) && !value.enum && !value.anyOf && !value.oneOf && !value.allOf)
-    throw new Error('Missing wire shape: ' + path);
-  for (const key of ['properties', '$defs', 'patternProperties'])
-    for (const [name, nested] of Object.entries(value[key] || {})) requireShape(nested, path + '/' + key + '/' + name);
-  for (const key of ['anyOf', 'oneOf', 'allOf', 'prefixItems'])
-    for (const [index, nested] of (value[key] || []).entries()) requireShape(nested, path + '/' + key + '/' + index);
-  for (const key of ['items', 'additionalProperties'])
-    if (value[key] !== undefined) requireShape(value[key], path + '/' + key);
-}
 for (const entry of entries) if (entry.responseContract?.kind === 'json')
   requireShape(entry.response, entry.declaration.id);
 for (const entry of entries) {

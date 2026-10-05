@@ -26,6 +26,42 @@ export const socketFrameSchemas = {
   logs: { client: z.never(), server: data },
 } as const;
 
+export type JsonSocketChannel = keyof typeof socketFrameSchemas;
+/** A fragment of the ordered RFB byte stream, never a complete-packet guarantee. */
+export type RfbStreamFragment = Uint8Array;
+export type SocketClientMessage<C extends SocketChannel> = C extends JsonSocketChannel
+  ? z.infer<(typeof socketFrameSchemas)[C]['client']> : RfbStreamFragment;
+export type SocketServerMessage<C extends SocketChannel> = C extends JsonSocketChannel
+  ? z.infer<(typeof socketFrameSchemas)[C]['server']> : RfbStreamFragment;
+export type TerminalReady = Extract<SocketServerMessage<'terminal'>, { type: 'ready' }>['data'];
+
+/** These are application close frames. Empty close() and terminate() have no wire code/reason. */
+export const socketCloseReasons = {
+  messageTooLarge: { code: 1009, reason: 'Message too large' },
+  unsupportedMessageType: { code: 1003, reason: 'Unsupported message type' },
+  readOnlyChannel: { code: 1008, reason: 'Read-only channel' },
+  invalidMessage: { code: 1008, reason: 'Invalid message' },
+  invalidTerminalInput: { code: 1008, reason: 'invalid message' },
+  readOnlyTerminal: { code: 1008, reason: 'Read-only terminal' },
+  pluginRevoked: { code: 1008, reason: 'Plugin generation revoked' },
+  incidentLockdown: { code: 1008, reason: 'Incident lockdown' },
+  slowConsumer: { code: 1008, reason: 'slow consumer' },
+  invalidServerMessage: { code: 1011, reason: 'Invalid server message' },
+  desktopUnavailable: { code: 1011, reason: 'Desktop unavailable' },
+  binaryRfbRequired: { code: 1003, reason: 'Binary RFB required' },
+} as const;
+export type SocketCloseReason = keyof typeof socketCloseReasons;
+export const socketUpgradeStatuses = { accepted: 101, locked: 423, refused: 403 } as const;
+export function closeSocket(socket: { close(code: number, reason: string): void }, reason: SocketCloseReason) {
+  const frame = socketCloseReasons[reason];
+  socket.close(frame.code, frame.reason);
+}
+export const readOnlyRfbPolicy = {
+  clientPolicy: 'read-only-filter', versions: ['003.007', '003.008'], securityType: 1,
+  clientMessageTypes: [0, 2, 3, 150, 248], maxPendingBytes: 65_536, maxEncodings: 256,
+  maxFencePayloadBytes: 64, fenceFlagsMask: 3, strippedEncoding: 0xc0a1e5ce,
+} as const;
+
 /** Binary desktop messages are ordered RFB byte-stream fragments, not JSON or one packet per frame. */
 export const socketContractSchema = z.object({
   version: z.literal(1), encoding: z.enum(['json', 'binary']), protocol: z.enum(['sakura-json-v1', 'rfb-3.7-or-3.8']),
@@ -33,6 +69,24 @@ export const socketContractSchema = z.object({
   serverMaxBytes: z.number().int().positive(), clientMessages: z.array(z.string()), serverMessages: z.array(z.string()),
   readOnly: z.boolean(),
   clientSchema: z.record(z.string(), jsonValueSchema).optional(), serverSchema: z.record(z.string(), jsonValueSchema).optional(),
+  authentication: z.object({
+    credential: z.literal('query.token'), sameOrigin: z.literal(true), session: z.literal('unlocked'),
+    local: z.literal('controller-token'), accountRoles: z.array(z.enum(['owner', 'viewer'])),
+    viewerGrant: z.enum(['none', 'vm', 'terminal']),
+  }).strict(),
+  lifecycle: z.object({
+    upgrade: z.object({ accepted: z.literal(101), locked: z.literal(423), refused: z.literal(403) }).strict(),
+    errorMessage: z.enum(['none', 'terminal-error', 'rfb-stream']),
+    closeReasons: z.array(z.enum(Object.keys(socketCloseReasons) as [SocketCloseReason, ...SocketCloseReason[]])),
+    emptyClose: z.array(z.string()), terminate: z.array(z.string()), replay: z.literal(false),
+  }).strict(),
+  rfb: z.object({ clientPolicy: z.enum(['passthrough', 'read-only-filter']),
+    // Only the read-only filter constrains negotiation and parses client packets.
+    versions: z.array(z.string()).optional(), securityType: z.literal(1).optional(),
+    clientMessageTypes: z.array(z.number().int()).optional(), maxPendingBytes: z.number().int().optional(),
+    maxEncodings: z.number().int().optional(), maxFencePayloadBytes: z.number().int().optional(),
+    fenceFlagsMask: z.number().int().optional(), strippedEncoding: z.number().int().optional(),
+  }).strict().optional(),
 }).strict();
 export type SocketContract = z.infer<typeof socketContractSchema>;
 export const socketContracts: Readonly<Record<SocketChannel, SocketContract>> = Object.fromEntries(socketChannels.map(channel => {
@@ -42,10 +96,28 @@ export const socketContracts: Readonly<Record<SocketChannel, SocketContract>> = 
     clientMessages: binary ? ['rfb-stream'] : channel === 'terminal' ? ['input', 'resize'] : [],
     serverMessages: binary ? ['rfb-stream'] : channel === 'events' ? ['change'] : channel === 'logs' ? ['data'] : ['ready', 'data', 'error', 'exit'],
     readOnly: channel !== 'terminal' && channel !== 'desktop',
+    authentication: { credential: 'query.token', sameOrigin: true, session: 'unlocked', local: 'controller-token',
+      accountRoles: channel === 'terminal-view' ? ['viewer'] : channel === 'desktop-view' ? ['owner', 'viewer'] : ['owner'],
+      viewerGrant: channel === 'terminal-view' ? 'terminal' : channel === 'desktop-view' ? 'vm' : 'none' },
+    lifecycle: { upgrade: socketUpgradeStatuses, errorMessage: binary ? 'rfb-stream' :
+      channel === 'terminal' || channel === 'terminal-view' ? 'terminal-error' : 'none',
+      closeReasons: ['messageTooLarge', 'unsupportedMessageType', 'pluginRevoked',
+        ...(channel === 'events' ? [] : ['incidentLockdown']),
+        ...(binary ? ['binaryRfbRequired', 'desktopUnavailable'] : ['slowConsumer', 'invalidServerMessage',
+          ...(channel === 'terminal' ? ['invalidMessage', 'invalidTerminalInput'] : ['readOnlyChannel']),
+          ...(channel === 'terminal-view' ? ['readOnlyTerminal'] : [])])],
+      emptyClose: ['host-shutdown', ...(binary ? ['ssh-close-or-error', 'rfb-stream-close-or-error'] :
+        channel === 'terminal' || channel === 'terminal-view' ? ['terminal-setup-failure', 'ssh-close', 'terminal-exit'] : [])],
+      terminate: ['session-lock', 'connection-reset', 'account-or-credential-revoked', 'account-expired', 'admission-failed',
+        ...(channel === 'terminal-view' ? ['terminal-grant-revoked-or-expired'] : []),
+        ...(binary ? ['desktop-session-invalidated'] : [])], replay: false },
+    ...(binary ? { rfb: channel === 'desktop' ? { clientPolicy: 'passthrough' } : readOnlyRfbPolicy } : {}),
     ...(!binary ? { clientSchema: z.toJSONSchema(socketFrameSchemas[channel as keyof typeof socketFrameSchemas].client),
       serverSchema: z.toJSONSchema(socketFrameSchemas[channel as keyof typeof socketFrameSchemas].server) } : {}) }];
 })) as Record<SocketChannel, SocketContract>;
 
+export function parseSocketInput<C extends SocketChannel>(channel: C, text: string):
+  C extends JsonSocketChannel ? SocketClientMessage<C> : never;
 export function parseSocketInput(channel: SocketChannel, text: string) {
   if (channel === 'desktop' || channel === 'desktop-view') throw new Error('Desktop uses binary RFB frames');
   return socketFrameSchemas[channel].client.parse(JSON.parse(text));

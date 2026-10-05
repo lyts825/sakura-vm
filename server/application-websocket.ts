@@ -11,10 +11,14 @@ import { PORT } from './paths.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import {
   encodeSocketOutput,
+  closeSocket,
   parseSocketInput,
+  socketUpgradeStatuses,
   SOCKET_CLIENT_BYTES,
   SOCKET_SERVER_BYTES,
   type SocketChannel,
+  type JsonSocketChannel,
+  type SocketServerMessage,
 } from '../shared/contracts/websocket.ts';
 
 /** Only this explicit domain code has a public recovery instruction; never expose exception messages. */
@@ -83,14 +87,14 @@ export function attachApplicationWebSocket(context: SocketContext) {
     try {
       session.requireUnlocked();
     } catch {
-      socket.end('HTTP/1.1 423 Locked\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      socket.end('HTTP/1.1 ' + socketUpgradeStatuses.locked + ' Locked\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
       return;
     }
     let admission: Awaited<ReturnType<OperationGateway['prepare']>>;
     try {
       admission = await gateway.prepare(req, url, 'UPGRADE');
     } catch {
-      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      socket.end('HTTP/1.1 ' + socketUpgradeStatuses.refused + ' Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
       return;
     }
     const { parameters } = gateway.resolve('UPGRADE', url.pathname);
@@ -119,7 +123,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
       ((mode === 'desktop' || mode === 'desktop-view') && !features.socketEnabled('desktop')) ||
       (url.searchParams.has('session') && !features.socketEnabled('terminal-session'))
     ) {
-      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.write('HTTP/1.1 ' + socketUpgradeStatuses.refused + ' Forbidden\r\n\r\n');
       socket.destroy();
       return;
     }
@@ -133,14 +137,14 @@ export function attachApplicationWebSocket(context: SocketContext) {
             ? raw.reduce((sum, part) => sum + part.byteLength, 0)
             : raw.byteLength;
           const desktop = mode === 'desktop' || mode === 'desktop-view';
-          if (bytes > SOCKET_CLIENT_BYTES) client.close(1009, 'Message too large');
-          else if (desktop ? !binary : binary) client.close(1003, 'Unsupported message type');
-          else if (!desktop && mode !== 'terminal') client.close(1008, 'Read-only channel');
+          if (bytes > SOCKET_CLIENT_BYTES) closeSocket(client, 'messageTooLarge');
+          else if (desktop ? !binary : binary) closeSocket(client, 'unsupportedMessageType');
+          else if (!desktop && mode !== 'terminal') closeSocket(client, 'readOnlyChannel');
           else if (!desktop) {
             try {
               parseSocketInput(mode, raw.toString());
             } catch {
-              client.close(1008, 'Invalid message');
+              closeSocket(client, 'invalidMessage');
             }
           }
         });
@@ -180,7 +184,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
             if (!events) socketVms.set(client, id);
             if (admission.instance) {
               const generation = admission.instance.generation;
-              const revoke = () => client.close(1008, 'Plugin generation revoked');
+              const revoke = () => closeSocket(client, 'pluginRevoked');
               admission.instance.signal.addEventListener('abort', revoke, { once: true });
               client.once('close', () => admission.instance?.signal.removeEventListener('abort', revoke));
               socketPlugins.set(client, {
@@ -196,24 +200,24 @@ export function attachApplicationWebSocket(context: SocketContext) {
               }
             }
             if (!events && mode !== 'logs' && machines.incidentLocked(id)) {
-              client.close(1008, 'Incident lockdown');
+              closeSocket(client, 'incidentLockdown');
               return;
             }
-            const sendData = (type: string, data: unknown) => {
+            const sender = <C extends JsonSocketChannel>(channel: C) => (message: SocketServerMessage<C>) => {
               if (client.readyState === WebSocket.OPEN) {
                 if (client.bufferedAmount > 1024 * 1024) {
-                  client.close(1008, 'slow consumer');
+                  closeSocket(client, 'slowConsumer');
                   return;
                 }
                 try {
-                  const payload = encodeSocketOutput(mode, { type, data });
+                  const payload = encodeSocketOutput(channel, message);
                   if (Buffer.byteLength(payload) > SOCKET_SERVER_BYTES) {
-                    client.close(1009, 'Message too large');
+                    closeSocket(client, 'messageTooLarge');
                     return;
                   }
                   client.send(payload);
                 } catch {
-                  client.close(1011, 'Invalid server message');
+                  closeSocket(client, 'invalidServerMessage');
                 }
               }
             };
@@ -230,24 +234,27 @@ export function attachApplicationWebSocket(context: SocketContext) {
                   terminalProject,
                 );
               } catch {
-                client.close(1011, 'Desktop unavailable');
+                closeSocket(client, 'desktopUnavailable');
               }
               return;
             }
             if (events) {
-              const listener = () => sendData('change', null);
+              const send = sender('events');
+              const listener = () => send({ type: 'change', data: null });
               machines.on('change', listener);
               client.on('close', () => machines.off('change', listener));
               listener();
               return;
             }
             if (mode === 'logs') {
-              sendData('data', machines.logs.get(id) || '等待 Linux 启动…\r\n');
-              const listener = (data: string) => sendData('data', data);
+              const send = sender('logs');
+              send({ type: 'data', data: machines.logs.get(id) || '等待 Linux 启动…\r\n' });
+              const listener = (data: string) => send({ type: 'data', data });
               machines.on(`log:${id}`, listener);
               client.on('close', () => machines.off(`log:${id}`, listener));
               return;
             }
+            const send = sender(mode);
             let ssh: Awaited<ReturnType<typeof machines.connect>> | undefined;
             let terminalLease: Awaited<ReturnType<typeof projectTerminals.prepare>> | undefined;
             const terminalAbort = new AbortController();
@@ -282,7 +289,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
                 ssh.end();
                 return;
               }
-              ssh.on('error', () => sendData('error', '终端连接暂不可用，请重试。'));
+              ssh.on('error', () => send({ type: 'error', data: '终端连接暂不可用，请重试。' }));
               ssh.once('close', () => client.close());
               const connected = (error: Error | undefined, stream: ClientChannel) => {
                 if (!error && (terminalAbort.signal.aborted || client.readyState !== WebSocket.OPEN)) {
@@ -291,22 +298,28 @@ export function attachApplicationWebSocket(context: SocketContext) {
                   return;
                 }
                 if (error) {
-                  sendData('error', '终端连接暂不可用，请重试。');
+                  send({ type: 'error', data: '终端连接暂不可用，请重试。' });
                   client.close();
                   ssh?.end();
                   return;
                 }
-                sendData('ready', {
+                // The service V1 result is wider than this wire enum. Keep the existing 1011 refusal.
+                const networkIsolation = terminalLease!.networkIsolation;
+                if (networkIsolation !== 'host' && networkIsolation !== 'private') {
+                  closeSocket(client, 'invalidServerMessage');
+                  return;
+                }
+                send({ type: 'ready', data: {
                   projectId: terminalLease!.projectId,
-                  networkIsolation: terminalLease!.networkIsolation,
-                });
+                  networkIsolation,
+                } });
                 const stdout = new StringDecoder('utf8'),
                   stderr = new StringDecoder('utf8');
-                stream.on('data', (data: Buffer) => sendData('data', stdout.write(data)));
-                stream.stderr.on('data', (data: Buffer) => sendData('data', stderr.write(data)));
-                stream.on('error', () => sendData('error', '终端连接暂不可用，请重试。'));
+                stream.on('data', (data: Buffer) => send({ type: 'data', data: stdout.write(data) }));
+                stream.stderr.on('data', (data: Buffer) => send({ type: 'data', data: stderr.write(data) }));
+                stream.on('error', () => send({ type: 'error', data: '终端连接暂不可用，请重试。' }));
                 stream.on('close', () => {
-                  sendData('exit', true);
+                  send({ type: 'exit', data: true });
                   client.close();
                   ssh?.end();
                 });
@@ -315,7 +328,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
                     if (client.readyState !== WebSocket.OPEN || binary) return;
                     session.requireUnlocked();
                     if (mode === 'terminal-view') {
-                      client.close(1008, 'Read-only terminal');
+                      closeSocket(client, 'readOnlyTerminal');
                       return;
                     }
                     const msg = parseSocketInput(mode, raw.toString());
@@ -328,7 +341,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
                         0,
                       );
                   } catch {
-                    client.close(1008, 'invalid message');
+                    closeSocket(client, 'invalidTerminalInput');
                   }
                 });
               };
@@ -338,7 +351,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
                 connected,
               );
             } catch (error: unknown) {
-              sendData('error', terminalConnectionFailure(error));
+              send({ type: 'error', data: terminalConnectionFailure(error) });
               client.close();
               releaseTerminal();
               ssh?.end();

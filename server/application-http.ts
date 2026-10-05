@@ -6,6 +6,7 @@ import { extname, join, resolve, sep } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
+import { closeSocket, socketContracts, SOCKET_CLIENT_BYTES, type SocketChannel } from '../shared/contracts/websocket.ts';
 
 import type { ApplicationServices } from './application-services.ts';
 import { attachApplicationWebSocket } from './application-websocket.ts';
@@ -146,7 +147,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     terminalSharing,
     plugins,
   } = services;
-  const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
+  const ws = new WebSocketServer({ noServer: true, maxPayload: SOCKET_CLIENT_BYTES });
   resources.defer(
     'websockets',
     () => {
@@ -193,7 +194,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
       for (const job of store.list())
         if (job.vmId === id && job.status === 'running' && job.id) store.cancel(job.id);
     for (const socket of ws.clients)
-      if (socketVms.get(socket) === id) socket.close(1008, 'Incident lockdown');
+      if (socketVms.get(socket) === id) closeSocket(socket, 'incidentLockdown');
   });
   let vite: Awaited<ReturnType<typeof import('vite').createServer>> | undefined;
   const equalToken = (value: unknown) => {
@@ -214,11 +215,13 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     if (!access.enabled) return equalToken(credential) ? { role: 'owner' as const } : null;
     try {
       const principal = access.authorize(credential);
-      return (principal.role === 'owner' && mode !== 'terminal-view') ||
+      const authentication = socketContracts[mode as SocketChannel]?.authentication;
+      if (!authentication?.accountRoles.some(role => role === principal.role)) return null;
+      return principal.role === 'owner' ||
         (principal.role === 'viewer' &&
           principal.vmIds.includes(id) &&
-          (mode === 'desktop-view' ||
-            (mode === 'terminal-view' &&
+          (authentication.viewerGrant === 'vm' ||
+            (authentication.viewerGrant === 'terminal' &&
               !!terminalSession &&
               !!terminalSharing?.find(principal.id, id, terminalSession, terminalProject))))
         ? principal

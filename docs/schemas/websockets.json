@@ -1,0 +1,1154 @@
+{
+  "events": {
+    "operation": {
+      "id": "core.socket.events",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/events",
+      "access": "socket",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": false,
+      "identity": "host",
+      "maintenance": "allow",
+      "transport": "websocket",
+      "mutating": false,
+      "contract": "declared",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "none",
+      "approval": "none",
+      "extensionAuth": "none",
+      "socketChannel": "events",
+      "socketContract": {
+        "version": 1,
+        "encoding": "json",
+        "protocol": "sakura-json-v1",
+        "framing": "message",
+        "clientMaxBytes": 65536,
+        "serverMaxBytes": 1048576,
+        "clientMessages": [],
+        "serverMessages": [
+          "change"
+        ],
+        "readOnly": true,
+        "authentication": {
+          "credential": "query.token",
+          "sameOrigin": true,
+          "session": "unlocked",
+          "local": "controller-token",
+          "accountRoles": [
+            "owner"
+          ],
+          "viewerGrant": "none"
+        },
+        "lifecycle": {
+          "upgrade": {
+            "accepted": 101,
+            "locked": 423,
+            "refused": 403
+          },
+          "errorMessage": "none",
+          "closeReasons": [
+            "messageTooLarge",
+            "unsupportedMessageType",
+            "pluginRevoked",
+            "slowConsumer",
+            "invalidServerMessage",
+            "readOnlyChannel"
+          ],
+          "emptyClose": [
+            "host-shutdown"
+          ],
+          "terminate": [
+            "session-lock",
+            "connection-reset",
+            "account-or-credential-revoked",
+            "account-expired",
+            "admission-failed"
+          ],
+          "replay": false
+        },
+        "clientSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "not": {}
+        },
+        "serverSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "change"
+            },
+            "data": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "request": {
+        "kind": "none",
+        "required": false
+      }
+    },
+    "query": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "additionalProperties": false
+    },
+    "headers": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "closeFrames": {
+      "messageTooLarge": {
+        "code": 1009,
+        "reason": "Message too large"
+      },
+      "unsupportedMessageType": {
+        "code": 1003,
+        "reason": "Unsupported message type"
+      },
+      "pluginRevoked": {
+        "code": 1008,
+        "reason": "Plugin generation revoked"
+      },
+      "slowConsumer": {
+        "code": 1008,
+        "reason": "slow consumer"
+      },
+      "invalidServerMessage": {
+        "code": 1011,
+        "reason": "Invalid server message"
+      },
+      "readOnlyChannel": {
+        "code": 1008,
+        "reason": "Read-only channel"
+      }
+    }
+  },
+  "terminal": {
+    "operation": {
+      "id": "core.socket.terminal",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/terminal",
+      "access": "socket",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "websocket",
+      "mutating": false,
+      "contract": "declared",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none",
+      "executionOwner": "core",
+      "sessionOwner": "terminal-workspace",
+      "socketChannel": "terminal",
+      "socketContract": {
+        "version": 1,
+        "encoding": "json",
+        "protocol": "sakura-json-v1",
+        "framing": "message",
+        "clientMaxBytes": 65536,
+        "serverMaxBytes": 1048576,
+        "clientMessages": [
+          "input",
+          "resize"
+        ],
+        "serverMessages": [
+          "ready",
+          "data",
+          "error",
+          "exit"
+        ],
+        "readOnly": false,
+        "authentication": {
+          "credential": "query.token",
+          "sameOrigin": true,
+          "session": "unlocked",
+          "local": "controller-token",
+          "accountRoles": [
+            "owner"
+          ],
+          "viewerGrant": "none"
+        },
+        "lifecycle": {
+          "upgrade": {
+            "accepted": 101,
+            "locked": 423,
+            "refused": 403
+          },
+          "errorMessage": "terminal-error",
+          "closeReasons": [
+            "messageTooLarge",
+            "unsupportedMessageType",
+            "pluginRevoked",
+            "incidentLockdown",
+            "slowConsumer",
+            "invalidServerMessage",
+            "invalidMessage",
+            "invalidTerminalInput"
+          ],
+          "emptyClose": [
+            "host-shutdown",
+            "terminal-setup-failure",
+            "ssh-close",
+            "terminal-exit"
+          ],
+          "terminate": [
+            "session-lock",
+            "connection-reset",
+            "account-or-credential-revoked",
+            "account-expired",
+            "admission-failed"
+          ],
+          "replay": false
+        },
+        "clientSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "input"
+                },
+                "data": {
+                  "type": "string",
+                  "maxLength": 32768
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "resize"
+                },
+                "cols": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "rows": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "type",
+                "cols",
+                "rows"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "serverSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "data"
+                },
+                "data": {
+                  "type": "string",
+                  "maxLength": 524288
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "ready"
+                },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "pattern": "^(default|[a-f0-9]{16})$"
+                    },
+                    "networkIsolation": {
+                      "type": "string",
+                      "enum": [
+                        "host",
+                        "private"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "networkIsolation"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "error"
+                },
+                "data": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "exit"
+                },
+                "data": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "request": {
+        "kind": "none",
+        "required": false
+      }
+    },
+    "query": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "pattern": "^(default|[a-f0-9]{16})$"
+        },
+        "token": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "session": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,48}$"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "additionalProperties": false
+    },
+    "headers": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "closeFrames": {
+      "messageTooLarge": {
+        "code": 1009,
+        "reason": "Message too large"
+      },
+      "unsupportedMessageType": {
+        "code": 1003,
+        "reason": "Unsupported message type"
+      },
+      "pluginRevoked": {
+        "code": 1008,
+        "reason": "Plugin generation revoked"
+      },
+      "incidentLockdown": {
+        "code": 1008,
+        "reason": "Incident lockdown"
+      },
+      "slowConsumer": {
+        "code": 1008,
+        "reason": "slow consumer"
+      },
+      "invalidServerMessage": {
+        "code": 1011,
+        "reason": "Invalid server message"
+      },
+      "invalidMessage": {
+        "code": 1008,
+        "reason": "Invalid message"
+      },
+      "invalidTerminalInput": {
+        "code": 1008,
+        "reason": "invalid message"
+      }
+    }
+  },
+  "terminal-view": {
+    "operation": {
+      "id": "core.socket.terminal-view",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/terminal-view",
+      "access": "socket",
+      "roles": [
+        "owner",
+        "viewer"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "websocket",
+      "mutating": false,
+      "contract": "declared",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "legacy-terminal-grant",
+      "approval": "none",
+      "extensionAuth": "none",
+      "executionOwner": "core",
+      "sessionOwner": "terminal-workspace",
+      "socketChannel": "terminal-view",
+      "socketContract": {
+        "version": 1,
+        "encoding": "json",
+        "protocol": "sakura-json-v1",
+        "framing": "message",
+        "clientMaxBytes": 65536,
+        "serverMaxBytes": 1048576,
+        "clientMessages": [],
+        "serverMessages": [
+          "ready",
+          "data",
+          "error",
+          "exit"
+        ],
+        "readOnly": true,
+        "authentication": {
+          "credential": "query.token",
+          "sameOrigin": true,
+          "session": "unlocked",
+          "local": "controller-token",
+          "accountRoles": [
+            "viewer"
+          ],
+          "viewerGrant": "terminal"
+        },
+        "lifecycle": {
+          "upgrade": {
+            "accepted": 101,
+            "locked": 423,
+            "refused": 403
+          },
+          "errorMessage": "terminal-error",
+          "closeReasons": [
+            "messageTooLarge",
+            "unsupportedMessageType",
+            "pluginRevoked",
+            "incidentLockdown",
+            "slowConsumer",
+            "invalidServerMessage",
+            "readOnlyChannel",
+            "readOnlyTerminal"
+          ],
+          "emptyClose": [
+            "host-shutdown",
+            "terminal-setup-failure",
+            "ssh-close",
+            "terminal-exit"
+          ],
+          "terminate": [
+            "session-lock",
+            "connection-reset",
+            "account-or-credential-revoked",
+            "account-expired",
+            "admission-failed",
+            "terminal-grant-revoked-or-expired"
+          ],
+          "replay": false
+        },
+        "clientSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "not": {}
+        },
+        "serverSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "data"
+                },
+                "data": {
+                  "type": "string",
+                  "maxLength": 524288
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "ready"
+                },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "pattern": "^(default|[a-f0-9]{16})$"
+                    },
+                    "networkIsolation": {
+                      "type": "string",
+                      "enum": [
+                        "host",
+                        "private"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "networkIsolation"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "error"
+                },
+                "data": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "exit"
+                },
+                "data": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "required": [
+                "type",
+                "data"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "request": {
+        "kind": "none",
+        "required": false
+      }
+    },
+    "query": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "pattern": "^(default|[a-f0-9]{16})$"
+        },
+        "token": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "session": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,48}$"
+        }
+      },
+      "required": [
+        "token",
+        "session"
+      ],
+      "additionalProperties": false
+    },
+    "headers": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "closeFrames": {
+      "messageTooLarge": {
+        "code": 1009,
+        "reason": "Message too large"
+      },
+      "unsupportedMessageType": {
+        "code": 1003,
+        "reason": "Unsupported message type"
+      },
+      "pluginRevoked": {
+        "code": 1008,
+        "reason": "Plugin generation revoked"
+      },
+      "incidentLockdown": {
+        "code": 1008,
+        "reason": "Incident lockdown"
+      },
+      "slowConsumer": {
+        "code": 1008,
+        "reason": "slow consumer"
+      },
+      "invalidServerMessage": {
+        "code": 1011,
+        "reason": "Invalid server message"
+      },
+      "readOnlyChannel": {
+        "code": 1008,
+        "reason": "Read-only channel"
+      },
+      "readOnlyTerminal": {
+        "code": 1008,
+        "reason": "Read-only terminal"
+      }
+    }
+  },
+  "logs": {
+    "operation": {
+      "id": "core.socket.logs",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/logs",
+      "access": "socket",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": false,
+      "identity": "fixed-vm",
+      "maintenance": "allow",
+      "transport": "websocket",
+      "mutating": false,
+      "contract": "declared",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "none",
+      "approval": "none",
+      "extensionAuth": "none",
+      "socketChannel": "logs",
+      "socketContract": {
+        "version": 1,
+        "encoding": "json",
+        "protocol": "sakura-json-v1",
+        "framing": "message",
+        "clientMaxBytes": 65536,
+        "serverMaxBytes": 1048576,
+        "clientMessages": [],
+        "serverMessages": [
+          "data"
+        ],
+        "readOnly": true,
+        "authentication": {
+          "credential": "query.token",
+          "sameOrigin": true,
+          "session": "unlocked",
+          "local": "controller-token",
+          "accountRoles": [
+            "owner"
+          ],
+          "viewerGrant": "none"
+        },
+        "lifecycle": {
+          "upgrade": {
+            "accepted": 101,
+            "locked": 423,
+            "refused": 403
+          },
+          "errorMessage": "none",
+          "closeReasons": [
+            "messageTooLarge",
+            "unsupportedMessageType",
+            "pluginRevoked",
+            "incidentLockdown",
+            "slowConsumer",
+            "invalidServerMessage",
+            "readOnlyChannel"
+          ],
+          "emptyClose": [
+            "host-shutdown"
+          ],
+          "terminate": [
+            "session-lock",
+            "connection-reset",
+            "account-or-credential-revoked",
+            "account-expired",
+            "admission-failed"
+          ],
+          "replay": false
+        },
+        "clientSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "not": {}
+        },
+        "serverSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "data"
+            },
+            "data": {
+              "type": "string",
+              "maxLength": 524288
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "request": {
+        "kind": "none",
+        "required": false
+      }
+    },
+    "query": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "session": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,48}$"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "additionalProperties": false
+    },
+    "headers": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "closeFrames": {
+      "messageTooLarge": {
+        "code": 1009,
+        "reason": "Message too large"
+      },
+      "unsupportedMessageType": {
+        "code": 1003,
+        "reason": "Unsupported message type"
+      },
+      "pluginRevoked": {
+        "code": 1008,
+        "reason": "Plugin generation revoked"
+      },
+      "incidentLockdown": {
+        "code": 1008,
+        "reason": "Incident lockdown"
+      },
+      "slowConsumer": {
+        "code": 1008,
+        "reason": "slow consumer"
+      },
+      "invalidServerMessage": {
+        "code": 1011,
+        "reason": "Invalid server message"
+      },
+      "readOnlyChannel": {
+        "code": 1008,
+        "reason": "Read-only channel"
+      }
+    }
+  },
+  "desktop": {
+    "operation": {
+      "id": "core.socket.desktop",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/desktop",
+      "access": "socket",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "websocket",
+      "mutating": false,
+      "contract": "declared",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none",
+      "executionOwner": "desktop",
+      "socketChannel": "desktop",
+      "socketContract": {
+        "version": 1,
+        "encoding": "binary",
+        "protocol": "rfb-3.7-or-3.8",
+        "framing": "byte-stream",
+        "clientMaxBytes": 65536,
+        "serverMaxBytes": 1048576,
+        "clientMessages": [
+          "rfb-stream"
+        ],
+        "serverMessages": [
+          "rfb-stream"
+        ],
+        "readOnly": false,
+        "authentication": {
+          "credential": "query.token",
+          "sameOrigin": true,
+          "session": "unlocked",
+          "local": "controller-token",
+          "accountRoles": [
+            "owner"
+          ],
+          "viewerGrant": "none"
+        },
+        "lifecycle": {
+          "upgrade": {
+            "accepted": 101,
+            "locked": 423,
+            "refused": 403
+          },
+          "errorMessage": "rfb-stream",
+          "closeReasons": [
+            "messageTooLarge",
+            "unsupportedMessageType",
+            "pluginRevoked",
+            "incidentLockdown",
+            "binaryRfbRequired",
+            "desktopUnavailable"
+          ],
+          "emptyClose": [
+            "host-shutdown",
+            "ssh-close-or-error",
+            "rfb-stream-close-or-error"
+          ],
+          "terminate": [
+            "session-lock",
+            "connection-reset",
+            "account-or-credential-revoked",
+            "account-expired",
+            "admission-failed",
+            "desktop-session-invalidated"
+          ],
+          "replay": false
+        },
+        "rfb": {
+          "clientPolicy": "passthrough"
+        }
+      },
+      "request": {
+        "kind": "none",
+        "required": false
+      }
+    },
+    "query": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "pattern": "^(default|[a-f0-9]{16})$"
+        },
+        "token": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "app": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "additionalProperties": false
+    },
+    "headers": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "closeFrames": {
+      "messageTooLarge": {
+        "code": 1009,
+        "reason": "Message too large"
+      },
+      "unsupportedMessageType": {
+        "code": 1003,
+        "reason": "Unsupported message type"
+      },
+      "pluginRevoked": {
+        "code": 1008,
+        "reason": "Plugin generation revoked"
+      },
+      "incidentLockdown": {
+        "code": 1008,
+        "reason": "Incident lockdown"
+      },
+      "binaryRfbRequired": {
+        "code": 1003,
+        "reason": "Binary RFB required"
+      },
+      "desktopUnavailable": {
+        "code": 1011,
+        "reason": "Desktop unavailable"
+      }
+    }
+  },
+  "desktop-view": {
+    "operation": {
+      "id": "core.socket.desktop-view",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/desktop-view",
+      "access": "socket",
+      "roles": [
+        "owner",
+        "viewer"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "websocket",
+      "mutating": false,
+      "contract": "declared",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none",
+      "executionOwner": "desktop",
+      "socketChannel": "desktop-view",
+      "socketContract": {
+        "version": 1,
+        "encoding": "binary",
+        "protocol": "rfb-3.7-or-3.8",
+        "framing": "byte-stream",
+        "clientMaxBytes": 65536,
+        "serverMaxBytes": 1048576,
+        "clientMessages": [
+          "rfb-stream"
+        ],
+        "serverMessages": [
+          "rfb-stream"
+        ],
+        "readOnly": true,
+        "authentication": {
+          "credential": "query.token",
+          "sameOrigin": true,
+          "session": "unlocked",
+          "local": "controller-token",
+          "accountRoles": [
+            "owner",
+            "viewer"
+          ],
+          "viewerGrant": "vm"
+        },
+        "lifecycle": {
+          "upgrade": {
+            "accepted": 101,
+            "locked": 423,
+            "refused": 403
+          },
+          "errorMessage": "rfb-stream",
+          "closeReasons": [
+            "messageTooLarge",
+            "unsupportedMessageType",
+            "pluginRevoked",
+            "incidentLockdown",
+            "binaryRfbRequired",
+            "desktopUnavailable"
+          ],
+          "emptyClose": [
+            "host-shutdown",
+            "ssh-close-or-error",
+            "rfb-stream-close-or-error"
+          ],
+          "terminate": [
+            "session-lock",
+            "connection-reset",
+            "account-or-credential-revoked",
+            "account-expired",
+            "admission-failed",
+            "desktop-session-invalidated"
+          ],
+          "replay": false
+        },
+        "rfb": {
+          "clientPolicy": "read-only-filter",
+          "versions": [
+            "003.007",
+            "003.008"
+          ],
+          "securityType": 1,
+          "clientMessageTypes": [
+            0,
+            2,
+            3,
+            150,
+            248
+          ],
+          "maxPendingBytes": 65536,
+          "maxEncodings": 256,
+          "maxFencePayloadBytes": 64,
+          "fenceFlagsMask": 3,
+          "strippedEncoding": 3231835598
+        }
+      },
+      "request": {
+        "kind": "none",
+        "required": false
+      }
+    },
+    "query": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "pattern": "^(default|[a-f0-9]{16})$"
+        },
+        "token": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "additionalProperties": false
+    },
+    "headers": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "closeFrames": {
+      "messageTooLarge": {
+        "code": 1009,
+        "reason": "Message too large"
+      },
+      "unsupportedMessageType": {
+        "code": 1003,
+        "reason": "Unsupported message type"
+      },
+      "pluginRevoked": {
+        "code": 1008,
+        "reason": "Plugin generation revoked"
+      },
+      "incidentLockdown": {
+        "code": 1008,
+        "reason": "Incident lockdown"
+      },
+      "binaryRfbRequired": {
+        "code": 1003,
+        "reason": "Binary RFB required"
+      },
+      "desktopUnavailable": {
+        "code": 1011,
+        "reason": "Desktop unavailable"
+      }
+    }
+  }
+}

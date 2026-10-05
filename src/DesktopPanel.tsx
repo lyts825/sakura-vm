@@ -1,4 +1,5 @@
 import type RFB from '@novnc/novnc';
+import { socketPath } from '../shared/socket-client.ts';
 import {
   CircleCheck,
   Clipboard,
@@ -235,8 +236,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
           () => {
             const client = new RFBClient(
               target,
-              `${scheme}//${location.host}/ws/${vm.id}/desktop?token=${encodeURIComponent(token)}` +
-                (desktop?.projectId ? `&project=${encodeURIComponent(desktop.projectId)}` : ''),
+              `${scheme}//${location.host}` + socketPath('desktop', { vmId: vm.id },
+                { token, project: desktop?.projectId || undefined }),
             );
             client.scaleViewport = true;
             client.resizeSession = desktop?.preferences?.monitorLayout !== 'dual-horizontal' &&

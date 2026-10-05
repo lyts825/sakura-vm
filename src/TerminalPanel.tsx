@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { VMView } from '../shared/contracts/vm.ts';
 import { controllerSession } from './controller-session';
 import { connectTerminal } from './terminal-connection';
+import { socketPath } from '../shared/socket-client.ts';
 
 export function TerminalPanel({
   vm,
@@ -79,7 +80,10 @@ export function TerminalPanel({
       authenticate: () => controllerSession.authenticate(),
       socket: (token) =>
         new WebSocket(
-          `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${vm.id}/${mode}?token=${encodeURIComponent(token)}${session ? `&session=${encodeURIComponent(session)}` : ''}${mode === 'terminal' && projectId ? `&project=${encodeURIComponent(projectId)}` : ''}`,
+          `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}` +
+            (mode === 'terminal' ? socketPath('terminal', { vmId: vm.id },
+              { token, session: session || undefined, project: projectId || undefined }) :
+              socketPath('logs', { vmId: vm.id }, { token, session: session || undefined })),
         ),
       data: (text) => term.write(text),
       report: setConnection,

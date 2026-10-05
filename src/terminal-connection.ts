@@ -1,9 +1,11 @@
+import type { SocketClientMessage, SocketServerMessage } from '../shared/contracts/websocket-client.generated.ts';
+
 type Options = {
   authenticate: () => Promise<string>;
   socket: (token: string) => WebSocket;
   data: (text: string) => void;
   report: (message: string) => void;
-  ready: (context: unknown) => void;
+  ready: (context: Extract<SocketServerMessage<'terminal'>, { type: 'ready' }>['data']) => void;
   logs: boolean;
 };
 
@@ -36,7 +38,8 @@ export function connectTerminal(options: Options) {
       current.onmessage = (event) => {
         if (stopped || socket !== current) return;
         try {
-          const message = JSON.parse(event.data);
+          // Preserve tolerant reads from older hosts; these types describe current published frames.
+          const message = JSON.parse(event.data) as SocketServerMessage<'terminal' | 'logs'>;
           if (message.type === 'data' && typeof message.data === 'string') options.data(message.data);
           if (message.type === 'ready') {
             ready = true;
@@ -67,7 +70,7 @@ export function connectTerminal(options: Options) {
   };
   void connect();
   return {
-    send(message: { type: 'input'; data: string } | { type: 'resize'; cols: number; rows: number }) {
+    send(message: SocketClientMessage<'terminal'>) {
       if (!stopped && ready && socket?.readyState === 1) socket.send(JSON.stringify(message));
     },
     close() {

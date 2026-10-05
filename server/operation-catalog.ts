@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isDeepStrictEqual } from 'node:util';
 import type { HttpResponseContract } from '../shared/contracts/http-response.ts';
 import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { operationDeclarationSchema, type OperationDeclaration } from '../shared/contracts/operations.ts';
@@ -39,7 +40,7 @@ const socketEntries: OperationEntry[] = [
       "identity": "host",
       "maintenance": "allow",
       "transport": "websocket", "mutating": false,
-      "contract": "partial",
+      "contract": "declared",
       "enabled": true,
       "session": "required",
       "vmLock": "allow-locked",
@@ -66,7 +67,7 @@ const socketEntries: OperationEntry[] = [
       "identity": "fixed-vm",
       "maintenance": "block",
       "transport": "websocket", "mutating": false,
-      "contract": "partial",
+      "contract": "declared",
       "enabled": true,
       "session": "required",
       "vmLock": "require-unlocked",
@@ -94,7 +95,7 @@ const socketEntries: OperationEntry[] = [
       "identity": "fixed-vm",
       "maintenance": "block",
       "transport": "websocket", "mutating": false,
-      "contract": "partial",
+      "contract": "declared",
       "enabled": true,
       "session": "required",
       "vmLock": "require-unlocked",
@@ -121,7 +122,7 @@ const socketEntries: OperationEntry[] = [
       "identity": "fixed-vm",
       "maintenance": "allow",
       "transport": "websocket", "mutating": false,
-      "contract": "partial",
+      "contract": "declared",
       "enabled": true,
       "session": "required",
       "vmLock": "allow-locked",
@@ -148,7 +149,7 @@ const socketEntries: OperationEntry[] = [
       "identity": "fixed-vm",
       "maintenance": "block",
       "transport": "websocket", "mutating": false,
-      "contract": "partial",
+      "contract": "declared",
       "enabled": true,
       "session": "required",
       "vmLock": "require-unlocked",
@@ -176,7 +177,7 @@ const socketEntries: OperationEntry[] = [
       "identity": "fixed-vm",
       "maintenance": "block",
       "transport": "websocket", "mutating": false,
-      "contract": "partial",
+      "contract": "declared",
       "enabled": true,
       "session": "required",
       "vmLock": "require-unlocked",
@@ -231,7 +232,7 @@ export const operationEntries: readonly OperationEntry[] = [
   ...socketEntries.map(entry => {
     const input = requestContract(entry.declaration.id, entry.declaration, 'UPGRADE');
     const socketContract = socketContracts[entry.declaration.socketChannel!];
-    return { ...entry, requestContract: input, socketContract, declaration: { ...entry.declaration, contract: 'declared' as const,
+    return { ...entry, requestContract: input, socketContract, declaration: { ...entry.declaration,
       socketContract,
       request: { kind: input.kind, required: false } } };
   }),
@@ -269,8 +270,8 @@ export function validateOperationEntries(entries: readonly OperationEntry[]) {
     if (declaration.transport === 'websocket') {
       const expected = socketContracts[declaration.socketChannel!];
       const actual = socketContractSchema.parse(entry.socketContract);
-      if (declaration.contract !== 'declared' || JSON.stringify(actual) !== JSON.stringify(expected) ||
-        JSON.stringify(declaration.socketContract) !== JSON.stringify(expected))
+      if (declaration.contract !== 'declared' || !isDeepStrictEqual(actual, expected) ||
+        !isDeepStrictEqual(declaration.socketContract, expected))
         throw new Error('WebSocket 帧协议与真实通道不匹配：' + declaration.id);
     } else if (entry.socketContract || declaration.socketContract)
       throw new Error('HTTP操作不能声明WebSocket帧协议：' + declaration.id);

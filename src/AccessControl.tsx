@@ -1,4 +1,6 @@
 import { formatDateTime } from './localization';
+import { socketPath } from '../shared/socket-client.ts';
+import type { SocketServerMessage } from '../shared/contracts/websocket-client.generated.ts';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type RFB from '@novnc/novnc';
 import type { PublicKeyCredentialCreationOptionsJSON,
@@ -712,14 +714,13 @@ function SharedTerminal({ grant, token }: { grant: TerminalGrantView; token: str
         fontSize: 13, scrollback: 4000, theme: { background: '#26212c', foreground: '#eee6ef' } });
       terminal.open(screen.current);
       const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${scheme}//${location.host}/ws/${grant.vmId}/terminal-view?` +
-        `token=${encodeURIComponent(token)}&session=${encodeURIComponent(grant.session)}` +
-        (grant.projectId ? `&project=${encodeURIComponent(grant.projectId)}` : ''));
+      socket = new WebSocket(`${scheme}//${location.host}` + socketPath('terminal-view', { vmId: grant.vmId },
+        { token, session: grant.session, project: grant.projectId || undefined }));
       socket.onopen = () => { if (active) setConnection('正在连接终端…'); };
       socket.onmessage = (event) => {
         if (!active) return;
         try {
-          const message = JSON.parse(event.data);
+          const message = JSON.parse(event.data) as SocketServerMessage<'terminal-view'>;
           if (message.type === 'data' && typeof message.data === 'string')
             terminal?.write(message.data);
           if (message.type === 'ready') setConnection('终端视图已连接');
@@ -844,7 +845,7 @@ function SharedDesktop({ vmId, token }: { vmId: string; token: string }) {
       if (!alive || !screen.current) return;
       const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
       client = new RFBClient(screen.current,
-        `${scheme}//${location.host}/ws/${vmId}/desktop-view?token=${encodeURIComponent(token)}`);
+        `${scheme}//${location.host}` + socketPath('desktop-view', { vmId }, { token }));
       client.viewOnly = true;
       client.scaleViewport = true;
       client.resizeSession = false;

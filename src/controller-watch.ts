@@ -1,5 +1,9 @@
 import type { ControllerSession } from './controller-session';
 import { resourceCache } from './resource-cache';
+import type { SocketServerMessage } from '../shared/contracts/websocket-client.generated.ts';
+
+// Resource hints remain a tolerated extension; current hosts publish change/data:null.
+type CompatibleEventMessage = SocketServerMessage<'events'> | { data?: { resources?: unknown } };
 
 type Options = {
   session: Pick<ControllerSession, 'authenticate'>;
@@ -81,7 +85,7 @@ export function watchController(options: Options) {
       events.onmessage = (event) => {
         let resources = ['*'];
         try {
-          const message = JSON.parse(String(event?.data));
+          const message = JSON.parse(String(event?.data)) as CompatibleEventMessage;
           if (Array.isArray(message.data?.resources) && message.data.resources.every((item: unknown) => typeof item === 'string'))
             resources = message.data.resources;
         } catch { /* Old hosts only signal that state changed. Reconcile all active resources. */ }
