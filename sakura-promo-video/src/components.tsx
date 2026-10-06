@@ -8,7 +8,8 @@ export const ease = Easing.bezier(0.16, 1, 0.3, 1);
 export const Paper = ({children, petals = true, style}: {children: ReactNode; petals?: boolean; style?: CSSProperties}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  return <AbsoluteFill style={{background: colors.paper, color: colors.ink, fontFamily: font.sans, overflow: 'hidden', ...style}}>
+  return <AbsoluteFill style={{background: colors.paper, color: colors.ink, fontFamily: font.sans, lineHeight: 1.35, overflow: 'hidden', ...style}}>
+    <style>{'*, *::before, *::after {box-sizing: border-box;}'}</style>
     <AbsoluteFill style={{backgroundImage: 'radial-gradient(ellipse at 85% 8%, #f7e7ef88 0%, #faf7f900 48%)'}} />
     <div style={{position: 'absolute', left: 104, right: 104, top: 72, height: 1, background: colors.line}} />
     <div style={{position: 'absolute', left: 106, top: 37, color: colors.muted, fontSize: 20, letterSpacing: 5}}>SAKURA / LOCAL LINUX WORKSPACE</div>

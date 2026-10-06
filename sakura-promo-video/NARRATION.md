@@ -1,36 +1,52 @@
-# Sakura 45 秒介绍视频音频
+# Sakura 1.1.0 中文配音与原创音乐
 
-两条音轨均为 45 秒、48 kHz、双声道 24 位 WAV。旁白使用 Microsoft Edge `zh-CN-XiaoxiaoNeural`，通过 `edge-tts 7.2.8` 联网合成。只向语音服务发送下表公开介绍文案。音轨已分别按约 −18 LUFS（旁白）和 −29 LUFS（音乐）归一化；Remotion 两条音轨均使用 `volume={1}`。音乐已包含末尾 1.2 秒淡出，不必再次淡出。
+本轮以 `STORYBOARD.json` 为唯一文案来源，制作十二景中文介绍片。实际时长为 **154.266667 秒，4628 帧，30 fps**；150 秒只是前期估算，正式音频与画面按完整语音确定长度。
 
-| 场景 | 公开旁白 |
-| --- | --- |
-| 0–6 秒 | Sakura。让 Linux，在本地生长。 |
-| 6–14 秒 | 从基础 Alpine 终端开始。创建、启动和停止实例，数据保存在持久磁盘。 |
-| 14–22 秒 | QEMU 真正运行 Linux 内核。PosixLoom，编排命令与会话。 |
-| 22–32 秒 | 文件、多终端、项目、Git 和快照，按需选择插件。保存后，重启 Sakura 服务生效。 |
-| 32–40 秒 | 把代码、文件和终端，组织成本地工作空间。按需组合，专注创造。 |
-| 40–45 秒 | 从一个终端，长成你的工作空间。 |
+用户试听后明确选择 **A：明亮活泼**。正式使用 Microsoft Edge 预置合成女声 `zh-CN-XiaoyiNeural`，语速 `-3%`，自然音高 `+0Hz`，通过 `edge-tts 7.2.8` 合成。不模仿、克隆或拼接任何特定真人声音。这里只合成公开介绍文案，未使用 Azure HD 语音，也未声称 HD 效果已经验证。
 
-`public/audio/transcript.json` 包含实际合成后的逐段语速、旁白起止时间和 TTS 句边界字幕时间；`narration.srt` 为同源字幕。结尾至少保留 0.45 秒空白，遇到超时段时提高合成语速，保留完整尾音。
+本轮减少机械感的方法：每景的两到三句连续合成，保留上下文语气、句长变化和原有句间停顿；不把每句独立拼播，不使用 `atempo`，不为固定时长重新调快；画面头尾留稳定与余韵空间。音轨仅采用一个全局常量增益调整响度，没有压缩器、降噪门或人为呼吸采样。这些方法改善制作流程，最终自然度仍应以实际试听为准。
 
-音乐与场景切换轻铃由 `scripts/audio_generate.py` 原创程序合成：D 大调五声音阶木琴旋律、柔和键盘和弦、稀疏低音与轻刷音。使用固定随机种子，无采样曲库或第三方录音。
+字幕使用分镜 `lines[].text`，朗读使用准确对应的 `lines[].ttsText`。例如品牌朗读为“萨库拉”，字幕仍写 `Sakura`；数量按中文朗读，字幕保留数字；`WSL` 按字母分开朗读。字幕时间来自实际 TTS 句边界，并量化到 30 fps，32 句均与分镜字幕逐句对应、没有重叠。
+
+| 景别 | 时间（秒） | 起始帧 | 持续帧 |
+| --- | --- | ---: | ---: |
+| 开场 | 0.000–11.267 | 0 | 338 |
+| 内核 | 11.267–24.800 | 338 | 406 |
+| 实例 | 24.800–39.233 | 744 | 433 |
+| 插件 | 39.233–53.733 | 1177 | 435 |
+| 开发 | 53.733–67.267 | 1612 | 406 |
+| 文件 | 67.267–79.600 | 2018 | 370 |
+| 恢复 | 79.600–93.167 | 2388 | 407 |
+| 网络 | 93.167–106.433 | 2795 | 398 |
+| 自动化 | 106.433–120.500 | 3193 | 422 |
+| 隔离 | 120.500–133.833 | 3615 | 400 |
+| 桌面 | 133.833–144.433 | 4015 | 318 |
+| 落版 | 144.433–154.267 | 4333 | 295 |
+
+开场语音在画面开始后 0.8 秒进入，其余各景为 0.6 秒；普通景尾部至少保留 0.667 秒，尾景留 1.5 秒。最后一句音频完整结束于 152.766667 秒。精确数据以 `public/audio/transcript.json` 为准，包含各景 `id/from/durationInFrames/start/end/speechStart/speechEnd/captions` 和顶层字幕；`narration.srt` 为同源中文字幕。
+
+两音轨均为 48 kHz、双声道、24 位 WAV：旁白实测 **−18.00 LUFS / −3.75 dBTP**，音乐 **−30.00 LUFS / −17.56 dBTP**。Remotion 两条音轨均采用 `volume={1}`。音乐已含最后 1.8 秒淡出，不需重复淡出。
+
+配乐由 `scripts/audio_generate.py` 原创程序合成：76 BPM 的柔和键盘、五声音阶木琴、章节间轻铃及稀疏轻刷节奏；不同章节采用不同旋律动机，结尾回归主和弦。旁白期间轻柔降低音乐，保证清楚讲解优先。没有第三方曲库、流行音乐或真人录音采样。
 
 ## 重生成
 
-需要 Python 3.12 与 PATH 中的 FFmpeg。以下命令在本目录执行，专用环境与合成缓存位于被忽略的 `.cache/audio/`，不修改项目 Node 依赖。
+需要 Python 3.12、FFmpeg 和 FFprobe。以下命令在本目录执行；专用环境、分景 MP3、语音句边界和详细检测报告均位于被忽略的 `.cache/audio-v1.1/`，不修改项目 Node 依赖。
 
 ```powershell
-python -m venv .cache/audio/venv
-.cache/audio/venv/Scripts/python.exe -m pip install -r scripts/audio_requirements.txt
-.cache/audio/venv/Scripts/python.exe scripts/audio_generate.py
+python -m venv .cache/audio-v1.1/venv
+.cache/audio-v1.1/venv/Scripts/python.exe -m pip install -r scripts/audio_requirements.txt
+.cache/audio-v1.1/venv/Scripts/python.exe scripts/audio_generate.py
 ```
 
-语音合成需要联网，语音服务输出可能随服务更新变化。原创音乐可离线重生成：
+脚本按公开文案、音色与参数的摘要复用本地语音缓存。无缓存或文案变化时需要联网；同一服务未来输出可能变化。需要重新请求所有语音时使用 `--force-tts`，之后应重新核对音画同步。
+
+仅重做原创音乐可离线使用现有时间轴：
 
 ```powershell
-.cache/audio/venv/Scripts/python.exe scripts/audio_generate.py --music-only
+.cache/audio-v1.1/venv/Scripts/python.exe scripts/audio_generate.py --music-only
 ```
 
-本次已通过 FFprobe 核对两条音轨均为 45.000000 秒、48 kHz、双声道。FFmpeg `loudnorm` 实测旁白 −18.00 LUFS / −5.09 dBTP，音乐 −28.99 LUFS / −16.67 dBTP。最后一句完整音频在 43.562 秒结束。当前环境没有可用的音频听辨工具，未声称完成主观试听；可在成片预览中验收发音与混音。
+本次已核对两 WAV 的时长、采样率、声道、响度与峰值；时间轴、字幕对应、帧边界及各景余韵校验通过。用户已试听并选定 A 短样；当前工具没有全片音频听辨能力，本文没有将技术检测写成主观试听结论。
 
-依赖环境和分段 MP3 仅供本地再生成与检查，不纳入 Git。
+1.0.0 的 45 秒短片交付物保留；当前 `public/audio/` 为 1.1.0 的长片配音和配乐。未代表已经发布。

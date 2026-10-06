@@ -1,132 +1,789 @@
 {
-  "duration": 45,
+  "videoVersion": "1.1.0",
+  "duration": 154.26666666666668,
+  "durationInFrames": 4628,
+  "fps": 30,
   "sampleRate": 48000,
   "channels": 2,
-  "voice": "zh-CN-XiaoxiaoNeural",
+  "voice": "zh-CN-XiaoyiNeural",
+  "rate": "-3%",
+  "pitch": "+0Hz",
+  "voiceSelection": "User-selected sample A; non-imitative prebuilt synthetic female voice",
   "ttsLibrary": "edge-tts 7.2.8",
+  "timingPolicy": "Actual complete speech; frame-aligned scene boundaries; no time stretching",
+  "storyboardSha256": "69ff37a4e069a4d2726a6d3dbd5419f2ec3aff112b11dd4a624800986bd56045",
   "music": "Original procedural composition",
-  "musicFadeOutSeconds": 1.2,
-  "narration": {
-    "targetIntegratedLufs": -18,
-    "verifiedIntegratedLufs": -18.0,
-    "verifiedTruePeakDbtp": -5.09
-  },
+  "musicFadeOutSeconds": 1.8,
   "scenes": [
     {
+      "id": "opening",
       "index": 1,
-      "start": 0,
-      "end": 6,
-      "text": "Sakura。让 Linux，在本地生长。",
-      "speechStart": 0.4,
-      "speechEnd": 4.48,
-      "rate": "+0%"
+      "title": "让 Linux，在本地生长",
+      "start": 0.0,
+      "end": 11.266666666666667,
+      "from": 0,
+      "durationInFrames": 338,
+      "speechStart": 0.8,
+      "speechEnd": 10.6,
+      "text": "在 Windows 上，搭一个属于自己的 Linux 工作空间。Sakura，让终端、代码和文件，在这里连起来。",
+      "ttsText": "在 Windows 上，搭一个属于自己的 Linux 工作空间。萨库拉，让终端、代码和文件，在这里连起来。",
+      "captions": [
+        {
+          "sceneId": "opening",
+          "line": 1,
+          "start": 0.9,
+          "end": 5.666666666666667,
+          "from": 27,
+          "durationInFrames": 143,
+          "text": "在 Windows 上，搭一个属于自己的 Linux 工作空间。"
+        },
+        {
+          "sceneId": "opening",
+          "line": 2,
+          "start": 5.7,
+          "end": 10.533333333333333,
+          "from": 171,
+          "durationInFrames": 145,
+          "text": "Sakura，让终端、代码和文件，在这里连起来。"
+        }
+      ]
     },
     {
+      "id": "kernel",
       "index": 2,
-      "start": 6,
-      "end": 14,
-      "text": "从基础 Alpine 终端开始。创建、启动和停止实例，数据保存在持久磁盘。",
-      "speechStart": 6.4,
-      "speechEnd": 13.48,
-      "rate": "+13%"
+      "title": "真正的 Linux 内核",
+      "start": 11.266666666666667,
+      "end": 24.8,
+      "from": 338,
+      "durationInFrames": 406,
+      "speechStart": 11.866666666666667,
+      "speechEnd": 24.133333333333333,
+      "text": "它运行的，是真正的 Linux 内核。虚拟化引擎负责系统运行，编排层管理命令和会话。不依赖已有的 WSL。",
+      "ttsText": "它运行的，是真正的 Linux 内核。虚拟化引擎负责系统运行，编排层管理命令和会话。不依赖已有的 W S L。",
+      "captions": [
+        {
+          "sceneId": "kernel",
+          "line": 1,
+          "start": 11.966666666666667,
+          "end": 15.566666666666666,
+          "from": 359,
+          "durationInFrames": 108,
+          "text": "它运行的，是真正的 Linux 内核。"
+        },
+        {
+          "sceneId": "kernel",
+          "line": 2,
+          "start": 15.6,
+          "end": 21.066666666666666,
+          "from": 468,
+          "durationInFrames": 164,
+          "text": "虚拟化引擎负责系统运行，编排层管理命令和会话。"
+        },
+        {
+          "sceneId": "kernel",
+          "line": 3,
+          "start": 21.1,
+          "end": 24.033333333333335,
+          "from": 633,
+          "durationInFrames": 88,
+          "text": "不依赖已有的 WSL。"
+        }
+      ]
     },
     {
+      "id": "instances",
       "index": 3,
-      "start": 14,
-      "end": 22,
-      "text": "QEMU 真正运行 Linux 内核。PosixLoom，编排命令与会话。",
-      "speechStart": 14.4,
-      "speechEnd": 21.168,
-      "rate": "+0%"
+      "title": "从一个基础实例开始",
+      "start": 24.8,
+      "end": 39.233333333333334,
+      "from": 744,
+      "durationInFrames": 433,
+      "speechStart": 25.4,
+      "speechEnd": 38.56666666666667,
+      "text": "从轻量的基础实例开始，创建、启动，打开终端。文件保存在持久磁盘里。按需调整资源，也能通过插件选择更多发行版。",
+      "ttsText": "从轻量的基础实例开始，创建、启动，打开终端。文件保存在持久磁盘里。按需调整资源，也能通过插件选择更多发行版。",
+      "captions": [
+        {
+          "sceneId": "instances",
+          "line": 1,
+          "start": 25.5,
+          "end": 30.533333333333335,
+          "from": 765,
+          "durationInFrames": 151,
+          "text": "从轻量的基础实例开始，创建、启动，打开终端。"
+        },
+        {
+          "sceneId": "instances",
+          "line": 2,
+          "start": 30.566666666666666,
+          "end": 33.266666666666666,
+          "from": 917,
+          "durationInFrames": 81,
+          "text": "文件保存在持久磁盘里。"
+        },
+        {
+          "sceneId": "instances",
+          "line": 3,
+          "start": 33.3,
+          "end": 38.5,
+          "from": 999,
+          "durationInFrames": 156,
+          "text": "按需调整资源，也能通过插件选择更多发行版。"
+        }
+      ]
     },
     {
+      "id": "plugins",
       "index": 4,
-      "start": 22,
-      "end": 32,
-      "text": "文件、多终端、项目、Git 和快照，按需选择插件。保存后，重启 Sakura 服务生效。",
-      "speechStart": 22.4,
-      "speechEnd": 30.488,
-      "rate": "+8%"
+      "title": "需要什么，再打开什么",
+      "start": 39.233333333333334,
+      "end": 53.733333333333334,
+      "from": 1177,
+      "durationInFrames": 435,
+      "speechStart": 39.833333333333336,
+      "speechEnd": 53.06666666666667,
+      "text": "需要什么，再打开什么。32 个插件，9 个整合包，把开发、运维和实验工具分开选择。保存后，重启服务，功能才会生效。",
+      "ttsText": "需要什么，再打开什么。三十二个插件，九个整合包，把开发、运维和实验工具分开选择。保存后，重启服务，功能才会生效。",
+      "captions": [
+        {
+          "sceneId": "plugins",
+          "line": 1,
+          "start": 39.93333333333333,
+          "end": 42.333333333333336,
+          "from": 1198,
+          "durationInFrames": 72,
+          "text": "需要什么，再打开什么。"
+        },
+        {
+          "sceneId": "plugins",
+          "line": 2,
+          "start": 42.36666666666667,
+          "end": 48.86666666666667,
+          "from": 1271,
+          "durationInFrames": 195,
+          "text": "32 个插件，9 个整合包，把开发、运维和实验工具分开选择。"
+        },
+        {
+          "sceneId": "plugins",
+          "line": 3,
+          "start": 48.9,
+          "end": 53.03333333333333,
+          "from": 1467,
+          "durationInFrames": 124,
+          "text": "保存后，重启服务，功能才会生效。"
+        }
+      ]
     },
     {
+      "id": "development",
       "index": 5,
-      "start": 32,
-      "end": 40,
-      "text": "把代码、文件和终端，组织成本地工作空间。按需组合，专注创造。",
-      "speechStart": 32.4,
-      "speechEnd": 39.623999999999995,
-      "rate": "+0%"
+      "title": "让开发流程连起来",
+      "start": 53.733333333333334,
+      "end": 67.26666666666667,
+      "from": 1612,
+      "durationInFrames": 406,
+      "speechStart": 54.333333333333336,
+      "speechEnd": 66.6,
+      "text": "做开发时，从项目模板起步。编辑代码、查看 Git 改动，再用多终端运行和调试。项目命令、日志，都有各自的位置。",
+      "ttsText": "做开发时，从项目模板起步。编辑代码、查看 Git 改动，再用多终端运行和调试。项目命令、日志，都有各自的位置。",
+      "captions": [
+        {
+          "sceneId": "development",
+          "line": 1,
+          "start": 54.43333333333333,
+          "end": 57.5,
+          "from": 1633,
+          "durationInFrames": 92,
+          "text": "做开发时，从项目模板起步。"
+        },
+        {
+          "sceneId": "development",
+          "line": 2,
+          "start": 57.53333333333333,
+          "end": 62.56666666666667,
+          "from": 1726,
+          "durationInFrames": 151,
+          "text": "编辑代码、查看 Git 改动，再用多终端运行和调试。"
+        },
+        {
+          "sceneId": "development",
+          "line": 3,
+          "start": 62.6,
+          "end": 66.53333333333333,
+          "from": 1878,
+          "durationInFrames": 118,
+          "text": "项目命令、日志，都有各自的位置。"
+        }
+      ]
     },
     {
+      "id": "files",
       "index": 6,
-      "start": 40,
-      "end": 45,
-      "text": "从一个终端，长成你的工作空间。",
-      "speechStart": 40.25,
-      "speechEnd": 43.562,
-      "rate": "+0%"
+      "title": "文件往来，有迹可循",
+      "start": 67.26666666666667,
+      "end": 79.6,
+      "from": 2018,
+      "durationInFrames": 370,
+      "speechStart": 67.86666666666666,
+      "speechEnd": 78.93333333333334,
+      "text": "文件可以直接上传、下载，也能与 Windows 文件夹双向同步。先预览变化，遇到冲突，逐个决定保留哪一份。",
+      "ttsText": "文件可以直接上传、下载，也能与 Windows 文件夹双向同步。先预览变化，遇到冲突，逐个决定保留哪一份。",
+      "captions": [
+        {
+          "sceneId": "files",
+          "line": 1,
+          "start": 67.96666666666667,
+          "end": 74.0,
+          "from": 2039,
+          "durationInFrames": 181,
+          "text": "文件可以直接上传、下载，也能与 Windows 文件夹双向同步。"
+        },
+        {
+          "sceneId": "files",
+          "line": 2,
+          "start": 74.03333333333333,
+          "end": 78.83333333333333,
+          "from": 2221,
+          "durationInFrames": 144,
+          "text": "先预览变化，遇到冲突，逐个决定保留哪一份。"
+        }
+      ]
+    },
+    {
+      "id": "recovery",
+      "index": 7,
+      "title": "给每次尝试留条退路",
+      "start": 79.6,
+      "end": 93.16666666666667,
+      "from": 2388,
+      "durationInFrames": 407,
+      "speechStart": 80.2,
+      "speechEnd": 92.5,
+      "text": "尝试新配置前，先停机，留一份快照。需要另一套环境，就克隆实例。重要数据还能定时备份，校验后恢复成新实例。",
+      "ttsText": "尝试新配置前，先停机，留一份快照。需要另一套环境，就克隆实例。重要数据还能定时备份，校验后恢复成新实例。",
+      "captions": [
+        {
+          "sceneId": "recovery",
+          "line": 1,
+          "start": 80.3,
+          "end": 84.36666666666666,
+          "from": 2409,
+          "durationInFrames": 122,
+          "text": "尝试新配置前，先停机，留一份快照。"
+        },
+        {
+          "sceneId": "recovery",
+          "line": 2,
+          "start": 84.4,
+          "end": 87.4,
+          "from": 2532,
+          "durationInFrames": 90,
+          "text": "需要另一套环境，就克隆实例。"
+        },
+        {
+          "sceneId": "recovery",
+          "line": 3,
+          "start": 87.43333333333334,
+          "end": 92.43333333333334,
+          "from": 2623,
+          "durationInFrames": 150,
+          "text": "重要数据还能定时备份，校验后恢复成新实例。"
+        }
+      ]
+    },
+    {
+      "id": "network",
+      "index": 8,
+      "title": "从命令，走到服务",
+      "start": 93.16666666666667,
+      "end": 106.43333333333334,
+      "from": 2795,
+      "durationInFrames": 398,
+      "speechStart": 93.76666666666667,
+      "speechEnd": 105.76666666666667,
+      "text": "服务跑起来，再把端口转发到本机。多服务项目可以设置启动依赖和健康检查。支持的发行版，还能接入桌面编辑器。",
+      "ttsText": "服务跑起来，再把端口转发到本机。多服务项目可以设置启动依赖和健康检查。支持的发行版，还能接入桌面编辑器。",
+      "captions": [
+        {
+          "sceneId": "network",
+          "line": 1,
+          "start": 93.86666666666666,
+          "end": 97.36666666666666,
+          "from": 2816,
+          "durationInFrames": 105,
+          "text": "服务跑起来，再把端口转发到本机。"
+        },
+        {
+          "sceneId": "network",
+          "line": 2,
+          "start": 97.4,
+          "end": 101.6,
+          "from": 2922,
+          "durationInFrames": 126,
+          "text": "多服务项目可以设置启动依赖和健康检查。"
+        },
+        {
+          "sceneId": "network",
+          "line": 3,
+          "start": 101.63333333333334,
+          "end": 105.7,
+          "from": 3049,
+          "durationInFrames": 122,
+          "text": "支持的发行版，还能接入桌面编辑器。"
+        }
+      ]
+    },
+    {
+      "id": "automation",
+      "index": 9,
+      "title": "把重复操作交给工具",
+      "start": 106.43333333333334,
+      "end": 120.5,
+      "from": 3193,
+      "durationInFrames": 422,
+      "speechStart": 107.03333333333333,
+      "speechEnd": 119.83333333333333,
+      "text": "重复操作，交给自动化。计划启停、资源监控、任务日志和故障诊断，让日常维护更清楚。发现异常，也更容易追查。",
+      "ttsText": "重复操作，交给自动化。计划启停、资源监控、任务日志和故障诊断，让日常维护更清楚。发现异常，也更容易追查。",
+      "captions": [
+        {
+          "sceneId": "automation",
+          "line": 1,
+          "start": 107.13333333333334,
+          "end": 109.76666666666667,
+          "from": 3214,
+          "durationInFrames": 79,
+          "text": "重复操作，交给自动化。"
+        },
+        {
+          "sceneId": "automation",
+          "line": 2,
+          "start": 109.8,
+          "end": 116.5,
+          "from": 3294,
+          "durationInFrames": 201,
+          "text": "计划启停、资源监控、任务日志和故障诊断，让日常维护更清楚。"
+        },
+        {
+          "sceneId": "automation",
+          "line": 3,
+          "start": 116.53333333333333,
+          "end": 119.76666666666667,
+          "from": 3496,
+          "durationInFrames": 97,
+          "text": "发现异常，也更容易追查。"
+        }
+      ]
+    },
+    {
+      "id": "isolation",
+      "index": 10,
+      "title": "把运行边界说清楚",
+      "start": 120.5,
+      "end": 133.83333333333334,
+      "from": 3615,
+      "durationInFrames": 400,
+      "speechStart": 121.1,
+      "speechEnd": 133.16666666666666,
+      "text": "管理入口留在本机。不同项目使用独立账号和主目录，命令按项目运行。需要试验时，还能开启默认隔离网络的沙箱。",
+      "ttsText": "管理入口留在本机。不同项目使用独立账号和主目录，命令按项目运行。需要试验时，还能开启默认隔离网络的沙箱。",
+      "captions": [
+        {
+          "sceneId": "isolation",
+          "line": 1,
+          "start": 121.2,
+          "end": 123.33333333333333,
+          "from": 3636,
+          "durationInFrames": 64,
+          "text": "管理入口留在本机。"
+        },
+        {
+          "sceneId": "isolation",
+          "line": 2,
+          "start": 123.36666666666666,
+          "end": 128.46666666666667,
+          "from": 3701,
+          "durationInFrames": 153,
+          "text": "不同项目使用独立账号和主目录，命令按项目运行。"
+        },
+        {
+          "sceneId": "isolation",
+          "line": 3,
+          "start": 128.5,
+          "end": 133.1,
+          "from": 3855,
+          "durationInFrames": 138,
+          "text": "需要试验时，还能开启默认隔离网络的沙箱。"
+        }
+      ]
+    },
+    {
+      "id": "desktop",
+      "index": 11,
+      "title": "图形桌面，按需尝试",
+      "start": 133.83333333333334,
+      "end": 144.43333333333334,
+      "from": 4015,
+      "durationInFrames": 318,
+      "speechStart": 134.43333333333334,
+      "speechEnd": 143.76666666666668,
+      "text": "偶尔需要图形界面，也有实验性的桌面。它通过浏览器连接，仍有功能限制，适合按需尝试。",
+      "ttsText": "偶尔需要图形界面，也有实验性的桌面。它通过浏览器连接，仍有功能限制，适合按需尝试。",
+      "captions": [
+        {
+          "sceneId": "desktop",
+          "line": 1,
+          "start": 134.53333333333333,
+          "end": 138.2,
+          "from": 4036,
+          "durationInFrames": 110,
+          "text": "偶尔需要图形界面，也有实验性的桌面。"
+        },
+        {
+          "sceneId": "desktop",
+          "line": 2,
+          "start": 138.23333333333332,
+          "end": 143.7,
+          "from": 4147,
+          "durationInFrames": 164,
+          "text": "它通过浏览器连接，仍有功能限制，适合按需尝试。"
+        }
+      ]
+    },
+    {
+      "id": "closing",
+      "index": 12,
+      "title": "长成你的工作空间",
+      "start": 144.43333333333334,
+      "end": 154.26666666666668,
+      "from": 4333,
+      "durationInFrames": 295,
+      "speechStart": 145.03333333333333,
+      "speechEnd": 152.76666666666668,
+      "text": "从一个终端开始，按自己的节奏扩展。Sakura，让 Linux，在本地生长。",
+      "ttsText": "从一个终端开始，按自己的节奏扩展。萨库拉，让 Linux，在本地生长。",
+      "captions": [
+        {
+          "sceneId": "closing",
+          "line": 1,
+          "start": 145.13333333333333,
+          "end": 148.7,
+          "from": 4354,
+          "durationInFrames": 107,
+          "text": "从一个终端开始，按自己的节奏扩展。"
+        },
+        {
+          "sceneId": "closing",
+          "line": 2,
+          "start": 148.73333333333332,
+          "end": 152.7,
+          "from": 4462,
+          "durationInFrames": 119,
+          "text": "Sakura，让 Linux，在本地生长。"
+        }
+      ]
     }
   ],
   "captions": [
     {
-      "start": 0.5,
-      "end": 1.765,
-      "text": "Sakura。"
+      "sceneId": "opening",
+      "line": 1,
+      "start": 0.9,
+      "end": 5.666666666666667,
+      "from": 27,
+      "durationInFrames": 143,
+      "text": "在 Windows 上，搭一个属于自己的 Linux 工作空间。"
     },
     {
-      "start": 1.775,
-      "end": 4.48,
-      "text": "让 Linux，在本地生长。"
+      "sceneId": "opening",
+      "line": 2,
+      "start": 5.7,
+      "end": 10.533333333333333,
+      "from": 171,
+      "durationInFrames": 145,
+      "text": "Sakura，让终端、代码和文件，在这里连起来。"
     },
     {
-      "start": 6.5,
-      "end": 8.912,
-      "text": "从基础 Alpine 终端开始。"
+      "sceneId": "kernel",
+      "line": 1,
+      "start": 11.966666666666667,
+      "end": 15.566666666666666,
+      "from": 359,
+      "durationInFrames": 108,
+      "text": "它运行的，是真正的 Linux 内核。"
     },
     {
-      "start": 8.922,
-      "end": 13.48,
-      "text": "创建、启动和停止实例，数据保存在持久磁盘。"
+      "sceneId": "kernel",
+      "line": 2,
+      "start": 15.6,
+      "end": 21.066666666666666,
+      "from": 468,
+      "durationInFrames": 164,
+      "text": "虚拟化引擎负责系统运行，编排层管理命令和会话。"
     },
     {
-      "start": 14.5,
-      "end": 18.002,
-      "text": "QEMU 真正运行 Linux 内核。"
+      "sceneId": "kernel",
+      "line": 3,
+      "start": 21.1,
+      "end": 24.033333333333335,
+      "from": 633,
+      "durationInFrames": 88,
+      "text": "不依赖已有的 WSL。"
     },
     {
-      "start": 18.012,
-      "end": 21.168,
-      "text": "PosixLoom，编排命令与会话。"
+      "sceneId": "instances",
+      "line": 1,
+      "start": 25.5,
+      "end": 30.533333333333335,
+      "from": 765,
+      "durationInFrames": 151,
+      "text": "从轻量的基础实例开始，创建、启动，打开终端。"
     },
     {
-      "start": 22.5,
-      "end": 27.425,
-      "text": "文件、多终端、项目、Git 和快照，按需选择插件。"
+      "sceneId": "instances",
+      "line": 2,
+      "start": 30.566666666666666,
+      "end": 33.266666666666666,
+      "from": 917,
+      "durationInFrames": 81,
+      "text": "文件保存在持久磁盘里。"
     },
     {
-      "start": 27.435,
-      "end": 30.488,
-      "text": "保存后，重启 Sakura 服务生效。"
+      "sceneId": "instances",
+      "line": 3,
+      "start": 33.3,
+      "end": 38.5,
+      "from": 999,
+      "durationInFrames": 156,
+      "text": "按需调整资源，也能通过插件选择更多发行版。"
     },
     {
-      "start": 32.5,
-      "end": 36.99,
-      "text": "把代码、文件和终端，组织成本地工作空间。"
+      "sceneId": "plugins",
+      "line": 1,
+      "start": 39.93333333333333,
+      "end": 42.333333333333336,
+      "from": 1198,
+      "durationInFrames": 72,
+      "text": "需要什么，再打开什么。"
     },
     {
-      "start": 37.0,
-      "end": 39.624,
-      "text": "按需组合，专注创造。"
+      "sceneId": "plugins",
+      "line": 2,
+      "start": 42.36666666666667,
+      "end": 48.86666666666667,
+      "from": 1271,
+      "durationInFrames": 195,
+      "text": "32 个插件，9 个整合包，把开发、运维和实验工具分开选择。"
     },
     {
-      "start": 40.35,
-      "end": 43.562,
-      "text": "从一个终端，长成你的工作空间。"
+      "sceneId": "plugins",
+      "line": 3,
+      "start": 48.9,
+      "end": 53.03333333333333,
+      "from": 1467,
+      "durationInFrames": 124,
+      "text": "保存后，重启服务，功能才会生效。"
+    },
+    {
+      "sceneId": "development",
+      "line": 1,
+      "start": 54.43333333333333,
+      "end": 57.5,
+      "from": 1633,
+      "durationInFrames": 92,
+      "text": "做开发时，从项目模板起步。"
+    },
+    {
+      "sceneId": "development",
+      "line": 2,
+      "start": 57.53333333333333,
+      "end": 62.56666666666667,
+      "from": 1726,
+      "durationInFrames": 151,
+      "text": "编辑代码、查看 Git 改动，再用多终端运行和调试。"
+    },
+    {
+      "sceneId": "development",
+      "line": 3,
+      "start": 62.6,
+      "end": 66.53333333333333,
+      "from": 1878,
+      "durationInFrames": 118,
+      "text": "项目命令、日志，都有各自的位置。"
+    },
+    {
+      "sceneId": "files",
+      "line": 1,
+      "start": 67.96666666666667,
+      "end": 74.0,
+      "from": 2039,
+      "durationInFrames": 181,
+      "text": "文件可以直接上传、下载，也能与 Windows 文件夹双向同步。"
+    },
+    {
+      "sceneId": "files",
+      "line": 2,
+      "start": 74.03333333333333,
+      "end": 78.83333333333333,
+      "from": 2221,
+      "durationInFrames": 144,
+      "text": "先预览变化，遇到冲突，逐个决定保留哪一份。"
+    },
+    {
+      "sceneId": "recovery",
+      "line": 1,
+      "start": 80.3,
+      "end": 84.36666666666666,
+      "from": 2409,
+      "durationInFrames": 122,
+      "text": "尝试新配置前，先停机，留一份快照。"
+    },
+    {
+      "sceneId": "recovery",
+      "line": 2,
+      "start": 84.4,
+      "end": 87.4,
+      "from": 2532,
+      "durationInFrames": 90,
+      "text": "需要另一套环境，就克隆实例。"
+    },
+    {
+      "sceneId": "recovery",
+      "line": 3,
+      "start": 87.43333333333334,
+      "end": 92.43333333333334,
+      "from": 2623,
+      "durationInFrames": 150,
+      "text": "重要数据还能定时备份，校验后恢复成新实例。"
+    },
+    {
+      "sceneId": "network",
+      "line": 1,
+      "start": 93.86666666666666,
+      "end": 97.36666666666666,
+      "from": 2816,
+      "durationInFrames": 105,
+      "text": "服务跑起来，再把端口转发到本机。"
+    },
+    {
+      "sceneId": "network",
+      "line": 2,
+      "start": 97.4,
+      "end": 101.6,
+      "from": 2922,
+      "durationInFrames": 126,
+      "text": "多服务项目可以设置启动依赖和健康检查。"
+    },
+    {
+      "sceneId": "network",
+      "line": 3,
+      "start": 101.63333333333334,
+      "end": 105.7,
+      "from": 3049,
+      "durationInFrames": 122,
+      "text": "支持的发行版，还能接入桌面编辑器。"
+    },
+    {
+      "sceneId": "automation",
+      "line": 1,
+      "start": 107.13333333333334,
+      "end": 109.76666666666667,
+      "from": 3214,
+      "durationInFrames": 79,
+      "text": "重复操作，交给自动化。"
+    },
+    {
+      "sceneId": "automation",
+      "line": 2,
+      "start": 109.8,
+      "end": 116.5,
+      "from": 3294,
+      "durationInFrames": 201,
+      "text": "计划启停、资源监控、任务日志和故障诊断，让日常维护更清楚。"
+    },
+    {
+      "sceneId": "automation",
+      "line": 3,
+      "start": 116.53333333333333,
+      "end": 119.76666666666667,
+      "from": 3496,
+      "durationInFrames": 97,
+      "text": "发现异常，也更容易追查。"
+    },
+    {
+      "sceneId": "isolation",
+      "line": 1,
+      "start": 121.2,
+      "end": 123.33333333333333,
+      "from": 3636,
+      "durationInFrames": 64,
+      "text": "管理入口留在本机。"
+    },
+    {
+      "sceneId": "isolation",
+      "line": 2,
+      "start": 123.36666666666666,
+      "end": 128.46666666666667,
+      "from": 3701,
+      "durationInFrames": 153,
+      "text": "不同项目使用独立账号和主目录，命令按项目运行。"
+    },
+    {
+      "sceneId": "isolation",
+      "line": 3,
+      "start": 128.5,
+      "end": 133.1,
+      "from": 3855,
+      "durationInFrames": 138,
+      "text": "需要试验时，还能开启默认隔离网络的沙箱。"
+    },
+    {
+      "sceneId": "desktop",
+      "line": 1,
+      "start": 134.53333333333333,
+      "end": 138.2,
+      "from": 4036,
+      "durationInFrames": 110,
+      "text": "偶尔需要图形界面，也有实验性的桌面。"
+    },
+    {
+      "sceneId": "desktop",
+      "line": 2,
+      "start": 138.23333333333332,
+      "end": 143.7,
+      "from": 4147,
+      "durationInFrames": 164,
+      "text": "它通过浏览器连接，仍有功能限制，适合按需尝试。"
+    },
+    {
+      "sceneId": "closing",
+      "line": 1,
+      "start": 145.13333333333333,
+      "end": 148.7,
+      "from": 4354,
+      "durationInFrames": 107,
+      "text": "从一个终端开始，按自己的节奏扩展。"
+    },
+    {
+      "sceneId": "closing",
+      "line": 2,
+      "start": 148.73333333333332,
+      "end": 152.7,
+      "from": 4462,
+      "durationInFrames": 119,
+      "text": "Sakura，让 Linux，在本地生长。"
     }
   ],
+  "narration": {
+    "targetIntegratedLufs": -18,
+    "verifiedIntegratedLufs": -18.0,
+    "verifiedTruePeakDbtp": -3.75,
+    "constantGainDb": 0.96
+  },
   "soundtrack": {
-    "targetIntegratedLufs": -29,
-    "verifiedIntegratedLufs": -28.99,
-    "verifiedTruePeakDbtp": -16.67
+    "targetIntegratedLufs": -30,
+    "verifiedIntegratedLufs": -30.0,
+    "verifiedTruePeakDbtp": -17.56,
+    "constantGainDb": 4.99
   }
 }

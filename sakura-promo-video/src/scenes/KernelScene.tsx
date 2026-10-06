@@ -1,25 +1,23 @@
 import {Video} from '@remotion/media';
 import {Freeze, Interactive, Sequence, staticFile, useVideoConfig} from 'remotion';
-import {Eyebrow, Icon, Paper, Reveal} from '../components';
+import {Chapter, ScenePaper, type SceneProps, SoftFocus, Tag, useScene} from '../stage';
 import {colors, font} from '../theme';
 
-const KernelInner: React.FC<{style?: React.CSSProperties}> = ({style}) => {
+export const ManimClip = ({src, seconds}: {src: string; seconds: number}) => {
   const {fps} = useVideoConfig();
-  return <Paper style={style}>
-    <Reveal delay={0.1} style={{position: 'absolute', left: 107, top: 122}}><Eyebrow number="02">内核与编排</Eyebrow></Reveal>
-    <Reveal delay={0.3} style={{position: 'absolute', left: 108, top: 264, width: 525}}>
-      <h1 style={{fontFamily: font.serif, fontSize: 76, lineHeight: 1.36, fontWeight: 600, margin: 0}}>真正运行<br/><span style={{color: colors.accent}}>Linux 内核</span></h1>
-      <div style={{height: 3, width: 118, background: colors.accent, marginTop: 38}} />
-    </Reveal>
-    <Reveal delay={1.05} style={{position: 'absolute', left: 112, top: 529, width: 490, fontSize: 32, color: colors.muted, lineHeight: 1.7}}>PosixLoom<br/><span style={{color: colors.ink, fontSize: 36}}>命令编排 · 会话管理</span></Reveal>
-    <Reveal delay={2} style={{position: 'absolute', left: 112, top: 663, width: 490, fontSize: 32, color: colors.muted, lineHeight: 1.7}}>QEMU<br/><span style={{color: colors.ink, fontSize: 36}}>虚拟化 · Linux 实例</span></Reveal>
-    <div style={{position: 'absolute', left: 667, top: 233, width: 1152, height: 648, borderRadius: 26, overflow: 'hidden', border: `1px solid ${colors.line}`}}>
-      <Sequence name="Manim — 核心原理" durationInFrames={8 * fps} premountFor={fps}>
-        <Video name="Manim kernel flow" src={staticFile('manim/kernel-flow.mp4')} muted premountFor={fps} style={{width: '100%', height: '100%'}} />
-      </Sequence>
-      <Sequence name="Manim — 尾帧保持" from={8 * fps} premountFor={fps}><Freeze frame={8 * fps - 1}><Video src={staticFile('manim/kernel-flow.mp4')} muted premountFor={fps} style={{width: '100%', height: '100%'}} /></Freeze></Sequence>
-    </div>
-    <div style={{position: 'absolute', right: 112, top: 183, display: 'flex', gap: 11, alignItems: 'center', color: colors.muted, fontSize: 23}}><Icon type="grid" size={24} />运行原理示意 · Manim</div>
-  </Paper>;
+  return <>
+    <Sequence name="Manim 动画" durationInFrames={seconds * fps} premountFor={fps}><Video name={src} src={staticFile(src)} muted premountFor={fps} style={{width: '100%', height: '100%'}}/></Sequence>
+    <Sequence name="图解停留" from={seconds * fps} premountFor={fps}><Freeze frame={seconds * fps - 1}><Video src={staticFile(src)} muted premountFor={fps} style={{width: '100%', height: '100%'}}/></Freeze></Sequence>
+  </>;
+};
+const KernelInner: React.FC<SceneProps> = ({style}) => {
+  const {cue} = useScene('kernel');
+  return <ScenePaper id="kernel" style={style}>
+    <Chapter id="kernel" number="02" tag="内核与编排" detail="原生 Windows 后端 · 不依赖已有 WSL"/>
+    <SoftFocus at={0.65} style={{position: 'absolute', left: 112, top: 391, width: 490}}><div style={{fontFamily: font.serif, fontSize: 63, lineHeight: 1.45}}>真正运行<br/><span style={{color: colors.accent}}>Linux 内核</span></div></SoftFocus>
+    <SoftFocus at={cue(1)} style={{position: 'absolute', left: 112, top: 602, width: 515}}><div style={{fontSize: 31, color: colors.muted}}>QEMU</div><div style={{fontSize: 33, marginTop: 13}}>虚拟化引擎</div><div style={{fontSize: 29, color: colors.muted, marginTop: 28}}>PosixLoom</div><div style={{fontSize: 31, marginTop: 12}}>命令与会话编排</div></SoftFocus>
+    <SoftFocus at={cue(2)} style={{position: 'absolute', left: 109, top: 851}}><Tag>无需已有 WSL · 无需管理员权限</Tag></SoftFocus>
+    <div style={{position: 'absolute', left: 655, top: 353, width: 1160, height: 550, borderRadius: 22, border: `1px solid ${colors.line}`, overflow: 'hidden'}}><div style={{position: 'absolute', width: 1160, height: 652.5, top: -51}}><ManimClip src="manim/kernel-flow.mp4" seconds={8}/></div></div>
+  </ScenePaper>;
 };
 export const KernelScene = Interactive.withSchema({Component: KernelInner, componentName: '<KernelScene>', schema: {}, wrapInSequence: true});

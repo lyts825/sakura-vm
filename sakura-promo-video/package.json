@@ -1,6 +1,6 @@
 {
   "name": "sakura-promo-video",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Sakura introduction video made with Remotion and Manim",
   "license": "MIT",
   "private": true,
@@ -8,7 +8,6 @@
     "@remotion/cli": "4.0.533",
     "@remotion/fonts": "4.0.533",
     "@remotion/media": "4.0.533",
-    "@remotion/transitions": "4.0.533",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "remotion": "4.0.533"

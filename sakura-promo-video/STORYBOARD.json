@@ -1,0 +1,173 @@
+{
+  "videoVersion": "1.1.0",
+  "sourceProjectVersion": "2.3.3",
+  "language": "zh-CN",
+  "fps": 30,
+  "targetDurationSeconds": 150,
+  "timingPolicy": "以实际旁白定长，镜头为句间停顿和尾部余韵留空间；不为固定总长加速或拉伸语音。",
+  "voiceDirection": "自然、明亮、温和的成年中文女声。口语讲解，重音克制，保留句长变化，不模仿或克隆任何真人。",
+  "visualDirection": "延续 Sakura 纸白、樱粉、深紫的视觉；产品界面为标注清楚的动效示意。以操作进展和图解呈现特点，底部保留中文字幕安全区。",
+  "scenes": [
+    {
+      "id": "opening",
+      "title": "让 Linux，在本地生长",
+      "targetDurationSeconds": 11,
+      "lines": [
+        {"text": "在 Windows 上，搭一个属于自己的 Linux 工作空间。", "ttsText": "在 Windows 上，搭一个属于自己的 Linux 工作空间。"},
+        {"text": "Sakura，让终端、代码和文件，在这里连起来。", "ttsText": "萨库拉，让终端、代码和文件，在这里连起来。"}
+      ],
+      "onScreen": ["Sakura", "Windows 上的本地 Linux 工作空间", "终端 · 代码 · 文件"],
+      "visual": "樱花品牌开场，三个工作元素自然汇入主窗口，留出完整落版。",
+      "sources": ["../README.md"]
+    },
+    {
+      "id": "kernel",
+      "title": "真正的 Linux 内核",
+      "targetDurationSeconds": 14,
+      "lines": [
+        {"text": "它运行的，是真正的 Linux 内核。", "ttsText": "它运行的，是真正的 Linux 内核。"},
+        {"text": "虚拟化引擎负责系统运行，编排层管理命令和会话。", "ttsText": "虚拟化引擎负责系统运行，编排层管理命令和会话。"},
+        {"text": "不依赖已有的 WSL。", "ttsText": "不依赖已有的 W S L。"}
+      ],
+      "onScreen": ["QEMU：虚拟化", "PosixLoom：命令与会话编排", "默认原生 Windows 后端", "无需管理员权限 · 无需已有 WSL"],
+      "visual": "Manim kernel-flow 运行链路，配中文职责注释；动画结束后停留图解，不循环重播。",
+      "sources": ["../README.md", "../docs/architecture.md"],
+      "boundary": "不是 WSL 的替代实现，不承诺硬件加速或启动性能。"
+    },
+    {
+      "id": "instances",
+      "title": "从一个基础实例开始",
+      "targetDurationSeconds": 14,
+      "lines": [
+        {"text": "从轻量的基础实例开始，创建、启动，打开终端。", "ttsText": "从轻量的基础实例开始，创建、启动，打开终端。"},
+        {"text": "文件保存在持久磁盘里。", "ttsText": "文件保存在持久磁盘里。"},
+        {"text": "按需调整资源，也能通过插件选择更多发行版。", "ttsText": "按需调整资源，也能通过插件选择更多发行版。"}
+      ],
+      "onScreen": ["Alpine 基础版", "持久 QCOW2 磁盘", "CPU · 内存 · 磁盘", "镜像插件：Debian 12 / Ubuntu 24.04"],
+      "visual": "实例卡从已停止到启动日志、终端连接，展示实际 Linux 命令示意；资源设置明确停机后修改。",
+      "sources": ["../README.md", "../docs/workspace-management.md"],
+      "boundary": "创建和启动为过程示意，不用倒计时或伪实测速度。"
+    },
+    {
+      "id": "plugins",
+      "title": "需要什么，再打开什么",
+      "targetDurationSeconds": 14,
+      "lines": [
+        {"text": "需要什么，再打开什么。", "ttsText": "需要什么，再打开什么。"},
+        {"text": "32 个插件，9 个整合包，把开发、运维和实验工具分开选择。", "ttsText": "三十二个插件，九个整合包，把开发、运维和实验工具分开选择。"},
+        {"text": "保存后，重启服务，功能才会生效。", "ttsText": "保存后，重启服务，功能才会生效。"}
+      ],
+      "onScreen": ["32 个插件 / 9 个整合包", "默认全部关闭", "日常使用 · 开发工作台 · 运维与备份 · 实验室", "选择 → 保存 → 重启 Sakura 服务"],
+      "visual": "插件卡按场景逐步展开，开发整合包被选中，最后显示保存与重启步骤。",
+      "sources": ["../README.md", "../docs/plugin-architecture.md"],
+      "boundary": "以下可选功能需启用相关插件；仅刷新浏览器无效，重启服务会停止当前实例。"
+    },
+    {
+      "id": "development",
+      "title": "让开发流程连起来",
+      "targetDurationSeconds": 13,
+      "lines": [
+        {"text": "做开发时，从项目模板起步。", "ttsText": "做开发时，从项目模板起步。"},
+        {"text": "编辑代码、查看 Git 改动，再用多终端运行和调试。", "ttsText": "编辑代码、查看 Git 改动，再用多终端运行和调试。"},
+        {"text": "项目命令、日志，都有各自的位置。", "ttsText": "项目命令、日志，都有各自的位置。"}
+      ],
+      "onScreen": ["Node.js / Python / Rust 模板", "代码编辑器 · Git 工作台", "多终端 · 分屏 · tmux 会话恢复", "需启用相关开发插件"],
+      "visual": "项目文件树、代码修改、Git 差异、多终端分屏按叙述顺序出现，使用普通项目账号与相对项目路径。",
+      "sources": ["../docs/development-workbench.md", "../docs/development-workspaces.md", "../docs/project-terminals.md"],
+      "boundary": "tmux 恢复需客户机已安装；不表示默认基础终端具备多终端。"
+    },
+    {
+      "id": "files",
+      "title": "文件往来，有迹可循",
+      "targetDurationSeconds": 12,
+      "lines": [
+        {"text": "文件可以直接上传、下载，也能与 Windows 文件夹双向同步。", "ttsText": "文件可以直接上传、下载，也能与 Windows 文件夹双向同步。"},
+        {"text": "先预览变化，遇到冲突，逐个决定保留哪一份。", "ttsText": "先预览变化，遇到冲突，逐个决定保留哪一份。"}
+      ],
+      "onScreen": ["SFTP 文件管理", "Windows ⇄ Linux 双向同步", "预览变更 → 处理冲突 → 同步", "自定义忽略规则"],
+      "visual": "两端目录与同步预览，中间一个文件标记冲突，再明确选择版本；不能直接将冲突自动显示为成功。",
+      "sources": ["../docs/development-workspaces.md", "../docs/development-next.md"]
+    },
+    {
+      "id": "recovery",
+      "title": "给每次尝试留条退路",
+      "targetDurationSeconds": 13,
+      "lines": [
+        {"text": "尝试新配置前，先停机，留一份快照。", "ttsText": "尝试新配置前，先停机，留一份快照。"},
+        {"text": "需要另一套环境，就克隆实例。", "ttsText": "需要另一套环境，就克隆实例。"},
+        {"text": "重要数据还能定时备份，校验后恢复成新实例。", "ttsText": "重要数据还能定时备份，校验后恢复成新实例。"}
+      ],
+      "onScreen": ["停机快照与恢复", "克隆为独立实例", "定时备份 · 保留策略 · 完整性校验", "备份恢复为新实例"],
+      "visual": "Manim recovery-flow 三条分支与中文标签，分清快照回退、独立克隆和备份恢复。",
+      "sources": ["../README.md", "../docs/workspace-management.md", "../docs/backup-file-recovery.md"],
+      "boundary": "快照和备份要求实例已停止；不能展示运行中无损快照或无条件恢复承诺。"
+    },
+    {
+      "id": "network",
+      "title": "从命令，走到服务",
+      "targetDurationSeconds": 13,
+      "lines": [
+        {"text": "服务跑起来，再把端口转发到本机。", "ttsText": "服务跑起来，再把端口转发到本机。"},
+        {"text": "多服务项目可以设置启动依赖和健康检查。", "ttsText": "多服务项目可以设置启动依赖和健康检查。"},
+        {"text": "支持的发行版，还能接入桌面编辑器。", "ttsText": "支持的发行版，还能接入桌面编辑器。"}
+      ],
+      "onScreen": ["命名 TCP 端口转发", "数据库 → API → 网页", "独立日志 · 就绪检查 · 健康检查", "VS Code Remote-SSH：Debian / Ubuntu"],
+      "visual": "Linux Web 服务通过本机转发端口打开浏览器预览，随后展开依赖链；Remote-SSH 作为辅助卡。",
+      "sources": ["../docs/development-workbench.md", "../docs/project-service-lifecycle.md", "../docs/development-workspaces.md"],
+      "boundary": "健康检查需相关插件；编辑器接入应满足发行版和运行环境条件，不暗示 Alpine 通用支持。"
+    },
+    {
+      "id": "automation",
+      "title": "把重复操作交给工具",
+      "targetDurationSeconds": 13,
+      "lines": [
+        {"text": "重复操作，交给自动化。", "ttsText": "重复操作，交给自动化。"},
+        {"text": "计划启停、资源监控、任务日志和故障诊断，让日常维护更清楚。", "ttsText": "计划启停、资源监控、任务日志和故障诊断，让日常维护更清楚。"},
+        {"text": "发现异常，也更容易追查。", "ttsText": "发现异常，也更容易追查。"}
+      ],
+      "onScreen": ["计划启停 · 空闲停止", "CPU / 内存资源历史", "统一任务日志 · 取消 / 重试", "故障诊断与脱敏报告"],
+      "visual": "计划卡触发任务，资源曲线正常滚动，任务状态和日志条目依次更新；曲线与数值注明示意。",
+      "sources": ["../docs/automation-rules.md", "../docs/feature-suite.md", "../docs/workspace-management.md"],
+      "boundary": "需启用相关插件和调度服务；不承诺自动解决故障。"
+    },
+    {
+      "id": "isolation",
+      "title": "把运行边界说清楚",
+      "targetDurationSeconds": 14,
+      "lines": [
+        {"text": "管理入口留在本机。", "ttsText": "管理入口留在本机。"},
+        {"text": "不同项目使用独立账号和主目录，命令按项目运行。", "ttsText": "不同项目使用独立账号和主目录，命令按项目运行。"},
+        {"text": "需要试验时，还能开启默认隔离网络的沙箱。", "ttsText": "需要试验时，还能开启默认隔离网络的沙箱。"}
+      ],
+      "onScreen": ["回环监听 · 随机访问凭证", "项目 UID/GID · 独立 Home · 运行归属", "沙箱插件：独立 Linux 虚拟机", "默认隔离网络 · 资源配额 · 到期清理"],
+      "visual": "Manim project-isolation 展示同一实例中的项目账号边界；后段以单独卡片呈现沙箱虚拟机，避免与项目账号隔离混为一谈。",
+      "sources": ["../README.md", "../docs/project-identities.md", "../docs/project-execution.md", "../docs/sandbox.md"],
+      "boundary": "不宣称多租户安全或防御虚拟化逃逸；沙箱管理 SSH 是隔离网络的明确例外。"
+    },
+    {
+      "id": "desktop",
+      "title": "图形桌面，按需尝试",
+      "targetDurationSeconds": 10,
+      "lines": [
+        {"text": "偶尔需要图形界面，也有实验性的桌面。", "ttsText": "偶尔需要图形界面，也有实验性的桌面。"},
+        {"text": "它通过浏览器连接，仍有功能限制，适合按需尝试。", "ttsText": "它通过浏览器连接，仍有功能限制，适合按需尝试。"}
+      ],
+      "onScreen": ["KDE Plasma · 实验性", "浏览器 VNC 连接", "首次安装需联网 · 建议 2 GiB 内存", "网页无独立音频流"],
+      "visual": "明确为示意的浏览器桌面窗口，包含文件管理器和终端，始终显示实验性标识；不把它画成 WSLg 单应用。",
+      "sources": ["../README.md", "../docs/linux-desktop.md"],
+      "boundary": "当前可配置 Virtio GPU/VirGL 与 QEMU HDA/DirectSound，不使用过时的无 GPU / 无音频能力表述；noVNC 网页自身无独立音频流。"
+    },
+    {
+      "id": "closing",
+      "title": "长成你的工作空间",
+      "targetDurationSeconds": 9,
+      "lines": [
+        {"text": "从一个终端开始，按自己的节奏扩展。", "ttsText": "从一个终端开始，按自己的节奏扩展。"},
+        {"text": "Sakura，让 Linux，在本地生长。", "ttsText": "萨库拉，让 Linux，在本地生长。"}
+      ],
+      "onScreen": ["Sakura", "从一个终端，长成你的工作空间", "本地运行 · 按需扩展 · 专注创造"],
+      "visual": "功能元素回归品牌主画面，轻音乐自然淡出，最后完整保留品牌画面。",
+      "sources": ["../README.md"]
+    }
+  ]
+}

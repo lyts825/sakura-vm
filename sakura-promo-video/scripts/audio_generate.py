@@ -1,14 +1,16 @@
-"""Generate the public Sakura narration and an original instrumental score.
+"""Generate STORYBOARD-based Chinese narration and original music for Sakura.
 
-Python 3.12, edge-tts 7.2.8, numpy 2.4.2, FFmpeg on PATH.
-Only the six public promotional sentences below are sent to Edge TTS.
+Python 3.12, edge-tts 7.2.8, numpy 2.4.2, FFmpeg/FFprobe on PATH.
+Only the public storyboard ttsText is sent to Microsoft Edge TTS.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import math
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -18,16 +20,10 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 SR = 48000
-SECONDS = 45
-VOICE = "zh-CN-XiaoxiaoNeural"
-SCENES = [
-    (0, 6, "Sakura。让 Linux，在本地生长。", 0),
-    (6, 14, "从基础 Alpine 终端开始。创建、启动和停止实例，数据保存在持久磁盘。", 8),
-    (14, 22, "QEMU 真正运行 Linux 内核。PosixLoom，编排命令与会话。", 0),
-    (22, 32, "文件、多终端、项目、Git 和快照，按需选择插件。保存后，重启 Sakura 服务生效。", 8),
-    (32, 40, "把代码、文件和终端，组织成本地工作空间。按需组合，专注创造。", 0),
-    (40, 45, "从一个终端，长成你的工作空间。", 0),
-]
+VOICE = "zh-CN-XiaoyiNeural"
+RATE = "-3%"
+PITCH = "+0Hz"
+MUSIC_FADE = 1.8
 
 
 def run(args: list[str]) -> subprocess.CompletedProcess:
@@ -40,149 +36,194 @@ def decode(path: Path) -> np.ndarray:
     return np.frombuffer(result.stdout, dtype="<f4").copy()
 
 
+def loudness(args: list[str], target: float) -> dict:
+    report = run(args + ["-af", f"loudnorm=I={target}:TP=-2:LRA=11:print_format=json",
+                         "-f", "null", "-"]).stderr.decode("utf-8", errors="replace")
+    return json.loads(report[report.rfind("{"):report.rfind("}") + 1])
+
+
 def write_normalized(samples: np.ndarray, output: Path, cache: Path, target: float) -> dict:
+    """One constant gain preserves dynamics and breaths; no compressor or time stretching."""
     raw = cache / (output.stem + ".f32")
     samples.astype("<f4").tofile(raw)
     common = ["ffmpeg", "-hide_banner", "-nostats", "-f", "f32le", "-ar", str(SR),
               "-ac", "2", "-i", str(raw)]
-    measured = run(common + ["-af", f"loudnorm=I={target}:TP=-2:LRA=8:print_format=json",
-                             "-f", "null", "-"]).stderr.decode("utf-8", errors="replace")
-    values = json.loads(measured[measured.rfind("{"):measured.rfind("}") + 1])
-    filt = (f"loudnorm=I={target}:TP=-2:LRA=8:measured_I={values['input_i']}:"
-            f"measured_TP={values['input_tp']}:measured_LRA={values['input_lra']}:"
-            f"measured_thresh={values['input_thresh']}:offset={values['target_offset']}:"
-            "linear=true,aresample=48000")
-    run(common + ["-y", "-af", filt, "-t", str(SECONDS), "-c:a", "pcm_s24le", str(output)])
+    measured = loudness(common, target)
+    gain = min(target - float(measured["input_i"]), -2.0 - float(measured["input_tp"]))
+    run(common + ["-y", "-af", f"volume={gain:.6f}dB", "-c:a", "pcm_s24le", str(output)])
     raw.unlink()
-    verified = run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(output), "-af",
-                    f"loudnorm=I={target}:TP=-1:LRA=8:print_format=json", "-f", "null", "-"])
-    report = verified.stderr.decode("utf-8", errors="replace")
-    actual = json.loads(report[report.rfind("{"):report.rfind("}") + 1])
+    actual = loudness(["ffmpeg", "-hide_banner", "-nostats", "-i", str(output)], target)
     (cache / (output.stem + "-measurements.json")).write_text(
-        json.dumps({"beforeNormalization": values, "afterNormalization": actual}, indent=2) + "\n",
+        json.dumps({"beforeGain": measured, "gainDb": gain, "afterGain": actual}, indent=2) + "\n",
         encoding="utf-8")
-    return {"targetIntegratedLufs": target,
-            "verifiedIntegratedLufs": float(actual["input_i"]),
-            "verifiedTruePeakDbtp": float(actual["input_tp"])}
+    return {"targetIntegratedLufs": target, "verifiedIntegratedLufs": float(actual["input_i"]),
+            "verifiedTruePeakDbtp": float(actual["input_tp"]), "constantGainDb": round(gain, 3)}
 
 
-async def synthesize(text: str, rate: int, output: Path) -> list[dict]:
-    boundaries = []
-    communicate = edge_tts.Communicate(text, VOICE, rate=f"{rate:+d}%", boundary="SentenceBoundary")
-    with output.open("wb") as audio:
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio.write(chunk["data"])
-            elif chunk["type"] == "SentenceBoundary":
-                boundaries.append({"start": chunk["offset"] / 10_000_000,
-                                   "duration": chunk["duration"] / 10_000_000,
-                                   "text": chunk["text"]})
-    return boundaries
+def comparable(text: str) -> str:
+    return re.sub(r"[\s，。！？、,.!?]", "", text)
 
 
-async def narration(cache: Path) -> tuple[np.ndarray, list[dict], list[dict]]:
-    track = np.zeros((SR * SECONDS, 2), np.float32)
-    scenes, captions = [], []
-    for index, (start, end, text, initial_rate) in enumerate(SCENES):
-        speech_start = start + (0.25 if index == 5 else 0.4)
-        available = end - speech_start - (0.45 if index == 5 else 0.35)
-        rate = initial_rate
-        for attempt in range(4):
-            mp3 = cache / f"scene-{index + 1}.mp3"
-            boundaries = await synthesize(text, rate, mp3)
-            samples = decode(mp3)
-            # Keep the generated signal intact; adjust TTS speaking rate instead of cutting tails.
-            duration = len(samples) / SR
-            if duration <= available:
-                break
-            rate = math.ceil((100 + rate) * duration / available - 100) + 2
-        else:
-            raise RuntimeError(f"Scene {index + 1} still exceeds its slot: {duration:.3f}s")
-        offset = round(speech_start * SR)
-        track[offset:offset + len(samples), 0] = samples
-        track[offset:offset + len(samples), 1] = samples
-        scene = {"index": index + 1, "start": start, "end": end, "text": text,
-                 "speechStart": speech_start, "speechEnd": speech_start + duration,
-                 "rate": f"{rate:+d}%"}
+async def synthesize(scene: dict, cache: Path, force: bool) -> tuple[np.ndarray, list[dict]]:
+    """Synthesize the entire scene together to keep sentence context and natural prosody."""
+    text = "\n".join(line["ttsText"] for line in scene["lines"])
+    fingerprint = hashlib.sha256((VOICE + RATE + PITCH + text).encode("utf-8")).hexdigest()
+    mp3 = cache / (scene["id"] + ".mp3")
+    boundary_file = cache / (scene["id"] + "-boundaries.json")
+    saved = json.loads(boundary_file.read_text(encoding="utf-8")) if boundary_file.exists() else {}
+    if force or not mp3.exists() or saved.get("fingerprint") != fingerprint:
+        communicate = edge_tts.Communicate(text, VOICE, rate=RATE, pitch=PITCH,
+                                          boundary="SentenceBoundary")
+        boundaries = []
+        with mp3.open("wb") as audio:
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio.write(chunk["data"])
+                elif chunk["type"] == "SentenceBoundary":
+                    boundaries.append({"start": chunk["offset"] / 10_000_000,
+                                       "duration": chunk["duration"] / 10_000_000,
+                                       "text": chunk["text"]})
+        saved = {"fingerprint": fingerprint, "voice": VOICE, "rate": RATE,
+                 "pitch": PITCH, "ttsText": text, "boundaries": boundaries}
+        boundary_file.write_text(json.dumps(saved, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    boundaries = saved["boundaries"]
+    if len(boundaries) != len(scene["lines"]):
+        raise RuntimeError(f"{scene['id']}: {len(boundaries)} TTS sentences for {len(scene['lines'])} caption lines")
+    for boundary, line in zip(boundaries, scene["lines"]):
+        if comparable(boundary["text"]) != comparable(line["ttsText"]):
+            raise RuntimeError(f"{scene['id']}: TTS boundary text does not match its public line")
+    return decode(mp3), boundaries
+
+
+async def narration(storyboard: dict, cache: Path, force: bool) -> tuple[np.ndarray, list[dict], list[dict]]:
+    fps = storyboard["fps"]
+    if SR % fps:
+        raise RuntimeError("Audio sample rate must divide evenly into the storyboard FPS")
+    samples_per_frame = SR // fps
+    scenes, captions, pieces = [], [], []
+    cursor = 0
+    for index, source in enumerate(storyboard["scenes"]):
+        samples, boundaries = await synthesize(source, cache, force)
+        head = round((.8 if index == 0 else .6) * fps)
+        tail = math.ceil((1.5 if index == len(storyboard["scenes"]) - 1 else .65) * fps)
+        speech_frames = math.ceil(len(samples) / samples_per_frame)
+        duration_frames = head + speech_frames + tail
+        speech_from = cursor + head
+        speech_to = speech_from + speech_frames
+        scene_captions = []
+        for line_index, (boundary, line) in enumerate(zip(boundaries, source["lines"])):
+            cue_from = speech_from + round(boundary["start"] * fps)
+            cue_to = min(speech_to, speech_from + math.ceil((boundary["start"] + boundary["duration"]) * fps))
+            if line_index + 1 < len(boundaries):
+                next_from = speech_from + round(boundaries[line_index + 1]["start"] * fps)
+                cue_to = min(cue_to, next_from - 1)
+            if cue_to <= cue_from:
+                raise RuntimeError(f"{source['id']}: nonpositive caption interval")
+            cue = {"sceneId": source["id"], "line": line_index + 1,
+                   "start": cue_from / fps, "end": cue_to / fps,
+                   "from": cue_from, "durationInFrames": cue_to - cue_from, "text": line["text"]}
+            scene_captions.append(cue)
+        scene = {"id": source["id"], "index": index + 1, "title": source["title"],
+                 "start": cursor / fps, "end": (cursor + duration_frames) / fps,
+                 "from": cursor, "durationInFrames": duration_frames,
+                 "speechStart": speech_from / fps, "speechEnd": speech_to / fps,
+                 "text": "".join(line["text"] for line in source["lines"]),
+                 "ttsText": "".join(line["ttsText"] for line in source["lines"]),
+                 "captions": scene_captions}
         scenes.append(scene)
-        if boundaries:
-            for boundary in boundaries:
-                cue_start = speech_start + boundary["start"]
-                cue_end = min(speech_start + duration, cue_start + boundary["duration"] + 0.12)
-                captions.append({"start": round(cue_start, 3), "end": round(cue_end, 3),
-                                 "text": boundary["text"]})
-        else:
-            captions.append({"start": speech_start, "end": speech_start + duration, "text": text})
-        print(f"Scene {index + 1}: {duration:.3f}s, {rate:+d}%, {speech_start:.2f}–{speech_start + duration:.2f}s", flush=True)
-    # Edge sentence boundaries can overlap slightly; a subtitle renderer must see one cue at a time.
-    for current, following in zip(captions, captions[1:]):
-        current["end"] = round(min(current["end"], following["start"] - .01), 3)
+        captions.extend(scene_captions)
+        pieces.append((speech_from * samples_per_frame, samples))
+        cursor += duration_frames
+        print(f"{scene['id']}: {scene['start']:.3f}–{scene['end']:.3f}s, "
+              f"speech {scene['speechStart']:.3f}–{scene['speechEnd']:.3f}s; "
+              f"{scene['durationInFrames']} frames", flush=True)
+    track = np.zeros((cursor * samples_per_frame, 2), np.float32)
+    for at, samples in pieces:
+        track[at:at + len(samples), :] = samples[:, None]
     return track, scenes, captions
 
 
-def soundtrack() -> np.ndarray:
-    """Original D-major pentatonic mallet melody, warm keyboard chords and sparse pulse."""
-    score = np.zeros((SR * SECONDS, 2), np.float32)
-    rng = np.random.default_rng(20261006)
+def soundtrack(duration_frames: int, fps: int, scenes: list[dict]) -> np.ndarray:
+    """Original evolving pentatonic score: soft keyboard, mallets, sparse pulse, chapter cues."""
+    seconds = duration_frames / fps
+    total = duration_frames * (SR // fps)
+    score = np.zeros((total, 2), np.float32)
+    rng = np.random.default_rng(20261008)
 
     def note(at: float, midi: int, duration: float, gain: float, pan: float, kind="mallet"):
-        length = min(round(duration * SR), len(score) - round(at * SR))
-        if length <= 0:
+        position = round(at * SR)
+        length = min(round(duration * SR), total - position)
+        if length <= 0 or position < 0:
             return
         t = np.arange(length) / SR
         frequency = 440 * 2 ** ((midi - 69) / 12)
         if kind == "mallet":
-            envelope = (1 - np.exp(-t * 250)) * np.exp(-t * 3.2)
+            envelope = (1 - np.exp(-t * 210)) * np.exp(-t * 2.9)
             sound = (np.sin(2 * np.pi * frequency * t)
-                     + 0.28 * np.sin(2 * np.pi * frequency * 3 * t) * np.exp(-t * 6)
-                     + 0.12 * np.sin(2 * np.pi * frequency * 7 * t) * np.exp(-t * 10))
+                     + .23 * np.sin(2 * np.pi * frequency * 3 * t) * np.exp(-t * 6)
+                     + .07 * np.sin(2 * np.pi * frequency * 7 * t) * np.exp(-t * 10))
         else:
-            envelope = (1 - np.exp(-t * 100)) * np.exp(-t * 1.15)
+            envelope = (1 - np.exp(-t * 80)) * np.exp(-t * .9)
             sound = sum(weight * np.sin(2 * np.pi * frequency * harmonic * t)
-                        for harmonic, weight in [(1, 1), (2, .24), (3, .1), (4, .04)])
-        envelope *= np.minimum(1, np.maximum(0, (duration - t) / 0.3))
+                        for harmonic, weight in [(1, 1), (2, .19), (3, .08), (4, .03)])
+        envelope *= np.minimum(1, np.maximum(0, (duration - t) / .4))
         mono = sound * envelope * gain
-        position = round(at * SR)
         score[position:position + length, 0] += mono * math.sqrt((1 - pan) / 2)
         score[position:position + length, 1] += mono * math.sqrt((1 + pan) / 2)
 
-    beat = 60 / 72
-    # Composed specifically for this 45-second film, with a quiet resolving final phrase.
-    melody = [(0, 74), (2, 78), (3.5, 81), (5, 78), (7, 76), (9, 74),
-              (11, 69), (13, 71), (15, 74), (17, 78), (19, 76), (21, 74),
-              (23, 71), (25, 69), (27, 74), (29, 78), (31, 81), (33, 78),
-              (35, 76), (37, 74), (39, 71), (41, 74), (43, 78), (45, 81),
-              (47, 78), (49, 76), (50.5, 74)]
-    for index, (pulse, midi) in enumerate(melody):
-        note(0.65 + pulse * beat, midi, 2.2, .085 if pulse < 47 else .07,
-             .24 * math.sin(index * 1.4))
-    chords = [(50, 57, 66), (47, 54, 62), (43, 50, 59), (45, 52, 61)]
-    for bar in range(13):
-        at = .4 + bar * 4 * beat
-        chord = chords[bar % 4] if bar < 12 else chords[0]
-        for index, pitch in enumerate(chord):
-            note(at + index * .09, pitch, 4.2, .028, (-.25, .1, .3)[index], "keyboard")
-    # Small rounded bass pulse and filtered shaker only after the introduction.
-    for pulse in range(8, 47, 2):
-        at = .4 + pulse * beat
-        note(at, [38, 35, 31, 33][(pulse // 4) % 4], .6, .015, 0, "keyboard")
-        length = round(.11 * SR)
-        noise = rng.standard_normal(length)
-        soft = np.convolve(noise, np.ones(25) / 25, mode="same")
-        soft *= np.exp(-np.arange(length) / SR * 45) * .014
-        position = round((at + beat) * SR)
-        if position + length < len(score):
-            score[position:position + length, :] += soft[:, None]
-    # Original soft, high chimes mark scene changes without masking consonants.
-    for at in [6, 14, 22, 32, 40]:
-        note(at + .03, 86, 1.7, .016, -.2)
+    beat = 60 / 76
+    chords = [(50, 57, 66), (47, 54, 62), (43, 50, 59), (45, 52, 61),
+              (50, 57, 62), (43, 54, 59), (47, 57, 62), (45, 57, 61)]
+    for bar, at in enumerate(np.arange(.3, seconds - 3.7, 4 * beat)):
+        chord = chords[bar % len(chords)]
+        for part, midi in enumerate(chord):
+            note(float(at) + part * .075, midi, 4.3, .023, (-.28, .08, .3)[part], "keyboard")
+        if bar % 2:
+            note(float(at) + 2 * beat, chord[0] - 12, 1.0, .013, -.05, "keyboard")
+
+    motifs = [[74, 78, 81, 78, 76, 74], [71, 74, 78, 76, 74],
+              [74, 76, 78, 81, 78], [78, 81, 83, 81, 78, 76],
+              [76, 74, 71, 69, 74], [71, 74, 76, 78, 74]]
+    for index, scene in enumerate(scenes):
+        motif = motifs[index % len(motifs)]
+        interval = beat * (2.1 if index in (3, 4, 8) else 2.7)
+        for n, at in enumerate(np.arange(scene["start"] + .8, scene["end"] - 1.9, interval)):
+            pitch = motif[n % len(motif)]
+            note(float(at), pitch, 2.7, .065 if n % 3 else .074,
+                 .26 * math.sin(index + n * 1.6), "mallet" if n % 3 else "keyboard")
+        if index > 0:
+            note(scene["start"] + .08, 86 if index % 2 else 81, 1.7, .012, -.18)
+        # Gentle brush rhythm in the busier chapters; no continuous click track.
+        if index in (3, 4, 8):
+            for at in np.arange(scene["start"] + 2, scene["end"] - 2, 4 * beat):
+                length = round(.11 * SR)
+                soft = np.convolve(rng.standard_normal(length), np.ones(31) / 31, mode="same")
+                soft *= np.exp(-np.arange(length) / SR * 38) * .008
+                position = round(at * SR)
+                score[position:position + length, :] += soft[:, None]
+
+    # Resolve the whole piece, then allow the final brand image to breathe.
+    for part, midi in enumerate((50, 57, 62, 66, 74)):
+        note(seconds - 3.5 + part * .11, midi, 3.3, .023 if part < 4 else .05,
+             -.2 + part * .1, "keyboard")
     dry = score.copy()
-    for delay, amount in [(.087, .12), (.173, .08), (.29, .055), (.41, .025)]:
+    for delay, amount in [(.087, .1), (.173, .07), (.29, .04), (.41, .02)]:
         shift = round(delay * SR)
         score[shift:] += dry[:-shift, ::-1] * amount
-    fade_in = np.minimum(1, np.arange(len(score)) / (SR * .7))
-    fade_out = np.minimum(1, (len(score) - 1 - np.arange(len(score))) / (SR * 1.2))
-    score *= (fade_in * fade_out)[:, None]
+    del dry
+    envelope = np.ones(total, np.float32)
+    # Slow chapter-level attenuation leaves consonants and breaths clear.
+    for scene in scenes:
+        a = max(0, round((scene["speechStart"] - .15) * SR))
+        b = min(total, round((scene["speechEnd"] + .15) * SR))
+        ramp = min(round(.4 * SR), (b - a) // 2)
+        envelope[a:a + ramp] = np.minimum(envelope[a:a + ramp], np.linspace(1, .78, ramp))
+        envelope[a + ramp:b - ramp] = np.minimum(envelope[a + ramp:b - ramp], .78)
+        envelope[b - ramp:b] = np.minimum(envelope[b - ramp:b], np.linspace(.78, 1, ramp))
+    envelope[:round(.8 * SR)] *= np.linspace(0, 1, round(.8 * SR))
+    fade = round(MUSIC_FADE * SR)
+    envelope[-fade:] *= np.linspace(1, 0, fade)
+    score *= envelope[:, None]
     return score
 
 
@@ -193,29 +234,39 @@ def srt_time(seconds: float) -> str:
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--music-only", action="store_true", help="Offline: regenerate only original music")
+    parser.add_argument("--music-only", action="store_true", help="Offline: reuse transcript timeline and regenerate music")
+    parser.add_argument("--force-tts", action="store_true", help="Re-request public speech, ignoring cached scene MP3")
     args = parser.parse_args()
-    if not shutil.which("ffmpeg"):
-        raise SystemExit("FFmpeg must be on PATH")
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        raise SystemExit("FFmpeg and FFprobe must be on PATH")
+    storyboard_path = ROOT / "STORYBOARD.json"
+    storyboard = json.loads(storyboard_path.read_text(encoding="utf-8"))
     output = ROOT / "public" / "audio"
-    cache = ROOT / ".cache" / "audio"
+    cache = ROOT / ".cache" / "audio-v1.1"
     output.mkdir(parents=True, exist_ok=True)
     cache.mkdir(parents=True, exist_ok=True)
-    metadata = {"duration": SECONDS, "sampleRate": SR, "channels": 2,
-                "voice": VOICE, "ttsLibrary": "edge-tts 7.2.8", "music": "Original procedural composition",
-                "musicFadeOutSeconds": 1.2}
-    if not args.music_only:
-        samples, scenes, captions = await narration(cache)
+    if args.music_only:
+        metadata = json.loads((output / "transcript.json").read_text(encoding="utf-8"))
+    else:
+        samples, scenes, captions = await narration(storyboard, cache, args.force_tts)
+        duration_frames = sum(scene["durationInFrames"] for scene in scenes)
+        metadata = {"videoVersion": storyboard["videoVersion"], "duration": duration_frames / storyboard["fps"],
+                    "durationInFrames": duration_frames, "fps": storyboard["fps"], "sampleRate": SR,
+                    "channels": 2, "voice": VOICE, "rate": RATE, "pitch": PITCH,
+                    "voiceSelection": "User-selected sample A; non-imitative prebuilt synthetic female voice",
+                    "ttsLibrary": "edge-tts 7.2.8", "timingPolicy": "Actual complete speech; frame-aligned scene boundaries; no time stretching",
+                    "storyboardSha256": hashlib.sha256(storyboard_path.read_bytes()).hexdigest(),
+                    "music": "Original procedural composition", "musicFadeOutSeconds": MUSIC_FADE,
+                    "scenes": scenes, "captions": captions}
         metadata["narration"] = write_normalized(samples, output / "narration.wav", cache, -18)
-        metadata["scenes"] = scenes
-        metadata["captions"] = captions
+        del samples
         (output / "narration.srt").write_text("\n\n".join(
             f"{index + 1}\n{srt_time(cue['start'])} --> {srt_time(cue['end'])}\n{cue['text']}"
             for index, cue in enumerate(captions)) + "\n", encoding="utf-8")
-    metadata["soundtrack"] = write_normalized(soundtrack(), output / "soundtrack.wav", cache, -29)
-    if not args.music_only:
-        (output / "transcript.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print("Wrote 45-second, 48kHz stereo WAV tracks.", flush=True)
+    music = soundtrack(metadata["durationInFrames"], metadata["fps"], metadata["scenes"])
+    metadata["soundtrack"] = write_normalized(music, output / "soundtrack.wav", cache, -30)
+    (output / "transcript.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {metadata['duration']:.6f}s / {metadata['durationInFrames']} frames, 48kHz stereo WAV tracks.", flush=True)
 
 
 if __name__ == "__main__":

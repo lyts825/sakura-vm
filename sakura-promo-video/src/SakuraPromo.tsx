@@ -1,39 +1,46 @@
 import {Audio} from '@remotion/media';
-import {TransitionSeries, linearTiming} from '@remotion/transitions';
-import {fade} from '@remotion/transitions/fade';
-import {staticFile, useVideoConfig} from 'remotion';
-import {OpeningScene} from './scenes/OpeningScene';
-import {TerminalScene} from './scenes/TerminalScene';
-import {KernelScene} from './scenes/KernelScene';
-import {PluginsScene} from './scenes/PluginsScene';
-import {WorkflowScene} from './scenes/WorkflowScene';
-import {ClosingScene} from './scenes/ClosingScene';
+import {AbsoluteFill, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Captions} from './Captions';
+import {colors, font} from './theme';
+import {audioReady, getScene, sceneTitles, timeline, totalFrames} from './timeline';
+import {OpeningScene} from './scenes/OpeningScene';
+import {KernelScene} from './scenes/KernelScene';
+import {InstancesScene} from './scenes/InstancesScene';
+import {PluginsScene} from './scenes/PluginsScene';
+import {DevelopmentScene} from './scenes/DevelopmentScene';
+import {FilesScene} from './scenes/FilesScene';
+import {RecoveryScene} from './scenes/RecoveryScene';
+import {NetworkScene} from './scenes/NetworkScene';
+import {AutomationScene} from './scenes/AutomationScene';
+import {IsolationScene} from './scenes/IsolationScene';
+import {DesktopScene} from './scenes/DesktopScene';
+import {ClosingScene} from './scenes/ClosingScene';
 
-// Each outgoing scene contains 0.4s of overlap. New scenes still begin at
-// exactly 6 / 14 / 22 / 32 / 40 seconds; the finished timeline is 45 seconds.
+const Progress = () => {
+  const frame = useCurrentFrame();
+  const active = timeline.findIndex(({from, durationInFrames}) => frame >= from && frame < from + durationInFrames);
+  return <><div style={{position: 'absolute', top: 37, right: 108, fontFamily: font.sans, fontSize: 20, color: colors.muted, letterSpacing: 1.6}}>{String(Math.max(active + 1, 1)).padStart(2, '0')} / 12 <span style={{marginLeft: 19, letterSpacing: 1}}>{active >= 0 ? sceneTitles[timeline[active].id] : '完整介绍'}</span></div><div style={{position: 'absolute', left: 104, top: 72, width: 1712 * frame / (totalFrames - 1), height: 2, background: '#ad416f66'}}/></>;
+};
+
+/** The audio transcript owns every start and duration. No fixed 150s limit. */
 export const SakuraPromo = () => {
   const {fps} = useVideoConfig();
-  return <>
-    <Audio name="中文旁白" src={staticFile('audio/narration.wav')} volume={1} premountFor={fps} />
-    <Audio name="原创配乐（已含尾淡出）" src={staticFile('audio/soundtrack.wav')} volume={1} premountFor={fps} />
-    <TransitionSeries
-      style={{
-        scale: 0.999
-      }}
-    >
-      <TransitionSeries.Sequence name="01 — 让 Linux 在本地生长" durationInFrames={6.4 * fps} premountFor={fps}><OpeningScene /></TransitionSeries.Sequence>
-      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({durationInFrames: 0.4 * fps})} />
-      <TransitionSeries.Sequence name="02 — 基础终端" durationInFrames={8.4 * fps} premountFor={fps}><TerminalScene /></TransitionSeries.Sequence>
-      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({durationInFrames: 0.4 * fps})} />
-      <TransitionSeries.Sequence name="03 — Linux 内核 / Manim" durationInFrames={8.4 * fps} premountFor={fps}><KernelScene /></TransitionSeries.Sequence>
-      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({durationInFrames: 0.4 * fps})} />
-      <TransitionSeries.Sequence name="04 — 按需扩展" durationInFrames={10.4 * fps} premountFor={fps}><PluginsScene /></TransitionSeries.Sequence>
-      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({durationInFrames: 0.4 * fps})} />
-      <TransitionSeries.Sequence name="05 — 本地工作流" durationInFrames={8.4 * fps} premountFor={fps}><WorkflowScene /></TransitionSeries.Sequence>
-      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({durationInFrames: 0.4 * fps})} />
-      <TransitionSeries.Sequence name="06 — 工作空间" durationInFrames={5 * fps} premountFor={fps}><ClosingScene /></TransitionSeries.Sequence>
-    </TransitionSeries>
-    <Captions />
-  </>;
+  return <AbsoluteFill style={{background: colors.paper, scale: 0.999}}>
+    {audioReady && <Audio name="中文讲解 · 自然晓伊女声" src={staticFile('audio/narration.wav')} volume={1} premountFor={fps}/>}
+    {audioReady && <Audio name="原创配乐 · 已含片尾淡出" src={staticFile('audio/soundtrack.wav')} volume={1} premountFor={fps}/>}
+    <Sequence name="01 — 品牌定位" from={getScene('opening').from} durationInFrames={getScene('opening').durationInFrames} premountFor={fps}><OpeningScene/></Sequence>
+    <Sequence name="02 — 真正的 Linux 内核" from={getScene('kernel').from} durationInFrames={getScene('kernel').durationInFrames} premountFor={fps}><KernelScene/></Sequence>
+    <Sequence name="03 — 基础实例" from={getScene('instances').from} durationInFrames={getScene('instances').durationInFrames} premountFor={fps}><InstancesScene/></Sequence>
+    <Sequence name="04 — 按需插件" from={getScene('plugins').from} durationInFrames={getScene('plugins').durationInFrames} premountFor={fps}><PluginsScene/></Sequence>
+    <Sequence name="05 — 开发流程" from={getScene('development').from} durationInFrames={getScene('development').durationInFrames} premountFor={fps}><DevelopmentScene/></Sequence>
+    <Sequence name="06 — 文件与同步" from={getScene('files').from} durationInFrames={getScene('files').durationInFrames} premountFor={fps}><FilesScene/></Sequence>
+    <Sequence name="07 — 快照与备份" from={getScene('recovery').from} durationInFrames={getScene('recovery').durationInFrames} premountFor={fps}><RecoveryScene/></Sequence>
+    <Sequence name="08 — 网络与服务" from={getScene('network').from} durationInFrames={getScene('network').durationInFrames} premountFor={fps}><NetworkScene/></Sequence>
+    <Sequence name="09 — 自动化与维护" from={getScene('automation').from} durationInFrames={getScene('automation').durationInFrames} premountFor={fps}><AutomationScene/></Sequence>
+    <Sequence name="10 — 运行边界" from={getScene('isolation').from} durationInFrames={getScene('isolation').durationInFrames} premountFor={fps}><IsolationScene/></Sequence>
+    <Sequence name="11 — 实验性桌面" from={getScene('desktop').from} durationInFrames={getScene('desktop').durationInFrames} premountFor={fps}><DesktopScene/></Sequence>
+    <Sequence name="12 — 品牌收束" from={getScene('closing').from} durationInFrames={getScene('closing').durationInFrames} premountFor={fps}><ClosingScene/></Sequence>
+    <Progress/>
+    <Captions/>
+  </AbsoluteFill>;
 };

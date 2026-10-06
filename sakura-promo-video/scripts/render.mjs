@@ -11,7 +11,7 @@ const logPath = join(root, '.cache', 'render.log');
 await mkdir(join(root, '.cache'), {recursive: true});
 await mkdir(join(root, 'deliverables'), {recursive: true});
 if (!coverOnly) {
-  for (const asset of ['manim/kernel-flow.mp4', 'audio/narration.wav', 'audio/soundtrack.wav']) {
+  for (const asset of ['manim/kernel-flow.mp4', 'manim/recovery-flow.mp4', 'manim/project-isolation.mp4', 'audio/narration.wav', 'audio/soundtrack.wav', 'audio/transcript.json']) {
     await access(join(root, 'public', asset));
   }
 }
@@ -31,10 +31,21 @@ const run = async (args) => {
   }
 };
 if (!coverOnly) {
-  console.log('Rendering SakuraPromo: 1920 × 1080 / 30fps / 45s. Progress log: .cache/render.log');
-  await run(['render', 'src/index.ts', 'SakuraPromo', 'deliverables/sakura-intro-1080p.mp4', '--codec=h264', '--audio-codec=aac', '--pixel-format=yuv420p', '--color-space=bt709', '--crf=18', '--concurrency=4', '--overwrite']);
-  console.log('Saved deliverables/sakura-intro-1080p.mp4');
+  const transcript = JSON.parse(await readFile(join(root, 'public', 'audio', 'transcript.json'), 'utf8'));
+  const storyboard = JSON.parse(await readFile(join(root, 'STORYBOARD.json'), 'utf8'));
+  let expectedFrom = 0;
+  for (const scene of storyboard.scenes) {
+    const timing = transcript.scenes.find(({id}) => id === scene.id);
+    if (!timing || timing.from !== expectedFrom || !Number.isInteger(timing.durationInFrames) || timing.durationInFrames <= 0) {
+      throw new Error(`Final audio timing is missing or inconsistent for scene ${scene.id}. Regenerate narration before rendering.`);
+    }
+    expectedFrom += timing.durationInFrames;
+  }
+  if (transcript.durationInFrames !== expectedFrom) throw new Error('Transcript total duration does not match its scene timeline.');
+  console.log(`Rendering SakuraPromo: 1920 × 1080 / 30fps / ${expectedFrom} frames / ${(expectedFrom / 30).toFixed(3)}s. Progress log: .cache/render.log`);
+  await run(['render', 'src/index.ts', 'SakuraPromo', 'deliverables/sakura-intro-extended-1080p.mp4', '--codec=h264', '--audio-codec=aac', '--pixel-format=yuv420p', '--color-space=bt709', '--crf=18', '--concurrency=4', '--overwrite']);
+  console.log('Saved deliverables/sakura-intro-extended-1080p.mp4');
 }
 console.log('Rendering the cover.');
-await run(['still', 'src/index.ts', 'SakuraCover', 'deliverables/sakura-intro-cover.png', '--image-format=png', '--overwrite']);
-console.log('Saved deliverables/sakura-intro-cover.png');
+await run(['still', 'src/index.ts', 'SakuraCover', 'deliverables/sakura-intro-extended-cover.png', '--image-format=png', '--overwrite']);
+console.log('Saved deliverables/sakura-intro-extended-cover.png');

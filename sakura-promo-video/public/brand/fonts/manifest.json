@@ -5,13 +5,13 @@
     "source": "https://raw.githubusercontent.com/google/fonts/e44c4b011a820c2cbe2fd2cfa8052037d7edb571/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
     "sourceGitBlob": "fb0637bafbcd804fe32152370a1225990745b4bc",
     "file": "sakura-sans-ui.woff2",
-    "bytes": 133388,
-    "glyphs": 645,
+    "bytes": 161240,
+    "glyphs": 768,
     "weights": [
       400,
       700
     ],
-    "sha256": "f995567cd818aee39beec0b59907eb2ba1e44f95093587230e913f9ba275aba3",
+    "sha256": "75bc2d4699cde6632bf4d4a29abf170e6753f943e29d484f263b907600b33158",
     "subsetPurpose": "Sakura promo video: src/**/*.ts(x) + transcript.json",
     "sourceSha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
     "licenseGitBlob": "1c9f43281b8f216c5461fe9ac729afbade7724e4",
@@ -26,25 +26,31 @@
       "zopfli": "0.4.3"
     },
     "corpusFilesSha256": {
-      "src/Captions.tsx": "70bc06f69835e240bb242071c2e664719be978fd307ac25e681d04de863dc048",
-      "src/components.tsx": "805b0eb598fa16fd0e466e608c10e2d53adabdfd6c1da58589a1252e44846687",
-      "src/Cover.tsx": "9a51873e1e80b684508487575009cac280dfd7aa1d85a3afcfe6f7ec56ab10a1",
+      "src/Captions.tsx": "2385195893c936c8d980e46503b549843f2ac986a0ebda27e7fa8b64fde8168e",
+      "src/components.tsx": "13e0ae79e5f561076caf6a039501e52ef43226aab1d3cd71de5b8aebb506d4a1",
+      "src/Cover.tsx": "3de21214a5650b6169bc537de386c28139921476b40b4c41dd8d793376bd908e",
       "src/index.ts": "957e481dd33a29b4a55ae0e95dbf763b7e48c37c427ca4bd1275faf34bc07a74",
-      "src/Root.tsx": "05944d2c9e6b93a3bbb4a15bbd580b92d043e8c304820e4058d95a220c63b313",
-      "src/SakuraPromo.tsx": "968ee63dba696377a4b8a0a5c770033280bc607ebbb4d96e23513b53e31bb067",
-      "src/scenes/ClosingScene.tsx": "ffd38801336b016678f4395db9c60c72689a24a96cf6f3806a0a8c3d71b0f42c",
-      "src/scenes/KernelScene.tsx": "8790073b2546d4037959c3dde6b9b52a00214c86fea0cb78e1e679f8b03e253e",
-      "src/scenes/OpeningScene.tsx": "593f77a403cef92c572176a64ab5fcf06be5095afcb9a24a77b6f63f0909478b",
-      "src/scenes/PluginsScene.tsx": "01410b0d9bf04f4244d22ab1aeb4a8da8dee5f5007e2499b2df99dc9a43cd495",
-      "src/scenes/TerminalScene.tsx": "b19de098e229c77af468257be85f74344e4d741625054c1cae44638a271fee68",
-      "src/scenes/WorkflowScene.tsx": "f952839098e2b7a3a93ad2e878d5f2651e71de19fcf7157158da754bc4889ea2",
+      "src/Root.tsx": "2ddfec8617ddce554416ae4c7c1a2373b129125b05812c38d0632f25eca0c12a",
+      "src/SakuraPromo.tsx": "8f7de13dbb9877f5f06d267913686cb1d99cd0cb485398ccc18edfc8ed3f18ca",
+      "src/scenes/AutomationScene.tsx": "b7414d8930cd09ae43011e0cef7a0cab330a22741fe35bf0318768f16692e7e5",
+      "src/scenes/ClosingScene.tsx": "761018d02ba3c6f1d1ae9ae6578fd1815d4226798a55357373369e6ee2d8e50b",
+      "src/scenes/DesktopScene.tsx": "af029064926a0c6af06319116746e3a87a453da4089a67087718c1ceab839faa",
+      "src/scenes/DevelopmentScene.tsx": "4c6834a971e77eb9636f2a57929abd366962e9805dad3063f6cf4e5f552177c9",
+      "src/scenes/FilesScene.tsx": "2035ca2b8b5f08790a08cf10b7ce94422f804058ef797833dbc3304396a4d4df",
+      "src/scenes/InstancesScene.tsx": "059a029cb39954070019979ccca9dd3b0cf7b403fceffa67f112c26fbff8ce9c",
+      "src/scenes/IsolationScene.tsx": "94e194fa8b4a458673e7b0b2808f7bb1dd58fa07cec81c40a95ac50bd6b1df23",
+      "src/scenes/KernelScene.tsx": "c71e75318b043ef358db7c3385e8949f05c721ad809d6c8f4d84975760645931",
+      "src/scenes/NetworkScene.tsx": "bba6801c953abfc36a8ad821b82caa91ff12f1b9bd35b16ad3c81535bd96bfd2",
+      "src/scenes/OpeningScene.tsx": "4ff799f15917d3f622acd0c2daf4027ca2716c73ebb6db3e25f4ab5c4c4e1bd4",
+      "src/scenes/PluginsScene.tsx": "01f76e721217d6520c80bdd25b0bf9cadef1229e8a4415f885d78e4973d1a12f",
+      "src/scenes/RecoveryScene.tsx": "9fae6f2aa1a4762775ce797bd4841b5a28be123057ad1b9a7812dbeb80c939f7",
+      "src/stage.tsx": "7d09793923bcf5f3ece554ac520c5a8a0bd201b3621eaad7ad42ae8a2a7b4da5",
       "src/theme.ts": "b80d7c4de3ab7565d673569768ed32549e4c9580bf5a2ae7cddedec650a99abe",
-      "public/audio/transcript.json": "b2b8181ea5931cf21ff75c80ef50dfa6bd1c21c03985ad4d19bbdf0cc6d48ae5"
+      "src/timeline.ts": "21cffd1932c9fe9447d30a0c72cc495ce1c928e0ebc51e5220a60b156e1b3fc0",
+      "public/audio/transcript.json": "1d65fa8679809e5f3ded40d077c31e052d0c51194d8b4dc065f830b954eece20"
     },
-    "requiredHanzi": 148,
-    "unsupportedNonHanzi": [
-      "U+2304"
-    ]
+    "requiredHanzi": 407,
+    "unsupportedNonHanzi": []
   },
   {
     "family": "Sakura Serif",
@@ -52,13 +58,13 @@
     "source": "https://raw.githubusercontent.com/google/fonts/e44c4b011a820c2cbe2fd2cfa8052037d7edb571/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
     "sourceGitBlob": "eab063faf229160a52d3760f5555150e4eb9e5bf",
     "file": "sakura-serif-ui.woff2",
-    "bytes": 176812,
-    "glyphs": 645,
+    "bytes": 212992,
+    "glyphs": 768,
     "weights": [
       400,
       700
     ],
-    "sha256": "4f4b0b029d5e9f6c0bb12517ed46d88ef9b5c0fd8cef981234dab75a1d4b3d98",
+    "sha256": "932fc1a1c6d7ca37393122f7aa6fa67e7d39de4675d13f82abdf38f152c806b5",
     "subsetPurpose": "Sakura promo video: src/**/*.ts(x) + transcript.json",
     "sourceSha256": "050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9",
     "licenseGitBlob": "94d1bf7b52481343e2983fb7751e8b7abe1ea07b",
@@ -73,25 +79,31 @@
       "zopfli": "0.4.3"
     },
     "corpusFilesSha256": {
-      "src/Captions.tsx": "70bc06f69835e240bb242071c2e664719be978fd307ac25e681d04de863dc048",
-      "src/components.tsx": "805b0eb598fa16fd0e466e608c10e2d53adabdfd6c1da58589a1252e44846687",
-      "src/Cover.tsx": "9a51873e1e80b684508487575009cac280dfd7aa1d85a3afcfe6f7ec56ab10a1",
+      "src/Captions.tsx": "2385195893c936c8d980e46503b549843f2ac986a0ebda27e7fa8b64fde8168e",
+      "src/components.tsx": "13e0ae79e5f561076caf6a039501e52ef43226aab1d3cd71de5b8aebb506d4a1",
+      "src/Cover.tsx": "3de21214a5650b6169bc537de386c28139921476b40b4c41dd8d793376bd908e",
       "src/index.ts": "957e481dd33a29b4a55ae0e95dbf763b7e48c37c427ca4bd1275faf34bc07a74",
-      "src/Root.tsx": "05944d2c9e6b93a3bbb4a15bbd580b92d043e8c304820e4058d95a220c63b313",
-      "src/SakuraPromo.tsx": "968ee63dba696377a4b8a0a5c770033280bc607ebbb4d96e23513b53e31bb067",
-      "src/scenes/ClosingScene.tsx": "ffd38801336b016678f4395db9c60c72689a24a96cf6f3806a0a8c3d71b0f42c",
-      "src/scenes/KernelScene.tsx": "8790073b2546d4037959c3dde6b9b52a00214c86fea0cb78e1e679f8b03e253e",
-      "src/scenes/OpeningScene.tsx": "593f77a403cef92c572176a64ab5fcf06be5095afcb9a24a77b6f63f0909478b",
-      "src/scenes/PluginsScene.tsx": "01410b0d9bf04f4244d22ab1aeb4a8da8dee5f5007e2499b2df99dc9a43cd495",
-      "src/scenes/TerminalScene.tsx": "b19de098e229c77af468257be85f74344e4d741625054c1cae44638a271fee68",
-      "src/scenes/WorkflowScene.tsx": "f952839098e2b7a3a93ad2e878d5f2651e71de19fcf7157158da754bc4889ea2",
+      "src/Root.tsx": "2ddfec8617ddce554416ae4c7c1a2373b129125b05812c38d0632f25eca0c12a",
+      "src/SakuraPromo.tsx": "8f7de13dbb9877f5f06d267913686cb1d99cd0cb485398ccc18edfc8ed3f18ca",
+      "src/scenes/AutomationScene.tsx": "b7414d8930cd09ae43011e0cef7a0cab330a22741fe35bf0318768f16692e7e5",
+      "src/scenes/ClosingScene.tsx": "761018d02ba3c6f1d1ae9ae6578fd1815d4226798a55357373369e6ee2d8e50b",
+      "src/scenes/DesktopScene.tsx": "af029064926a0c6af06319116746e3a87a453da4089a67087718c1ceab839faa",
+      "src/scenes/DevelopmentScene.tsx": "4c6834a971e77eb9636f2a57929abd366962e9805dad3063f6cf4e5f552177c9",
+      "src/scenes/FilesScene.tsx": "2035ca2b8b5f08790a08cf10b7ce94422f804058ef797833dbc3304396a4d4df",
+      "src/scenes/InstancesScene.tsx": "059a029cb39954070019979ccca9dd3b0cf7b403fceffa67f112c26fbff8ce9c",
+      "src/scenes/IsolationScene.tsx": "94e194fa8b4a458673e7b0b2808f7bb1dd58fa07cec81c40a95ac50bd6b1df23",
+      "src/scenes/KernelScene.tsx": "c71e75318b043ef358db7c3385e8949f05c721ad809d6c8f4d84975760645931",
+      "src/scenes/NetworkScene.tsx": "bba6801c953abfc36a8ad821b82caa91ff12f1b9bd35b16ad3c81535bd96bfd2",
+      "src/scenes/OpeningScene.tsx": "4ff799f15917d3f622acd0c2daf4027ca2716c73ebb6db3e25f4ab5c4c4e1bd4",
+      "src/scenes/PluginsScene.tsx": "01f76e721217d6520c80bdd25b0bf9cadef1229e8a4415f885d78e4973d1a12f",
+      "src/scenes/RecoveryScene.tsx": "9fae6f2aa1a4762775ce797bd4841b5a28be123057ad1b9a7812dbeb80c939f7",
+      "src/stage.tsx": "7d09793923bcf5f3ece554ac520c5a8a0bd201b3621eaad7ad42ae8a2a7b4da5",
       "src/theme.ts": "b80d7c4de3ab7565d673569768ed32549e4c9580bf5a2ae7cddedec650a99abe",
-      "public/audio/transcript.json": "b2b8181ea5931cf21ff75c80ef50dfa6bd1c21c03985ad4d19bbdf0cc6d48ae5"
+      "src/timeline.ts": "21cffd1932c9fe9447d30a0c72cc495ce1c928e0ebc51e5220a60b156e1b3fc0",
+      "public/audio/transcript.json": "1d65fa8679809e5f3ded40d077c31e052d0c51194d8b4dc065f830b954eece20"
     },
-    "requiredHanzi": 148,
-    "unsupportedNonHanzi": [
-      "U+2304"
-    ]
+    "requiredHanzi": 407,
+    "unsupportedNonHanzi": []
   },
   {
     "family": "Sakura Mono",
