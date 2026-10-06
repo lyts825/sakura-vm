@@ -355,7 +355,14 @@ export class HttpIngress {
   private target(req: IncomingMessage, port: number) {
     const raw = req.url || '/';
     if (!raw.startsWith('/') || raw.startsWith('//')) return null;
-    const url = new URL(raw, 'http://127.0.0.1');
+    let url: URL;
+    try {
+      url = new URL(raw, 'http://127.0.0.1');
+    } catch {
+      return null;
+    }
+    // Backslashes and stripped URL whitespace can turn an apparent path into an authority.
+    if (url.origin !== 'http://127.0.0.1') return null;
     const host = req.headers.host?.toLowerCase().replace(new RegExp(`:${port}$`), '') || '127.0.0.1';
     const entry = this.entries
       .filter((candidate) =>

@@ -10,7 +10,7 @@ import type {
 } from './plugin-schema.ts';
 
 export const PLUGIN_API_VERSION = 5;
-export const BUILTIN_PLUGIN_VERSION = '2.3.3';
+export const BUILTIN_PLUGIN_VERSION = '2.3.4';
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type PluginPack = z.infer<typeof pluginPackSchema>;
 export type PluginSelection = z.infer<typeof pluginSelectionSchema>;

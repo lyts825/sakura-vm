@@ -40,8 +40,11 @@ manifest.scripts = {
 delete manifest.devDependencies;
 await writeFile(join(output, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
 await mkdir(join(output, 'scripts'));
+await mkdir(join(output, 'scripts', 'patches'));
 for (const file of [
   'setup.mjs',
+  'patch-posixloom-process.mjs',
+  'patches/posixloom-process.json',
   'network-client.mjs',
   'versions.mjs',
   'cli.mjs',

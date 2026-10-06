@@ -151,6 +151,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
         void admission
           .run(async () => {
             await admission.check();
+            if (client.readyState !== WebSocket.OPEN) return;
             try {
               session.requireUnlocked();
             } catch {
@@ -225,6 +226,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
               try {
                 const port = appSession ? await features.desktops.apps.port(id, appSession) : 5901;
                 await admission.check();
+                if (client.readyState !== WebSocket.OPEN) return;
                 await features.desktops.attach(
                   id,
                   client,
@@ -283,6 +285,11 @@ export function attachApplicationWebSocket(context: SocketContext) {
                 terminalAbort.signal,
                 terminalGrant?.terminalId,
               );
+              // close may have fired before the preparation returned its cleanup receipt.
+              if (terminalAbort.signal.aborted || client.readyState !== WebSocket.OPEN) {
+                releaseTerminal();
+                return;
+              }
               ssh = await machines.connect(id, 10000, terminalAbort.signal);
               await admission.check();
               if (client.readyState !== WebSocket.OPEN) {

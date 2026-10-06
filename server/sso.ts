@@ -432,22 +432,32 @@ export class SingleSignOn {
       expiresAt: this.now() + 5 * 60_000,
       revision: this.revision,
     };
-    let redirect: string;
-    if (input.provider === 'oidc') {
-      const config = await this.configuration();
-      attempt.verifier = oidc.randomPKCECodeVerifier();
-      attempt.nonce = oidc.randomNonce();
-      redirect = oidc.buildAuthorizationUrl(config, {
-        redirect_uri: `http://localhost:${this.port}/api/access/sso/oidc/callback`,
-        scope: 'openid',
-        state,
-        nonce: attempt.nonce,
-        code_challenge: await oidc.calculatePKCECodeChallenge(attempt.verifier),
-        code_challenge_method: 'S256',
-      }).href;
-    } else redirect = await this.samlClient().getAuthorizeUrlAsync(state, undefined, {});
-    this.attempts.set(digest(state), attempt);
-    return { redirect, state, expiresAt: attempt.expiresAt };
+    const key = digest(state);
+    // Reserve admission before discovery or request construction can yield to another start.
+    this.attempts.set(key, attempt);
+    try {
+      let redirect: string;
+      if (input.provider === 'oidc') {
+        const config = await this.configuration();
+        attempt.verifier = oidc.randomPKCECodeVerifier();
+        attempt.nonce = oidc.randomNonce();
+        redirect = oidc.buildAuthorizationUrl(config, {
+          redirect_uri: `http://localhost:${this.port}/api/access/sso/oidc/callback`,
+          scope: 'openid',
+          state,
+          nonce: attempt.nonce,
+          code_challenge: await oidc.calculatePKCECodeChallenge(attempt.verifier),
+          code_challenge_method: 'S256',
+        }).href;
+      } else redirect = await this.samlClient().getAuthorizeUrlAsync(state, undefined, {});
+      if (attempt.revision !== this.revision || this.attempts.get(key) !== attempt)
+        throw new AppError('SSO 配置或控制面状态已变化，请重新登录', 409);
+      if (attempt.expiresAt <= this.now()) throw new AppError('SSO 登录已过期，请重新登录', 403);
+      return { redirect, state, expiresAt: attempt.expiresAt };
+    } catch (error) {
+      if (this.attempts.get(key) === attempt) this.attempts.delete(key);
+      throw error;
+    }
   }
   private take(state: string, providerId: SsoProvider) {
     if (!/^[A-Za-z0-9_-]{40,60}$/.test(state)) throw new AppError('SSO 状态无效', 403);
@@ -513,7 +523,12 @@ export class SingleSignOn {
           item.subject === identity.subject,
       );
       if (!binding) throw new AppError('该外部身份尚未关联 Sakura 账户', 403);
-      return this.access.completeFederatedLogin(binding.accountId, binding.id);
+      const login = await this.access.completeFederatedLogin(binding.accountId, binding.id);
+      if (attempt.revision !== this.revision) {
+        this.access.logout(login.token);
+        throw new AppError('SSO 配置或控制面状态已变化，请重新登录', 409);
+      }
+      return login;
     });
   }
   async completeOidc(callback: URL) {

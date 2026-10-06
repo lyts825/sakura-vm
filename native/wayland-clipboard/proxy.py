@@ -632,7 +632,16 @@ class Connection:
         self.wire = Wire(broker.protocols)
         self.closed = False
         self.client = Endpoint(self, client, False)
-        self.upstream = Endpoint(self, upstream, True)
+        try:
+            self.upstream = Endpoint(self, upstream, True)
+        except Exception:
+            # accept() closes both sockets on failure. Remove the first
+            # endpoint's selector entry too, before its descriptor is reused.
+            try:
+                self.client.close()
+            except Exception:
+                pass  # Preserve the construction failure for accept().
+            raise
 
     def intercept(self, raw, server, decoded, descriptors):
         obj, message, values, _, _ = decoded

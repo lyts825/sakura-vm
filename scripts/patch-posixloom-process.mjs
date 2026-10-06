@@ -1,8 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
 import { POSIXLOOM_COMMIT } from './versions.mjs';
 
 const patch = JSON.parse(
@@ -10,7 +10,7 @@ const patch = JSON.parse(
 );
 const normalize = (text) => text.replaceAll('\r\n', '\n');
 const digest = (text) => createHash('sha256').update(normalize(text)).digest('hex');
-const compile = (text) =>
+const compile = (text, ts) =>
   ts.transpileModule(text, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2022,
@@ -47,10 +47,17 @@ export async function patchPosixLoomProcess(directory, { distribution = true } =
   const patched = lines.join('\n');
   if (digest(patched) !== patch.patched) throw new Error('PosixLoom process patch verification failed');
   const targetPath = join(directory, 'dist/src/core/process/native.js');
-  const generated = compile(patched);
+  let generated;
   if (distribution) {
+    // Installed releases omit development dependencies. Setup has already installed
+    // PosixLoom's compiler; source-only patching does not need a compiler at all.
+    const require = createRequire(import.meta.url);
+    const ts = require(require.resolve('typescript', {
+      paths: [resolve(directory), fileURLToPath(new URL('..', import.meta.url))],
+    }));
+    generated = compile(patched, ts);
     const actual = withoutMap(await readFile(targetPath, 'utf8'));
-    if (actual !== compile(original) && actual !== generated)
+    if (actual !== compile(original, ts) && actual !== generated)
       throw new Error('PosixLoom native process distribution changed; refusing an unverified overwrite');
   }
   // Validate both inputs before changing either one.

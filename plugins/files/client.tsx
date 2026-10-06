@@ -324,7 +324,8 @@ export function FileBrowser({
       });
       await refresh();
     }, '文件操作已完成');
-  const openPath = async (filePath: string, jump?: number) => {
+  const loadPath = async (filePath: string, jump: number | undefined, signal: AbortSignal) => {
+    signal.throwIfAborted();
     const existing = workspaceRef.current.drafts.find((draft) => draft.path === filePath);
     setLine({ path: filePath, number: jump });
     if (existing) {
@@ -335,20 +336,22 @@ export function FileBrowser({
       setError('最多同时打开 20 个文件，请先关闭部分标签');
       return;
     }
-    await action.run(async () => {
-      const value = await request<{ content: string; version: string }>(
-        `/vms/${vm.id}/file?path=${encodeURIComponent(filePath)}`,
-      );
-      const draft: EditorDraft = {
-        id: crypto.randomUUID(),
-        path: filePath,
-        content: value.content,
-        baseContent: value.content,
-        version: value.version,
-      };
-      setWorkspace((current) => ({ drafts: [...current.drafts, draft], active: draft.id }));
-    });
+    const value = await request<{ content: string; version: string }>(
+      `/vms/${vm.id}/file?path=${encodeURIComponent(filePath)}`,
+      'GET', undefined, signal,
+    );
+    signal.throwIfAborted();
+    const draft: EditorDraft = {
+      id: crypto.randomUUID(),
+      path: filePath,
+      content: value.content,
+      baseContent: value.content,
+      version: value.version,
+    };
+    setWorkspace((current) => ({ drafts: [...current.drafts, draft], active: draft.id }));
   };
+  const openPath = (filePath: string, jump?: number) =>
+    action.run((signal) => loadPath(filePath, jump, signal));
   const open = (file: Entry) => (file.directory ? navigate(target(file.name)) : openPath(target(file.name)));
   useEffect(() => {
     if (openFile && vm.status === 'running') {
@@ -415,7 +418,7 @@ export function FileBrowser({
       } else if (kind === 'definition') {
         setDefinitions(result.locations);
         setCompletions([]);
-        if (result.locations.length === 1) await openPath(result.locations[0].path, result.locations[0].line);
+        if (result.locations.length === 1) await loadPath(result.locations[0].path, result.locations[0].line, signal);
       } else if (kind === 'diagnostics') {
         setDiagnostics(result.diagnostics);
         setDiagnosticNote(result.received
@@ -459,7 +462,8 @@ export function FileBrowser({
         ...current,
         drafts: current.drafts.map((draft) => {
           const file = updated.get(draft.path);
-          return file ? { ...draft, content: file.content, baseContent: file.content, version: file.version } : draft;
+          return file ? { ...draft, content: dirtyEdit(draft) ? draft.content : file.content,
+            baseContent: file.content, version: file.version } : draft;
         }),
       }));
       setRenamePreview(null);

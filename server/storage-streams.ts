@@ -1,7 +1,7 @@
 import { open } from 'node:fs/promises';
 import { finished, pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
-import type { Writable } from 'node:stream';
+import { Readable, Transform, type Writable } from 'node:stream';
 import { AppError } from '../shared/errors.ts';
 import { storageRuntime, type StorageLease } from './storage-runtime.ts';
 
@@ -31,14 +31,28 @@ export async function streamStoredFile(
   lease.assertActive();
   signal.throwIfAborted();
   const handle = await open(file, 'r');
-  let input: ReturnType<typeof handle.createReadStream> | undefined;
+  let input: Readable | undefined;
   try {
     const info = await handle.stat();
     if (!info.isFile()) throw new AppError('文件不可用', 409);
     signal.throwIfAborted();
     headers(info.size);
-    input = handle.createReadStream({ end: Math.max(0, info.size - 1), signal });
-    await pipeline(input, output, { signal });
+    input = info.size ? handle.createReadStream({ end: info.size - 1, signal }) : Readable.from([]);
+    let bytes = 0;
+    await pipeline(
+      input,
+      new Transform({
+        transform(chunk: Buffer, _encoding, done) {
+          bytes += chunk.length;
+          done(bytes > info.size ? new AppError('下载期间文件长度变化', 409) : null, chunk);
+        },
+        flush(done) {
+          done(bytes !== info.size ? new AppError('下载期间文件长度变化', 409) : null);
+        },
+      }),
+      output,
+      { signal },
+    );
   } finally {
     input?.destroy();
     if (input) await finished(input).catch(() => {});

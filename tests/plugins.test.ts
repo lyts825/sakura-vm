@@ -355,11 +355,13 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
     );
     assert.equal(memory.res.payload.consistency, 'vmstate');
     const restore = request('POST');
+    const restoreBody = { backup: true, memory: true };
     restore.req.headers['content-type'] = 'application/json';
+    restore.req.headers['content-length'] = String(Buffer.byteLength(JSON.stringify(restoreBody)));
     assert.equal(
       await routeThroughGateway(host, restore.req, restore.res,
         new URL('http://localhost/api/vms/vm/snapshots/checkpoint/restore'),
-        async () => ({ backup: true, memory: true })),
+        async () => restoreBody),
       true,
     );
     assert.deepEqual(restoreArguments,

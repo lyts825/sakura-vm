@@ -6,6 +6,9 @@ const portInput = element('port');
 const codeInput = element('code');
 const vmList = element('vms');
 let connection = { port: 7337, token: '' };
+let refreshVersion = 0;
+let pairing = false;
+const pairButton = pairForm.querySelector('button[type="submit"]');
 
 function message(text, error = false) {
   status.textContent = text;
@@ -17,18 +20,18 @@ function show(connected) {
   inventory.hidden = !connected;
 }
 
-function endpoint(path) {
-  return `http://127.0.0.1:${connection.port}/api/extension/${path}`;
+function endpoint(path, current) {
+  return `http://127.0.0.1:${current.port}/api/extension/${path}`;
 }
 
-async function request(path, method = 'GET', data) {
-  const response = await fetch(endpoint(path), {
+async function request(path, method = 'GET', data, current = connection) {
+  const response = await fetch(endpoint(path, current), {
     method,
     cache: 'no-store',
     headers: {
       'X-Sakura-Extension-Origin': `chrome-extension://${chrome.runtime.id}`,
       ...(data ? { 'Content-Type': 'application/json' } : {}),
-      ...(connection.token ? { 'X-Sakura-Extension-Token': connection.token } : {}),
+      ...(current.token ? { 'X-Sakura-Extension-Token': current.token } : {}),
     },
     body: data ? JSON.stringify(data) : undefined,
     signal: AbortSignal.timeout(10000),
@@ -64,16 +67,27 @@ function renderVms(vms) {
 
 async function refresh() {
   if (!connection.token) return;
+  const current = connection;
+  const version = ++refreshVersion;
   try {
-    const result = await request('inventory');
+    const result = await request('inventory', 'GET', undefined, current);
+    if (connection !== current || version !== refreshVersion) return;
     renderVms(result.vms);
     show(true);
     message(`已连接 · ${result.vms.length} 台实例`);
   } catch (error) {
+    if (connection !== current || version !== refreshVersion) return;
     if (error.status === 401 || error.status === 403) {
-      connection.token = '';
-      await chrome.storage.local.remove('token');
+      const cleared = connection = { port: current.port, token: '' };
+      vmList.replaceChildren();
       show(false);
+      try {
+        await chrome.storage.local.remove('token');
+      } catch (storageError) {
+        if (connection === cleared) message(storageError.message || '无法清除扩展设置。', true);
+        return;
+      }
+      if (connection !== cleared) return;
       message(`连接已失效，请重新配对：${error.message}`, true);
     } else {
       message(error.message || '无法连接 Sakura。', true);
@@ -83,21 +97,31 @@ async function refresh() {
 
 pairForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (pairing) return;
   const port = Number(portInput.value);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     message('端口必须在 1–65535 之间。', true);
     return;
   }
-  connection.port = port;
+  pairing = true;
+  pairButton.disabled = true;
+  const current = connection = { port, token: '' };
+  let owned = current;
   message('正在配对…');
   try {
-    const result = await request('connect', 'POST', { code: codeInput.value.trim() });
-    connection.token = result.token;
+    const result = await request('connect', 'POST', { code: codeInput.value.trim() }, current);
+    if (connection !== current) return;
+    const paired = connection = { port, token: result.token };
+    owned = paired;
     await chrome.storage.local.set({ port, token: result.token });
+    if (connection !== paired) return;
     codeInput.value = '';
     await refresh();
   } catch (error) {
-    message(error.message || '配对失败。', true);
+    if (connection === owned) message(error.message || '配对失败。', true);
+  } finally {
+    pairing = false;
+    pairButton.disabled = false;
   }
 });
 
@@ -105,18 +129,23 @@ element('refresh').addEventListener('click', () => void refresh());
 element('open').addEventListener('click', () =>
   chrome.tabs.create({ url: `http://127.0.0.1:${connection.port}/` }));
 element('forget').addEventListener('click', async () => {
-  connection.token = '';
-  await chrome.storage.local.remove('token');
+  const current = connection = { port: connection.port, token: '' };
   vmList.replaceChildren();
   show(false);
-  message('本地凭证已清除。管理员可在 Sakura 中撤销配对。');
+  try {
+    await chrome.storage.local.remove('token');
+    if (connection === current) message('本地凭证已清除。管理员可在 Sakura 中撤销配对。');
+  } catch (error) {
+    if (connection === current) message(error.message || '无法清除扩展设置。', true);
+  }
 });
 
 void (async () => {
   const stored = await chrome.storage.local.get(['port', 'token']);
-  connection.port = Number.isInteger(stored.port) && stored.port >= 1 && stored.port <= 65535
-    ? stored.port : 7337;
-  connection.token = typeof stored.token === 'string' ? stored.token : '';
+  connection = {
+    port: Number.isInteger(stored.port) && stored.port >= 1 && stored.port <= 65535 ? stored.port : 7337,
+    token: typeof stored.token === 'string' ? stored.token : '',
+  };
   portInput.value = String(connection.port);
   if (connection.token) await refresh();
   else { show(false); message('尚未配对。'); }

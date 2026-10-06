@@ -217,7 +217,21 @@ export class Files {
         // Bound reads to the stat result so appends cannot exceed Content-Length
         // or the transfer limit after the response headers have been selected.
         const source = size ? ftp.createReadStream(path, { start: 0, end: size - 1 }) : Readable.from([]);
-        await pipeline(source, target, { signal });
+        let bytes = 0;
+        await pipeline(
+          source,
+          new Transform({
+            transform(chunk: Buffer, _encoding, done) {
+              bytes += chunk.length;
+              done(bytes > size ? new AppError('下载期间文件长度变化', 409) : null, chunk);
+            },
+            flush(done) {
+              done(bytes !== size ? new AppError('下载期间文件长度变化', 409) : null);
+            },
+          }),
+          target,
+          { signal },
+        );
       },
       signal,
     );
