@@ -8,6 +8,7 @@ import { publicApiFailure } from './api-errors.ts';
 import type { HttpOperationHandler } from './operation-gateway.ts';
 import type { CoreHttpContext, CoreHttpHandlers } from './http-core-context.ts';
 import { rejectOperationBeforeEffect } from './operation-execution.ts';
+import type { SessionLockV1 } from './service-contracts/v1.ts';
 
 /** Wrap only request admission, before any challenge, credential counter or
  * session is issued. Post-effect failures must retain their unknown outcome. */
@@ -17,6 +18,23 @@ async function authenticationInput<T>(operationId: string, prepare: () => T | Pr
     if (error !== null && typeof error === 'object') rejectOperationBeforeEffect(error, [operationId]);
     throw error;
   }
+}
+
+/** A body read or credential proof may span a complete lock/unlock transition. */
+async function unlockedAuthenticationInput<T>(operationId: string,
+  session: Pick<SessionLockV1, 'requireUnlocked' | 'getGeneration'>, prepare: () => Promise<T>) {
+  return authenticationInput(operationId, async () => {
+    session.requireUnlocked();
+    const generation = session.getGeneration();
+    const check = () => {
+      session.requireUnlocked();
+      if (generation !== session.getGeneration())
+        throw new AppError('会话状态已变化，请重新登录', 409, 'SESSION_STATE_CHANGED');
+    };
+    const input = await prepare();
+    check();
+    return { input, check };
+  });
 }
 
 export function publicAccessHandlers(
@@ -164,15 +182,14 @@ export function publicAccessHandlers(
   const accessLoginHandler: HttpOperationHandler = async (req, res, url) => {
     const { access, session } = services;
     if (url.pathname === '/api/access/login') {
-      const input = await authenticationInput('core.access.login', async () => {
-        session.requireUnlocked();
+      const { input, check } = await unlockedAuthenticationInput('core.access.login', session, async () => {
         if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
         return body(req, 4096);
       });
       const login = await access.login(input);
       noteOperationResultActor(login.principal.id);
       try {
-        session.requireUnlocked();
+        check();
       } catch (error) {
         access.logout(login.token);
         throw error;
@@ -215,8 +232,7 @@ export function publicAccessHandlers(
   const accessPasskeyLoginVerifyHandler: HttpOperationHandler = async (req, res, url) => {
     const { access, features, passkeys, session } = services;
     if (url.pathname === '/api/access/passkeys/login/verify') {
-      const input = await authenticationInput('core.access.passkeyLoginVerify', async () => {
-        session.requireUnlocked();
+      const { input, check } = await unlockedAuthenticationInput('core.access.passkeyLoginVerify', session, async () => {
         if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
         requirePasskeyOrigin(req);
         if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
@@ -225,7 +241,7 @@ export function publicAccessHandlers(
       const login = await passkeys.finishAuthentication(input);
       noteOperationResultActor(login.principal.id);
       try {
-        session.requireUnlocked();
+        check();
       } catch (error) {
         access.logout(login.token);
         throw error;

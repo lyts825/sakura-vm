@@ -134,8 +134,9 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
                 className="secondary compact"
                 disabled={action.busy}
                 onClick={() =>
-                  void action.run(async () => {
-                    await request(`/jobs/${job.id}/cancel`, 'POST');
+                  void action.run(async (signal) => {
+                    await request(`/jobs/${job.id}/cancel`, 'POST', undefined, signal);
+                    signal.throwIfAborted();
                     remote.reload();
                   })
                 }
@@ -148,8 +149,9 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
                 className="secondary compact"
                 disabled={action.busy}
                 onClick={() =>
-                  void action.run(async () => {
-                    const result = await request(`/jobs/${job.id}/retry`, 'POST');
+                  void action.run(async (signal) => {
+                    const result = await request(`/jobs/${job.id}/retry`, 'POST', undefined, signal);
+                    signal.throwIfAborted();
                     if (result && typeof result === 'object' && 'url' in result && typeof result.url === 'string' &&
                       /^\/api\/downloads\/[a-f0-9]{64}$/.test(result.url)) {
                       const link = document.createElement('a');

@@ -99,9 +99,11 @@ export function FileBrowser({
   });
   const edit = workspace.drafts.find((draft) => draft.id === workspace.active) || null;
   const workspaceRef = useRef(workspace);
+  const selectionVersion = useRef(0);
   workspaceRef.current = workspace;
   const setEdit = (value: FileEdit | null) => {
     const active = workspaceRef.current.active;
+    if (!value) selectionVersion.current++;
     setWorkspace((current) => {
       const drafts = value
         ? current.drafts.map((draft) => (draft.id === active ? { ...value, id: draft.id } : draft))
@@ -329,6 +331,7 @@ export function FileBrowser({
     const existing = workspaceRef.current.drafts.find((draft) => draft.path === filePath);
     setLine({ path: filePath, number: jump });
     if (existing) {
+      selectionVersion.current++;
       setWorkspace((current) => ({ ...current, active: existing.id }));
       return;
     }
@@ -336,6 +339,8 @@ export function FileBrowser({
       setError('最多同时打开 20 个文件，请先关闭部分标签');
       return;
     }
+    // Returning to the same tab is still a newer selection than this read.
+    const selected = selectionVersion.current;
     const value = await request<{ content: string; version: string }>(
       `/vms/${vm.id}/file?path=${encodeURIComponent(filePath)}`,
       'GET', undefined, signal,
@@ -348,7 +353,8 @@ export function FileBrowser({
       baseContent: value.content,
       version: value.version,
     };
-    setWorkspace((current) => ({ drafts: [...current.drafts, draft], active: draft.id }));
+    setWorkspace((current) => ({ drafts: [...current.drafts, draft],
+      active: selectionVersion.current === selected ? draft.id : current.active }));
   };
   const openPath = (filePath: string, jump?: number) =>
     action.run((signal) => loadPath(filePath, jump, signal));
@@ -410,7 +416,7 @@ export function FileBrowser({
         position: cursor.current,
         ...(kind === 'rename' ? { newName: renameName, version: submitted.version } : {}),
       }, signal).catch(error => { setLanguageRefresh(value => value + 1); throw error; });
-      if (workspaceRef.current.active !== submitted.id ||
+      if (workspaceRef.current.active !== submitted.id || editRef.current?.path !== submitted.path ||
           (kind !== 'rename' && editRef.current?.content !== submitted.content)) return;
       if (kind === 'completion') {
         setCompletions(result.items);
@@ -586,6 +592,7 @@ export function FileBrowser({
               content: '',
               fresh: true,
             };
+            selectionVersion.current++;
             setWorkspace((current) => ({ drafts: [...current.drafts, draft], active: draft.id }));
           }}
         >
@@ -796,7 +803,10 @@ export function FileBrowser({
               aria-selected={draft.id === workspace.active}
               title={draft.path}
               className={draft.id === workspace.active ? 'active' : ''}
-              onClick={() => setWorkspace((current) => ({ ...current, active: draft.id }))}
+              onClick={() => {
+                selectionVersion.current++;
+                setWorkspace((current) => ({ ...current, active: draft.id }));
+              }}
             >
               {draft.path.split('/').at(-1)}
               {dirtyEdit(draft) ? ' ●' : ''}
@@ -959,16 +969,24 @@ export function FileBrowser({
                 disabled={action.busy}
                 onClick={() =>
                   void action.run(async (signal) => {
-                    const result = await request<{
-                      diagnostics: { message: string; line?: number; column?: number }[];
-                    }>(
-                      `/vms/${vm.id}/code-diagnostics?path=${encodeURIComponent(edit.path)}`,
-                      'GET',
-                      undefined,
-                      signal,
-                    );
-                    setDiagnostics(result.diagnostics);
-                    setDiagnosticNote(result.diagnostics.length ? '' : '代码检查未发现问题');
+                    const submitted = editRef.current;
+                    if (!submitted) return;
+                    const current = () => editRef.current?.id === submitted.id &&
+                      editRef.current.path === submitted.path && editRef.current.content === submitted.content;
+                    try {
+                      const result = await request<{
+                        diagnostics: { message: string; line?: number; column?: number }[];
+                      }>(
+                        `/vms/${vm.id}/code-diagnostics?path=${encodeURIComponent(submitted.path)}`,
+                        'GET', undefined, signal,
+                      );
+                      signal.throwIfAborted();
+                      if (!current()) throw new DOMException('编辑草稿已变化', 'AbortError');
+                      setDiagnostics(result.diagnostics);
+                      setDiagnosticNote(result.diagnostics.length ? '' : '代码检查未发现问题');
+                    } catch (error) {
+                      throw current() ? error : new DOMException('编辑草稿已变化', 'AbortError');
+                    }
                   }, '检查完成')
                 }
               >

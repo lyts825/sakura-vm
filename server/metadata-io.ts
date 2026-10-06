@@ -12,12 +12,14 @@ export async function atomicMetadataWrite(
   contents: string,
   beforeCommit?: () => void | Promise<void>,
   markPublication: () => void = () => {},
+  signal?: AbortSignal,
 ) {
   const instance = pluginAuthority(),
     cleaning = !!instance && pluginCleanup() === instance;
   const check = captureOperationCheck();
   if (!cleaning) instance?.check('metadata', true);
   await check();
+  signal?.throwIfAborted();
   try {
     await mkdir(dirname(file), { recursive: true });
   } catch (error) {
@@ -26,6 +28,7 @@ export async function atomicMetadataWrite(
   }
   const temp = `${file}.${randomUUID()}.tmp`;
   try {
+    signal?.throwIfAborted();
     try {
       await writeFile(temp, contents, { mode: 0o600, flag: 'wx', flush: true });
     } catch (error) {
@@ -37,6 +40,8 @@ export async function atomicMetadataWrite(
       await beforeCommit?.();
       if (!cleaning) instance?.check('metadata', true);
       await check();
+      // Cancellation can arrive while either asynchronous commit guard waits.
+      signal?.throwIfAborted();
       try {
         await rename(temp, file);
         markPublication();
@@ -53,7 +58,7 @@ export async function atomicMetadataWrite(
         }
         // Windows can briefly deny replacement while another handle is open.
         // Keep the original file and this exact flushed temporary file intact.
-        await delay(Math.min(remaining, 25 * 2 ** Math.min(attempt, 3)));
+        await delay(Math.min(remaining, 25 * 2 ** Math.min(attempt, 3)), undefined, { signal });
       }
     }
   } finally {

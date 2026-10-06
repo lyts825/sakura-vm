@@ -1191,7 +1191,7 @@ export function App() {
                         </div>
                         {tab === 'development' && (
                           <DevelopmentPanel
-                            key={vm.id}
+                            key={`${vm.id}:${projectId || ''}`}
                             vm={vm}
                             request={workspaceApi}
                             token={token}
@@ -1201,7 +1201,7 @@ export function App() {
                         )}
                         {pluginTabOwner && !builtInTabIds.has(tab) && (
                           <PluginTab
-                            key={pluginTabOwner + '-' + tab + '-' + vm.id}
+                            key={`${pluginTabOwner}-${tab}-${vm.id}:${projectId || ''}`}
                             owner={pluginTabOwner}
                             id={tab}
                             vm={vm}

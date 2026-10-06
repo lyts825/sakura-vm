@@ -176,9 +176,15 @@ export class FileHistory {
   async purge(id: string, key: string) {
     return this.machines.locked(`history:${id}`, async () => {
       const entry = await this.find(id, key);
-      if (entry.kind === 'trash')
-        await new Files(this.machines).operation(id, 'delete', this.trashPath(entry), undefined, true);
-      else await rm(join(this.root(id), `${entry.id}.txt`), { force: true });
+      if (entry.kind === 'trash') {
+        try {
+          await new Files(this.machines).operation(id, 'delete', this.trashPath(entry), undefined, true);
+        } catch (error) {
+          // A refused rename or an interrupted previous purge can leave only
+          // the durable receipt. Confirmed absence permits retiring that receipt.
+          if (!(error instanceof AppError && error.status === 404)) throw error;
+        }
+      } else await rm(join(this.root(id), `${entry.id}.txt`), { force: true });
       await writeStore(
         join(this.root(id), 'index.json'),
         (await this.list(id)).filter((v) => v.id !== key),

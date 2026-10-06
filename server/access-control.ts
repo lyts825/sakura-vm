@@ -5,6 +5,7 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { rejectOperationBeforeEffect } from './operation-execution.ts';
+import { captureOperationCheck, withOperationCheck } from './operation-context.ts';
 
 const password = z.string().min(12).max(256);
 const username = z.string().regex(/^[a-z][a-z0-9_-]{2,31}$/);
@@ -75,6 +76,7 @@ export class AccessControl {
   private failures = new Map<string, { count: number; blockedUntil: number }>();
   private pending = Promise.resolve();
   private closed = false;
+  private sessionGeneration = 0;
 
   constructor(private file = join(DATA, 'access-control.json'), private now = Date.now) {}
 
@@ -114,8 +116,10 @@ export class AccessControl {
   }
 
   private serial<T>(work: () => Promise<T>) {
+    const check = captureOperationCheck();
     const operation = this.pending.catch(() => {}).then(async () => {
       if (this.closed) throw new AppError('账户服务正在关闭', 503);
+      await check();
       return work();
     });
     this.pending = operation.then(() => {}, () => {});
@@ -134,7 +138,7 @@ export class AccessControl {
       const next: State = { version: 1, enabled: true, accounts: [owner] };
       await writeStore(this.file, next);
       this.state = next;
-      this.sessions.clear();
+      this.revokeAll();
       return this.status();
     });
   }
@@ -143,6 +147,7 @@ export class AccessControl {
     let value: z.infer<typeof accessLoginInput>;
     try { value = accessLoginInput.parse(input); }
     catch (error) { rejectLogin(error as object); }
+    const generation = this.sessionGeneration;
     return this.serial(async () => {
       if (!this.state.enabled) rejectLogin(new AppError('账户模式未启用', 409));
       const failed = this.failures.get(value.username);
@@ -164,11 +169,19 @@ export class AccessControl {
         rejectLogin(new AppError('账户或密码无效', 403));
       }
       this.failures.delete(value.username);
-      return this.issueSession(user!);
+      try { return this.issueSession(user!, generation); }
+      catch (error) { return rejectLogin(error as object); }
     });
   }
 
-  private issueSession(user: Account, credentialId?: string, notAfter = Number.MAX_SAFE_INTEGER) {
+  private requireSessionGeneration(generation: number) {
+    if (this.closed || generation !== this.sessionGeneration)
+      throw new AppError('账户会话状态已变化，请重新登录', 409, 'ACCESS_STATE_CHANGED');
+  }
+  private issueSession(user: Account, generation: number, credentialId?: string, notAfter = Number.MAX_SAFE_INTEGER) {
+    this.requireSessionGeneration(generation);
+    if (user.expiresAt !== null && user.expiresAt <= this.now())
+      throw new AppError('账户已失效，请重新登录', 401);
     const expiresAt = Math.min(this.now() + (user.role === 'owner' ? 8 : 1) * 3_600_000,
       user.expiresAt ?? Number.MAX_SAFE_INTEGER, notAfter);
     const token = randomBytes(32).toString('hex');
@@ -176,12 +189,13 @@ export class AccessControl {
     return { token, principal: this.principal(user, expiresAt) };
   }
   async completeFederatedLogin(accountId: string, credentialId: string) {
+    const generation = this.sessionGeneration;
     return this.serial(async () => {
       if (!this.state.enabled) throw new AppError('账户模式未启用', 409);
       const user = this.state.accounts.find((item) => item.id === accountId);
       if (!user || (user.expiresAt && user.expiresAt <= this.now()))
         throw new AppError('关联账户已失效', 401);
-      return this.issueSession(user, credentialId);
+      return this.issueSession(user, generation, credentialId);
     });
   }
   revokeFederatedCredential(credentialId: string) {
@@ -223,7 +237,7 @@ export class AccessControl {
     return { ok: true };
   }
 
-  revokeAll() { this.sessions.clear(); this.handoffs.clear(); }
+  revokeAll() { this.sessionGeneration++; this.sessions.clear(); this.handoffs.clear(); }
 
   async createHandoff(sourceToken: unknown) {
     return this.serial(async () => {
@@ -252,6 +266,7 @@ export class AccessControl {
 
   async redeemHandoff(input: unknown) {
     const { code } = accessHandoffRedeem.parse(input);
+    const generation = this.sessionGeneration;
     return this.serial(async () => {
       const key = digest(code);
       const handoff = this.handoffs.get(key);
@@ -263,7 +278,7 @@ export class AccessControl {
           !user || (user.expiresAt && user.expiresAt <= this.now()))
         throw new AppError('交接码无效或已过期', 403);
       this.sessions.delete(handoff.sessionKey);
-      const login = this.issueSession(user, session.credentialId, session.expiresAt);
+      const login = this.issueSession(user, generation, session.credentialId, session.expiresAt);
       return { ...login, sourceToken: handoff.sourceToken };
     });
   }
@@ -374,6 +389,7 @@ export class AccessControl {
 
   async completePasskeyLogin(accountId: string, id: string,
     previousCounter: number, newCounter: number) {
+    const generation = this.sessionGeneration;
     return this.serial(async () => {
       const user = this.state.accounts.find((item) => item.id === accountId);
       const key = user?.passkeys.find((item) => item.id === id);
@@ -385,9 +401,10 @@ export class AccessControl {
         item.id === accountId ? { ...item, passkeys: item.passkeys.map((entry) =>
           entry.id === id ? { ...entry, counter: newCounter,
             lastUsedAt: new Date(this.now()).toISOString() } : entry) } : item) };
-      await writeStore(this.file, next);
+      await withOperationCheck(async () => this.requireSessionGeneration(generation),
+        () => writeStore(this.file, next));
       this.state = next;
-      return this.issueSession(next.accounts.find((item) => item.id === accountId)!, id);
+      return this.issueSession(next.accounts.find((item) => item.id === accountId)!, generation, id);
     });
   }
 
@@ -402,16 +419,14 @@ export class AccessControl {
         ? { ...item, credential: replacement } : item) };
       await writeStore(this.file, next);
       this.state = next;
-      this.sessions.clear();
-      this.handoffs.clear();
+      this.revokeAll();
       return { changed: true };
     });
   }
 
   async close() {
     this.closed = true;
+    this.revokeAll();
     await this.pending;
-    this.sessions.clear();
-    this.handoffs.clear();
   }
 }

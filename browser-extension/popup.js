@@ -69,6 +69,8 @@ async function refresh() {
   if (!connection.token) return;
   const current = connection;
   const version = ++refreshVersion;
+  show(true);
+  message('正在连接…');
   try {
     const result = await request('inventory', 'GET', undefined, current);
     if (connection !== current || version !== refreshVersion) return;

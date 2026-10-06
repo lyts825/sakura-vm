@@ -11,6 +11,7 @@ import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { dpapi, type Protector } from './secrets.ts';
 import { networkFor } from './network/index.ts';
+import { withOperationCheck } from './operation-context.ts';
 const { fetch: managedFetch } = networkFor('core:sso', 'oidc');
 const oidcFetch: oidc.CustomFetch = (url, options) => managedFetch(url, options as RequestInit);
 
@@ -507,7 +508,12 @@ export class SingleSignOn {
           bindings: [...this.state.bindings.filter((item) => item !== previous), binding],
         };
         if (next.bindings.length > 100) throw new AppError('外部身份数量已达上限', 409);
-        await writeStore(this.file, next);
+        await withOperationCheck(async () => {
+          if (attempt.revision !== this.revision)
+            throw new AppError('SSO 配置或控制面状态已变化，请重新绑定', 409);
+          if (this.access.authorize(attempt.sourceToken).id !== accountId)
+            throw new AppError('关联账户已失效', 401);
+        }, () => writeStore(this.file, next));
         this.state = next;
         if (previous) this.revokeCredential(previous.id);
         return { linked: true, binding };

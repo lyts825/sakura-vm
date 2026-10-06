@@ -74,6 +74,7 @@ export class MetadataStore<T> {
           await options.beforeCommit?.();
         },
         mark,
+        options.signal,
       );
       return { value: next, revision: revision(text) };
     });
@@ -97,6 +98,7 @@ export class MetadataStore<T> {
           await options.beforeCommit?.();
         },
         mark,
+        options.signal,
       );
       return { value: next, revision: revision(JSON.stringify(next, null, 2)), result };
     });
