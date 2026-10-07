@@ -1,4 +1,5 @@
-/** 烟雾验收：验证编译 HTTP 的项目认证缓存；仅复用已停机自有认证夹具。 */
+/** 烟雾验收：验证编译 HTTP 的项目认证缓存；仅复用已停机自有认证夹具。
+ * Smoke acceptance for compiled HTTP project-authentication cache using only stopped owned fixtures. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -69,12 +70,18 @@ const projectRoot = '/workspace/sakura-http-cache-' + randomBytes(8).toString('h
 const npmDirectory = projectRoot + '/npm',
   pipDirectory = projectRoot + '/pip';
 let projectId, previousActive;
+/** 将输入编码成单个 POSIX shell 字面参数，嵌入单引号用结束/转义/重开方式保留原值；调用方仍负责命令和路径授权。
+ * Encode input as one literal POSIX shell argument, preserving embedded quotes by closing/escaping/reopening; callers still authorize the command/path. */
 const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
 let tokens = { npm: '', pip: '' };
 const privateValues = [];
+/** 逐一遮盖本次私有凭据再输出错误文本，避免验收日志和失败信息泄漏原令牌。
+ * Mask each private fixture credential before diagnostic output so verification logs/errors do not reveal tokens. */
 const redact = (text) =>
   privateValues.reduce((result, value) => result.replaceAll(value, '[owned token]'), text);
 const jobs = [];
+/** 使用认证本机 HTTP 入口发送请求，三十秒期限，失败正文先脱敏；返回成功 JSON。
+ * Send authenticated local HTTP requests with a thirty-second deadline, redacting failed bodies before returning successful JSON. */
 async function request(endpoint, method = 'GET', body) {
   const response = await fetch(origin + endpoint, {
     method,
@@ -85,11 +92,15 @@ async function request(endpoint, method = 'GET', body) {
   assert.equal(response.ok, true, redact(await response.clone().text()));
   return response.json();
 }
+/** 通过生成 SDK 的 core.vms.exec 实例域执行命令，要求退出零并脱敏失败诊断，返回标准输出。
+ * Execute an instance-scoped command via generated SDK core.vms.exec, requiring zero exit/redacting failure diagnostics before returning stdout. */
 const guest = async (command) => {
   const result = await sdk.call('core.vms.exec', { path, body: { scope: 'instance', command } });
   assert.equal(result.code, 0, redact(result.stderr || result.stdout));
   return result.stdout.trim();
 };
+/** 将内容 base64 编码后由隔离 Python 以私有 umask 写入指定夹具路径，避免二进制或引号破坏 shell。
+ * Base64-encode content and write the fixture path through isolated Python/private umask so binary bytes/quotes cannot corrupt the shell command. */
 const writeGuest = async (file, contents) =>
   guest(
     'python3 -I -c ' +
@@ -101,6 +112,8 @@ const writeGuest = async (file, contents) =>
           '))',
       ),
   );
+/** 从编译 HTTP 入口启动依赖操作，只接受本次 startedAt 之后的任务；十分钟内要求 done 并检查所有凭据不在任务输出中。
+ * Start dependency work through the compiled HTTP entry and accept only jobs newer than this invocation; require done within ten minutes and ensure credentials never appear in job output. */
 async function dev(manager, operation) {
   const started = Date.now();
   await request(`/api/vms/${vm.id}/advanced?project=${projectId}`, 'POST', {

@@ -1,5 +1,6 @@
 /**
  * 模块职责：解析并导入外部磁盘及 OVA；限制 TAR 成员、路径和磁盘依赖，防止导入越界。
+ * Module purpose: Parses external disks and OVA archives, bounding TAR members, paths and disk dependencies before import.
  */
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, open, rm, stat } from 'node:fs/promises';
@@ -45,9 +46,31 @@ export const diskImportSchema = z
   });
 export type DiskImportInput = z.infer<typeof diskImportSchema>;
 
+/**
+ * 入口 / Entry: tarText.
+ * 功能：在解析并导入外部磁盘及 OVA中，执行此领域的具体处理步骤并返回其结果；本入口产生 `bytes.toString('utf8').split('\0')[0].trim()` 供上层消费（`disk-imports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `disk-imports.ts`; this entry produces `bytes.toString('utf8').split('\0')[0].trim()` for its caller. Module context: Parses external disks and OVA archives, bounding TAR members, paths and disk dependencies before import.
+ * 处理：通过 `bytes.toString().split()[...].trim`, `bytes.toString().split`, `bytes.toString` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `bytes.toString().split()[...].trim`, `bytes.toString().split`, `bytes.toString`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: bytes: Buffer
+ * 输出 / Returns: `bytes.toString('utf8').split('\0')[0].trim()`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function tarText(bytes: Buffer) {
   return bytes.toString('utf8').split('\0')[0].trim();
 }
+/**
+ * 入口 / Entry: tarNumber.
+ * 功能：在解析并导入外部磁盘及 OVA中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value` 供上层消费（`disk-imports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `disk-imports.ts`; this entry produces `value` for its caller. Module context: Parses external disks and OVA archives, bounding TAR members, paths and disk dependencies before import.
+ * 处理：通过 `tarText().trim`, `tarText`, `inline.test` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `tarText().trim`, `tarText`, `inline.test`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: bytes: Buffer
+ * 输出 / Returns: `value`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `bytes[0] & 0x80`; `!/^[0-7]+$/.test(text)`; `!Number.isSafeInteger(value) || value < 0 || value > MAX_UPLOAD`; 异常 / errors `new AppError('暂不支持 TAR 二进制长度字段')`; `new AppError('OVA 的 TAR 长度字段损坏')`.
+ */
 function tarNumber(bytes: Buffer) {
   if (bytes[0] & 0x80) throw new AppError('暂不支持 TAR 二进制长度字段');
   const text = tarText(bytes).trim();
@@ -57,6 +80,17 @@ function tarNumber(bytes: Buffer) {
     throw new AppError('OVA 条目超出 8 GiB 上限');
   return value;
 }
+/**
+ * 入口 / Entry: tarHeader.
+ * 功能：在解析并导入外部磁盘及 OVA中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ name: prefix ? `${prefix}/${name}` : name, size: tarNumber(header.subarray(124, 136)), type: header[156], }` 供上层消费（`disk-imports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `disk-imports.ts`; this entry produces `{ name: prefix ? `${prefix}/${name}` : name, size: tarNumber(header.subarray(124, 136)), type: header[156], }` for its caller. Module context: Parses external disks and OVA archives, bounding TAR members, paths and disk dependencies before import.
+ * 处理：通过 `tarNumber`, `header.subarray`, `tarText` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `tarNumber`, `header.subarray`, `tarText`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: header: Buffer
+ * 输出 / Returns: `{ name: prefix ? `${prefix}/${name}` : name, size: tarNumber(header.subarray(124, 136)), type: header[156], }`.
+ * 副作用 / Effects: 更新 / updates `sum`.
+ * 拒绝 / Refusals: 条件 / conditions `sum !== claimed`; 异常 / errors `new AppError('OVA TAR 标头校验失败')`.
+ */
 function tarHeader(header: Buffer) {
   const claimed = tarNumber(header.subarray(148, 156));
   let sum = 0;
@@ -70,6 +104,17 @@ function tarHeader(header: Buffer) {
     type: header[156],
   };
 }
+/**
+ * 入口 / Entry: safeMember.
+ * 功能：在解析并导入外部磁盘及 OVA中，执行此领域的具体处理步骤并返回其结果；本入口产生 `name` 供上层消费（`disk-imports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `disk-imports.ts`; this entry produces `name` for its caller. Module context: Parses external disks and OVA archives, bounding TAR members, paths and disk dependencies before import.
+ * 处理：通过 `name.startsWith`, `name.includes`, `name.split().some`, `name.split` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `name.startsWith`, `name.includes`, `name.split().some`, `name.split`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: name: string
+ * 输出 / Returns: `name`.
+ * 副作用 / Effects: `name.startsWith`.
+ * 拒绝 / Refusals: 条件 / conditions `!name || name.startsWith('/') || name.includes('\\') || name.includes(':') || name.split('/').some((part) => part === '..') |…`; 异常 / errors `new AppError('OVA 成员路径无效')`.
+ */
 function safeMember(name: string) {
   if (
     !name ||
@@ -82,6 +127,17 @@ function safeMember(name: string) {
     throw new AppError('OVA 成员路径无效');
   return name;
 }
+/**
+ * 入口 / Entry: paxValues.
+ * 功能：在解析并导入外部磁盘及 OVA中，执行此领域的具体处理步骤并返回其结果；本入口产生 `values` 供上层消费（`disk-imports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `disk-imports.ts`; this entry produces `values` for its caller. Module context: Parses external disks and OVA archives, bounding TAR members, paths and disk dependencies before import.
+ * 处理：通过 `data.indexOf`, `data.subarray().toString`, `data.subarray`, `record.indexOf` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `data.indexOf`, `data.subarray().toString`, `data.subarray`, `record.indexOf`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: data: Buffer
+ * 输出 / Returns: `values`.
+ * 副作用 / Effects: 更新 / updates `values[record.slice(0, equal)]`, `at`.
+ * 拒绝 / Refusals: 条件 / conditions `space < 0`; `!Number.isSafeInteger(length) || length < 4 || at + length > data.length`; `data[at + length - 1] !== 10`; 异常 / errors `new AppError('OVA PAX 记录损坏')`.
+ */
 function paxValues(data: Buffer) {
   const values: Record<string, string> = {};
   let at = 0;
@@ -100,6 +156,17 @@ function paxValues(data: Buffer) {
   }
   return values;
 }
+/**
+ * 入口 / Entry: readAt.
+ * 功能：在解析并导入外部磁盘及 OVA中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `data` 供上层消费（`disk-imports.ts`）。
+ * Purpose: Reads/verifies domain state and constructs a caller-facing result in `disk-imports.ts`; this entry produces `data` for its caller. Module context: Parses external disks and OVA archives, bounding TAR members, paths and disk dependencies before import.
+ * 处理：通过 `file.read` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `file.read`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: file: Awaited<ReturnType<typeof open>>; size: number; offset: number
+ * 输出 / Returns: `data`.
+ * 副作用 / Effects: 更新 / updates `received`.
+ * 拒绝 / Refusals: 条件 / conditions `!bytesRead`; 异常 / errors `new AppError('OVA 归档已截断')`.
+ */
 async function readAt(file: Awaited<ReturnType<typeof open>>, size: number, offset: number) {
   const data = Buffer.alloc(size);
   let received = 0;
@@ -111,6 +178,21 @@ async function readAt(file: Awaited<ReturnType<typeof open>>, size: number, offs
   return data;
 }
 /** Only a single regular VMDK payload is copied to a fixed temporary path. */
+/**
+ * 入口 / Entry: extractOva.
+ * 功能：有界解析 OVA/TAR 和 OVF 引用，将唯一受支持磁盘成员写入受管目标。
+ * Purpose: Parses bounded OVA/TAR/OVF references and extracts the sole supported disk member into a managed target.
+ * 设计：校验全部成员、长度、重复路径和 OVF 对应关系；提取失败清理暂存并把失败记入原存储租约。
+ * Design: Members, lengths, duplicates and OVF correspondence are verified; extraction failure cleans staging and retains lease cleanup failure.
+ * 输入 / Inputs: archive: string; target: string; signal: AbortSignal optional; lease: StorageLease optional
+ * 输出 / Returns: Promise<{ member: string; bytes: number }>；结果来自 / values from `storageRuntime.run( { owner: 'core:ova-extract', taskId: 'ova:' + randomUUID(), label: 'Extract validated OVA disk', mode: 'w…`; `{ member: disk.name, bytes: disk.size }`.
+ * 副作用 / Effects: `seen.add`; `createWriteStream`; `createReadStream`; `file.close`; `rm`; 更新 / updates `name`, `length`, `pending`, `ovf`.
+ * 拒绝 / Refusals: 条件 / conditions `++entries > 1024`; `pending && item.type !== 120`; `pending.size`; 异常 / errors `new AppError('OVA 条目过多')`; `new AppError('OVA PAX 文件长度无效')`.
+ * 收尾：退出 try 区域时始终执行 `try { await file.close(); if (owned && !complete) await rm(target, { force: true }); } catch (error) { lease.cleanupPending(e…`；这些步骤也适用于异常退出。
+ * Finalization: Leaving the try region always executes `try { await file.close(); if (owned && !complete) await rm(target, { force: true }); } catch (error) { lease.cleanupPending(e…`; these steps also apply to exceptional exits.
+ * 失败处理：catch 分支执行 `lease.cleanupPending(error);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `lease.cleanupPending(error);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function extractOva(
   archive: string,
   target: string,
@@ -222,10 +304,42 @@ export async function extractOva(
 }
 
 export class DiskImports {
+  /**
+   * 入口 / Entry: DiskImports.constructor.
+   * 功能：建立 DiskImports 的解析并导入外部磁盘及 OVA上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the DiskImports context for this module's responsibility: Parses external disks and OVA archives, bounding TAR members, paths and disk dependencies before import. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(private machines: Machines) {}
+  /**
+   * 入口 / Entry: DiskImports.import.
+   * 功能：校验导入格式与目标硬件，在暂存区转换外部磁盘并采用为新实例。
+   * Purpose: Validates source format/target hardware, converts external disks in staging and adopts them as a new VM.
+   * 设计：转换前拒绝外部 backing 依赖和不受支持组合；最终采用前检查磁盘与容量，失败关闭文件和暂存资源。
+   * Design: External backing dependencies/unsupported combinations are refused; disk/capacity checks precede adoption and failure closes staging resources.
+   * 输入 / Inputs: input: unknown; source: Readable; signal: AbortSignal optional
+   * 输出 / Returns: `storageRuntime.run( { owner: 'core:disk-import', taskId: 'disk-import:' + randomUUID(), label: 'Import and convert external d…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async import(input: unknown, source: Readable, signal?: AbortSignal) {
     const request = diskImportSchema.parse(input);
     if (request.firmware === 'uefi') await requireUefiSupport(request.architecture);
+    /**
+     * 入口 / Entry: DiskImports.import.callback@241.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（storageRuntime.run）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (storageRuntime.run).
+     * 输入 / Inputs: lease
+     * 输出 / Returns: `{ vm, source: { format: request.format, bytes, sha256: checksum, virtualBytes: virtual, ...(ova ? { member: ova.member } : {}…`.
+     * 副作用 / Effects: `mkdir`; `createHash`; `createWriteStream`; `header.close`; `qcow.close`.
+     * 拒绝 / Refusals: 条件 / conditions `bytes < 512`; `request.sha256 && request.sha256 !== checksum`; `format === 'vmdk' && prefix.toString() !== 'KDMV'`; 异常 / errors `new AppError('镜像文件过小')`; `new AppError('镜像 SHA-256 与预期不符')`.
+     * 收尾：退出 try 区域时始终执行 `if (!within(transfers, dir) || !basename(dir).startsWith('image-import-')) throw new Error('镜像导入临时路径超出受控目录');`; `try { await rm(dir, { recursive: true, force: true }); } catch (error) { lease.cleanupPending(error); throw error; }`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `if (!within(transfers, dir) || !basename(dir).startsWith('image-import-')) throw new Error('镜像导入临时路径超出受控目录');`; `try { await rm(dir, { recursive: true, force: true }); } catch (error) { lease.cleanupPending(error); throw error; }`; these steps also apply to exceptional exits.
+     * 失败处理：catch 分支执行 `lease.cleanupPending(error);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `lease.cleanupPending(error);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return storageRuntime.run(
       {
         owner: 'core:disk-import',
@@ -251,6 +365,18 @@ export class DiskImports {
           await pipeline(
             source,
             new Transform({
+              /**
+               * 入口 / Entry: DiskImports.import.transform.
+               * 功能：在解析并导入外部磁盘及 OVA中，执行此领域的具体处理步骤并返回其结果；本入口产生 `callback(new AppError('镜像文件超过 8 GiB', 413))` 供上层消费（`DiskImports`）。
+               * Purpose: Executes the domain-specific processing steps and returns their outcome in `DiskImports`; this entry produces `callback(new AppError('镜像文件超过 8 GiB', 413))` for its caller. Module context: Parses external disks and OVA archives, bounding TAR members, paths and disk dependencies before import.
+               * 处理：通过 `callback`, `hash.update` 协调依赖；下列分支决定是否继续、返回或拒绝。
+               * Processing: Coordinates its dependencies through `callback`, `hash.update`; the branches below determine continuation, return or refusal.
+               * 分支 / Branches: `bytes > MAX_UPLOAD`.
+               * 输入 / Inputs: chunk: Buffer; _encoding; callback
+               * 输出 / Returns: `callback(new AppError('镜像文件超过 8 GiB', 413))`.
+               * 副作用 / Effects: `hash.update`; 更新 / updates `bytes`.
+               * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+               */
               transform(chunk: Buffer, _encoding, callback) {
                 const payload = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
                 bytes += payload.length;

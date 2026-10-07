@@ -1,5 +1,8 @@
 /**
- * 模块职责：黄金镜像条目、操作输入与结果契约，限制镜像元数据和资源规模。
+ * 模块职责（中文）：黄金镜像条目、操作输入与结果契约，限制镜像元数据和资源规模。
+ * Module responsibility (English): Defining golden-image metadata, operations and resource constraints.
+ * 详细范围（中文）：公开入口包括 goldenLimits, goldenEntrySchema, GoldenEntry, goldenActionSchema, GoldenAction, goldenResultSchema, GoldenResult；职责覆盖定义黄金镜像元数据、操作及资源约束，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include goldenLimits, goldenEntrySchema, GoldenEntry, goldenActionSchema, GoldenAction, goldenResultSchema, GoldenResult. The scope covers Defining golden-image metadata, operations and resource constraints. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 

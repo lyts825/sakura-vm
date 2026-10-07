@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - Git conflict choices show deleted and retained sides and submit reviewed index tokens
- * - remote controls select the upstream, submit explicit targets and stay busy before polling catches up
- * - conflicts, unfinished operations, dirty work and detached or unborn branches explain blocked actions
+ * 模块职责：浏览器回归模块，围绕 `git-workbench` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Browser regression for `git-workbench`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: Git conflict choices show deleted and retained sides and submit reviewed index tokens; remote controls select the upstream, submit explicit targets and stay busy before polling catches up.
  */
 import { expect, test, type Page } from '@playwright/test';
 import type { GitChange } from '../shared/git';
@@ -10,6 +11,16 @@ import type { JobView } from '../server/jobs';
 
 const vmId = '11111111-1111-4111-8111-111111111111';
 
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: page: Page。
+ * 结果：返回受控对象，公开字段包括 `state, submissions, cancelled, staleJobs, finish, refresh`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `state, submissions, cancelled, staleJobs, finish, refresh`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `['origin', 'upstream'].flatMap`, `page.route`, `page.goto`, `page.getByRole('tab', { name: 'Git', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function workbench(page: Page) {
   const state = {
     projectId: 'default',
@@ -33,7 +44,16 @@ async function workbench(page: Page) {
   const cancelled: string[] = [];
   let retainOldJob = false;
   let latestJob: JobView;
-  await page.route('**/api/**', async (route) => {
+  await page.route('**/api/**', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { enabled: false, session: { configured: false, enabled: f… / route.fulfill({ status: 202, json: latestJob })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { enabled: false, session: { configured: false, enabled: f… / route.fulfill({ status: 202, json: latestJob })`) through a Promise.
+   * 状态影响 / State effects: `latestJob`, `state.job`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().url`, `route.request`, `route.fulfill`, `path.endsWith`.
+   */
+  async (route) => {
     const url = new URL(route.request().url()),
       path = url.pathname;
     if (path === '/api/access/status') return route.fulfill({ json: { enabled: false,
@@ -103,16 +123,52 @@ async function workbench(page: Page) {
     state,
     submissions,
     cancelled,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `retainOldJob`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     staleJobs: () => {
       retainOldJob = true;
     },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: status: JobView['status']; error: string。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `state.job`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     finish: (status: JobView['status'], error?: string) => {
       state.job = { ...latestJob, status, error };
     },
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`page.getByRole('button', { name: '刷新 Git', exact: true }).click()`）。
+     * Result: Return the branch-computed value (`page.getByRole('button', { name: '刷新 Git', exact: true }).click()`).
+     * 协作入口 / Collaborators: `page.getByRole('button', { name: '刷新 Git', exact: true }).click`, `page.getByRole`.
+     */
     refresh: () => page.getByRole('button', { name: '刷新 Git', exact: true }).click(),
   };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Git conflict choices show deleted and retained sides and submit reviewed index tokens
+ * 状态影响 / State effects: `f.state.changes`, `f.state.conflicts`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `workbench`, `f.refresh`, `page.getByRole('button', { name: '选择版本 deleted.txt' }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('Git conflict choices show deleted and retained sides and submit reviewed index tokens', async ({ page }) => {
   const f = await workbench(page);
   f.state.changes = [{ path: 'deleted.txt', index: 'U', worktree: 'U' }];
@@ -131,6 +187,17 @@ test('Git conflict choices show deleted and retained sides and submit reviewed i
   await expect(page.getByRole('heading', { name: '选择冲突版本：deleted.txt' })).toBeHidden();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: remote controls select the upstream, submit explicit targets and stay busy before polling catches up
+ * 协作入口 / Collaborators: `workbench`, `expect(page.getByRole('combobox', { name: '远程仓库', exact: true })).toHaveVal…`, `expect`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('remote controls select the upstream, submit explicit targets and stay busy before polling catches up', async ({
   page,
 }) => {
@@ -170,6 +237,18 @@ test('remote controls select the upstream, submit explicit targets and stay busy
   await expect(page.getByText('操作已取消', { exact: true })).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: conflicts, unfinished operations, dirty work and detached or unborn branches explain blocked actions
+ * 状态影响 / State effects: `f.state.changes`, `f.state.conflicts`, `f.state.operation`, `f.state.detached`, `f.state.branch`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `workbench`, `page.getByRole`, `f.refresh`, `expect(page.getByRole('alert').filter({ hasText: '未解决的文件冲突' })).toContainTe…`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('conflicts, unfinished operations, dirty work and detached or unborn branches explain blocked actions', async ({
   page,
 }) => {

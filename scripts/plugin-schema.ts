@@ -1,4 +1,5 @@
-/** 从当前插件协议和操作目录生成 JSON Schema 与操作说明，支持 --check 校验已提交生成物。 */
+/** 从当前插件协议和操作目录生成 JSON Schema 与操作说明，支持 --check 校验已提交生成物。
+ * Define strict plugin/pack manifest validation used by catalog synchronization and architecture checks. */
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { pluginManifestSchema, pluginPackSchema, pluginSelectionSchema } from '../shared/plugin-schema.ts';

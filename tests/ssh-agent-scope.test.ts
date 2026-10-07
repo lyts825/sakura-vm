@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - owned BaseAgent lists and signs a real self-created Ed25519 key over its own socket
- * - owned connection budgets and cancellation never close another owner using the same source
- * - late actual host close is recoverable and an execution release cannot lose its unconfirmed owner
+ * 模块职责：回归验证模块，围绕 `ssh-agent-scope` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `ssh-agent-scope`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: owned BaseAgent lists and signs a real self-created Ed25519 key over its own socket; owned connection budgets and cancellation never close another owner using the same source.
  */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,6 +32,14 @@ after(async () => {
   assert.equal(dirname(canonical), parent); assert.ok(basename(canonical).startsWith('sakura-agent-scope-unit-'));
   await rm(canonical, { recursive: true, force: true });
 });
+/**
+ * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+ * English: Generate or verify digest and identity material required by this suite.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回受控对象，公开字段包括 `resource, identity, owner, sha256`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `resource, identity, owner, sha256`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `randomUUID`, `projectIdentitySchema.parse`, `identityId.replaceAll('-', '').slice`, `identityId.replaceAll`.
+ */
 function context(): SshAgentContext {
   const identityId = randomUUID();
   return { resource: { version: 1, kind: 'ssh-agent', leaseId: randomUUID(), brokerSha256: sha256, timeoutSeconds: 60 },
@@ -40,40 +49,136 @@ function context(): SshAgentContext {
       directoryDevice: '1', directoryInode: '3', networkIsolation: 'private' }),
     owner: { kind: 'task', runId: randomUUID(), bootId: randomUUID() }, sha256: 'a'.repeat(64) };
 }
+/**
+ * 中文功能：构造测试所需的数据、身份、协议帧或适配器，保持生成结果可被本组断言观察。
+ * English: Construct test data, identity, protocol frames or adapters with results observable by this suite.
+ * 输入 / Inputs: ctx: SshAgentContext; phase: 'preparing' | 'ready' | 'failed' | 'closed' = 'closed'。
+ * 结果：返回受控对象，公开字段包括 `version, context, phase, scope, source, endpointDirectory, endpoint, broker, failure`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `version, context, phase, scope, source, endpointDirectory, endpoint, broker, failure`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `randomUUID`.
+ */
 function record(ctx: SshAgentContext, phase: 'preparing' | 'ready' | 'failed' | 'closed' = 'closed') {
   return { version: 1, context: ctx, phase, scope: { device: '1', inode: '2', controlToken: randomUUID() },
     source: null, endpointDirectory: null, endpoint: null, broker: null, failure: null };
 }
-async function ownServer(handle?: (socket: Socket) => void) {
+/**
+ * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+ * English: Generate or verify digest and identity material required by this suite.
+ * 输入 / Inputs: handle: (socket: Socket) => void。
+ * 结果：返回受控对象，公开字段包括 `path, done`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `path, done`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `randomUUID`, `join`, `createServer`.
+ */
+async function ownServer(handle?: /**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: socket: Socket。
+ * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+ * Result: The declared return type defines the result; its test provider supplies the implementation.
+ */
+(socket: Socket) => void) {
   const path = process.platform === 'win32' ? '\\\\.\\pipe\\sakura-agent-owned-' + randomUUID() : join(root, randomUUID());
   const peers = new Set<Socket>(), server = createServer(socket => {
     peers.add(socket); socket.on('error', () => {}); socket.once('close', () => peers.delete(socket)); handle?.(socket);
   });
   await new Promise<void>(resolve => server.listen(path, resolve));
-  return { path, done: async () => { for (const socket of peers) socket.destroy();
+  return { path, /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `socket.destroy`.
+   */
+  done: async () => { for (const socket of peers) socket.destroy();
     await new Promise<void>(resolve => server.close(() => resolve())); } };
 }
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: agent: OwnedForwardAgent。
+ * 结果：返回分支计算值（`new Promise<Socket>((resolve, reject) => agent.getStream((error, stream) => erro…`）。
+ * Result: Return the branch-computed value (`new Promise<Socket>((resolve, reject) => agent.getStream((error, stream) => erro…`).
+ */
 function agentStream(agent: OwnedForwardAgent) {
   return new Promise<Socket>((resolve, reject) => agent.getStream((error, stream) =>
     error ? reject(error) : resolve(stream as Socket)));
 }
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: value: Buffer | string。
+ * 结果：返回分支计算值（`Buffer.concat([header, body])`）。
+ * Result: Return the branch-computed value (`Buffer.concat([header, body])`).
+ * 协作入口 / Collaborators: `Buffer.from`, `Buffer.alloc`, `header.writeUInt32BE`, `Buffer.concat`.
+ */
 const string = (value: Buffer | string) => { const body = Buffer.from(value), header = Buffer.alloc(4);
   header.writeUInt32BE(body.length); return Buffer.concat([header, body]); };
+/**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: body: Buffer。
+ * 结果：返回分支计算值（`string(body)`）。
+ * Result: Return the branch-computed value (`string(body)`).
+ * 协作入口 / Collaborators: `string`.
+ */
 const packet = (body: Buffer) => string(body);
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: owned BaseAgent lists and signs a real self-created Ed25519 key over its own socket
+ * 协作入口 / Collaborators: `generateKeyPairSync`, `Buffer.from`, `publicKey.export`, `Buffer.concat`.
+ * 检查边界 / Checked boundaries: `assert.equal(keys.length, 1)`; `assert.deepEqual(keys[0].getPublicSSH(), key)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('owned BaseAgent lists and signs a real self-created Ed25519 key over its own socket', async () => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   const raw = Buffer.from(publicKey.export({ format: 'jwk' }).x!, 'base64url');
   const key = Buffer.concat([string('ssh-ed25519'), string(raw)]);
-  const server = await ownServer(socket => {
+  const server = await ownServer(/**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: socket。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: owned BaseAgent lists and signs a real self-created Ed25519 key over its own socket
+   * 协作入口 / Collaborators: `Buffer.alloc`, `socket.on`.
+   */
+  socket => {
     let pending = Buffer.alloc(0);
-    socket.on('data', bytes => {
+    socket.on('data', /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: bytes。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: owned BaseAgent lists and signs a real self-created Ed25519 key over its own socket
+     * 状态影响 / State effects: `pending`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `Buffer.concat`, `pending.readUInt32BE`, `pending.subarray`, `Buffer.alloc`.
+     * 检查边界 / Checked boundaries: `assert.equal(request[0], 13)`; `assert.deepEqual(read(), key)`.
+     */
+    bytes => {
       pending = Buffer.concat([pending, bytes]);
       if (pending.length < 4 || pending.length < pending.readUInt32BE() + 4) return;
       const request = pending.subarray(4, pending.readUInt32BE() + 4); pending = Buffer.alloc(0);
       if (request[0] === 11) socket.write(packet(Buffer.concat([Buffer.from([12, 0, 0, 0, 1]), string(key), string('unit-owned')])));
       else {
         assert.equal(request[0], 13); let offset = 1;
+        /**
+         * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+         * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+         * 输入 / Inputs: 无 / none。
+         * 结果：返回分支计算值（`value`）。
+         * Result: Return the branch-computed value (`value`).
+         * 验证场景 / Scenario: owned BaseAgent lists and signs a real self-created Ed25519 key over its own socket
+         * 状态影响 / State effects: `offset`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+         * 协作入口 / Collaborators: `request.readUInt32BE`, `request.subarray`.
+         */
         const read = () => { const size = request.readUInt32BE(offset); offset += 4;
           const value = request.subarray(offset, offset + size); offset += size; return value; };
         assert.deepEqual(read(), key); const data = read();
@@ -94,6 +199,18 @@ test('owned BaseAgent lists and signs a real self-created Ed25519 key over its o
   } finally { await agent.close(); await server.done(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: owned connection budgets and cancellation never close another owner using the same source
+ * 协作入口 / Collaborators: `ownServer`, `Promise.all`, `Array.from`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.rejects(agentStream(first), /budget/)`; `assert.ok(streams.every(stream => stream.destroyed))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('owned connection budgets and cancellation never close another owner using the same source', async () => {
   const server = await ownServer(), cancel = new AbortController(), first = new OwnedForwardAgent(server.path, cancel.signal);
   const neighbor = new OwnedForwardAgent(server.path, new AbortController().signal);
@@ -106,15 +223,45 @@ test('owned connection budgets and cancellation never close another owner using 
   } finally { await first.close(); await neighbor.close(); await server.done(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: late actual host close is recoverable and an execution release cannot lose its unconfirmed owner
+ * 状态影响 / State effects: `stream.destroy`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `ownServer`, `context`, `randomUUID`, `agentStream`.
+ * 检查边界 / Checked boundaries: `assert.rejects(closing, { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' })`; `assert.equal(isOwnedTaskAgent(machines, vmId, ctx.owner.runId, agent), true)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('late actual host close is recoverable and an execution release cannot lose its unconfirmed owner', async t => {
   const server = await ownServer(), ctx = context(), live = {}, vmId = randomUUID();
   const agent = new OwnedForwardAgent(server.path, new AbortController().signal), stream = await agentStream(agent);
   let controls = 0;
-  const machines = { live: new Map([[vmId, live]]), exec: async () => { ++controls;
+  const machines = { live: new Map([[vmId, live]]), /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回受控对象，公开字段包括 `code, stderr, stdout`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `code, stderr, stdout`; the actual branch determines its shape.
+   * 验证场景 / Scenario: late actual host close is recoverable and an execution release cannot lose its unconfirmed owner
+   * 协作入口 / Collaborators: `JSON.stringify`.
+   */
+  exec: async () => { ++controls;
     return { code: 0, stderr: '', stdout: JSON.stringify({ version: 1, ok: true, result: { phase: 'closed', context: ctx, record: null } }) }; }
   } as unknown as Machines;
   const release = bindTaskAgent(machines, vmId, ctx, agent, live as never), scopes = new SshAgentScopes(machines);
-  const destroy = stream.destroy.bind(stream); stream.destroy = () => stream;
+  const destroy = stream.destroy.bind(stream); stream.destroy = /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`stream`）。
+   * Result: Return the branch-computed value (`stream`).
+   * 验证场景 / Scenario: late actual host close is recoverable and an execution release cannot lose its unconfirmed owner
+   */
+  () => stream;
   t.mock.timers.enable({ apis: ['setTimeout'] });
   try {
     const closing = scopes.cleanup(vmId, ctx), failure = assert.rejects(closing, { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
@@ -128,9 +275,31 @@ test('late actual host close is recoverable and an execution release cannot lose
   } finally { t.mock.timers.reset(); stream.destroy = destroy; destroy(); await agent.close(); await server.done(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: assets require exact packaged manifests and are staged by private raw-hash generation over stdin
+ * 协作入口 / Collaborators: `context`, `scopes.install`, `assert.equal`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.equal(commands.length, 1)`; `assert.rejects(scopes.install('owned', { ...ctx.resource, brokerSha256: 'b'.repeat(64) }, new AbortController().signal), { code: '…`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('assets require exact packaged manifests and are staged by private raw-hash generation over stdin', async () => {
   const ctx = context(), commands: string[] = [];
-  const machines = { execInput: async (_id: string, command: string, bytes: Buffer) => {
+  const machines = { /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: _id: string; command: string; bytes: Buffer。
+   * 结果：返回受控对象，公开字段包括 `code, stderr, stdout`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `code, stderr, stdout`; the actual branch determines its shape.
+   * 验证场景 / Scenario: assets require exact packaged manifests and are staged by private raw-hash generation over stdin
+   * 协作入口 / Collaborators: `commands.push`, `assert.deepEqual`, `inflateSync`, `assert.ok`.
+   * 检查边界 / Checked boundaries: `assert.deepEqual(inflateSync(bytes), source)`; `assert.ok(command.includes('O_NOFOLLOW') && command.includes('O_EXCL') && command.includes('st_nlink==1'))`.
+   */
+  execInput: async (_id: string, command: string, bytes: Buffer) => {
     commands.push(command); assert.deepEqual(inflateSync(bytes), source);
     assert.ok(command.includes('O_NOFOLLOW') && command.includes('O_EXCL') && command.includes('st_nlink==1'));
     assert.ok(!command.includes(source.toString()) && !command.includes(source.toString('base64')));
@@ -146,10 +315,33 @@ test('assets require exact packaged manifests and are staged by private raw-hash
     { code: 'PROJECT_IDENTITY_AGENT_ASSET_INVALID' });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: readonly resource replies are strict and cleanup retries the exact immutable request without installation
+ * 状态影响 / State effects: `value.context`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `context`, `randomUUID`, `record`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal((await scopes.readonly(vmId, ctx)).record?.context.owner.runId, ctx.owner.runId)`; `assert.equal(attempts, 3)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('readonly resource replies are strict and cleanup retries the exact immutable request without installation', async () => {
   const ctx = context(), commands: string[] = [], live = {}, vmId = randomUUID(); let attempts = 0;
   const value = record(ctx);
-  const machines = { live: new Map([[vmId, live]]), exec: async (_id: string, command: string) => {
+  const machines = { live: new Map([[vmId, live]]), /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: _id: string; command: string。
+   * 结果：返回受控对象，公开字段包括 `code, stderr, stdout`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `code, stderr, stdout`; the actual branch determines its shape.
+   * 验证场景 / Scenario: readonly resource replies are strict and cleanup retries the exact immutable request without installation
+   * 失败 / Failure: `new Error('lost cleanup connection')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `commands.push`, `command.startsWith`, `JSON.stringify`.
+   */
+  exec: async (_id: string, command: string) => {
     commands.push(command);
     if (command.startsWith('# SAKURA_SSH_AGENT_CLEANUP') && ++attempts < 3) throw new Error('lost cleanup connection');
     return { code: 0, stderr: '', stdout: JSON.stringify({ version: 1, ok: true, result: { phase: value.phase, context: ctx, record: value } }) };
@@ -164,6 +356,15 @@ test('readonly resource replies are strict and cleanup retries the exact immutab
   await assert.rejects(scopes.readonly(vmId, ctx), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
 });
 
+/**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: body: string。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `spawnSync`, `assert.equal`, `assert.ok`, `result.stdout.includes`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.status, 0, result.stderr || result.error?.message)`; `assert.ok(result.stdout.includes('passed'), result.stdout)`.
+ */
 function python(body: string) {
   const result = spawnSync('python', ['-I', '-S', '-c',
     'import json,sys,types,copy,stat,struct,time,io,os\n' +
@@ -174,6 +375,15 @@ function python(body: string) {
   assert.equal(result.status, 0, result.stderr || result.error?.message); assert.ok(result.stdout.includes('passed'), result.stdout);
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(` events=[]; scenario='proc'; fake=types.SimpleNamespace(pidfd_open=lambd…`）。
+ * Result: Return the branch-computed value (`python(` events=[]; scenario='proc'; fake=types.SimpleNamespace(pidfd_open=lambd…`).
+ * 验证场景 / Scenario: Process construction failures close every acquired descriptor, including malformed proc stat
+ * 协作入口 / Collaborators: `python`.
+ */
 test('Process construction failures close every acquired descriptor, including malformed proc stat', () => python(`
 events=[]; scenario='proc'; fake=types.SimpleNamespace(pidfd_open=lambda *a:71,close=lambda fd:events.append(fd))
 fake.O_RDONLY=0; fake.O_DIRECTORY=1; fake.O_NOFOLLOW=2; fake.O_CLOEXEC=4; fake.O_NONBLOCK=8
@@ -191,6 +401,15 @@ for scenario,expected in [('proc',[71]),('stat',[72,71])]:
 print('passed')
 `));
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(` events=[];bad='owner';sourceinfo={'device':'1','inode':'8','uid':20000,…`）。
+ * Result: Return the branch-computed value (`python(` events=[];bad='owner';sourceinfo={'device':'1','inode':'8','uid':20000,…`).
+ * 验证场景 / Scenario: source validation pins no-follow root parent/socket and cleans partial constructor failures
+ * 协作入口 / Collaborators: `python`.
+ */
 test('source validation pins no-follow root parent/socket and cleans partial constructor failures', () => python(`
 events=[];bad='owner';sourceinfo={'device':'1','inode':'8','uid':20000,'gid':0,'mode':0o600,'type':stat.S_IFSOCK}
 parentinfo={'device':'1','inode':'7','uid':0,'gid':0,'mode':0o700,'type':stat.S_IFDIR}
@@ -220,6 +439,15 @@ value.close();assert 'peerclose' in events
 print('passed')
 `));
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(` events=[];children=['source-a','source-b'];parentinfo={'device':'1','in…`）。
+ * Result: Return the branch-computed value (`python(` events=[];children=['source-a','source-b'];parentinfo={'device':'1','in…`).
+ * 验证场景 / Scenario: independent forwarded sources can share a root0700 parent while exact leaf, parent and peer replacements remain refused
+ * 协作入口 / Collaborators: `python`.
+ */
 test('independent forwarded sources can share a root0700 parent while exact leaf, parent and peer replacements remain refused', () => python(`
 events=[];children=['source-a','source-b'];parentinfo={'device':'1','inode':'7','uid':0,'gid':0,'mode':0o700,'type':stat.S_IFDIR}
 sockets={name:{'device':'1','inode':str(8+index),'uid':0,'gid':0,'mode':0o600,'type':stat.S_IFSOCK} for index,name in enumerate(children)}
@@ -264,6 +492,15 @@ assert ('peer-close',25) in events and ('peer-close',26) in events
 print('passed')
 `));
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(` events=[];parent={'device':'1','inode':'7','uid':0,'gid':0,'mode':0o700…`）。
+ * Result: Return the branch-computed value (`python(` events=[];parent={'device':'1','inode':'7','uid':0,'gid':0,'mode':0o700…`).
+ * 验证场景 / Scenario: forwarded socket permissions stay pinned behind the root0700 parent without changing the sshd object
+ * 协作入口 / Collaborators: `python`.
+ */
 test('forwarded socket permissions stay pinned behind the root0700 parent without changing the sshd object', () => python(`
 events=[];parent={'device':'1','inode':'7','uid':0,'gid':0,'mode':0o700,'type':stat.S_IFDIR}
 leaf={'device':'1','inode':'8','uid':0,'gid':0,'mode':0o755,'type':stat.S_IFSOCK}
@@ -298,6 +535,15 @@ assert set(str(item) for item in events)<=set([str(('fd-close',71)),'wire-close'
 print('passed')
 `));
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});events=[] …`）。
+ * Result: Return the branch-computed value (`python(` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});events=[] …`).
+ * 验证场景 / Scenario: the locked broker still rejects another unresolved lease with the identical complete source tuple
+ * 协作入口 / Collaborators: `python`, `JSON.stringify`, `context`.
+ */
 test('the locked broker still rejects another unresolved lease with the identical complete source tuple', () => python(`
 ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});events=[]
 source={'path':'/root/.ssh/agent/source-a','parent':{'device':'1','inode':'7','uid':0,'gid':0,'mode':0o700,'type':stat.S_IFDIR},
@@ -321,6 +567,15 @@ assert 'source-close' in events and ('fd-close',80) in events and ('fd-close',90
 print('passed')
 `));
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(String.raw` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});…`）。
+ * Result: Return the branch-computed value (`python(String.raw` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});…`).
+ * 验证场景 / Scenario: peer identity uses original pidfd/start, exact full cgroup and caps/NNP on every check
+ * 协作入口 / Collaborators: `python`, `JSON.stringify`, `context`.
+ */
 test('peer identity uses original pidfd/start, exact full cgroup and caps/NNP on every check', () => python(String.raw`
 ctx=json.loads(${JSON.stringify(JSON.stringify(context()))}); p=object.__new__(ns['Process']); p.pid=32;p.pidfd=70;p.directory=71;p.start='42'
 cg=b'0::/sakura-task-'+ctx['owner']['runId'].encode()+b'\n'; changed=False; capabilities=b'0000000000000000'; nnp=b'1'
@@ -342,6 +597,15 @@ scope['inode']='3'; reject('CGROUP_CHANGED')
 print('passed')
 `));
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(` class Wire: def __init__(self,data):self.data=data;self.sent=b'' def se…`）。
+ * Result: Return the branch-computed value (`python(` class Wire: def __init__(self,data):self.data=data;self.sent=b'' def se…`).
+ * 验证场景 / Scenario: framed relay bounds lengths, requests and bytes and rechecks revocation before returning a response
+ * 协作入口 / Collaborators: `python`.
+ */
 test('framed relay bounds lengths, requests and bytes and rechecks revocation before returning a response', () => python(`
 class Wire:
  def __init__(self,data):self.data=data;self.sent=b''
@@ -376,6 +640,15 @@ assert len(request.sent)==9
 print('passed')
 `));
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(String.raw` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});…`）。
+ * Result: Return the branch-computed value (`python(String.raw` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});…`).
+ * 验证场景 / Scenario: a failed broker ready receipt refuses the native launcher before any protected payload execution
+ * 协作入口 / Collaborators: `python`, `JSON.stringify`, `context`.
+ */
 test('a failed broker ready receipt refuses the native launcher before any protected payload execution', () => python(String.raw`
 ctx=json.loads(${JSON.stringify(JSON.stringify(context()))}); events=[]; reads=0
 ns['task_scope']=lambda context:(77,{'device':'1','inode':'2','controlToken':'00000000-0000-4000-8000-000000000001'})
@@ -394,6 +667,15 @@ assert 'EXEC' not in events
 print('passed')
 `));
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))}); endpoint=…`）。
+ * Result: Return the branch-computed value (`python(` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))}); endpoint=…`).
+ * 验证场景 / Scenario: closed/no-record cleanup checks the socket root and rejects any revived lease without deleting it
+ * 协作入口 / Collaborators: `python`, `JSON.stringify`, `context`.
+ */
 test('closed/no-record cleanup checks the socket root and rejects any revived lease without deleting it', () => python(`
 ctx=json.loads(${JSON.stringify(JSON.stringify(context()))}); endpoint=ns['SOCKETS']+'/'+ctx['resource']['leaseId']; present={ns['RECORDS'],ns['SOCKETS']}; events=[]; rootmode=0o755
 value={'phase':'closed','source':None};ns['stopped']=lambda context:ctx['owner']['bootId'];ns['locked']=lambda:80;ns['read_record']=lambda context:value
@@ -416,6 +698,15 @@ else:raise AssertionError('accepted unknown socket root')
 print('passed')
 `));
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`python(` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});endpoint=n…`）。
+ * Result: Return the branch-computed value (`python(` ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});endpoint=n…`).
+ * 验证场景 / Scenario: partially unlinked endpoints retry by original inode, and replacements stay untouched
+ * 协作入口 / Collaborators: `python`, `JSON.stringify`, `context`.
+ */
 test('partially unlinked endpoints retry by original inode, and replacements stay untouched', () => python(`
 ctx=json.loads(${JSON.stringify(JSON.stringify(context()))});endpoint=ns['SOCKETS']+'/'+ctx['resource']['leaseId'];present=True;children=['agent'];rmdir_fail=True;events=[]
 meta={'device':'1','inode':'9','uid':0,'gid':20000,'mode':0o710,'type':stat.S_IFDIR};sock={'device':'1','inode':'10','uid':20000,'gid':20000,'mode':0o600,'type':stat.S_IFSOCK}

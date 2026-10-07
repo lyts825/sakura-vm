@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实 guest-task 的结构化执行、身份边界及本轮自有 VM 证据。 */
+/** 烟雾验收：验证真实 guest-task 的结构化执行、身份边界及本轮自有 VM 证据。
+ * Smoke acceptance for real structured guest execution, identity boundaries and owned VM evidence. */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -53,6 +54,8 @@ const vm = reuse
       diskGiB: 4,
     });
 const nativeExec = machines.exec.bind(machines);
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string, timeout = 10000) => {
   const result = await nativeExec(vm.id, command, timeout);
   assert.equal(result.code, 0, result.stderr + result.stdout);
@@ -69,6 +72,8 @@ const proof: any = {
     .digest('hex'),
   cases: [],
 };
+/** 递归观察指定任务 cgroup 的活进程并保存 PID/组/会话/出生 ticks，排除死亡状态，供脱离后代核查。
+ * Recursively observe live processes in the task cgroup with PID/group/session/birth ticks, excluding dead states for detached-child checks. */
 const cgroupMembers = async (name: string) =>
   JSON.parse(
     await run(
@@ -85,6 +90,8 @@ const cgroupMembers = async (name: string) =>
         ),
     ),
   ) as { pid: number; pgid: number; sid: number; startTicks: string }[];
+/** 读取指定 PID 当前 /proc 状态，非僵尸/死亡才返回 true；消失返回 false，仅作存活观测。
+ * Read the PID’s current /proc state and return true only outside zombie/dead states, false on absence, solely for liveness observation. */
 const alive = async (pid: number) =>
   (
     await run(
@@ -96,6 +103,8 @@ const alive = async (pid: number) =>
         ),
     )
   ).trim() === 'True';
+/** 有限次轮询自有应用的结果文件，出现后返回；期限内未发布则失败，避免使用上一阶段缺失结果。
+ * Poll the owned application result file for a bounded number of attempts, returning when published and failing on absence rather than using missing prior-stage evidence. */
 const waitFile = async (file: string) => {
   for (let attempt = 0; attempt < 100; ++attempt) {
     if ((await nativeExec(vm.id, 'test -f ' + quote(file), 5000)).code === 0) return;
@@ -103,6 +112,8 @@ const waitFile = async (file: string) => {
   }
   throw new Error('Owned task fixture file not created: ' + file);
 };
+/** 暂时换成空闲 SSH 端口模拟连接丢失，要求拒绝/超时，finally 恢复原 live 端口。
+ * Temporarily use an unused SSH port to simulate connection loss, require refusal/timeout and restore the original live port in finally. */
 const badConnection = async (command: string) => {
   const live = machines.live.get(vm.id)!;
   const saved = live.sshPort;
@@ -166,7 +177,8 @@ try {
     replaceScope?: boolean;
     replacement?: { pid: number; inode: string };
   } = {};
-  machines.exec = (async (id, command, timeout, signal, output, agent) => {
+  machines.exec = (/** 仅对自有 task 命令注入延迟 launcher、BusyBox fork、只读 cgroup 和精确清理连接故障；可在原域已清理后建无关替代域，验证按原票据清理不会误杀替代对象。
+ * Inject delayed launchers, BusyBox forks, read-only cgroups and exact cleanup-connection faults only into owned task commands; optionally create an unrelated replacement after original cleanup to prove receipt-bound cleanup never kills replacement objects. */ async (id, command, timeout, signal, output, agent) => {
     if (command.startsWith('# SAKURA_GUEST_TASK_RUN\n')) {
       current.main = command;
       command = command.replace(
@@ -238,20 +250,30 @@ try {
     }
     return nativeExec(id, command, timeout, signal, output, agent);
   }) as typeof machines.exec;
+  /** 构造忽略 TERM、持续追加心跳的自有任务，结果位于指定 stage，验证强制停止和域级取消。
+   * Build an owned TERM-ignoring heartbeat task under the stage for forced-stop/domain-cancellation checks. */
   const payload = (stage: string) =>
     "trap '' TERM\nprintf started > " +
     quote(stage + '/started') +
     '\nwhile :; do printf x >> ' +
     quote(stage + '/heartbeat') +
     '; sleep 0.1; done';
+  /** 从当前精确任务命令提取 UUID 并由生产路径函数解析 receipt，要求命令确实包含该 receipt。
+   * Extract the exact task UUID from its current command/derive receipt through production paths and require the command contains it. */
   const receiptFrom = () => {
     const id = /sakura-task-([a-f0-9-]{36})/.exec(current.main!)![1];
     const receipt = guestTaskControlPaths(id).receipt;
     assert.ok(current.main!.includes(receipt));
     return receipt;
   };
+  /** 从当前任务命令提取精确 sakura-task cgroup 名称，供同一次运行的资源核对。
+   * Extract the exact sakura-task cgroup name from the current command for same-run resource comparisons. */
   const scopeFrom = () => /sakura-task-[a-f0-9-]{36}/.exec(current.main!)![0];
+  /** 只清理调用方建立的专用 stage，路径作字面参数，等待来宾清理成功。
+   * Remove only the caller-created dedicated stage using a literal path argument and await guest cleanup success. */
   const cleanupStage = async (stage: string) => run('rm -rf -- ' + quote(stage));
+  /** 删除该精确任务 receipt 的已知控制/暂存伴随文件，再要求目录为空并 rmdir，不扩散到其他运行目录。
+   * Remove only known control/staging siblings of the exact task receipt, then require an empty directory via rmdir without affecting other runs. */
   const retireReceipt = async (receipt: string) =>
     run(
       'rm -f ' +

@@ -1,5 +1,8 @@
 /**
- * 模块职责：“平台扩展适配器”插件清单：远程、灾备、安全与协作适配器；按实际就绪状态提供。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ * 模块职责（中文）：“平台扩展适配器”插件清单：远程、灾备、安全与协作适配器；按实际就绪状态提供。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ * Module responsibility (English): declarations of dependencies, services, admission policy and UI contributions for remote, security, disaster-recovery and collaboration capabilities.
+ * 详细范围（中文）：公开入口包括 manifest；职责覆盖声明远程、安全、灾备与协作能力的依赖、服务、准入策略和界面贡献，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include manifest. The scope covers declarations of dependencies, services, admission policy and UI contributions for remote, security, disaster-recovery and collaboration capabilities. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { definePlugin, pin, http, operation } from '../../shared/plugin-protocol.ts';
 

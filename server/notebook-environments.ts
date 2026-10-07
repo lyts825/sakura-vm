@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理绑定项目账户的 Notebook 会话，连接和停止需核对原启动及完整运行域。
+ * Module purpose: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
@@ -55,9 +56,42 @@ type Input = z.infer<typeof notebookInput>;
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const executionSchema = z.object({ identity: projectIdentitySchema, record: projectNotebookRecordSchema,
   run: projectIdentityRunSchema.nullable(), sha256: digest, configSha256: digest }).strict();
+/**
+ * 入口 / Entry: same.
+ * 功能：把本层请求转交 `isDeepStrictEqual`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `isDeepStrictEqual` and propagates the provider result or rejection.
+ * 输入 / Inputs: left: unknown; right: unknown
+ * 输出 / Returns: `isDeepStrictEqual(left, right)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const same = (left: unknown, right: unknown) => isDeepStrictEqual(left, right);
+/**
+ * 入口 / Entry: changed.
+ * 功能：从当前输入或状态计算 `new AppError('Notebook 原项目、账号、boot、进程或完整运行域无法核对，请先停止原会话', 409, 'NOTEBOOK_SCOPE_CHANGED')`，供调用方后续验证或使用。
+ * Purpose: Computes `new AppError('Notebook 原项目、账号、boot、进程或完整运行域无法核对，请先停止原会话', 409, 'NOTEBOOK_SCOPE_CHANGED')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `new AppError('Notebook 原项目、账号、boot、进程或完整运行域无法核对，请先停止原会话', 409, 'NOTEBOOK_SCOPE_CHANGED')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const changed = () => new AppError('Notebook 原项目、账号、boot、进程或完整运行域无法核对，请先停止原会话', 409, 'NOTEBOOK_SCOPE_CHANGED');
+/**
+ * 入口 / Entry: legacy.
+ * 功能：从当前输入或状态计算 `new AppError('旧 Notebook 尚未接入项目账号；请管理员确认关闭原 root 会话及全部后代，并明确迁移项目目录后重建，原记录继续保留', 409, 'NOTEBOOK_IDENTITY_REQUIRED')`，供调用方后续验证或使用。
+ * Purpose: Computes `new AppError('旧 Notebook 尚未接入项目账号；请管理员确认关闭原 root 会话及全部后代，并明确迁移项目目录后重建，原记录继续保留', 409, 'NOTEBOOK_IDENTITY_REQUIRED')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `new AppError('旧 Notebook 尚未接入项目账号；请管理员确认关闭原 root 会话及全部后代，并明确迁移项目目录后重建，原记录继续保留', 409, 'NOTEBOOK_IDENTITY_REQUIRED')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const legacy = () => new AppError('旧 Notebook 尚未接入项目账号；请管理员确认关闭原 root 会话及全部后代，并明确迁移项目目录后重建，原记录继续保留', 409, 'NOTEBOOK_IDENTITY_REQUIRED');
+/**
+ * 入口 / Entry: nativeMatches.
+ * 功能：从当前输入或状态计算 `run.phase === 'active' && run.mode === 'inherit-current' && run.projectId === identity.projectId && run.registryId === identi…`，供调用方后续验证或使用。
+ * Purpose: Computes `run.phase === 'active' && run.mode === 'inherit-current' && run.projectId === identity.projectId && run.registryId === identi…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: run: ProjectIdentityRun; identity: ProjectIdentity; record: ProjectNotebookRecord
+ * 输出 / Returns: `run.phase === 'active' && run.mode === 'inherit-current' && run.projectId === identity.projectId && run.registryId === identi…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 function nativeMatches(run: ProjectIdentityRun, identity: ProjectIdentity, record: ProjectNotebookRecord) {
   return run.phase === 'active' && run.mode === 'inherit-current' && run.projectId === identity.projectId &&
     run.registryId === identity.registryId && run.identityId === identity.identityId && run.revision === identity.revision &&
@@ -94,9 +128,39 @@ const storeSchema = z.object({ version: z.literal(1), sessions: z.array(notebook
       new Set(store.environments.map(item => `${item.vmId}:${item.projectId}:${item.provider}`)).size !== store.environments.length)
     context.addIssue({ code: 'custom', message: 'Notebook 原项目归属记录重复' });
 });
+/**
+ * 入口 / Entry: keyOf.
+ * 功能：从当前输入或状态计算 ``${session.vmId}:${session.projectId}``，供调用方后续验证或使用。
+ * Purpose: Computes ``${session.vmId}:${session.projectId}`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: session: Pick<Session, 'vmId' | 'projectId'>
+ * 输出 / Returns: ``${session.vmId}:${session.projectId}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const keyOf = (session: Pick<Session, 'vmId' | 'projectId'>) => `${session.vmId}:${session.projectId}`;
+/**
+ * 入口 / Entry: binary.
+ * 功能：从当前输入或状态计算 `session.directory.replace(/\/$/, '') + '/.sakura/notebooks/' + session.provider + '/venv/bin/' + session.provider`，供调用方后续验证或使用。
+ * Purpose: Computes `session.directory.replace(/\/$/, '') + '/.sakura/notebooks/' + session.provider + '/venv/bin/' + session.provider` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: session: Pick<Session, 'directory' | 'provider'>
+ * 输出 / Returns: `session.directory.replace(/\/$/, '') + '/.sakura/notebooks/' + session.provider + '/venv/bin/' + session.provider`.
+ * 副作用 / Effects: `session.directory.replace`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const binary = (session: Pick<Session, 'directory' | 'provider'>) =>
   session.directory.replace(/\/$/, '') + '/.sakura/notebooks/' + session.provider + '/venv/bin/' + session.provider;
+/**
+ * 入口 / Entry: httpReady.
+ * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `response.ok` / `false` 供上层消费（`notebook-environments.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `notebook-environments.ts`; this entry produces `response.ok` / `false` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+ * 处理：通过 `fetch`, `AbortSignal.timeout`, `response.body.cancel` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `fetch`, `AbortSignal.timeout`, `response.body.cancel`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: session: Session
+ * 输出 / Returns: `response.ok`; `false`.
+ * 副作用 / Effects: `fetch`; `AbortSignal.timeout`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ * 失败处理：catch 分支执行 `return false;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `return false;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 async function httpReady(session: Session) {
   try {
     const response = await fetch(`http://127.0.0.1:${session.hostPort}${session.provider === 'jupyter' ? '/api/status' : '/health'}`,
@@ -110,16 +174,45 @@ type Options = {
   scopes?: Pick<ProjectRunScopes, 'identity' | 'inherited' | 'active' | 'readonlyActive'>;
   identities?: Pick<ProjectIdentities, 'runReadonly'>;
   terminals?: Pick<ProjectTerminals, 'prepare'>;
+  /**
+   * 签名 / Signature: Options.processScope.
+   * 功能：为管理绑定项目账户的 Notebook 会话声明 processScope 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for processScope in Options. Module responsibility: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 输入 / Inputs: id: string; project: Project
+   * 输出 / Returns: Scope.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   processScope?: (id: string, project: Project) => Scope;
   runTask?: typeof projectIdentityTask;
   adminTask?: typeof guestTask;
   bridges?: Pick<ProjectNetworkBridges, 'open' | 'stop' | 'close'>;
+  /**
+   * 签名 / Signature: Options.listener.
+   * 功能：为管理绑定项目账户的 Notebook 会话声明 listener 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for listener in Options. Module responsibility: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 输入 / Inputs: session: Session; signal: AbortSignal optional
+   * 输出 / Returns: Promise<boolean>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   listener?: (session: Session, signal?: AbortSignal) => Promise<boolean>;
 };
 type Capture = { projectId: string; raw: Project; configSha256: string; project: Project;
   live: NonNullable<ReturnType<Machines['live']['get']>>; bootId: string; signal: AbortSignal };
 
 /** Read kernel ownership only: no project file, command or environment is interpreted by root. */
+/**
+ * 入口 / Entry: notebookListenerCommand.
+ * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'# SAKURA_NOTEBOOK_LISTENER\nenv -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' + q…` 供上层消费（`notebook-environments.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `notebook-environments.ts`; this entry produces `'# SAKURA_NOTEBOOK_LISTENER\nenv -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' + q…` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+ * 处理：通过 `nativeMatches`, `changed`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `nativeMatches`, `changed`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: session: Session
+ * 输出 / Returns: `'# SAKURA_NOTEBOOK_LISTENER\nenv -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' + q…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!execution?.run || !nativeMatches(execution.run, execution.identity, execution.record)`; 异常 / errors `changed()`.
+ */
 export function notebookListenerCommand(session: Session) {
   const execution = session.execution;
   if (!execution?.run || !nativeMatches(execution.run, execution.identity, execution.record)) throw changed();
@@ -192,6 +285,17 @@ print(json.dumps({'ready':found}))
 }
 
 /** System dependency preparation never loads project configuration, Python or hooks. */
+/**
+ * 入口 / Entry: notebookToolsScript.
+ * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'exec /usr/bin/env -i HOME=/ USER=root LOGNAME=root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C PIP_CONFIG_FILE=/dev/n…` 供上层消费（`notebook-environments.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `notebook-environments.ts`; this entry produces `'exec /usr/bin/env -i HOME=/ USER=root LOGNAME=root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C PIP_CONFIG_FILE=/dev/n…` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+ * 处理：通过 `z.uuid().parse`, `z.uuid`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: distro: string; bootId: string
+ * 输出 / Returns: `'exec /usr/bin/env -i HOME=/ USER=root LOGNAME=root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C PIP_CONFIG_FILE=/dev/n…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function notebookToolsScript(distro: string, bootId: string) {
   z.uuid().parse(bootId);
   const body = 'set -eu\ncd /\n' +
@@ -217,6 +321,14 @@ export class NotebookEnvironments {
   private scopes: NonNullable<Options['scopes']>;
   private identities: NonNullable<Options['identities']>;
   private closed = false;
+  /**
+   * 入口 / Entry: NotebookEnvironments.constructor.
+   * 功能：建立 NotebookEnvironments 的管理绑定项目账户的 Notebook 会话上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the NotebookEnvironments context for this module's responsibility: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; file: default=join(DATA, 'notebook-environments.json'); probeHttp: (session: Session) => Promise<boolean> default=httpReady; options: Options default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.scopes`, `this.identities`, `this.bridges`.
+   */
   constructor(private machines: Machines, private workspaces: WorkspacesV1,
     private file = join(DATA, 'notebook-environments.json'), private probeHttp: (session: Session) => Promise<boolean> = httpReady,
     private options: Options = {}) {
@@ -227,39 +339,137 @@ export class NotebookEnvironments {
       if (!session || !await this.prove(session, project, signal)) throw changed();
     });
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.init.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，初始化并核对当前领域状态；处理结果记录到 `this.state`（`NotebookEnvironments`）。
+   * Purpose: Initializes and verifies current domain state in `NotebookEnvironments`; the outcome is recorded in `this.state`. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `storeSchema.parse`, `readStore` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `storeSchema.parse`, `readStore`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.state`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async init() {
     this.state = storeSchema.parse(await readStore(this.file, () => ({ version: 1, sessions: [], environments: [] })));
     // Reload never closes or advances a receipt. Starting and legacy records
     // remain available for an explicit original-owner stop or administrator review.
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.change.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `operation` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `operation` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `this.writes.catch().then`, `this.writes.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.writes.catch().then`, `this.writes.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: edit: (state: z.infer<typeof storeSchema>) => T
+   * 输出 / Returns: `operation`.
+   * 副作用 / Effects: `this.writes.catch().then`; `this.writes.catch`; 更新 / updates `this.writes`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async change<T>(edit: (state: z.infer<typeof storeSchema>) => T) {
+    /**
+     * 入口 / Entry: NotebookEnvironments.change.callback@236.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.writes.catch().then）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.writes.catch().then).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `result`.
+     * 副作用 / Effects: `writeStore`; 更新 / updates `this.state`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const operation = this.writes.catch(() => {}).then(async () => {
       const next = structuredClone(this.state!), result = edit(next);
       storeSchema.parse(next); await writeStore(this.file, next); this.state = next; return result;
     });
     this.writes = operation; return operation;
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.context.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ vm, projectId, session: this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId) }` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `{ vm, projectId, session: this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId) }` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `this.machines.get`, `this.workspaces.projects.current`, `inline.sessions.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.workspaces.projects.current`, `inline.sessions.find`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ vm, projectId, session: this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId) }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private context(id: string) {
     const vm = this.machines.get(id), projectId = this.workspaces.projects.current(id);
     return { vm, projectId, session: this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId) };
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.current.
+   * 功能：把本层请求转交 `this.state.sessions.find`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.state.sessions.find` and propagates the provider result or rejection.
+   * 输入 / Inputs: session: Session
+   * 输出 / Returns: `this.state?.sessions.find(item => keyOf(item) === keyOf(session) && item.startedAt === session.startedAt && item.token === se…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private current(session: Session) {
     return this.state?.sessions.find(item => keyOf(item) === keyOf(session) && item.startedAt === session.startedAt &&
       item.token === session.token && same(item.execution, session.execution));
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.scope.
+   * 功能：从当前输入或状态计算 `this.options.processScope?.(session.vmId, project) || new ProjectNotebookScope(this.machines, session.vmId, project)`，供调用方后续验证或使用。
+   * Purpose: Computes `this.options.processScope?.(session.vmId, project) || new ProjectNotebookScope(this.machines, session.vmId, project)` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: session: Session
+   * 输出 / Returns: Scope；结果来自 / values from `this.options.processScope?.(session.vmId, project) || new ProjectNotebookScope(this.machines, session.vmId, project)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private scope(session: Session): Scope {
     const project = { _workspace: session.projectId, directory: session.directory, networkIsolation: session.networkIsolation } as Project;
     return this.options.processScope?.(session.vmId, project) || new ProjectNotebookScope(this.machines, session.vmId, project);
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.scoped.
+   * 功能：把本层请求转交 `this.workspaces.projects.inScope`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.workspaces.projects.inScope` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; projectId: string; work: () => Promise<T>
+   * 输出 / Returns: `this.workspaces.projects.inScope(id, projectId, work)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private scoped<T>(id: string, projectId: string, work: () => Promise<T>) {
     return this.workspaces.projects.inScope(id, projectId, work);
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.config.
+   * 功能：把本层请求转交 `this.scoped`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.scoped` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; projectId: string
+   * 输出 / Returns: `this.scoped(id, projectId, () => this.workspaces.config(id))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async config(id: string, projectId: string) { return this.scoped(id, projectId, () => this.workspaces.config(id)); }
+  /**
+   * 入口 / Entry: NotebookEnvironments.matchesProject.
+   * 功能：从当前输入或状态计算 `(project._workspace || 'default') === session.projectId && project.directory === session.directory && (project.networkIsolati…`，供调用方后续验证或使用。
+   * Purpose: Computes `(project._workspace || 'default') === session.projectId && project.directory === session.directory && (project.networkIsolati…` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: session: Session; project: Project
+   * 输出 / Returns: `(project._workspace || 'default') === session.projectId && project.directory === session.directory && (project.networkIsolati…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private matchesProject(session: Session, project: Project) {
     return (project._workspace || 'default') === session.projectId && project.directory === session.directory &&
       (project.networkIsolation || 'host') === session.networkIsolation &&
       (!session.execution || projectVersion(project) === session.execution.configSha256);
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.kernelBoot.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `boot.data` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `boot.data` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `this.machines.live.get`, `this.machines.exec`, `z.uuid().safeParse`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.live.get`, `this.machines.exec`, `z.uuid().safeParse`, `z.uuid`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; signal: AbortSignal optional
+   * 输出 / Returns: `boot.data`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `!instance || this.machines.live.get(id) !== instance || result.code !== 0 || !boot.success`; 异常 / errors `changed()`.
+   */
   private async kernelBoot(id: string, signal?: AbortSignal) {
     const instance = this.machines.live.get(id), result = await this.machines.exec(id,
       'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/cat /proc/sys/kernel/random/boot_id', 10000, signal);
@@ -267,8 +477,37 @@ export class NotebookEnvironments {
     if (!instance || this.machines.live.get(id) !== instance || result.code !== 0 || !boot.success) throw changed();
     return boot.data;
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.assertCaptured.
+   * 功能：把本层请求转交 `this.scoped`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.scoped` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; captured: Capture; boot: default=true
+   * 输出 / Returns: `this.scoped(id, captured.projectId, async () => { const current = () => { captured.signal.throwIfAborted(); if (this.closed |…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async assertCaptured(id: string, captured: Capture, boot = true) {
+    /**
+     * 入口 / Entry: NotebookEnvironments.assertCaptured.callback@271.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.scoped）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.scoped).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `(project._workspace || 'default') !== captured.projectId || projectVersion(project) !== captured.configSha256`; `boot && await this.kernelBoot(id, captured.signal) !== captured.bootId`; 异常 / errors `changed()`.
+     */
     return this.scoped(id, captured.projectId, async () => {
+      /**
+       * 入口 / Entry: NotebookEnvironments.assertCaptured.current.
+       * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`NotebookEnvironments`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; the calls and state transitions below complete the operation. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+       * 处理：通过 `captured.signal.throwIfAborted`, `this.machines.state`, `this.machines.live.get`, `this.workspaces.projects.current` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `captured.signal.throwIfAborted`, `this.machines.state`, `this.machines.live.get`, `this.workspaces.projects.current`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 拒绝 / Refusals: 条件 / conditions `this.closed || this.machines.state(id) !== 'running' || this.machines.live.get(id) !== captured.live || this.workspaces.proje…`; 异常 / errors `changed()`.
+       */
       const current = () => {
         captured.signal.throwIfAborted();
         if (this.closed || this.machines.state(id) !== 'running' || this.machines.live.get(id) !== captured.live ||
@@ -282,6 +521,19 @@ export class NotebookEnvironments {
       current();
     });
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.prepared.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `await this.machines.locked(id, async () => { await this.assertCaptured(id, capture); return this.scoped(id, projectId, () => …` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `await this.machines.locked(id, async () => { await this.assertCaptured(id, capture); return this.scoped(id, projectId, () => …` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `projectTerminalsFor`, `terminals.prepare`, `projectVersion`, `this.machines.live.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `projectTerminalsFor`, `terminals.prepare`, `projectVersion`, `this.machines.live.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; projectId: string; signal: AbortSignal; work: (capture: Capture) => Promise<T>
+   * 输出 / Returns: `await this.machines.locked(id, async () => { await this.assertCaptured(id, capture); return this.scoped(id, projectId, () => …`.
+   * 副作用 / Effects: `prepared.release`; 更新 / updates `this.ownedTerminals`.
+   * 拒绝 / Refusals: 条件 / conditions `!original || !prepared.signal || prepared.projectId !== projectId || (original.project._workspace || 'default') !== projectId…`; 异常 / errors `changed()`.
+   * 收尾：退出 try 区域时始终执行 `await prepared.release();`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `await prepared.release();`; these steps also apply to exceptional exits.
+   */
   private async prepared<T>(id: string, projectId: string, signal: AbortSignal, work: (capture: Capture) => Promise<T>) {
     const terminals = this.options.terminals || (this.ownedTerminals ||= projectTerminalsFor(this.machines, this.workspaces));
     const prepared = await terminals.prepare(id, projectId, null, false, signal, undefined, { mode: 'task' });
@@ -293,6 +545,15 @@ export class NotebookEnvironments {
       // Workspaces deliberately excludes scope from the serialized config.
       // Preserve it explicitly across both clones, independently of the digest.
       Object.defineProperty(raw, '_workspace', { value: original.project._workspace, enumerable: false });
+      /**
+       * 入口 / Entry: NotebookEnvironments.prepared.callback@296.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.scoped）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.scoped).
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `cloned`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 拒绝 / Refusals: 条件 / conditions `this.workspaces.projects.current(id) !== projectId || (resolved._workspace || 'default') !== projectId || resolved.directory …`; 异常 / errors `changed()`.
+       */
       const project = await this.scoped(id, projectId, async () => {
         const resolved = await this.workspaces.resolveProject(id, raw);
         if (this.workspaces.projects.current(id) !== projectId || (resolved._workspace || 'default') !== projectId ||
@@ -308,11 +569,37 @@ export class NotebookEnvironments {
       });
     } finally { await prepared.release(); }
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.control.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `await pending` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `await pending` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `keyOf`, `inline.catch().then`, `inline.catch`, `this.controls.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `keyOf`, `inline.catch().then`, `inline.catch`, `this.controls.get`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.controls.get(key) === pending`.
+   * 输入 / Inputs: session: Session; work: () => Promise<T>
+   * 输出 / Returns: `await pending`.
+   * 副作用 / Effects: `this.controls.set`; `this.controls.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `if (this.controls.get(key) === pending) this.controls.delete(key);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `if (this.controls.get(key) === pending) this.controls.delete(key);`; these steps also apply to exceptional exits.
+   */
   private async control<T>(session: Session, work: () => Promise<T>) {
     const key = keyOf(session), pending = (this.controls.get(key) || Promise.resolve()).catch(() => {}).then(work);
     this.controls.set(key, pending);
     try { return await pending; } finally { if (this.controls.get(key) === pending) this.controls.delete(key); }
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.prove.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `false` / `listener && !this.closed && this.machines.state(session.vmId) === 'running' && this.machines.live.get(session.vmId) === insta…` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `false` / `listener && !this.closed && this.machines.state(session.vmId) === 'running' && this.machines.live.get(session.vmId) === insta…` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `this.current`, `this.launching.has`, `keyOf`, `this.matchesProject` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.current`, `this.launching.has`, `keyOf`, `this.matchesProject`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed || !current || current.status === 'review' || current.status !== 'running' && !this.laun…`; `!instance`; `status.status !== 'running' || !status.record || !same(status.record, execution.record) || status.bo…`.
+   * 输入 / Inputs: session: Session; project: Project; signal: AbortSignal optional
+   * 输出 / Returns: `false`; `listener && !this.closed && this.machines.state(session.vmId) === 'running' && this.machines.live.get(session.vmId) === insta…`.
+   * 副作用 / Effects: `this.options.listener`; `this.machines.exec`; 更新 / updates `listener`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async prove(session: Session, project: Project, signal?: AbortSignal) {
     const current = this.current(session);
     if (this.closed || !current || current.status === 'review' || current.status !== 'running' &&
@@ -337,6 +624,15 @@ export class NotebookEnvironments {
       this.machines.live.get(session.vmId) === instance && !!unchanged && unchanged.status !== 'review' &&
       this.matchesProject(session, configured);
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.restoreBridge.
+   * 功能：把本层请求转交 `this.control`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.control` and propagates the provider result or rejection.
+   * 输入 / Inputs: session: Session; project: Project; signal: AbortSignal optional
+   * 输出 / Returns: `this.control(session, async () => { if (!await this.prove(session, project, signal)) throw changed(); await this.bridges.open…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private restoreBridge(session: Session, project: Project, signal?: AbortSignal) {
     return this.control(session, async () => {
       if (!await this.prove(session, project, signal)) throw changed();
@@ -344,11 +640,37 @@ export class NotebookEnvironments {
       if (!this.current(session)) { await this.bridges.stop(session.vmId, session.projectId); throw changed(); }
     });
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.installed.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `false` / `result.code === 0 && z.object({ installed: z.boolean() }).strict().parse(JSON.parse(result.stdout)).installed` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `false` / `result.code === 0 && z.object({ installed: z.boolean() }).strict().parse(JSON.parse(result.stdout)).installed` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `this.machines.state`, `this.machines.exec`, `notebookInstalledCommand`, `z.object().strict().parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.state`, `this.machines.exec`, `notebookInstalledCommand`, `z.object().strict().parse`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!identity || this.machines.state(id) !== 'running'`.
+   * 输入 / Inputs: id: string; identity: ProjectIdentity | undefined; provider: NotebookProvider; signal: AbortSignal optional
+   * 输出 / Returns: `false`; `result.code === 0 && z.object({ installed: z.boolean() }).strict().parse(JSON.parse(result.stdout)).installed`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async installed(id: string, identity: ProjectIdentity | undefined, provider: NotebookProvider, signal?: AbortSignal) {
     if (!identity || this.machines.state(id) !== 'running') return false;
     const result = await this.machines.exec(id, notebookInstalledCommand(identity, provider), 10000, signal);
     return result.code === 0 && z.object({ installed: z.boolean() }).strict().parse(JSON.parse(result.stdout)).installed;
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.view.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ ready: running, executed: false, installed, projectId, session: session ? { provider: session.provider, directory: session.…` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `NotebookEnvironments`; this entry produces `{ ready: running, executed: false, installed, projectId, session: session ? { provider: session.provider, directory: session.…` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `notebookInput.parse`, `this.context`, `this.config`, `this.machines.state` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `notebookInput.parse`, `this.context`, `this.config`, `this.machines.state`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `session?.execution`; `session`.
+   * 输入 / Inputs: id: string; input: unknown default={}; signal: AbortSignal optional
+   * 输出 / Returns: `{ ready: running, executed: false, installed, projectId, session: session ? { provider: session.provider, directory: session.…`.
+   * 副作用 / Effects: `this.installed`; `this.bridges.stop`; 更新 / updates `reachable`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; 异常 / errors `new AppError('Notebook 服务已关闭', 409)`.
+   * 失败处理：catch 分支执行 `signal?.throwIfAborted();`; `await this.bridges.stop(id, projectId);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `signal?.throwIfAborted();`; `await this.bridges.stop(id, projectId);`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async view(id: string, input: unknown = {}, signal?: AbortSignal) {
     if (this.closed) throw new AppError('Notebook 服务已关闭', 409);
     const options = notebookInput.parse(input), { projectId, session } = this.context(id), project = await this.config(id, projectId);
@@ -369,6 +691,22 @@ export class NotebookEnvironments {
       message: !running ? '请先启动实例。' : session && !session.execution ? legacy().message :
         'Notebook 使用项目账号和独立 home，通过本机回环桥接访问。' };
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.install.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `identity` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `identity` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `this.assertCaptured`, `this.scopes.identity`, `this.installed`, `admin` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.assertCaptured`, `this.scopes.identity`, `this.installed`, `admin`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `await this.installed(id, identity, provider, captured.signal)`; `cleanup.code === 0`; `metadata.phase !== 'closed'`.
+   * 输入 / Inputs: id: string; captured: Capture; provider: NotebookProvider; log: (line: string) => void
+   * 输出 / Returns: `identity`.
+   * 副作用 / Effects: `this.installed`; `writeStore`; 更新 / updates `metadata.lease`, `metadata.phase`, `result`, `receipt`.
+   * 拒绝 / Refusals: 条件 / conditions `tools.code !== 0`; `downloaded.code !== 0`; `lease.leaseId !== request.leaseId || lease.bootId !== captured.bootId || lease.provider !== provider`; 异常 / errors `new AppError('Notebook 系统依赖准备失败', 409, 'NOTEBOOK_PREPARE_FAILED')`; `new AppError('Notebook 固定管理员下载失败；已保留原 wheelhouse 租约', 409, 'NOTEBOOK_PREPARE_FAILED')`.
+   * 收尾：退出 try 区域时始终执行 `output.flush();`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `output.flush();`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `if (metadata.phase !== 'closed') { metadata.phase = 'review'; await writeStore(leaseFile, metadata); }`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if (metadata.phase !== 'closed') { metadata.phase = 'review'; await writeStore(leaseFile, metadata); }`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async install(id: string, captured: Capture, provider: NotebookProvider, log: (line: string) => void) {
     await this.assertCaptured(id, captured);
     const identity = await this.scopes.identity(id, captured.project, captured.signal);
@@ -425,7 +763,27 @@ export class NotebookEnvironments {
       throw error;
     }
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.stop.
+   * 功能：把本层请求转交 `this.control`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.control` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; session: Session; signal: AbortSignal
+   * 输出 / Returns: `this.control(session, async () => { signal.throwIfAborted(); if (!this.current(session)) throw changed(); if (!session.execut…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private stop(id: string, session: Session, signal: AbortSignal) {
+    /**
+     * 入口 / Entry: NotebookEnvironments.stop.callback@429.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.control）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.control).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.bridges.stop`; `this.scope().stop`.
+     * 拒绝 / Refusals: 条件 / conditions `!this.current(session)`; `!session.execution`; `this.machines.state(id) !== 'running'`; 异常 / errors `changed()`; `legacy()`.
+     * 失败处理：catch 分支执行 `throw new AppError('Notebook 完整运行域清理未确认，原记录继续保留：' + (error instanceof Error ? error.message : String(error)), 503, 'NOTEBOOK_…`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `throw new AppError('Notebook 完整运行域清理未确认，原记录继续保留：' + (error instanceof Error ? error.message : String(error)), 503, 'NOTEBOOK_…`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.control(session, async () => {
       signal.throwIfAborted(); if (!this.current(session)) throw changed(); if (!session.execution) throw legacy();
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例，再核对原 Notebook 完整运行域', 409);
@@ -439,6 +797,22 @@ export class NotebookEnvironments {
       await this.change(state => { state.sessions = state.sessions.filter(item => keyOf(item) !== keyOf(session) || item.startedAt !== session.startedAt); });
     });
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.start.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: true, executed: true, session: { provider: prior.provider, status: 'running', hostPort: prior.hostPort, guestPort: p…` / `{ ready: true, executed: true, session: { provider: session.provider, status: 'running', hostPort: session.hostPort, guestPor…` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `{ ready: true, executed: true, session: { provider: prior.provider, status: 'running', hostPort: prior.hostPort, guestPort: p…` / `{ ready: true, executed: true, session: { provider: session.provider, status: 'running', hostPort: session.hostPort, guestPor…` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `inline.sessions.find`, `this.matchesProject`, `this.restoreBridge`, `this.probeHttp` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `inline.sessions.find`, `this.matchesProject`, `this.restoreBridge`, `this.probeHttp`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `prior`; `!session.execution!.run`; `await this.probeHttp(session)`.
+   * 输入 / Inputs: id: string; input: Input; captured: Capture; log: (line: string) => void
+   * 输出 / Returns: `{ ready: true, executed: true, session: { provider: prior.provider, status: 'running', hostPort: prior.hostPort, guestPort: p…`; `{ ready: true, executed: true, session: { provider: session.provider, status: 'running', hostPort: session.hostPort, guestPor…`.
+   * 副作用 / Effects: `this.stop`; `this.install`; `createHash().update().digest`; `createHash().update`; `createHash`; 更新 / updates `session`.
+   * 拒绝 / Refusals: 条件 / conditions `prior && prior.status === 'running' && prior.execution?.run`; `!this.matchesProject(prior, captured.raw) || prior.provider !== input.provider || prior.hostPort !== input.hostPort || prior.…`; `!await this.probeHttp(prior)`; 异常 / errors `new AppError('请先停止当前 Notebook 会话，再修改参数或配置', 409)`; `new AppError('Notebook 原运行已核对但入口不可达', 409)`.
+   * 收尾：退出 try 区域时始终执行 `this.launching.delete(launching);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.launching.delete(launching);`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `try { if (session && this.current(session)) await this.stop(id, session, new AbortController().signal); else await process.st…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `try { if (session && this.current(session)) await this.stop(id, session, new AbortController().signal); else await process.st…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async start(id: string, input: Input, captured: Capture, log: (line: string) => void) {
     const { project, projectId, signal } = captured;
     let prior = this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId);
@@ -480,6 +854,15 @@ export class NotebookEnvironments {
       const payload = await this.scopes.inherited(id, project, execution, { kind: 'service', runId: intent.runId, bootId: intent.bootId }, signal);
       if (!same(payload.identity, identity) || payload.sha256 !== sha256) throw changed();
       await this.assertCaptured(id, captured); const started = await process.start(intent, payload, signal);
+      /**
+       * 入口 / Entry: NotebookEnvironments.start.callback@483.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.change）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.change).
+       * 输入 / Inputs: state
+       * 输出 / Returns: `row`.
+       * 副作用 / Effects: 更新 / updates `row.execution!.record`.
+       * 拒绝 / Refusals: 条件 / conditions `!same(row.execution!.record, intent)`; 异常 / errors `changed()`.
+       */
       session = await this.change(state => { const row = state.sessions.find(item => keyOf(item) === keyOf(session!))!;
         if (!same(row.execution!.record, intent)) throw changed(); row.execution!.record = started; return row; });
       const deadline = Date.now() + 90000;
@@ -512,6 +895,17 @@ export class NotebookEnvironments {
       throw error;
     } finally { this.launching.delete(launching); }
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.run.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `operation` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `operation` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `notebookInput.parse`, `this.context`, `this.active.has`, `inline.sessions.some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `notebookInput.parse`, `this.context`, `this.active.has`, `inline.sessions.some`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal; log: (line: string) => void
+   * 输出 / Returns: Promise<NotebookResponse>；结果来自 / values from `operation`.
+   * 副作用 / Effects: `this.active.add`; `AbortSignal.any`; `this.pending.add`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `this.active.has(key)`; `options.mode !== 'status' && this.state!.sessions.some(item => item.vmId === id && item.projectId === projectId && !item.exec…`; 异常 / errors `new AppError('Notebook 服务已关闭', 409)`; `new AppError('此项目的 Notebook 操作仍在进行', 409)`.
+   */
   async run(id: string, input: unknown, signal: AbortSignal, log: (line: string) => void): Promise<NotebookResponse> {
     if (this.closed) throw new AppError('Notebook 服务已关闭', 409);
     const options = notebookInput.parse(input), { projectId } = this.context(id), key = `${id}:${projectId}`;
@@ -520,6 +914,15 @@ export class NotebookEnvironments {
       throw legacy();
     this.active.add(key);
     const abort = AbortSignal.any([signal, this.controller.signal]);
+    /**
+     * 入口 / Entry: NotebookEnvironments.run.callback@523.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id, options, abort)`; `this.prepared(id, projectId, abort, async captured => { if (options.mode === 'start') return this.start(id, options, captured…`; `this.machines.locked(id, async () => { const session = this.state!.sessions.find(item => item.vmId === id && item.projectId =…`.
+     * 副作用 / Effects: `abort.throwIfAborted`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const operation = (async () => {
       abort.throwIfAborted(); if (options.mode === 'status') return this.view(id, options, abort);
       if (options.mode === 'start' || options.mode === 'install') return this.prepared(id, projectId, abort, async captured => {
@@ -537,6 +940,19 @@ export class NotebookEnvironments {
     void operation.finally(() => { this.pending.delete(operation); this.active.delete(key); }).catch(() => {});
     return operation;
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.link.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ provider: session.provider, url: session.provider === 'jupyter' ? `${base}lab?token=${session.token}` : `${base}?access_tok…` 供上层消费（`NotebookEnvironments`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NotebookEnvironments`; this entry produces `{ provider: session.provider, url: session.provider === 'jupyter' ? `${base}lab?token=${session.token}` : `${base}?access_tok…` for its caller. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `this.context`, `legacy`, `changed`, `this.restoreBridge` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.context`, `legacy`, `changed`, `this.restoreBridge`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ provider: session.provider, url: session.provider === 'jupyter' ? `${base}lab?token=${session.token}` : `${base}?access_tok…`.
+   * 副作用 / Effects: `this.bridges.stop`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `!session || !session.execution`; `!await this.probeHttp(session) || !this.current(session)`; 异常 / errors `new AppError('Notebook 服务已关闭', 409)`; `session ? legacy() : changed()`.
+   * 失败处理：catch 分支执行 `await this.bridges.stop(id, session.projectId);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `await this.bridges.stop(id, session.projectId);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async link(id: string) {
     if (this.closed) throw new AppError('Notebook 服务已关闭', 409);
     const { session } = this.context(id); if (!session || !session.execution) throw session ? legacy() : changed();
@@ -547,6 +963,17 @@ export class NotebookEnvironments {
       return { provider: session.provider, url: session.provider === 'jupyter' ? `${base}lab?token=${session.token}` : `${base}?access_token=${session.token}` };
     } catch (error) { await this.bridges.stop(id, session.projectId); throw error; }
   }
+  /**
+   * 入口 / Entry: NotebookEnvironments.close.
+   * 功能：在管理绑定项目账户的 Notebook 会话中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`NotebookEnvironments`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `NotebookEnvironments`; the outcome is recorded in `this.closed`. Module context: Owns project-account Notebook sessions; connections and stops verify original boot and complete run scope.
+   * 处理：通过 `this.controller.abort`, `this.bridges.close`, `Promise.allSettled`, `this.controls.values` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.controller.abort`, `this.bridges.close`, `Promise.allSettled`, `this.controls.values`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.controller.abort`; `this.bridges.close`; `this.ownedTerminals.close`; 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true; this.controller.abort();
     await this.bridges.close(); await Promise.allSettled(this.pending); await Promise.allSettled(this.controls.values());

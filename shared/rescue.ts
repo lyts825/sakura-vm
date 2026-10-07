@@ -1,5 +1,8 @@
 /**
- * 模块职责：快照救援任务、默认只读检查命令和输出制品的公共契约。
+ * 模块职责（中文）：快照救援任务、默认只读检查命令和输出制品的公共契约。
+ * Module responsibility (English): Defining read-only snapshot rescue commands, jobs and artifacts.
+ * 详细范围（中文）：公开入口包括 rescueRunSchema, RescueRun, DEFAULT_RESCUE_COMMAND, rescueJobSchema, rescueViewSchema, rescueArtifactSchema；职责覆盖定义只读快照救援命令、任务和制品，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include rescueRunSchema, RescueRun, DEFAULT_RESCUE_COMMAND, rescueJobSchema, rescueViewSchema, rescueArtifactSchema. The scope covers Defining read-only snapshot rescue commands, jobs and artifacts. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 import { sandboxArtifactSchema, sandboxExecutionSchema } from './sandbox.ts';

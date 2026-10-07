@@ -1,4 +1,5 @@
-/** 打包 Wayland 控制器、代理及固定协议 XML，核对来源元数据并生成资源摘要清单。 */
+/** 打包 Wayland 控制器、代理及固定协议 XML，核对来源元数据并生成资源摘要清单。
+ * Package the Wayland controller/proxy and pinned protocol schemas with exact source provenance. */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

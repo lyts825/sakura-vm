@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实 QEMU NAT 的 HTTP/HTTPS 入口、证书轮换、mTLS 和停止实例拒绝。 */
+/** 烟雾验收：验证真实 QEMU NAT 的 HTTP/HTTPS 入口、证书轮换、mTLS 和停止实例拒绝。
+ * Smoke acceptance for real QEMU NAT HTTP/HTTPS ingress, certificate rotation, mTLS and stopped-VM refusal. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -23,8 +24,11 @@ await machines.init();
 const certificates = new IngressCertificates(join(directory, 'certificates.json'));
 await certificates.init();
 const ingress = new HttpIngress(machines, join(directory, 'ingress.json'), certificates);
+/** 访问本机 /app，使用给定 CA 严格验证 TLS，可提供 SNI 和客户端证书；收集完整正文和状态，TLS/连接失败拒绝。
+ * Request local /app with strict TLS validation from the supplied CA and optional SNI/client certificate; collect body/status and reject TLS/connection failures. */
 async function secureGet(port: number, ca: string, hostname?: string, client?: { cert: string; key: string }) {
-  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+  return new Promise<{ status: number; body: string }>(/** 以指定 CA 和可选客户端证书发起独立 HTTPS 请求，可同时控制 SNI/Host；收集完整响应状态/正文，TLS 或连接错误拒绝，保持服务端证书校验。
+ * Issue an isolated HTTPS request using the supplied CA/optional client certificate and controlled SNI/Host; collect status/full body, reject TLS/connection errors and retain server-certificate verification. */ (resolve, reject) => {
     const req = secureRequest(
       {
         hostname: '127.0.0.1', port, path: '/app', ca, rejectUnauthorized: true, agent: false,

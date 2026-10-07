@@ -1,4 +1,5 @@
 # 按 STORYBOARD 合成中文旁白和原创配乐，根据语音边界生成帧对齐场景、字幕与总时长元数据。
+# Generate whole-chapter Chinese narration/original music and derive frame-aligned scene/caption/total timing from actual speech boundaries.
 """Generate STORYBOARD-based Chinese narration and original music for Sakura.
 
 Python 3.12, edge-tts 7.2.8, numpy 2.4.2, FFmpeg/FFprobe on PATH.
@@ -27,22 +28,30 @@ PITCH = "+0Hz"
 MUSIC_FADE = 1.8
 
 
+# 执行外部音频工具并收集输出，非零退出直接抛错，不把失败当成有效音频。
+# Execute audio tools with captured output and raise on nonzero exits instead of accepting failed audio.
 def run(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, check=True, capture_output=True)
 
 
+# 经 FFmpeg 解码为固定采样率单声道 float32 数组，并复制缓冲供后续修改。
+# Decode through FFmpeg to fixed-rate mono float32 samples and copy the buffer for later mutation.
 def decode(path: Path) -> np.ndarray:
     result = run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "f32le",
                   "-ar", str(SR), "-ac", "1", "pipe:1"])
     return np.frombuffer(result.stdout, dtype="<f4").copy()
 
 
+# 运行 loudnorm 测量并解析 stderr 的最后 JSON 报告，返回目标响度所需观测。
+# Run loudnorm measurement and parse the final stderr JSON report for target-loudness observations.
 def loudness(args: list[str], target: float) -> dict:
     report = run(args + ["-af", f"loudnorm=I={target}:TP=-2:LRA=11:print_format=json",
                          "-f", "null", "-"]).stderr.decode("utf-8", errors="replace")
     return json.loads(report[report.rfind("{"):report.rfind("}") + 1])
 
 
+# 测量后应用单一常量增益，兼顾目标响度和 -2dB 真峰值，保留动态/呼吸并写出音频及报告。
+# Measure/apply one constant gain bounded by target loudness and -2dB true peak, preserving dynamics/breaths and writing audio/report.
 def write_normalized(samples: np.ndarray, output: Path, cache: Path, target: float) -> dict:
     """One constant gain preserves dynamics and breaths; no compressor or time stretching."""
     raw = cache / (output.stem + ".f32")
@@ -61,10 +70,14 @@ def write_normalized(samples: np.ndarray, output: Path, cache: Path, target: flo
             "verifiedTruePeakDbtp": float(actual["input_tp"]), "constantGainDb": round(gain, 3)}
 
 
+# 移除空白与常见中英文标点，用于语音边界和原稿的文本对应比较。
+# Remove whitespace/common Chinese-English punctuation for matching speech boundaries to script text.
 def comparable(text: str) -> str:
     return re.sub(r"[\s，。！？、,.!?]", "", text)
 
 
+# 按整章文案及声线/速率/音调摘要复用或重取 TTS，保留句子上下文，并核对边界文本与音频。
+# Reuse/request whole-chapter TTS from text/voice/rate/pitch fingerprints, preserving prosody and validating boundaries against audio/script.
 async def synthesize(scene: dict, cache: Path, force: bool) -> tuple[np.ndarray, list[dict]]:
     """Synthesize the entire scene together to keep sentence context and natural prosody."""
     text = "\n".join(line["ttsText"] for line in scene["lines"])
@@ -96,6 +109,8 @@ async def synthesize(scene: dict, cache: Path, force: bool) -> tuple[np.ndarray,
     return decode(mp3), boundaries
 
 
+# 按帧量化章起止和字幕，再换算精确样本位置并拼接旁白，返回音频、场景与字幕避免累积时长漂移。
+# Quantize scene/caption timing to frames before exact sample placement and narration concatenation, avoiding cumulative duration drift.
 async def narration(storyboard: dict, cache: Path, force: bool) -> tuple[np.ndarray, list[dict], list[dict]]:
     fps = storyboard["fps"]
     if SR % fps:
@@ -146,6 +161,8 @@ async def narration(storyboard: dict, cache: Path, force: bool) -> tuple[np.ndar
     return track, scenes, captions
 
 
+# 以固定随机种子生成原创五声音阶键盘/槌音配乐，按章节 cue 编排并做片尾淡出，返回定长立体声。
+# Generate original pentatonic keyboard/mallet music with a fixed seed, chapter cues and closing fade into fixed-length stereo samples.
 def soundtrack(duration_frames: int, fps: int, scenes: list[dict]) -> np.ndarray:
     """Original evolving pentatonic score: soft keyboard, mallets, sparse pulse, chapter cues."""
     seconds = duration_frames / fps
@@ -153,6 +170,8 @@ def soundtrack(duration_frames: int, fps: int, scenes: list[dict]) -> np.ndarray
     score = np.zeros((total, 2), np.float32)
     rng = np.random.default_rng(20261008)
 
+    # 把单音包络/泛音按 MIDI、时间、增益和声像累加到 score，裁剪片尾且忽略越界位置。
+    # Add a note’s envelope/harmonics to score from MIDI/time/gain/pan, clipping the tail and ignoring invalid positions.
     def note(at: float, midi: int, duration: float, gain: float, pan: float, kind="mallet"):
         position = round(at * SR)
         length = min(round(duration * SR), total - position)
@@ -230,11 +249,15 @@ def soundtrack(duration_frames: int, fps: int, scenes: list[dict]) -> np.ndarray
     return score
 
 
+# 将秒量化为毫秒并格式化 SRT 时间戳，统一字幕导出表示。
+# Quantize seconds to milliseconds and format a consistent SRT timestamp.
 def srt_time(seconds: float) -> str:
     ms = round(seconds * 1000)
     return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
 
 
+# 检查 FFmpeg 依赖，按模式生成或复用旁白时间线，再导出配乐、字幕和元数据；失败不标记音频就绪。
+# Check FFmpeg dependencies, generate/reuse narration timing by mode and export music/captions/metadata without claiming readiness after failure.
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--music-only", action="store_true", help="Offline: reuse transcript timeline and regenerate music")

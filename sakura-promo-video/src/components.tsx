@@ -1,4 +1,5 @@
-/** 宣传视频共用的纸面、品牌、图标和入场动画组件，以当前帧计算确定性画面。 */
+/** 宣传视频共用的纸面、品牌、图标和入场动画组件，以当前帧计算确定性画面。
+ * Share paper/brand/icon/entrance components with deterministic visuals derived from the current frame. */
 import type {CSSProperties, ReactNode} from 'react';
 import {AbsoluteFill, CanvasImage, Easing, interpolate, useCurrentFrame, useVideoConfig, staticFile} from 'remotion';
 import {colors, font} from './theme';
@@ -6,6 +7,8 @@ import {colors, font} from './theme';
 export const clamp = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'} as const;
 export const ease = Easing.bezier(0.16, 1, 0.3, 1);
 
+/** 创建纸面背景、统一字体和边界，再用当前帧计算确定性的花瓣位置；petals 可关闭装饰，style 允许调用方调整纸面。
+ * Build the paper background, shared typography and bounds, deriving deterministic petal positions from the current frame; petals disables decoration and style customizes the surface. */
 export const Paper = ({children, petals = true, style}: {children: ReactNode; petals?: boolean; style?: CSSProperties}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -26,6 +29,8 @@ export const Paper = ({children, petals = true, style}: {children: ReactNode; pe
   </AbsoluteFill>;
 };
 
+/** 按 size 比例摆放品牌 SVG 与衬线名称，提前加载图像，允许外部 style 调整布局。
+ * Place the brand SVG and serif wordmark proportionally to size, premount the image and allow layout overrides through style. */
 export const Brand = ({style, size = 44}: {style?: CSSProperties; size?: number}) => {
   const {fps} = useVideoConfig();
   return <div style={{display: 'flex', alignItems: 'center', gap: size * 0.32, ...style}}>
@@ -34,9 +39,13 @@ export const Brand = ({style, size = 44}: {style?: CSSProperties; size?: number}
   </div>;
 };
 
+/** 组合章节编号、分隔线和传入标题内容，保持相同的章节引导排版。
+ * Combine the chapter number, separator and supplied heading content using consistent chapter-introduction typography. */
 export const Eyebrow = ({number, children, style}: {number: string; children: ReactNode; style?: CSSProperties}) => <div style={{display: 'flex', alignItems: 'center', gap: 20,
   fontSize: 25, color: colors.accent, letterSpacing: 2, ...style}}><span style={{fontFamily: font.mono, opacity: 0.66}}>{number}</span><span style={{width: 48, height: 1, background: colors.accent}} /><span>{children}</span></div>;
 
+/** 从受类型限制的图标集合选择 SVG 路径，并按 size/color 绘制等宽描边，所有场景复用同一视觉尺寸体系。
+ * Select SVG paths from the typed icon set and draw uniform strokes at size/color, giving scenes one consistent icon scale. */
 export const Icon = ({type, size = 30, color = 'currentColor'}: {type: 'terminal' | 'folder' | 'branch' | 'snapshot' | 'code' | 'disk' | 'check' | 'power' | 'grid'; size?: number; color?: string}) => {
   const paths = {
     terminal: <><rect x="3" y="4" width="26" height="23" rx="4"/><path d="m9 11 5 5-5 5m9 0h6"/></>,
@@ -52,8 +61,12 @@ export const Icon = ({type, size = 30, color = 'currentColor'}: {type: 'terminal
   return <svg viewBox="0 0 32 32" width={size} height={size} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink: 0}}>{paths[type]}</svg>;
 };
 
+/** 显示可覆盖的界面示意标签，让观众理解画面表达的是功能演示；style 只调整标签位置与外观。
+ * Render an overridable mock-interface label to identify illustrative UI; style controls its placement and appearance. */
 export const MockLabel = ({children = '界面示意', style}: {children?: ReactNode; style?: CSSProperties}) => <div style={{fontSize: 23, color: colors.muted, letterSpacing: 2, ...style}}>{children}</div>;
 
+/** 把秒单位 delay 转为当前 fps 的局部帧，分别在 0.7/0.85 秒内插值透明度和位移，并夹住端点保证逐帧可复现。
+ * Convert delay seconds to local frames at the current fps, interpolate opacity/translation over 0.7/0.85 seconds and clamp endpoints for reproducible frames. */
 export const Reveal = ({children, delay = 0, style}: {children: ReactNode; delay?: number; style?: CSSProperties}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();

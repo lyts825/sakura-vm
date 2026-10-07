@@ -1,5 +1,8 @@
 /**
- * 模块职责：选择备份和文件恢复目标，预览恢复内容并跟踪恢复任务。
+ * 模块职责（中文）：选择备份和文件恢复目标，预览恢复内容并跟踪恢复任务。
+ * Module responsibility (English): UI interaction and state presentation for backup policy, retention and file recovery.
+ * 详细范围（中文）：公开入口包括 FileRecovery；职责覆盖备份策略、保留与文件恢复的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include FileRecovery. The scope covers UI interaction and state presentation for backup policy, retention and file recovery. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
@@ -9,6 +12,22 @@ import type { SandboxArtifact } from '../../shared/sandbox';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import { saveBlob, saveText } from '../../src/export-file';
 
+/**
+ * 中文：呈现备份策略、保留与文件恢复的界面交互与状态呈现中的 FileRecovery 界面，订阅 /vms/{vm.id}/backup-recovery，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the FileRecovery surface for UI interaction and state presentation for backup policy, retention and file recovery, subscribing to /vms/{vm.id}/backup-recovery. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  vm,
+  request,
+  refresh,
+  items,
+} 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力）、refresh（refresh 状态）、items（条目集合） 上下文字段
+ * English: Inputs: {
+  vm,
+  request,
+  refresh,
+  items,
+} provides context fields vm (vm state), request (transport capability bound to identity/authority scope), refresh (refresh state), items (item set)
+ */
 export function FileRecovery({
   vm,
   request,
@@ -39,11 +58,18 @@ export function FileRecovery({
         message={action.message}
       />
       <form
-        onSubmit={(event) => {
+        onSubmit={/**
+         * 中文功能：阻止默认表单提交，捕获并立即清空密码状态，再把备份、分区和逐行路径交给可取消恢复动作；提交后刷新任务与实例视图。
+         * English: Prevent default form submission, capture/clear password state, and submit backup/partition/line-separated paths through a cancellable recovery action; refresh job/VM views after submission.
+         * 输入 / Inputs: event.
+         * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+         * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+         */
+        (event) => {
           event.preventDefault();
           const secret = password;
           setPassword('');
-          void action.run(async (signal) => {
+          void action.run(/** 中文：提交 POST /vms/{vm.id}/backup-recovery，完成备份策略、保留与文件恢复的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/backup-recovery for UI interaction and state presentation for backup policy, retention and file recovery. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
             await request(
               `/vms/${vm.id}/backup-recovery`,
               'POST',
@@ -142,7 +168,7 @@ export function FileRecovery({
             className="secondary compact"
             disabled={cancellation.busy}
             onClick={() =>
-              void cancellation.run(async (signal) => {
+              void cancellation.run(/** 中文：提交 POST /jobs/{running.id}/cancel，完成备份策略、保留与文件恢复的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /jobs/{running.id}/cancel for UI interaction and state presentation for backup policy, retention and file recovery. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 await request(`/jobs/${running.id}/cancel`, 'POST', undefined, signal);
                 remote.reload();
                 await refresh();
@@ -170,7 +196,7 @@ export function FileRecovery({
                 className="secondary compact"
                 disabled={action.busy}
                 onClick={() =>
-                  void action.run(async (signal) => {
+                  void action.run(/** 中文：读取 GET /vms/{vm.id}/backup-recovery/artifact?run={job.id}&artifact={artifact.id}，完成备份策略、保留与文件恢复的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vm.id}/backup-recovery/artifact?run={job.id}&artifact={artifact.id} for UI interaction and state presentation for backup policy, retention and file recovery. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                     const value = await request<SandboxArtifact & { base64: string }>(
                       `/vms/${vm.id}/backup-recovery/artifact?run=${job.id}&artifact=${artifact.id}`,
                       'GET',

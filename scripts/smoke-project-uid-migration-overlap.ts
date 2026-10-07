@@ -1,4 +1,5 @@
-/** 烟雾验收：验证迁移前后的项目 UID 与挂载目录重叠拒绝。 */
+/** 烟雾验收：验证迁移前后的项目 UID 与挂载目录重叠拒绝。
+ * Smoke acceptance for UID/mount-directory overlap refusal across project migration. */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -17,6 +18,8 @@ const parent = await realpath(join(workspace, '.data', 'network-remaining-test-t
 const root = await realpath(resolve(process.argv[3]));
 assert.equal(dirname(root), parent);
 assert.match(basename(root), /^sakura-guest-task-[A-Za-z0-9_-]+$/);
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const digest = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
 const oldSummaryFile = join(parent, 'project-uid-scopes-final-summary.json');
 const oldSummaryBytes = await readFile(oldSummaryFile), oldSummary = JSON.parse(oldSummaryBytes.toString());
@@ -53,6 +56,8 @@ for (const name of ['sandbox', 'storagePoolId', 'haPromotion', 'haRetirement', '
 const machineDirectory = await realpath(join(root, 'machines', owned.vmId));
 assert.equal(dirname(machineDirectory), await realpath(join(root, 'machines')));
 assert.equal(dirname(await realpath(join(machineDirectory, 'disk.qcow2'))), machineDirectory);
+/** 按 QEMU 可执行文件名和本夹具根目录/实例参数精确筛选主机进程，返回观测数量；该数量是残留证据，不赋予终止其他进程的权限。
+ * Count host processes matching QEMU executable names and this fixture’s root/VM arguments; the count is residue evidence and grants no authority to terminate other processes. */
 const exactQemu = () => {
   const ps = "$r='" + root.replaceAll("'", "''") + "';$v='" + owned.vmId + "';@(" +
     "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(sakura-qemu|qemu-system[^.]*)\\.exe$' -and $_.CommandLine -and $_.CommandLine.Contains($r) -and $_.CommandLine.Contains($v) }).Count";
@@ -90,7 +95,8 @@ proof.packagedIdentity = JSON.parse(await readFile(join(workspace, '.sakura-serv
 assert.equal(proof.packagedIdentity.build, '94bc2a7fb050ac8a72cce5fcf56997c6c44ba4a8473cd543cff6d36ff407b905');
 await writeFile(proofFile, JSON.stringify(proof, null, 2) + '\n');
 const runtime = await createRuntime(), nativeRun = runtime.run.bind(runtime);
-runtime.run = (async (...args: Parameters<typeof nativeRun>) => {
+runtime.run = (/** 只对 argv 指向本自有根的 QEMU 记录参数摘要、起止和 settled，其他 runtime 原样转发；finally 记录真实调用结算用于退出验收。
+ * Record argv digest/start/end/settled only for QEMU targeting this owned root and forward other runtime calls unchanged; finally records real-call settlement for exit acceptance. */ async (...args: Parameters<typeof nativeRun>) => {
   if (args[0] !== 'sakura-qemu' || !args[1].some(value => value.includes(root))) return nativeRun(...args);
   const execution = { startedAt: new Date().toISOString(), settled: false, argvSha256: digest(JSON.stringify(args[1])) };
   qemuExecutions.push(execution);
@@ -106,12 +112,18 @@ const spaces = new Workspaces(machines), scopes = new ProjectRunScopes(machines)
 const migration = new ProjectDirectoryMigrations(machines, spaces);
 const nativeExec = machines.exec.bind(machines);
 const fixed = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C ';
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const py = (source: string) => fixed + '/usr/bin/python3 -I -S -c ' + quote(source);
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string, timeout = 30000) => {
   const result = await nativeExec(owned.vmId, command, timeout);
   assert.equal(result.code, 0, result.stderr + result.stdout);
   return result.stdout.trim();
 };
+/** 以 NOFOLLOW/CLOEXEC 打开自有对象，读取 device/inode/文件系统与 mountId、账号/模式和有限文件摘要，关闭 FD 后返回 JSON。
+ * Open owned objects NOFOLLOW/CLOEXEC, inspect device-inode/filesystem-mount IDs/account-mode/bounded file hashes and return JSON after closing the FD. */
 const inspect = async (path: string) => JSON.parse(await run(py(
   'import hashlib,json,os,stat\np=' + JSON.stringify(path) + '\nf=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC);i=os.fstat(f)\n' +
   "mount=next(x.split()[1] for x in open('/proc/self/fdinfo/'+str(f)) if x.startswith('mnt_id:'))\n" +
@@ -119,14 +131,21 @@ const inspect = async (path: string) => JSON.parse(await run(py(
   "if stat.S_ISREG(i.st_mode):value['sha256']=hashlib.sha256(os.read(f,8192)).hexdigest();value['size']=i.st_size\n" +
   'os.close(f);print(json.dumps(value))'
 )));
+/** 比较设备、inode 与文件系统 ID，确认不同挂载名指向同一物理对象。
+ * Compare device/inode/filesystem IDs to prove different mount names reference one physical object. */
 const sameObject = (a: any, b: any) => {
   for (const key of ['device', 'inode', 'filesystemId']) assert.equal(a[key], b[key], key);
 };
 const existingIdentities: Record<string, unknown> = {};
+/** 逐项用正式 core.inspect 核对既有项目身份未变，防止负例预览污染已授权账号。
+ * Compare each existing identity through production core.inspect to ensure negative previews do not corrupt authorized accounts. */
 const checkOriginalIdentities = async () => {
   for (const [id, value] of Object.entries(existingIdentities)) assert.deepEqual(await core.inspect(owned.vmId, id), value, 'Existing identity changed: ' + id);
 };
-const check = async (name: string, action: () => Promise<unknown>) => {
+/** 按名称执行异步断言，成功后记录返回证据并落盘；异常直接传播，不记录通过。
+ * By case name, run asynchronous assertions and retain returned evidence on success with persistence; propagate errors without recording a pass. */
+const check = async (name: string, action: /** 执行一个身份边界用例的异步动作并返回观测，调用方保存时间/通过证据并传播异常；失败仍进入统一精确清理。
+ * Execute an asynchronous identity-boundary case and return observations; the caller persists timing/pass evidence and propagates exceptions into unified exact cleanup. */ () => Promise<unknown>) => {
   const startedAt = new Date().toISOString(), evidence = await action();
   proof.cases.push({ name, startedAt, finishedAt: new Date().toISOString(), evidence });
   await writeFile(proofFile, JSON.stringify(proof, null, 2) + '\n');
@@ -145,13 +164,20 @@ let mount: any;
 const positive = '/workspace/sakura-owned-migration-positive-' + invocation;
 const origin = '/srv/projects/sakura-owned-migration-' + invocation;
 const alias = '/opt/projects/sakura-owned-migration-' + invocation;
+/** 通过正式项目创建入口保存指定目录与 host 网络，返回新项目 ID，避免自行绕开目录索引。
+ * Create/save the directory with host networking through the production project catalog and return the new ID rather than bypass its index. */
 const makeCatalog = async (name: string, directory: string) => {
   const index = await spaces.projects.create(owned.vmId, name + ' ' + invocation.slice(0, 8), async () => {
     await spaces.save(owned.vmId, { directory, networkIsolation: 'host' });
   });
   return index.active;
 };
-const inAlpha = async <T>(action: () => Promise<T>) => spaces.projects.inScope(owned.vmId, alphaId!, action);
+/** 在精确 alpha 项目上下文执行回调，返回结果或传播失败。
+ * Execute/return the callback in the exact alpha-project context, propagating failures. */
+const inAlpha = async <T>(action: /** 在 alpha 项目身份作用域执行异步 action 返回 T，迁移和运行必须使用明确项目而非活动选择。
+ * Execute asynchronous action in alpha’s identity scope and return T; migration/execution use the explicit project rather than active selection. */ () => Promise<T>) => spaces.projects.inScope(owned.vmId, alphaId!, action);
+/** 仅在已保存 alpha 原配置时恢复该项目，避免异常退出后留下测试用重叠路径。
+ * Restore alpha only when its original settings were saved so exceptions do not leave overlapping test paths. */
 const restoreAlpha = async () => { if (alphaId && alphaConfig) await inAlpha(async () => { await spaces.save(owned.vmId, alphaConfig); }); };
 try {
   await machines.start(owned.vmId);
@@ -181,7 +207,8 @@ try {
   ));
   alphaId = await makeCatalog('Owned physical migration Alpha', positive);
   alphaConfig = await inAlpha(() => spaces.config(owned.vmId));
-  await check('reviewed-new-helper-migration-and-project-uid-task', async () => {
+  await check('reviewed-new-helper-migration-and-project-uid-task', /** 正向迁移预览不改 root 树，apply 只改变同 inode 的归属/权限而保留内容摘要；真实 UID 任务验证 Home/cwd/文件并结束票据，邻项目身份始终不变。
+ * Prove preview leaves the root-owned tree unchanged and apply changes ownership/mode on the same inodes while preserving digests; a real UID task verifies Home/cwd/files and closes receipts, retaining neighbor identities. */ async () => {
     const before = { directory: await inspect(positive), marker: await inspect(positive + '/marker.txt') };
     assert.equal(before.directory.uid, 0); assert.equal(before.directory.mode, 0o700);
     const preview = await inAlpha(() => migration.preview(owned.vmId)); assert.ok(preview.plan);
@@ -224,6 +251,8 @@ try {
   mount = { source: origin, target: alias, bootId: proof.bootId, sourceInfo: source, placeholder, current: await inspect(alias) };
   sameObject(mount.current, source); assert.notEqual(mount.current.mountId, placeholder.mountId);
   proof.mount = mount;
+  /** 建立不同 mountId 的物理别名，要求正式迁移拒绝重叠并对比源目录/标记/既有身份不变，最后恢复 alpha。
+   * Create a physical alias with different mountId, require production overlap denial/unchanged source-marker-existing identities and restore alpha. */
   const negative = async (name: 'saved' | 'native', betaId?: string) => {
     const sourcePath = origin + '/' + name, target = alias + '/' + name;
     const before = { directory: await inspect(sourcePath), marker: await inspect(sourcePath + '/marker.txt') };

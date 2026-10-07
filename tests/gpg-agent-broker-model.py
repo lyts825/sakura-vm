@@ -1,3 +1,7 @@
+# 模块职责：GPG 代理的便携权威模型；文件和进程证据模拟，协议用例使用自有本地 socketpair。
+# Module: Portable authority models for the GPG broker; filesystem/process evidence is simulated, while protocol cases use self-owned local socketpairs.
+# 阅读方式：按初始化、具名辅助函数与测试情景阅读；便携模型与模拟接口不能证明真实 Linux 隔离。
+# Reading guide: Follow initialization, named helpers and cases; portable models and substituted interfaces do not attest real Linux isolation.
 # 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
 """Portable models of the production broker, never a Linux/Agent proof.
 
@@ -30,6 +34,12 @@ source = Path(sys.argv[2]).read_bytes()
 exec(compile(source, sys.argv[2], 'exec'), ns)
 
 
+# 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+# English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+# 输入 / Inputs: 无 / none。
+# 结果：返回分支计算值（`{'resource': {'version': 1, 'kind': 'gpg-agent', 'leaseId': str(uuid.uuid4()), 'brokerSha256': hashl…`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`{'resource': {'version': 1, 'kind': 'gpg-agent', 'leaseId': str(uuid.uuid4()), 'brokerSha256': hashl…`); its implementation and call sites define the actual type.
+# 协作入口 / Collaborators: `str`, `uuid.uuid4`, `hashlib.sha256(source).hexdigest`, `hashlib.sha256`.
 def context():
     identity_id = str(uuid.uuid4())
     return {'resource': {'version': 1, 'kind': 'gpg-agent', 'leaseId': str(uuid.uuid4()),
@@ -43,16 +53,38 @@ def context():
         'owner': {'kind': 'task', 'runId': str(uuid.uuid4()), 'bootId': str(uuid.uuid4())}, 'sha256': 'a' * 64}
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: code, operation。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 失败 / Failure: `AssertionError('accepted ' + code)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `operation`, `str`, `AssertionError`.
+# 检查边界 / Checked boundaries: `str(error) == code`.
 def refused(code, operation):
     try: operation()
     except ns['Refused'] as error: assert str(error) == code, (str(error), code)
     else: raise AssertionError('accepted ' + code)
 
 
+# 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+# English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+# 输入 / Inputs: inode, uid = 0, gid = 0, mode = 448, kind = stat.S_IFDIR。
+# 结果：返回分支计算值（`{'device': '1', 'inode': str(inode), 'uid': uid, 'gid': gid, 'mode': mode, 'type': kind}`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`{'device': '1', 'inode': str(inode), 'uid': uid, 'gid': gid, 'mode': mode, 'type': kind}`); its implementation and call sites define the actual type.
+# 协作入口 / Collaborators: `str`.
 def meta(inode, uid=0, gid=0, mode=0o700, kind=stat.S_IFDIR):
     return {'device': '1', 'inode': str(inode), 'uid': uid, 'gid': gid, 'mode': mode, 'type': kind}
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `bad['resource'][field]`, `bad['resource']['sourcePath']`, `value['phase']`, `value['sourceDirectory']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `context`, `ns['context_checked']`, `copy.deepcopy`, `refused`.
+# 检查边界 / Checked boundaries: `ns['context_checked'](ctx) == ctx`.
 def strict_context():
     ctx = context(); assert ns['context_checked'](ctx) == ctx
     for field, value in [('kind', 'ssh-agent'), ('hostHelperSha256', 'BAD'), ('version', True), ('timeoutSeconds', 0)]:
@@ -69,6 +101,13 @@ def strict_context():
     refused('RECORD_INVALID', lambda: ns['record_checked'](value, ctx))
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `peer.alive`, `peer.read`, `ns['boot']`, `ns['directory']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `context`, `str`, `uuid.uuid4`, `ctx['owner']['runId'].encode`.
 def peer_identity():
     ctx = context(); scope = {'device': '1', 'inode': '6', 'controlToken': str(uuid.uuid4())}
     expected = b'0::/sakura-task-' + ctx['owner']['runId'].encode()
@@ -92,13 +131,50 @@ def peer_identity():
 
 class PairSocket:
     """Windows has socketpair but no recvmsg; no ancillary exists in this fixture."""
+    # 中文功能：初始化测试夹具实例并保存构造输入，供后续方法复用其状态。
+    # English: Initialize a test-fixture instance and retain constructor inputs for subsequent stateful methods.
+    # 输入 / Inputs: self, stream。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `self.stream`. Follow the actual model assignments / 以模型中的实际赋值为准。
     def __init__(self, stream): self.stream = stream
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self。
+    # 结果：返回分支计算值（`self.stream.fileno()`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.stream.fileno()`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `self.stream.fileno`.
     def fileno(self): return self.stream.fileno()
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, value。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.stream.setblocking`.
     def setblocking(self, value): self.stream.setblocking(value)
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self, data。
+    # 结果：返回分支计算值（`self.stream.send(data)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.stream.send(data)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `self.stream.send`.
     def send(self, data): return self.stream.send(data)
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self, size, ancillary_size, flags。
+    # 结果：返回分支计算值（`(self.stream.recv(size), [], 0, None)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`(self.stream.recv(size), [], 0, None)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `self.stream.recv`.
     def recvmsg(self, size, ancillary_size, flags): return self.stream.recv(size), [], 0, None
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: stream。
+# 结果：返回分支计算值（`bytes(data)`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`bytes(data)`); its implementation and call sites define the actual type.
+# 协作入口 / Collaborators: `bytearray`, `data.endswith`, `stream.recv`, `data.extend`.
+# 检查边界 / Checked boundaries: `piece`.
 def line(stream):
     data = bytearray()
     while not data.endswith(b'\n'):
@@ -108,14 +184,42 @@ def line(stream):
     return bytes(data)
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 协作入口 / Collaborators: `socket.socketpair`, `stream.settimeout`, `threading.Thread`, `runner.start`.
+# 检查边界 / Checked boundaries: `line(project) == b'# self-owned fixture\n'`; `line(project) == b'OK hello\n'`.
+# 设计思路：将主体计算与 finally 收尾分开，使返回和异常路径经过相同收尾步骤。
+# Design: Separate body computation from finally-based finalization so return and exception paths share the same finalization step.
 def transparent_protocol():
     local, project = socket.socketpair(); remote, agent = socket.socketpair()
     for stream in [project, agent]: stream.settimeout(5)
     errors = []; requests = []; checks = [0]
+    # 中文功能：核对模型证据或测试条件，按实现返回判定或拒绝不符合要求的输入。
+    # English: Check model evidence or test conditions, returning a decision or rejecting inputs as specified by the implementation.
+    # 输入 / Inputs: 无 / none。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `checks[0]`. Follow the actual model assignments / 以模型中的实际赋值为准。
     def check(): checks[0] += 1
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: 无 / none。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `ns['relay']`, `PairSocket`, `time.monotonic`, `errors.append`.
     def relay():
         try: ns['relay'](PairSocket(local), PairSocket(remote), time.monotonic() + 5, check)
         except BaseException as error: errors.append(error)
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: 无 / none。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `agent.sendall`, `requests.append`, `line`, `requests.extend`.
+    # 检查边界 / Checked boundaries: `requests[-1] == b'GETINFO version\n'`; `requests[-1] == b'PKSIGN\n'`.
     def host():
         try:
             agent.sendall(b'# self-owned fixture\nOK hello\n')
@@ -149,6 +253,14 @@ def transparent_protocol():
         for stream in [local, project, remote, agent]: stream.close()
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['os']`, `ns['socket'].SCM_RIGHTS`, `ns['socket'].MSG_CTRUNC`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `ns['Lines']`, `reader.pending.extend`, `reader.take`, `refused`.
+# 检查边界 / Checked boundaries: `actual == wire`; `emitted == []`.
 def frames_and_revocation():
     reader = ns['Lines'](None)
     for wire in [b'D \x00%25\n', b'OK\r\n', b'D ' + b'x' * 998 + b'\r\n']:
@@ -170,8 +282,26 @@ def frames_and_revocation():
 
 
 class Filesystem:
+    # 中文功能：初始化测试夹具实例并保存构造输入，供后续方法复用其状态。
+    # English: Initialize a test-fixture instance and retain constructor inputs for subsequent stateful methods.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `self.nodes`, `self.fds`, `self.next_fd`, `self.operations`. Follow the actual model assignments / 以模型中的实际赋值为准。
     def __init__(self): self.nodes = {}; self.fds = {}; self.next_fd = 70; self.operations = []
+    # 中文功能：构造本组边界验证所需的模型对象或输入材料。
+    # English: Construct model objects or input material required by this boundary-verification group.
+    # 输入 / Inputs: self, path, metadata, body = b''。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `self.nodes[path]`. Follow the actual model assignments / 以模型中的实际赋值为准。
     def node(self, path, metadata, body=b''): self.nodes[path] = {'meta': metadata, 'body': body}
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self, path, mode = None, gid = 0, **kwargs。
+    # 结果：返回分支计算值（`self.open(path, 0)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.open(path, 0)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `ns['require']`, `kwargs.get`, `self.mkdir`, `self.open`.
     def directory(self, path, mode=None, gid=0, **kwargs):
         if path not in self.nodes:
             ns['require'](kwargs.get('create', False), 'DIRECTORY_ABSENT')
@@ -180,47 +310,152 @@ class Filesystem:
         ns['require'](node['type'] == stat.S_IFDIR and node['uid'] == 0 and node['gid'] == gid and
             (mode is None or node['mode'] == mode), 'DIRECTORY_OWNER')
         return self.open(path, 0)
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, path, mode, dir_fd = None。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 失败 / Failure: `FileExistsError(path)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `FileExistsError`, `path.rsplit`, `self.operations.append`, `self.node`.
+    # 检查边界 / Checked boundaries: `path.rsplit('/', 1)[0] in self.nodes`.
     def mkdir(self, path, mode, dir_fd=None):
         if dir_fd is not None: path = self.fds[dir_fd][0] + '/' + path
         if path in self.nodes: raise FileExistsError(path)
         assert path.rsplit('/', 1)[0] in self.nodes
         self.operations.append(('mkdir', path)); self.node(path, meta(1000 + len(self.nodes), mode=mode))
+    # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+    # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+    # 输入 / Inputs: self, path, flags, mode = 0, dir_fd = None。
+    # 结果：返回分支计算值（`self.next_fd`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.next_fd`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `self.next_fd`, `self.fds[self.next_fd]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 失败 / Failure: `FileNotFoundError(path)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `FileNotFoundError`.
+    # 检查边界 / Checked boundaries: `self.nodes[path]['meta']['type'] != stat.S_IFLNK`.
     def open(self, path, flags, mode=0, dir_fd=None):
         if dir_fd is not None: path = self.fds[dir_fd][0] + '/' + path
         if path not in self.nodes: raise FileNotFoundError(path)
         assert self.nodes[path]['meta']['type'] != stat.S_IFLNK, 'production must never open a data symlink'
         self.next_fd += 1; self.fds[self.next_fd] = [path, 0]; return self.next_fd
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: self, fd。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.fds.pop`.
     def close(self, fd): self.fds.pop(fd)
+    # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+    # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+    # 输入 / Inputs: self, path。
+    # 结果：返回分支计算值（`types.SimpleNamespace(st_dev=int(value['device']), st_ino=int(value['inode']), st_uid=value['uid'], …`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`types.SimpleNamespace(st_dev=int(value['device']), st_ino=int(value['inode']), st_uid=value['uid'], …`); its implementation and call sites define the actual type.
+    # 失败 / Failure: `FileNotFoundError(path)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `FileNotFoundError`, `types.SimpleNamespace`, `int`, `len`.
     def object(self, path):
         if path not in self.nodes: raise FileNotFoundError(path)
         value = self.nodes[path]['meta']
         return types.SimpleNamespace(st_dev=int(value['device']), st_ino=int(value['inode']), st_uid=value['uid'],
             st_gid=value['gid'], st_mode=value['type'] | value['mode'], st_nlink=1, st_size=len(self.nodes[path]['body']))
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: self, fd。
+    # 结果：返回分支计算值（`self.object(self.fds[fd][0])`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.object(self.fds[fd][0])`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `self.object`.
     def fstat(self, fd): return self.object(self.fds[fd][0])
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: self, path, dir_fd = None, follow_symlinks = False。
+    # 结果：返回分支计算值（`self.object(path)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.object(path)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `self.object`.
+    # 检查边界 / Checked boundaries: `follow_symlinks is False`.
     def stat(self, path, dir_fd=None, follow_symlinks=False):
         assert follow_symlinks is False
         if dir_fd is not None: path = self.fds[dir_fd][0] + '/' + path
         return self.object(path)
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self, fd。
+    # 结果：返回分支计算值（`[name[len(path) + 1:] for name in self.nodes if name.startswith(path + '/') and '/' not in name[len(…`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`[name[len(path) + 1:] for name in self.nodes if name.startswith(path + '/') and '/' not in name[len(…`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `isinstance`, `len`, `name.startswith`.
     def children(self, fd):
         path = self.fds[fd][0] if isinstance(fd, int) else fd
         return [name[len(path) + 1:] for name in self.nodes if name.startswith(path + '/') and '/' not in name[len(path) + 1:]]
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self, fd。
+    # 结果：返回分支计算值（`Entries()`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`Entries()`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `Entries`.
     def scandir(self, fd):
         class Entries:
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: inner。
+            # 结果：返回分支计算值（`(types.SimpleNamespace(name=name) for name in self.children(fd))`），实际类型由实现及使用处约定。
+            # Result: Return the branch-computed value (`(types.SimpleNamespace(name=name) for name in self.children(fd))`); its implementation and call sites define the actual type.
+            # 协作入口 / Collaborators: `types.SimpleNamespace`, `self.children`.
             def __enter__(inner): return (types.SimpleNamespace(name=name) for name in self.children(fd))
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: inner, *args。
+            # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+            # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
             def __exit__(inner, *args): pass
         return Entries()
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: self, fd, size。
+    # 结果：返回分支计算值（`value`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`value`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `self.fds[fd][1]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `len`.
     def read(self, fd, size):
         path, offset = self.fds[fd]; value = self.nodes[path]['body'][offset:offset + size]
         self.fds[fd][1] += len(value); return value
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, fd, uid, gid。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.operations.append`, `self.nodes[path]['meta'].update`.
     def fchown(self, fd, uid, gid):
         path = self.fds[fd][0]; self.operations.append(('freeze', path))
         self.nodes[path]['meta'].update(uid=uid, gid=gid)
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, fd, mode。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `self.nodes[self.fds[fd][0]]['meta']['mode']`. Follow the actual model assignments / 以模型中的实际赋值为准。
     def fchmod(self, fd, mode): self.nodes[self.fds[fd][0]]['meta']['mode'] = mode
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: self, name, dir_fd。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.operations.append`.
     def unlink(self, name, dir_fd):
         path = self.fds[dir_fd][0] + '/' + name; self.operations.append(('unlink', path)); del self.nodes[path]
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: self, name, dir_fd。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.children`, `self.operations.append`.
+    # 检查边界 / Checked boundaries: `not self.children(path)`.
     def rmdir(self, name, dir_fd):
         path = self.fds[dir_fd][0] + '/' + name; assert not self.children(path)
         self.operations.append(('rmdir', path)); del self.nodes[path]
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self。
+    # 结果：返回分支计算值（`value`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`value`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `value.path`, `value.listdir`, `value.fsync`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `types.SimpleNamespace`, `getattr`, `setattr`.
     def module(self):
         value = types.SimpleNamespace(**{name: getattr(os, name) for name in ['O_RDONLY', 'O_DIRECTORY', 'O_NOFOLLOW', 'O_CLOEXEC', 'O_NONBLOCK']})
         value.path = types.SimpleNamespace(lexists=lambda path: path in self.nodes)
@@ -229,6 +464,13 @@ class Filesystem:
         return value
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：返回分支计算值（`(ctx, value, fs, saved)`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`(ctx, value, fs, saved)`); its implementation and call sites define the actual type.
+# 状态影响 / State effects: `value['phase']`, `value['failure']`, `value['homeDirectory']`, `value['home']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `context`, `ns['initial_record']`, `Filesystem`, `ns['home_path'](ctx).rsplit`.
 def cleanup_fixture():
     ctx = context(); value = ns['initial_record'](ctx); value['phase'] = 'failed'; value['failure'] = 'OWN_FIXTURE'
     fs = Filesystem(); parent = ns['home_path'](ctx).rsplit('/', 1)[0]; home = ns['home_path'](ctx)
@@ -245,6 +487,13 @@ def cleanup_fixture():
     return ctx, value, fs, saved
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 协作入口 / Collaborators: `cleanup_fixture`, `copy.deepcopy`, `ns['clean_home']`, `ns['home_path'](ctx).rsplit`.
+# 检查边界 / Checked boundaries: `value['home'] == original and value['homeCleanup']['phase'] == 'removed'`; `value['homeCleanup']['frozenHome'] == {**original, 'uid': 0, 'gid': 0, 'mode': 448}`.
 def frozen_cleanup():
     ctx, value, fs, saved = cleanup_fixture(); original = copy.deepcopy(value['home'])
     ns['clean_home'](value)
@@ -256,8 +505,24 @@ def frozen_cleanup():
     assert fs.operations.index(('freeze', ns['home_path'](ctx))) < fs.operations.index(('unlink', ns['home_path'](ctx) + '/pubring.kbx'))
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['save_record']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('crash was not injected')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `cleanup_fixture`, `ns['clean_home']`, `AssertionError`, `copy.deepcopy`.
+# 检查边界 / Checked boundaries: `recovered['homeCleanup']['directories'][0]['phase'] == 'freeze-intent'`; `fs.nodes[ns['home_path'](ctx) + '/data']['meta']['uid'] == 0`.
 def freeze_crash_retry():
     ctx, value, fs, saved = cleanup_fixture(); durable = ns['save_record']
+    # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+    # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+    # 输入 / Inputs: record。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 失败 / Failure: `OSError('own simulated crash after fchown')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `OSError`, `durable`.
     def crash(record):
         if record['homeCleanup'] and record['homeCleanup']['directories'] and record['homeCleanup']['directories'][0]['phase'] == 'frozen':
             raise OSError('own simulated crash after fchown')
@@ -272,6 +537,14 @@ def freeze_crash_retry():
     assert recovered['homeCleanup']['phase'] == 'removed' and not fs.fds
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `fs.nodes[ns['home_path'](ctx) + '/data']['meta']['uid']`, `fs.nodes[ns['home_path'](ctx)]['meta']['inode']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `cleanup_fixture`, `ns['home_path']`, `refused`.
+# 检查边界 / Checked boundaries: `ns['home_path'](ctx) in fs.nodes and '/workspace/foreign' in fs.nodes and (not fs.fds)`; `not fs.operations and (not fs.fds)`.
 def foreign_cleanup():
     ctx, value, fs, saved = cleanup_fixture(); fs.nodes[ns['home_path'](ctx) + '/data']['meta']['uid'] = 0
     refused('HOME_DIRECTORY_OWNER', lambda: ns['clean_home'](value))
@@ -281,6 +554,14 @@ def foreign_cleanup():
     assert not fs.operations and not fs.fds
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['os'].open`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `ns['valid_data_name']`, `cleanup_fixture`, `ns['home_path']`, `fs.node`.
+# 检查边界 / Checked boundaries: `ns['valid_data_name'](name)`; `not ns['valid_data_name'](name)`.
 def backup_cleanup():
     for name in ['pubring.kbx~', 'backup~', '.#lk0x123.host.456', 'trustdb.gpg.lock']:
         assert ns['valid_data_name'](name)
@@ -307,6 +588,13 @@ def backup_cleanup():
     ctx, value, fs, saved = cleanup_fixture(); home = ns['home_path'](ctx)
     fs.node(home + '/backup~', meta(21, uid=20000, gid=20000))
     original_open = ns['os'].open
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: name, flags, dir_fd = None。
+    # 结果：返回分支计算值（`original_open(name, flags, dir_fd=dir_fd)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`original_open(name, flags, dir_fd=dir_fd)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `fs.nodes[home + '/backup~']['meta']['inode']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `original_open`.
     def replaced_open(name, flags, dir_fd=None):
         if name == 'backup~': fs.nodes[home + '/backup~']['meta']['inode'] = '999'
         return original_open(name, flags, dir_fd=dir_fd)
@@ -317,10 +605,24 @@ def backup_cleanup():
     assert fs.nodes['/workspace/foreign']['body'] == b'must survive'
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：返回分支计算值（`(ctx, fs, durable, saved)`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`(ctx, fs, durable, saved)`); its implementation and call sites define the actual type.
+# 状态影响 / State effects: `ns['os']`, `ns['directory']`, `ns['boot']`, `ns['locked']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `context`, `Filesystem`, `enumerate`, `fs.node`.
 def lifecycle_fixture():
     ctx = context(); fs = Filesystem(); saved = []; durable = [None]
     for index, path in enumerate(['/run', ns['ROOT'], ns['RECORDS']]): fs.node(path, meta(100 + index, mode=0o755 if path == '/run' else 0o700))
     lock = ns['ROOT'] + '/resources.lock'; fs.node(lock, meta(110, mode=0o600, kind=stat.S_IFREG))
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: value。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `durable[0]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `ns['record_checked']`, `copy.deepcopy`, `saved.append`.
     def save(value):
         ns['record_checked'](value, ctx); durable[0] = copy.deepcopy(value); saved.append(copy.deepcopy(value))
     ns['os'] = fs.module(); ns['directory'] = fs.directory
@@ -330,6 +632,14 @@ def lifecycle_fixture():
     return ctx, fs, durable, saved
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `fs.nodes[ns['source_path'](ctx).rsplit('/', 1)[0]]['meta']['inode']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `lifecycle_fixture`, `ns['prepare']`, `copy.deepcopy`, `ns['source_path']`.
+# 检查边界 / Checked boundaries: `reply['phase'] == 'prepared' and reply['record']['scope'] is None and (reply['record']['broker'] is …`; `reply['sourcePath'] == ns['source_path'](ctx)`.
 def prepared_admission():
     ctx, fs, durable, saved = lifecycle_fixture()
     reply = ns['prepare'](ctx); original = copy.deepcopy(durable[0])
@@ -353,6 +663,13 @@ def prepared_admission():
     assert durable[0] == original and not fs.fds
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 协作入口 / Collaborators: `lifecycle_fixture`, `ns['cleanup']`, `ns['prepare']`, `copy.deepcopy`.
+# 检查边界 / Checked boundaries: `ns['cleanup'](ctx) == {'phase': 'closed', 'context': ctx, 'record': None}`; `not fs.operations and (not fs.fds)`.
 def absent_and_prepared_cleanup():
     ctx, fs, durable, saved = lifecycle_fixture()
     assert ns['cleanup'](ctx) == {'phase': 'closed', 'context': ctx, 'record': None}
@@ -379,6 +696,15 @@ def absent_and_prepared_cleanup():
     assert not fs.operations and not fs.fds
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `value['redirect']`, `value['home']`, `ns['save_record']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('post-rmdir crash was not injected')`; `AssertionError('removing journal failure was not injected')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `cleanup_fixture`, `ns['home_path']`, `ns['clean_home']`, `copy.deepcopy`.
+# 检查边界 / Checked boundaries: `value['homeCleanup']['phase'] == 'removed' and (not fs.fds)`; `'/workspace/foreign' in fs.nodes`.
 def partial_home_cleanup():
     ctx, value, fs, saved = cleanup_fixture(); home = ns['home_path'](ctx)
     del fs.nodes[home + '/S.gpg-agent']; value['redirect'] = None
@@ -396,6 +722,13 @@ def partial_home_cleanup():
     # A durable removing phase can be retried after unlink/rmdir, without
     # inventing a replacement inode for either the absent home or its parent.
     ctx, value, fs, saved = cleanup_fixture(); durable = ns['save_record']
+    # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+    # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+    # 输入 / Inputs: record。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 失败 / Failure: `OSError('own post-rmdir crash')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `OSError`, `durable`.
     def crash(record):
         if record['homeCleanup'] and record['homeCleanup']['phase'] == 'removed': raise OSError('own post-rmdir crash')
         durable(record)
@@ -408,6 +741,13 @@ def partial_home_cleanup():
     assert recovered['homeCleanup']['phase'] == 'removed' and not fs.fds
     # Journal write errors after obtaining the frozen top fd must close it.
     ctx, value, fs, saved = cleanup_fixture(); durable = ns['save_record']
+    # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+    # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+    # 输入 / Inputs: record。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 失败 / Failure: `OSError('own journal write failure')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `OSError`, `durable`.
     def fail_removing(record):
         if record['homeCleanup'] and record['homeCleanup']['phase'] == 'removing': raise OSError('own journal write failure')
         durable(record)
@@ -418,6 +758,15 @@ def partial_home_cleanup():
     assert not fs.fds and fs.nodes[ns['home_path'](ctx)]['meta']['uid'] == 0
 
 
+# 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+# English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `fs.nodes[child]['meta']['mode']`, `ns['os'].fchown`, `ns['os'].fchmod`, `value['homeCleanup']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('chown/chmod crash was not injected')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `cleanup_fixture`, `ns['home_path']`, `copy.deepcopy`, `ns['clean_home']`.
+# 检查边界 / Checked boundaries: `transition['original'] == original and transition['frozen'] == {**original, 'uid': 0, 'gid': 0, 'mod…`; `transition['phase'] == 'removed' and (not fs.fds)`.
 def directory_modes_and_chown_retry():
     for mode in [0, 0o755, 0o777, 0o1700, 0o2700, 0o4755]:
         ctx, value, fs, saved = cleanup_fixture(); child = ns['home_path'](ctx) + '/data'
@@ -431,9 +780,24 @@ def directory_modes_and_chown_retry():
             ctx, value, fs, saved = cleanup_fixture(); child = ns['home_path'](ctx) + '/data'
             fs.nodes[child]['meta']['mode'] = mode; durable = ns['save_record']
             real_chown, real_chmod = fs.fchown, fs.fchmod; interrupted = [False]
+            # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+            # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+            # 输入 / Inputs: fd, uid, gid。
+            # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+            # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+            # 状态影响 / State effects: `fs.nodes[child]['meta']['mode']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+            # 协作入口 / Collaborators: `real_chown`.
             def chown(fd, uid, gid):
                 real_chown(fd, uid, gid)
                 if fs.fds[fd][0] == child and cleared: fs.nodes[child]['meta']['mode'] &= ~0o6000
+            # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+            # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+            # 输入 / Inputs: fd, new_mode。
+            # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+            # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+            # 状态影响 / State effects: `interrupted[0]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+            # 失败 / Failure: `OSError('own simulated crash between chown and chmod')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+            # 协作入口 / Collaborators: `OSError`, `real_chmod`.
             def chmod(fd, new_mode):
                 if fs.fds[fd][0] == child and not interrupted[0]:
                     interrupted[0] = True; raise OSError('own simulated crash between chown and chmod')
@@ -454,6 +818,14 @@ def directory_modes_and_chown_retry():
     refused('HOME_DIRECTORY_REPLACED', lambda: ns['clean_home'](value)); assert not fs.fds
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `value['home']`, `value['homeCleanup']`, `ns['directory']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `cleanup_fixture`, `ns['home_path']`, `range`, `fs.node`.
+# 检查边界 / Checked boundaries: `ns['MAX_HOME_ENTRIES'] == 4096 and ns['MAX_HOME_DIRECTORIES'] == 128 and (ns['MAX_HOME_DEPTH'] == 16…`; `ns['MAX_RECORD_BYTES'] == 262144`.
 def cleanup_budgets():
     assert ns['MAX_HOME_ENTRIES'] == 4096 and ns['MAX_HOME_DIRECTORIES'] == 128 and ns['MAX_HOME_DEPTH'] == 16
     assert ns['MAX_RECORD_BYTES'] == 262144
@@ -479,12 +851,28 @@ def cleanup_budgets():
     refused('RECORD_BUDGET', lambda: production_save(value))
 
 
+# 中文功能：核对模型证据或测试条件，按实现返回判定或拒绝不符合要求的输入。
+# English: Check model evidence or test conditions, returning a decision or rejecting inputs as specified by the implementation.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['directory']`, `ns['os']`, `process.pid`, `process.start`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `Filesystem`, `context`, `ns['source_path'](ctx).rsplit`, `ns['source_path']`.
+# 检查边界 / Checked boundaries: `fs.nodes[ns['source_path'](ctx)]['meta']['mode'] == mode and (not fs.operations)`; `not fs.fds and all((stream.closed for stream in streams))`.
+# 设计思路：将主体计算与 finally 收尾分开，使返回和异常路径经过相同收尾步骤。
+# Design: Separate body computation from finally-based finalization so return and exception paths share the same finalization step.
 def source_and_birth_checks():
     fs = Filesystem(); ctx = context(); parent = ns['source_path'](ctx).rsplit('/', 1)[0]
     fs.node(parent, meta(1)); fs.node(ns['source_path'](ctx), meta(2, mode=0o755, kind=stat.S_IFSOCK))
     ns['directory'] = fs.directory; ns['os'] = fs.module()
     process = ns['Process'].__new__(ns['Process']); process.pid = 55; process.start = '123'; process.pidfd = 72; process.directory = 73
     kernel = {'ticks': '123', 'state': 'S', 'exited': False, 'uid': b'0 0 0 0', 'gid': b'0 0 0 0'}
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: name, limit。
+    # 结果：返回分支计算值（`('55 (own fixture) ' + kernel['state'] + ' ' + ' '.join(['0'] * 18) + ' ' + kernel['ticks']).encode(… / b'Uid:' + kernel['uid'] + b'\nGid:' + kernel['gid']`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`('55 (own fixture) ' + kernel['state'] + ' ' + ' '.join(['0'] * 18) + ' ' + kernel['ticks']).encode(… / b'Uid:' + kernel['uid'] + b'\nGid:' + kernel['gid']`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `('55 (own fixture) ' + kernel['state'] + ' ' + ' '.join(['0'] * 18) + ' ' + kernel['ticks']).encode`, `' '.join`.
     def read(name, limit):
         if name == 'stat': return ('55 (own fixture) ' + kernel['state'] + ' ' + ' '.join(['0'] * 18) + ' ' + kernel['ticks']).encode()
         return b'Uid:' + kernel['uid'] + b'\nGid:' + kernel['gid']
@@ -492,6 +880,13 @@ def source_and_birth_checks():
     ns['Process'] = lambda pid: process; process.close = lambda: None
     ns['credentials'] = lambda stream: (55, 0, 0)
     streams = []; original_connect = ns['Source'].connect_raw
+    # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+    # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+    # 输入 / Inputs: source。
+    # 结果：返回分支计算值（`stream`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`stream`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `stream.close`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `types.SimpleNamespace`, `streams.append`.
     def connect_raw(source):
         stream = types.SimpleNamespace(closed=False)
         stream.close = lambda: setattr(stream, 'closed', True); streams.append(stream); return stream
@@ -517,6 +912,14 @@ def source_and_birth_checks():
     finally: ns['Source'].connect_raw = original_connect
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `other['phase']`, `other['sourceDirectory']`, `other['source']`, `fs.nodes[filename]['body']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `lifecycle_fixture`, `context`, `ns['initial_record']`, `meta`.
+# 检查边界 / Checked boundaries: `not fs.fds`; `not fs.fds`.
 def source_exclusivity():
     ctx, fs, durable, saved = lifecycle_fixture(); other_ctx = context()
     other = ns['initial_record'](other_ctx); other['phase'] = 'prepared'; other['sourceDirectory'] = meta(150)
@@ -534,7 +937,22 @@ def source_exclusivity():
     refused('RECORD_INVALID', lambda: ns['source_exclusive'](ctx, fixed_source)); assert not fs.fds
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['source_peer_ended']`, `ns['source_listener_absent']`, `fs.nodes[source['path']]['meta'][field]`, `fs.nodes[parent]['meta']['inode']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `copy.deepcopy`, `cleanup`, `refused`.
+# 检查边界 / Checked boundaries: `source['path'] not in fs.nodes and fs.nodes[neighbor] == before`; `fs.operations == [('unlink', source['path'])] and (not fs.fds)`.
 def source_closed_listener_cleanup():
+    # 中文功能：构造本组边界验证所需的模型对象或输入材料。
+    # English: Construct model objects or input material required by this boundary-verification group.
+    # 输入 / Inputs: 无 / none。
+    # 结果：返回分支计算值（`(fs, source, parent, neighbor)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`(fs, source, parent, neighbor)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `ns['os']`, `ns['directory']`, `ns['time']`, `ns['source_peer_ended']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `context`, `ns['source_path']`, `path.rsplit`, `Filesystem`.
     def fixture():
         ctx = context(); path = ns['source_path'](ctx); parent = path.rsplit('/', 1)[0]
         fs = Filesystem(); fs.node(parent, meta(701)); fs.node(path, meta(702, mode=0o600, kind=stat.S_IFSOCK))
@@ -560,6 +978,12 @@ def source_closed_listener_cleanup():
     fs, source, parent, neighbor = fixture(); fs.nodes[parent]['meta']['inode'] = '999'
     refused('SOURCE_REPLACED', lambda: cleanup(source)); assert not fs.operations and not fs.fds
     fs, source, parent, neighbor = fixture(); calls = [0]
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: path。
+    # 结果：返回条件的布尔判定。
+    # Result: Return a boolean decision for the checked condition.
+    # 状态影响 / State effects: `calls[0]`, `fs.nodes[path]['meta']['inode']`. Follow the actual model assignments / 以模型中的实际赋值为准。
     def replaced_before_unlink(path):
         calls[0] += 1
         if calls[0] == 2: fs.nodes[path]['meta']['inode'] = '999'
@@ -571,8 +995,23 @@ def source_closed_listener_cleanup():
     refused('SOURCE_CLOSE_UNCONFIRMED', lambda: cleanup(source)); assert not fs.operations and not fs.fds
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['os']`, `module.pidfd_open`, `module.close`, `ns['select']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('Permission error became proof of process exit')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `Filesystem`, `fs.node`, `meta`, `status`.
+# 检查边界 / Checked boundaries: `ns['source_peer_ended'](peer) is False and closed == [pidfd] and (not fs.fds)`; `ns['source_peer_ended'](peer) is True and (not fs.fds)`.
 def source_peer_retirement():
     fs = Filesystem(); fs.node('/proc/55', meta(710, mode=0o755))
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: ticks = '123', state = 'S'。
+    # 结果：返回分支计算值（`('55 (own fixture) ' + state + ' ' + ' '.join(['0'] * 18) + ' ' + ticks).encode()`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`('55 (own fixture) ' + state + ' ' + ' '.join(['0'] * 18) + ' ' + ticks).encode()`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `('55 (own fixture) ' + state + ' ' + ' '.join(['0'] * 18) + ' ' + ticks).encode`, `' '.join`.
     def status(ticks='123', state='S'):
         return ('55 (own fixture) ' + state + ' ' + ' '.join(['0'] * 18) + ' ' + ticks).encode()
     fs.node('/proc/55/stat', meta(711, mode=0o444, kind=stat.S_IFREG), status())
@@ -599,10 +1038,24 @@ def source_peer_retirement():
     else: raise AssertionError('Permission error became proof of process exit')
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['os']`, `fs.nodes[proc]['body']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `Filesystem`, `fs.module`, `ns['source_path']`, `context`.
+# 检查边界 / Checked boundaries: `ns['source_listener_absent'](path) is True and (not fs.fds)`; `ns['source_listener_absent'](path) is False and (not fs.fds)`.
 def source_kernel_absence():
     fs = Filesystem(); module = fs.module(); ns['os'] = module
     header = b'Num RefCount Protocol Flags Type St Inode Path\n'
     path = ns['source_path'](context()); proc = '/proc/net/unix'
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: name, flags = '00010000'。
+    # 结果：返回分支计算值（`('00000001: 00000002 00000000 ' + flags + ' 0001 01 100 ' + name + '\n').encode()`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`('00000001: 00000002 00000000 ' + flags + ' 0001 01 100 ' + name + '\n').encode()`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `('00000001: 00000002 00000000 ' + flags + ' 0001 01 100 ' + name + '\n').encode`.
     def row(name, flags='00010000'):
         return ('00000001: 00000002 00000000 ' + flags + ' 0001 01 100 ' + name + '\n').encode()
     fs.node(proc, meta(720, mode=0o444, kind=stat.S_IFREG), header + row(path + '-neighbor'))

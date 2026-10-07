@@ -1,5 +1,6 @@
 /**
  * 模块职责：读取宿主卷容量并评估磁盘健康阈值，提供维护前可检查的容量证据。
+ * Module purpose: Reads host volume capacity and evaluates health thresholds to provide evidence before maintenance.
  */
 import { access, realpath, statfs } from 'node:fs/promises';
 import { constants } from 'node:fs';
@@ -66,6 +67,17 @@ if ($null -ne $volume) { $volumeView=@{health=[string]$volume.HealthStatus; oper
 @{volume=$volumeView; volumeError=$volumeError; disks=@($disks)} | ConvertTo-Json -Depth 8 -Compress
 `;
 
+/**
+ * 入口 / Entry: evaluateDiskHealth.
+ * 功能：把宿主容量、错误与性能样本按阈值归类为磁盘健康结果。
+ * Purpose: Classifies capacity/error/performance samples into disk-health results using configured thresholds.
+ * 设计：缺失样本保留未知或检查失败，而不是用零值证明健康；结果仅评价提供的实际证据。
+ * Design: Missing samples remain unknown/failing instead of treating zero as healthy; conclusions use supplied measured evidence.
+ * 输入 / Inputs: input: unknown; capacity: { totalBytes: number; availableBytes: number }; thresholdsInput: unknown
+ * 输出 / Returns: `{ ...observation, capacity: { ...capacity, freePercent }, thresholds, findings, status: findings.some((item) => item.severity…`.
+ * 副作用 / Effects: `findings.push`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function evaluateDiskHealth(
   input: unknown,
   capacity: { totalBytes: number; availableBytes: number },
@@ -82,6 +94,18 @@ export function evaluateDiskHealth(
     capacity.availableBytes < thresholds.minimumFreeGiB * 1024 ** 3
   )
     findings.push({ severity: 'warning', message: '数据卷可用空间低于设置阈值' });
+  /**
+   * 入口 / Entry: evaluateDiskHealth.checkStatus.
+   * 功能：在读取宿主卷容量并评估磁盘健康阈值中，核对调用资格、输入或资源归属；本入口产生 `void` 供上层消费（`host-disk-health.ts`）。
+   * Purpose: Checks admission, input or resource ownership in `host-disk-health.ts`; this entry produces `void` for its caller. Module context: Reads host volume capacity and evaluates health thresholds to provide evidence before maintenance.
+   * 处理：通过 `findings.push` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `findings.push`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `value === 'Healthy'`.
+   * 输入 / Inputs: value: string; label: string; disk: number optional
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `findings.push`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const checkStatus = (value: string, label: string, disk?: number) => {
     if (value === 'Healthy') return;
     findings.push({
@@ -151,6 +175,17 @@ export function evaluateDiskHealth(
   };
 }
 
+/**
+ * 入口 / Entry: hostDiskHealth.
+ * 功能：在读取宿主卷容量并评估磁盘健康阈值中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ checkedAt: new Date().toISOString(), directory, provider: 'Windows Storage', ...evaluateDiskHealth( observation, { totalByt…` 供上层消费（`host-disk-health.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `host-disk-health.ts`; this entry produces `{ checkedAt: new Date().toISOString(), directory, provider: 'Windows Storage', ...evaluateDiskHealth( observation, { totalByt…` for its caller. Module context: Reads host volume capacity and evaluates health thresholds to provide evidence before maintenance.
+ * 处理：通过 `diskHealthThresholds.parse`, `realpath`, `signal.throwIfAborted`, `access` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `diskHealthThresholds.parse`, `realpath`, `signal.throwIfAborted`, `access`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: input: unknown; signal: AbortSignal optional
+ * 输出 / Returns: `{ checkedAt: new Date().toISOString(), directory, provider: 'Windows Storage', ...evaluateDiskHealth( observation, { totalByt…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export async function hostDiskHealth(input: unknown, signal?: AbortSignal) {
   const thresholds = diskHealthThresholds.parse(input),
     directory = await realpath(DATA);

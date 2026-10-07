@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - disk reports distinguish explicit zero counters from missing, partial and unmapped evidence
- * - disk reports flag actual capacity, wear, temperature and lifetime errors without inventing current failures
- * - Windows probe keeps shell syntax in stdin data and aborts a running query
+ * 模块职责：回归验证模块，围绕 `host-disk-health` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `host-disk-health`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: disk reports distinguish explicit zero counters from missing, partial and unmapped evidence; disk reports flag actual capacity, wear, temperature and lifetime errors without inventing current failures.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,6 +32,16 @@ const observation = {
   ],
 };
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: disk reports distinguish explicit zero counters from missing, partial and unmapped evidence
+ * 协作入口 / Collaborators: `assert.equal`, `evaluateDiskHealth`, `assert.ok`, `report.findings.some`.
+ * 检查边界 / Checked boundaries: `assert.equal(evaluateDiskHealth(observation, capacity, {}).status, 'healthy')`; `assert.equal(report.status, 'unknown')`.
+ */
 test('disk reports distinguish explicit zero counters from missing, partial and unmapped evidence', () => {
   assert.equal(evaluateDiskHealth(observation, capacity, {}).status, 'healthy');
   for (const change of [
@@ -48,6 +59,17 @@ test('disk reports distinguish explicit zero counters from missing, partial and 
   assert.throws(() => evaluateDiskHealth(observation, capacity, { arbitrary: true }));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: disk reports flag actual capacity, wear, temperature and lifetime errors without inventing current failures
+ * 状态影响 / State effects: `data.disks[0].health`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `structuredClone`, `Object.assign`, `evaluateDiskHealth`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.status, 'warning')`; `assert.equal(result.findings.length, 4)`.
+ */
 test('disk reports flag actual capacity, wear, temperature and lifetime errors without inventing current failures', () => {
   const data = structuredClone(observation);
   Object.assign(data.disks[0].counters, { temperatureC: 71, wearPercent: 91, readErrorsUncorrected: 5 });
@@ -59,6 +81,16 @@ test('disk reports flag actual capacity, wear, temperature and lifetime errors w
   assert.equal(evaluateDiskHealth(data, capacity, {}).status, 'critical');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Windows probe keeps shell syntax in stdin data and aborts a running query
+ * 协作入口 / Collaborators: `windowsProbe`, `assert.deepEqual`, `abort.abort`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(result, { value })`; `assert.rejects(request, /cancelled Windows probe/)`.
+ */
 test(
   'Windows probe keeps shell syntax in stdin data and aborts a running query',
   { skip: process.platform !== 'win32' },

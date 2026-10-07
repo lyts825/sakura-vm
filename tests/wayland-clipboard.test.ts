@@ -1,12 +1,25 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - Wayland wire and content rules use real pinned protocol definitions
+ * 模块职责：回归验证模块，围绕 `wayland-clipboard` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `wayland-clipboard`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: Wayland wire and content rules use real pinned protocol definitions.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Wayland wire and content rules use real pinned protocol definitions
+ * 协作入口 / Collaborators: `spawnSync`, `resolve`, `assert.ifError`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.ifError(result.error)`; `assert.equal(result.status, 0, result.stdout + result.stderr)`.
+ */
 test('Wayland wire and content rules use real pinned protocol definitions', () => {
   const python = process.env.SAKURA_TEST_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
   const result = spawnSync(python, [resolve('tests/wayland-proxy.test.py')], {

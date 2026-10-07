@@ -1,4 +1,9 @@
-/** 烟雾验收：验证Win32/OLE/WinRT 及常规控件、托管剪贴板接口的真实策略覆盖。 */
+/**
+ * 模块职责：验证原生、OLE、控件和托管界面的复制剪切、策略热切换与控件重建，保留文档和选区边界。
+ * Module: Verify native/OLE/control/managed copy-cut paths, policy hot changes and control recreation while checking document and selection boundaries.
+ * 设计思路：编译并驱动自有夹具，在私有 station、独立状态文件与精确出生身份范围内检查实际回执；本脚本会产生临时进程/资产，执行平台及编译器要求由入口校验定义。
+ * Design: Compile/drive owned fixtures and check actual receipts within private stations, separate state files and exact process-birth identities. This script creates temporary processes/assets; entry checks define platform/compiler requirements.
+ */
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -231,6 +236,16 @@ await writeFile(
 );
 console.log('Owned ordinary clipboard interfaces proof:', root, 'native build:', manifest.build);
 
+/**
+ * 中文功能：协调本脚本的真实 Windows 创建或附着阶段，返回下述回执供身份与策略断言核对。
+ * English: Coordinate this script's real Windows creation/attachment stage, returning the receipt below for identity/policy assertions.
+ * 输入 / Inputs: station; managed。
+ * 结果：返回分支计算值（`fixture`），以 Promise 交付。
+ * Result: Return the branch-computed value (`fixture`) through a Promise.
+ * 状态影响 / State effects: `child`, `fixture.ready`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `randomUUID`, `createServer`, `spawn`, `child.stderr.on`.
+ * 检查边界 / Checked boundaries: `assert.equal(fixture.ready.privateStation, true)`; `assert.equal(fixture.ready.jobBound, true)`.
+ */
 async function launch(station, managed) {
   const pipe = '\\\\.\\pipe\\SakuraClipboardInterfaces.' + randomUUID();
   let socket,
@@ -240,7 +255,16 @@ async function launch(station, managed) {
     stderr = '';
   const queued = [],
     waiting = [];
-  const server = createServer((connection) => {
+  const server = createServer(/**
+   * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+   * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+   * 输入 / Inputs: connection。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `socket`, `lines`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `connection.destroy`, `createInterface`, `lines.on`, `socket.on`.
+   */
+  (connection) => {
     if (socket) {
       connection.destroy();
       return;
@@ -278,18 +302,50 @@ async function launch(station, managed) {
     closed = true;
     for (const item of waiting.splice(0)) item.reject(new Error(`Owned fixture exited ${code}: ${stderr}`));
   });
+  /**
+   * 中文功能：优先取已排队回执，否则登记等待者；关闭或超时通过本分支的拒绝路径结束等待。
+   * English: Consume a queued receipt first or register a waiter; the implemented closure/timeout rejection path ends pending waits.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`queued.length ? Promise.resolve(queued.shift()) : closed ? Promise.reject(new Er…`）。
+   * Result: Return the branch-computed value (`queued.length ? Promise.resolve(queued.shift()) : closed ? Promise.reject(new Er…`).
+   * 协作入口 / Collaborators: `Promise.resolve`, `queued.shift`, `Promise.reject`.
+   */
   const next = () =>
     queued.length
       ? Promise.resolve(queued.shift())
       : closed
         ? Promise.reject(new Error(stderr || 'Owned fixture closed'))
-        : new Promise((resolve, reject) => {
+        : new Promise(/**
+         * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+         * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+         * 输入 / Inputs: resolve; reject。
+         * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+         * Result: No explicit result value; callers observe completion, state changes or an exception.
+         * 协作入口 / Collaborators: `setTimeout`, `waiting.push`.
+         */
+        (resolve, reject) => {
             const timer = setTimeout(() => reject(new Error('Owned fixture response timeout')), 30_000);
             waiting.push({
+              /**
+               * 中文功能：清除本等待者的超时定时器并完成其成功结果。
+               * English: Clear this waiter's timeout and settle its successful result.
+               * 输入 / Inputs: value。
+               * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+               * Result: No explicit result value; callers observe completion, state changes or an exception.
+               * 协作入口 / Collaborators: `clearTimeout`, `resolve`.
+               */
               resolve: (value) => {
                 clearTimeout(timer);
                 resolve(value);
               },
+              /**
+               * 中文功能：清除本等待者的超时定时器并交付失败原因。
+               * English: Clear this waiter's timeout and deliver its rejection reason.
+               * 输入 / Inputs: error。
+               * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+               * Result: No explicit result value; callers observe completion, state changes or an exception.
+               * 协作入口 / Collaborators: `clearTimeout`, `reject`.
+               */
               reject: (error) => {
                 clearTimeout(timer);
                 reject(error);
@@ -299,10 +355,26 @@ async function launch(station, managed) {
   const fixture = {
     child,
     image: managed?.executable || executable,
+    /**
+     * 中文功能：向夹具发送操作与可选正文，再等待与本命令对应的下一条回执。
+     * English: Send an operation and optional body to the fixture, then await the next receipt for this command.
+     * 输入 / Inputs: action; text。
+     * 结果：返回分支计算值（`next()`），以 Promise 交付。
+     * Result: Return the branch-computed value (`next()`) through a Promise.
+     * 协作入口 / Collaborators: `socket.write`, `next`.
+     */
     request: async (action, text) => {
       socket.write(action + (text === undefined ? '' : '\t' + text) + '\n');
       return next();
     },
+    /**
+     * 中文功能：关闭本夹具拥有的进程、流或管道；具体等待期限和强制终止条件以本函数分支为准。
+     * English: Close processes, streams or pipes owned by this fixture; its branches define wait deadlines and forced-termination conditions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `socket?.end`, `lines?.close`, `socket?.destroy`.
+     */
     close: async () => {
       socket?.end();
       if (!closed)
@@ -331,6 +403,15 @@ async function launch(station, managed) {
   if (station) assert.equal(fixture.ready.station, station);
   return fixture;
 }
+/**
+ * 中文功能：执行固定原生控制器命令，收集其输出并解析 JSON 状态供断言使用。
+ * English: Execute a fixed native-controller command, collect output and parse JSON state for assertions.
+ * 输入 / Inputs: args。
+ * 结果：返回分支计算值（`JSON.parse((await run(controller, args, { windowsHide: true, timeout: 30_000 }))…`），以 Promise 交付。
+ * Result: Return the branch-computed value (`JSON.parse((await run(controller, args, { windowsHide: true, timeout: 30_000 }))…`) through a Promise.
+ * 失败 / Failure: `new Error(error.stdout ? JSON.parse(error.stdout).error : error.message)`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `JSON.parse`, `run`.
+ */
 async function agent(args) {
   try {
     return JSON.parse((await run(controller, args, { windowsHide: true, timeout: 30_000 })).stdout);
@@ -338,6 +419,15 @@ async function agent(args) {
     throw new Error(error.stdout ? JSON.parse(error.stdout).error : error.message);
   }
 }
+/**
+ * 中文功能：向指定原进程应用本用例的方向、大小和启用策略，核对操作回执与实际状态。
+ * English: Apply this case's direction, size and enablement policy to the specified original process and check receipts/state.
+ * 输入 / Inputs: fixture; flags; maximum = 1048576; active = true。
+ * 结果：返回分支计算值（`state`），以 Promise 交付。
+ * Result: Return the branch-computed value (`state`) through a Promise.
+ * 协作入口 / Collaborators: `agent`, `String`, `assert.equal`, `report.snapshots.push`.
+ * 检查边界 / Checked boundaries: `assert.equal(state.ready, true)`; `assert.equal(state.active, active)`.
+ */
 async function apply(fixture, flags, maximum = 1048576, active = true) {
   const state = await agent([
     'apply',
@@ -355,6 +445,15 @@ async function apply(fixture, flags, maximum = 1048576, active = true) {
   report.snapshots.push({ fixture: fixture.ready, rule: { flags, maximum, active }, state });
   return state;
 }
+/**
+ * 中文功能：检查本轮真实原生回执和状态，以下断言摘录给出本函数具体核对的边界。
+ * English: Check real native receipts/state from this run; assertion excerpts below identify the boundaries checked by this function.
+ * 输入 / Inputs: fixture; phase。
+ * 结果：返回分支计算值（`state`），以 Promise 交付。
+ * Result: Return the branch-computed value (`state`) through a Promise.
+ * 协作入口 / Collaborators: `agent`, `String`, `assert.equal`, `report.snapshots.push`.
+ * 检查边界 / Checked boundaries: `assert.equal(state.ready, true)`.
+ */
 async function snapshot(fixture, phase) {
   const state = await agent(['status', owner, String(fixture.ready.pid), fixture.ready.created]);
   assert.equal(state.ready, true);
@@ -364,6 +463,14 @@ async function snapshot(fixture, phase) {
 const plain = 'owned interfaces ordinary text 中文',
   secret = 'password=owned-interfaces-secret-123456789';
 const overflow = '中'.repeat(600);
+/**
+ * 中文功能：比较实际与预期结果，并将当前界面情景及额外证据关联到断言。
+ * English: Compare actual and expected results and attach current interface-case context and extra evidence to the assertion.
+ * 输入 / Inputs: label; observed; expected; detail。
+ * 结果：返回分支计算值（`pass`）。
+ * Result: Return the branch-computed value (`pass`).
+ * 协作入口 / Collaborators: `report.tests.push`, `report.failures.push`, `console.error`, `console.log`.
+ */
 function check(label, observed, expected, detail) {
   const pass = observed === expected;
   report.tests.push({ label, pass, observed, expected, ...detail });
@@ -373,16 +480,42 @@ function check(label, observed, expected, detail) {
   } else console.log('passed:', label);
   return pass;
 }
+/**
+ * 中文功能：断言被拒绝的传输没有交付预期内容，记录界面情景的失败边界。
+ * English: Assert that a rejected transfer did not deliver the expected content, recording the interface-case failure boundary.
+ * 输入 / Inputs: label; observed; forbidden; detail。
+ * 结果：返回分支计算值（`pass`）。
+ * Result: Return the branch-computed value (`pass`).
+ * 协作入口 / Collaborators: `check`, `report.leaks.push`.
+ */
 function blockedTransfer(label, observed, forbidden, detail) {
   const pass = check(label, observed === forbidden, false, { observedText: observed, ...detail });
   if (!pass) report.leaks.push(label);
   return pass;
 }
+/**
+ * 中文功能：断言被拒绝后原剪贴板或文档内容仍保持预期值。
+ * English: Assert that clipboard or document content retains the expected original value after rejection.
+ * 输入 / Inputs: label; observed; expected; detail。
+ * 结果：返回分支计算值（`pass`）。
+ * Result: Return the branch-computed value (`pass`).
+ * 协作入口 / Collaborators: `check`, `report.mutations.push`.
+ */
 function preserved(label, observed, expected, detail) {
   const pass = check(label, observed, expected, detail);
   if (!pass) report.mutations.push(label);
   return pass;
 }
+/**
+ * 中文功能：逐项验证原生、控件或托管界面的普通复制粘贴、敏感文本、方向策略和大小限制。
+ * English: Exercise ordinary copy/paste, sensitive text, direction policy and size limits through native/control/managed interfaces.
+ * 输入 / Inputs: target; peer; name。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `name.endsWith`, `'a'.repeat`, `'中'.repeat`, `apply`.
+ * 设计思路：先建立可正常传输的基线，再切换拒绝条件并核对目标内容与错误；每种界面使用同一策略切换入口，使差异来自实际 API 行为。
+ * Design: Establish a working transfer baseline, then switch refusal conditions and check target content/errors. Interfaces share the policy-change entry so differences come from actual API behavior.
+ */
 async function ordinarySuite(target, peer, name) {
   const plain = name.endsWith('ansi')
     ? 'owned interfaces ordinary ANSI text'
@@ -473,6 +606,16 @@ async function ordinarySuite(target, peer, name) {
   });
   await snapshot(target, name + ' UTF-8 copy limit');
 }
+/**
+ * 中文功能：验证键盘触发复制剪切与控件生命周期中的策略保持，核对重建及热切换后的内容。
+ * English: Verify keyboard-triggered copy/cut and policy retention through control lifecycle changes, checking content after recreation and hot changes.
+ * 输入 / Inputs: target; peer; name。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `name.endsWith`, `check`, `target.request`, `apply`.
+ * 设计思路：通过夹具真实界面操作观察策略，而非直接调用底层钩子；同时保留原内容和操作结果作为拒绝及重建证据。
+ * Design: Observe policy through actual fixture UI operations rather than direct low-level hook calls, retaining original content and operation results as refusal/recreation evidence.
+ */
 async function keyboardAndLifecycleSuite(target, peer, name) {
   const plain = name.endsWith('ansi')
     ? 'owned interfaces ordinary ANSI text'
@@ -552,6 +695,16 @@ async function keyboardAndLifecycleSuite(target, peer, name) {
     check(name + ' hot reenabled recreated copy ' + index, (await peer.request('read')).text, plain);
   }
 }
+/**
+ * 中文功能：验证 OLE 传输预检查能够在策略拒绝时阻止实际交付，同时保留允许方向的正常结果。
+ * English: Verify OLE transfer preflight prevents actual delivery under refusal policy while preserving normal results for allowed directions.
+ * 输入 / Inputs: target; peer。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `apply`, `peer.request`, `target.request`, `check`.
+ * 设计思路：将 OLE 返回码与最终剪贴板内容一起核对，避免只根据 COM 调用完成就判断策略成功。
+ * Design: Check OLE status together with final clipboard contents instead of inferring policy success from COM call completion alone.
+ */
 async function olePreflightSuite(target, peer) {
   for (const mode of ['unavailable', 'noenum', 'binaryonly']) {
     await apply(target, 3);
@@ -592,6 +745,16 @@ async function olePreflightSuite(target, peer) {
     false,
   );
 }
+/**
+ * 中文功能：验证受控界面内部嵌套创建后的策略状态与内容传输边界。
+ * English: Verify policy state and content-transfer boundaries after nested creation inside a controlled interface.
+ * 输入 / Inputs: target; peer。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `apply`, `peer.request`, `target.request`, `check`.
+ * 设计思路：在创建完成后重新观察策略和传输结果，避免仅凭父控件已受限认定新对象自动继承。
+ * Design: Reobserve policy and transfer results after creation instead of assuming a restricted parent implies inheritance by new objects.
+ */
 async function nestedCreationSuite(target, peer) {
   const text = 'owned nested ordinary ANSI text';
   for (const parent of ['a', 'w'])
@@ -613,14 +776,41 @@ async function nestedCreationSuite(target, peer) {
       await snapshot(target, name + ' creation return boundary');
     }
 }
+/**
+ * 中文功能：验证隐藏托管控件的选区复制/剪切、敏感和字节预算拒绝、热启用与反复重建。
+ * English: Verify hidden managed controls through selected copy/cut, sensitive/byte-budget refusal, hot enablement and repeated recreation.
+ * 输入 / Inputs: target; peer; name。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 状态影响 / State effects: `before`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `apply`, `prepare`, `check`, `target.request`.
+ * 设计思路：用完整文档、选区起点/长度与剪贴板原值同时检查拒绝的无损性；重建要求旧 HWND 已销毁、新控件仍有策略，显式禁用才允许普通剪切修改文档。
+ * Design: Check complete document, selection start/length and original clipboard together to establish non-destructive refusal. Recreation requires destroyed old HWNDs and policy on new controls; only explicit disabling permits ordinary cut to modify the document.
+ */
 async function managedLifecycleSuite(target, peer, name) {
   const family = `${target.ready.modern ? 'modern ' : 'Framework '}${name}`;
   const selected = 'owned selected 中文';
   const prefix = 'prefix ',
     suffix = ' suffix password=hidden-document-only';
   const document = prefix + selected + suffix;
+  /**
+   * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+   * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+   * 输入 / Inputs: value; offset; count。
+   * 结果：返回分支计算值（`target.request(name + '-prepare-selection', `${offset}:${count}:${value}`)`）。
+   * Result: Return the branch-computed value (`target.request(name + '-prepare-selection', `${offset}:${count}:${value}`)`).
+   * 协作入口 / Collaborators: `target.request`.
+   */
   const prepare = (value, offset, count) =>
     target.request(name + '-prepare-selection', `${offset}:${count}:${value}`);
+  /**
+   * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+   * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+   * 输入 / Inputs: label; value; source; offset; count; selection。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `preserved`, `check`.
+   */
   const retains = (label, value, source, offset, count, selection) => {
     preserved(family + ' ' + label + ' source retained', value.text, source, { result: value });
     check(family + ' ' + label + ' selection start retained', value.selectionStart, offset);

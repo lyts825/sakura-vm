@@ -1,4 +1,5 @@
-/** 插件源码的 AST 边界检查，约束服务访问、跨插件依赖及只允许的公开能力入口。 */
+/** 插件源码的 AST 边界检查，约束服务访问、跨插件依赖及只允许的公开能力入口。
+ * Inspect runtime imports/loaders against plugin ownership rules and report cross-plugin or shared-scope violations. */
 import ts from 'typescript';
 import { posix } from 'node:path';
 import { staticString } from './network-boundaries.ts';
@@ -16,6 +17,8 @@ const hostAdapters = new Set([
   'server/vm-access.ts',
   'server/vm-transport.ts',
 ]);
+/** 按插件 owner 与入口规则检查 AST 依赖/loader，阻止跨插件实现或公共层接管插件资源。
+ * Check AST dependencies/loaders against plugin ownership/entry rules, excluding cross-plugin implementations or shared resource adoption. */
 export function pluginBoundaryErrors(file: string, source: ts.SourceFile): string[] {
   file = file.replaceAll('\\', '/');
   if (!file.startsWith('server/') && !file.startsWith('plugins/')) return [];
@@ -23,10 +26,14 @@ export function pluginBoundaryErrors(file: string, source: ts.SourceFile): strin
   const requireFactories = new Set(['createRequire']);
   const loaders = new Set(['require']);
   const moduleObjects = new Set(['module']);
+  /** 附带源文件与一基行号累计边界诊断，不中断遍历，以便一次报告全部违规。
+   * Accumulate boundary diagnostics with source path/one-based line without stopping traversal, reporting all violations together. */
   const report = (node: ts.Node, message: string) =>
     errors.push(
       `${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}: ${message}`,
     );
+  /** 规范相对导入并核对调用方和目标插件 owner，报告不受允许的跨边界依赖。
+   * Normalize relative imports and compare source/target owners, reporting forbidden cross-boundary dependencies. */
   const dependency = (node: ts.Node, specifier: string | undefined, names?: string[]) => {
     if (!specifier) return;
     specifier = specifier.replaceAll('\\', '/');
@@ -47,9 +54,13 @@ export function pluginBoundaryErrors(file: string, source: ts.SourceFile): strin
       (!names || names.includes('registerLiveMigrationCompletionPort')))
       report(node, 'Plugin entries may not import host migration proof registration');
   };
+  /** 识别动态模块加载的 require 来源，防止别名加载器绕过插件规则。
+   * Identify require origins in dynamic loading so aliases cannot bypass plugin rules. */
   const moduleRequire = (expression: ts.Expression) => ts.isPropertyAccessExpression(expression) &&
     expression.name.text === 'require' && ts.isIdentifier(expression.expression) &&
     moduleObjects.has(expression.expression.text);
+  /** 预收集模块加载别名与绑定，供 AST 主遍历核实实际入口。
+   * Precollect loader aliases/bindings for the main AST pass to verify actual entry points. */
   function collectLoaders(node: ts.Node) {
     if (ts.isImportDeclaration(node) && ['module', 'node:module'].includes(staticString(node.moduleSpecifier) || '')) {
       const clause = node.importClause, bindings = clause?.namedBindings;
@@ -82,6 +93,8 @@ export function pluginBoundaryErrors(file: string, source: ts.SourceFile): strin
     count = requireFactories.size + loaders.size + moduleObjects.size;
     collectLoaders(source);
   }
+  /** 遍历静态与动态加载及 owner 相关访问，统一检查插件边界并继续全部子节点。
+   * Traverse static/dynamic loads and owner-related access, applying plugin rules to all children. */
   function visit(node: ts.Node) {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       const path = staticString(node.moduleSpecifier);

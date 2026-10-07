@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目服务进程的 UID 作用域、启动依赖与停止清理。 */
+/** 烟雾验收：验证项目服务进程的 UID 作用域、启动依赖与停止清理。
+ * Smoke acceptance for project service UID scopes, startup dependencies and stopped cleanup. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -41,24 +42,36 @@ assert.equal(vm.distro, distro);
 assert.equal(machines.state(vm.id), 'stopped');
 const workspaces = new Workspaces(machines);
 const nativeExec = machines.exec.bind(machines), nativeInput = machines.execInput.bind(machines);
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string, timeout = 30000) => {
   const result = await nativeExec(vm.id, command, timeout);
   assert.equal(result.code, 0, result.stderr + result.stdout);
   return result.stdout.trim();
 };
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const py = (source: string) => '/usr/bin/python3 -I -S -c ' + quote(source);
+/** 从固定请求标记行解码原生控制 JSON，未包含标记返回 null；用于精确故障阶段识别，正文不重新执行。
+ * Decode native-control JSON from its fixed request-marker line, returning null if absent; identify exact fault phases without reexecuting bodies. */
 const request = (command: string) => {
   const line = command.split('\n').find(value => value.startsWith('# SAKURA_PROJECT_SERVICE_REQUEST='));
   return line ? JSON.parse(Buffer.from(line.split('=')[1], 'base64').toString()) : null;
 };
+/** 暂时把原 live SSH 端口指向未监听端口，断言连接拒绝/超时，finally 恢复原端口以验证回复丢失后的恢复。
+ * Temporarily point the original live SSH port at an unlistened port, assert refusal/timeout and restore it in finally to exercise recovery after lost replies. */
 const failConnection = async (command: string) => {
   const live = machines.live.get(vm.id)!, saved = live.sshPort;
   live.sshPort = await freePort();
   try { await assert.rejects(nativeExec(vm.id, command, 350), /ECONNREFUSED|refused|timed out/); }
   finally { live.sshPort = saved; }
 };
+/** 检查 PID 非僵尸/死亡，可选 ticks 必须匹配，缺失返回 false，防止重用 PID 伪造原后代。
+ * Check the PID is nonzombie/nondead, match optional birth ticks and return false on absence to avoid reused-PID evidence. */
 const pidAlive = async (pid: number, ticks?: string) =>
   (await run(py(`try:\n fields=open('/proc/${pid}/stat').read().rsplit(') ',1)[1].split()\n print(fields[0] not in ['Z','X']${ticks ? ` and fields[19]==${JSON.stringify(ticks)}` : ''})\nexcept FileNotFoundError: print(False)`))) === 'True';
+/** 有限次轮询自有应用的结果文件，出现后返回；期限内未发布则失败，避免使用上一阶段缺失结果。
+ * Poll the owned application result file for a bounded number of attempts, returning when published and failing on absence rather than using missing prior-stage evidence. */
 const waitFile = async (file: string) => {
   for (let attempt = 0; attempt < 120; ++attempt) {
     if ((await nativeExec(vm.id, 'test -f ' + quote(file), 5000)).code === 0) return;
@@ -70,6 +83,8 @@ const base = '/workspace/service-scope-smoke';
 const proof: any = { version: 1, vmId: vm.id, distro, fixture: root, sourceSha256: {}, cases: [] };
 for (const source of ['server/project-services.ts', 'server/project-service-scope.ts'])
   proof.sourceSha256[source] = createHash('sha256').update(await readFile(resolve(source))).digest('hex');
+/** 等待自有主进程及脱离组/会话子进程各自发布记录，返回精确出生身份数组供完整域清理核查。
+ * Await reports from the owned main/process-group/session-detached children and return exact birth-identity records for whole-domain cleanup verification. */
 const children = async (directory: string) => {
   const values: any[] = [];
   for (const name of ['main', 'setsid', 'doublefork']) {
@@ -79,6 +94,8 @@ const children = async (directory: string) => {
   }
   return values;
 };
+/** 生成忽略 SIGTERM 的服务及 setsid/双 fork 后代，发布精确出生与环境记录，供依赖失败/停止清理验证。
+ * Generate a SIGTERM-ignoring service/setsid/double-fork children publishing birth/environment records for dependency-failure/stop cleanup checks. */
 const app = (directory: string) => py(`import json,os,signal,time
 signal.signal(signal.SIGTERM,signal.SIG_IGN)
 def report(name):
@@ -97,6 +114,8 @@ if first==0:
  report('doublefork'); stay()
 os.waitpid(first,0)
 stay()`);
+/** 创建唯一私有服务目录，按可选依赖配置 db/api 与故意失败的 ready 条件，授权正式项目身份后保存配置。
+ * Create a unique private service directory with optional db/api dependency/failing readiness, authorize production project identity and save settings. */
 const projectFor = async (label: string, dependencies = false) => {
   const directory = base + '/' + label + '-' + randomUUID();
   await run('mkdir -p ' + quote(directory) + (dependencies ? ' ' + quote(directory + '/db') : ''));
@@ -113,6 +132,8 @@ const projectFor = async (label: string, dependencies = false) => {
   await identities.identity(vm.id, project);
   return { directory, project };
 };
+/** 逐个验证捕获的原子进程身份已经死亡，任何自有后代存活都会使整域清理验收失败。
+ * Verify each captured original process identity is dead; any surviving owned descendant fails whole-domain cleanup acceptance. */
 const verifyChildrenStopped = async (values: any[]) => {
   for (const child of values) assert.equal(await pidAlive(child.pid, child.startTicks), false, 'Owned child remained: ' + JSON.stringify(child));
 };
@@ -144,7 +165,8 @@ try {
       values.push(...await children(directory + '/db'));
       events.push('existing-dependency-' + dependency.record!.runId);
     }
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 服务 COMMIT 前核实完整 host pane/cgroup 票据且应用未执行，再按模式注入 prepare/commit/stop 确认丢失或取消；真实连接失败保留清理错误。
+ * Before service COMMIT prove complete host pane/cgroup receipts and absent application execution, then inject prepare/commit/stop ACK loss or cancellation by mode; real connection failures retain cleanup errors. */ async (id, command, timeout, signal, output, agent) => {
       const input = request(command);
       if (input?.op === 'stop') {
         ++stops;
@@ -176,7 +198,8 @@ try {
       if (input?.op === 'stop' && mode === 'stop-ack-lost' && stops === 1 && result.code === 0) throw new Error('owned stop acknowledgement lost');
       return result;
     }) as typeof machines.exec;
-    machines.execInput = (async (id, command, input, ...rest) => {
+    machines.execInput = (/** 服务 pane 真实 start 完成后按模式丢一次 stdin 回应，原正文与其他调用不变，检验未确认 pane 的精确回滚。
+ * Lose one stdin reply by mode only after real service-pane start, leaving original body/other calls unchanged to test exact rollback of an unacknowledged pane. */ async (id, command, input, ...rest) => {
       const result = await nativeInput(id, command, input, ...rest);
       if (request(command)?.op === 'start' && mode === 'pane-ack-lost' && result.code === 0)
         throw new Error('owned pane acknowledgement lost');
@@ -274,13 +297,15 @@ try {
     const { project, directory } = await projectFor('partial-host-' + partial);
     const scopes = new ProjectServiceScopes(machines, vm.id, project), controller = new AbortController();
     const initial = await scopes.status('api'), intent = scopes.intent(project.services![0], initial.bootId);
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 真实 prepare 成功后在指定部分事务模式中模拟调用方丢失；已形成的原生准备票据仍须被恢复与清理。
+ * Model caller loss after real prepare succeeds in the selected partial-transaction mode; the resulting original native preparation receipt still requires recovery/cleanup. */ async (id, command, timeout, signal, output, agent) => {
       const result = await nativeExec(id, command, timeout, signal, output, agent);
       const op = request(command)?.op;
       if (result.code === 0 && op === 'prepare' && partial === 'prepare') throw new Error('owned caller lost after ' + partial);
       return result;
     }) as typeof machines.exec;
-    machines.execInput = (async (id, command, input, ...rest) => {
+    machines.execInput = (/** 真实 pane start 成功后模拟调用方在 pane 阶段丢失，保留入场副作用并验证后续恢复能定位该原 pane。
+ * Model caller loss at pane stage only after real start succeeds, retaining admission side effects so recovery must locate that original pane. */ async (id, command, input, ...rest) => {
       const result = await nativeInput(id, command, input, ...rest);
       if (result.code === 0 && request(command)?.op === 'start' && partial === 'pane') throw new Error('owned caller lost after ' + partial);
       return result;
@@ -304,7 +329,8 @@ try {
     const { project, directory } = await projectFor('late-prepare-cancelled');
     const controller = new AbortController(), scopes = new ProjectServiceScopes(machines, vm.id, project);
     let deferred = '';
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 截住自有 prepare 命令并延后交付，其他 exec 透明转发；用于证明已失败事务的迟到 prepare 不能复活正文。
+ * Intercept/delay the owned prepare command while forwarding other exec transparently, proving late prepare delivery cannot revive a failed transaction’s body. */ async (id, command, timeout, signal, output, agent) => {
       if (request(command)?.op === 'prepare') { deferred = command; throw new Error('owned prepare delivery delayed'); }
       return nativeExec(id, command, timeout, signal, output, agent);
     }) as typeof machines.exec;
@@ -342,7 +368,8 @@ try {
     const values = await children(directory), record = (await scopes.status('api')).record!;
     const scope = '/sys/fs/cgroup/' + record.scopeName, marker = directory + '/replacement.json';
     let replaced = false;
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 真实 stop 成功后建立同名新 cgroup 和无关自有进程，再丢原回应；重试必须识别原 inode 消失并保护替代域，不能按名字杀新对象。
+ * After real stop succeeds create a same-name new cgroup/unrelated owned process and lose the old reply; retries must recognize original-inode disappearance and preserve replacement domains rather than kill by name. */ async (id, command, timeout, signal, output, agent) => {
       const result = await nativeExec(id, command, timeout, signal, output, agent);
       if (request(command)?.op === 'stop' && result.code === 0 && !replaced) {
         replaced = true;

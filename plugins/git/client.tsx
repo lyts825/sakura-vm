@@ -1,5 +1,8 @@
 /**
- * 模块职责：“Git 工作台”插件的Git 状态、差异、分支、远程与三方冲突解决工作台，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“Git 工作台”插件的Git 状态、差异、分支、远程与三方冲突解决工作台，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for Git status, branches and conflict resolution.
+ * 详细范围（中文）：公开入口包括 GitPanel, tabs；职责覆盖Git 状态、分支与冲突处理的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include GitPanel, tabs. The scope covers UI interaction and state presentation for Git status, branches and conflict resolution. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from '../../src/localization';
 import { GitBranch, RefreshCw } from 'lucide-react';
@@ -21,10 +24,24 @@ type GitMerge = Extract<GitResponse, { base: string }>;
 type GitChoices = Extract<GitResponse, { expectedWorktree: string }>;
 
 // 实例/项目变更通过 key 重挂载工作台，避免上一仓库的选择、冲突上下文或表单草稿进入新仓库。
+/**
+ * 中文：呈现Git 状态、分支与冲突处理的界面交互与状态呈现中的 GitPanel 界面，组合 GitWorkspacePanel，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the GitPanel surface for UI interaction and state presentation for Git status, branches and conflict resolution and composing GitWorkspacePanel. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：props：签名所示 FeatureProps 业务值
+ * English: Inputs: props: the FeatureProps domain value in the signature
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function GitPanel(props: FeatureProps) {
   return <GitWorkspacePanel key={`${props.vm.id}:${props.projectId || 'default'}`} {...props} />;
 }
 
+/**
+ * 中文：呈现Git 状态、分支与冲突处理的界面交互与状态呈现中的 GitWorkspacePanel 界面，订阅 /vms/{vm.id}/git、/vms/{vm.id}/git?path={encodeURIComponent(selection?.path || '')}&staged={selection?.staged ? 1 : 0}，组合 RefreshCw、GitBranch、ThreeWayMerge，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the GitWorkspacePanel surface for UI interaction and state presentation for Git status, branches and conflict resolution, subscribing to /vms/{vm.id}/git, /vms/{vm.id}/git?path={encodeURIComponent(selection?.path || '')}&staged={selection?.staged ? 1 : 0} and composing RefreshCw, GitBranch, ThreeWayMerge. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request: baseRequest, projectId } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力）、projectId（当前项目标识） 上下文字段
+ * English: Inputs: { vm, request: baseRequest, projectId } provides context fields vm (vm state), request (transport capability bound to identity/authority scope), projectId (current project identifier)
+ */
 function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps) {
   const request = useMemo(() => workspaceRequest(baseRequest, projectId), [baseRequest, projectId]);
   const remote = useRemote<GitView>(request, `/vms/${vm.id}/git`, vm.status === 'running');
@@ -43,7 +60,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
   const [merge, setMerge] = useState<GitMerge | null>(null);
   const [choiceContext, setChoiceContext] = useState<GitChoices | null>(null);
   const [loadedProject, setLoadedProject] = useState('');
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [remote.data, loadedProject] 变化时loadedProject 状态，selection 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data, loadedProject] change, loadedProject state, selection state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     const projectId = remote.data?.projectId || 'default';
     if (remote.data && projectId !== loadedProject) {
       setLoadedProject(projectId);
@@ -58,7 +75,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
   );
   const remoteNames = [...new Set(repository?.remotes?.map((item) => item.name) || [])];
   const namesKey = remoteNames.join('\0');
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [namesKey, repository?.upstream?.remote] 变化时selectedRemote 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [namesKey, repository?.upstream?.remote] change, selectedRemote state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setSelectedRemote((selected) =>
       remoteNames.includes(selected)
         ? selected
@@ -69,7 +86,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
             : remoteNames[0] || '',
     );
   }, [namesKey, repository?.upstream?.remote]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [ selectedRemote, repository?.branch, repository?.detached, repository?.upstream?.remote, repository?.upstream?.branch, ] 变化时targetBranch 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [ selectedRemote, repository?.branch, repository?.detached, repository?.upstream?.remote, repository?.upstream?.branch, ] change, targetBranch state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setTargetBranch(
       repository?.upstream?.remote === selectedRemote
         ? repository.upstream.branch
@@ -92,7 +109,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
       ? submittedJob
       : remote.data?.job;
   const busy = action.busy || job?.status === 'running';
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [job?.id, job?.status, diff.reload] 变化时触发所属资源重新读取，merge 状态，choiceContext 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [job?.id, job?.status, diff.reload] change, trigger rereading of the owned resource, merge state, choiceContext state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (job && job.status !== 'running') diff.reload();
     if (job?.status === 'done' && ['resolve', 'resolve-choice'].includes(job.action || '')) {
       setMerge(null);
@@ -103,8 +120,14 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
   const blocked =
     !!conflicts.length || !!repository?.operation || repository?.detached || !repository?.hasCommits;
   const hasRemote = remoteNames.includes(selectedRemote);
+  /**
+   * 中文：提交 POST /vms/{vm.id}/git，完成Git 状态、分支与冲突处理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/git for UI interaction and state presentation for Git status, branches and conflict resolution. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：value：待校验、转换或保存的输入值
+   * English: Inputs: value: input value to validate/transform/save
+   */
   const run = (value: unknown) =>
-    action.run(async (signal) => {
+    action.run(/** 中文：提交 POST /vms/{vm.id}/git，完成Git 状态、分支与冲突处理的界面交互与状态呈现的数据交互并更新submittedJob 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/git for UI interaction and state presentation for Git status, branches and conflict resolution and update submittedJob state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
       const accepted = await request<JobView>(`/vms/${vm.id}/git`, 'POST', value, signal);
       if (signal.aborted) return;
       setSubmittedJob(accepted);
@@ -202,7 +225,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                           <button
                             disabled={busy}
                             onClick={() =>
-                              void action.run(async (signal) => {
+                              void action.run(/** 中文：读取 GET /vms/{vm.id}/git?merge={encodeURIComponent(change.path)}，完成Git 状态、分支与冲突处理的界面交互与状态呈现的数据交互并更新merge 状态、choiceContext 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vm.id}/git?merge={encodeURIComponent(change.path)} for UI interaction and state presentation for Git status, branches and conflict resolution and update merge state, choiceContext state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：取消边界：执行前或关键异步步骤检查已取消信号，取消后不继续提交下一步工作 | English: Cancellation boundary: check aborted signals before execution/key asynchronous steps; canceled work must not submit the next step */ async (signal) => {
                                 const result = await request<GitMerge>(
                                   `/vms/${vm.id}/git?merge=${encodeURIComponent(change.path)}`,
                                   'GET',
@@ -219,7 +242,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                           </button>
                           <button
                             disabled={busy}
-                            onClick={() => void action.run(async (signal) => {
+                            onClick={() => void action.run(/** 中文：读取 GET /vms/{vm.id}/git?choices={encodeURIComponent(change.path)}，完成Git 状态、分支与冲突处理的界面交互与状态呈现的数据交互并更新choiceContext 状态、merge 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vm.id}/git?choices={encodeURIComponent(change.path)} for UI interaction and state presentation for Git status, branches and conflict resolution and update choiceContext state, merge state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：取消边界：执行前或关键异步步骤检查已取消信号，取消后不继续提交下一步工作 | English: Cancellation boundary: check aborted signals before execution/key asynchronous steps; canceled work must not submit the next step */ async (signal) => {
                               const result = await request<GitChoices>(
                                 `/vms/${vm.id}/git?choices=${encodeURIComponent(change.path)}`,
                                 'GET', undefined, signal,
@@ -529,7 +552,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                   className="secondary compact"
                   disabled={action.busy}
                   onClick={() =>
-                    void action.run(async (signal) => {
+                    void action.run(/** 中文：在Git 状态、分支与冲突处理的界面交互与状态呈现流程中触发所属资源重新读取；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In UI interaction and state presentation for Git status, branches and conflict resolution, trigger rereading of the owned resource. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                       await baseRequest(`/jobs/${job.id}/cancel`, 'POST', undefined, signal);
                       remote.reload();
                     })

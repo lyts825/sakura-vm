@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - terminal leases bind to the selected project and block directory or network edits until disconnected
- * - task preparation refuses a missing original directory without creating it or issuing a lease
- * - prepared direct terminal leases block migration across terminal instances until the exact connection releases
+ * 模块职责：回归验证模块，围绕 `project-terminals` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `project-terminals`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: terminal leases bind to the selected project and block directory or network edits until disconnected; task preparation refuses a missing original directory without creating it or issuing a lease.
  */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
@@ -28,6 +29,14 @@ const { AppError } = await import('../server/model.ts');
 const { vmDir } = await import('../server/model.ts');
 after(() => rm(root, { recursive: true, force: true }));
 
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回受控对象，公开字段包括 `id, bootId, machines, commands, workspaces, terminals, options, identities, runs`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `id, bootId, machines, commands, workspaces, terminals, options, identities, runs`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `randomUUID`, `Object.assign`, `locks.locked.bind`, `mkdir`.
+ */
 async function fixture() {
   const id = randomUUID(), locks = new Machines({} as Engine, fakeVmNetwork);
   const commands: string[] = [];
@@ -40,9 +49,39 @@ async function fixture() {
   const controlCalls: string[] = [];
   const machines = Object.assign(new EventEmitter(), {
     records: new Map([[id, { template: 'none' }]]), live: new Map([[id, {}]]),
-    get: () => ({ template: 'none', distro: 'alpine' }), state: () => status,
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ template: 'none', distro: 'alpine' })`）。
+     * Result: Return the branch-computed value (`({ template: 'none', distro: 'alpine' })`).
+     */
+    get: () => ({ template: 'none', distro: 'alpine' }), /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`status`）。
+     * Result: Return the branch-computed value (`status`).
+     */
+    state: () => status,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     */
     writeGuestFile: async () => {},
     locked: locks.locked.bind(locks),
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _id: string; command: string。
+     * 结果：返回受控对象，公开字段包括 `code, stderr, stdout`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `code, stderr, stdout`; the actual branch determines its shape.
+     * 协作入口 / Collaborators: `commands.push`, `command.match`, `JSON.parse`, `Buffer.from(encoded, 'base64').toString`.
+     * 检查边界 / Checked boundaries: `assert.ok(['install', 'begin-network-release'].includes(request.action))`.
+     */
     exec: async (_id: string, command: string) => {
       commands.push(command);
       const encoded = command.match(/\/controller\.py' '([A-Za-z0-9+/=]+)'$/)?.[1];
@@ -75,6 +114,15 @@ async function fixture() {
   await mkdir(vmDir(id), { recursive: true });
   const workspaces = new Workspaces(machines);
   const core = {
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: _vm: string; binding: { projectId: string; directory: string; networkIsolation: 'host' …。
+     * 结果：返回分支计算值（`identity`），以 Promise 交付。
+     * Result: Return the branch-computed value (`identity`) through a Promise.
+     * 状态影响 / State effects: `identity`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `identities.get`, `projectIdentitySchema.parse`, `identityId.replaceAll('-', '').slice`, `identityId.replaceAll`.
+     */
     ensure: async (_vm: string, binding: { projectId: string; directory: string; networkIsolation: 'host' | 'private' }) => {
       let identity = identities.get(binding.projectId);
       if (!identity) identity = projectIdentitySchema.parse({ version: 1, phase: 'active', registryId,
@@ -83,12 +131,44 @@ async function fixture() {
         homeDevice: '1', homeInode: '2', directoryDevice: '1', directoryInode: '3', ...binding });
       identities.set(binding.projectId, identity); return identity;
     },
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: _vm: string; projectId: string。
+     * 结果：返回分支计算值（`identities.get(projectId) || null`），以 Promise 交付。
+     * Result: Return the branch-computed value (`identities.get(projectId) || null`) through a Promise.
+     * 协作入口 / Collaborators: `identities.get`.
+     */
     inspect: async (_vm: string, projectId: string) => identities.get(projectId) || null,
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: _vm: string; identity: ReturnType<typeof projectIdentitySchema.parse>; binding: { directory: string; networkIsolation: 'host' | 'private' }。
+     * 结果：返回分支计算值（`changed`），以 Promise 交付。
+     * Result: Return the branch-computed value (`changed`) through a Promise.
+     * 协作入口 / Collaborators: `identities.set`.
+     */
     rebind: async (_vm: string, identity: ReturnType<typeof projectIdentitySchema.parse>, binding: { directory: string; networkIsolation: 'host' | 'private' }) => {
       const changed = { ...identity, ...binding, revision: identity.revision + 1 };
       identities.set(identity.projectId, changed); return changed;
     },
+    /**
+     * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+     * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 失败 / Failure: `new Error('unexpected task payload')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     */
     inheritedInput: async () => { throw new Error('unexpected task payload'); },
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: _vm: string; identity: ReturnType<typeof projectIdentitySchema.parse>; options: { runId?: string }。
+     * 结果：返回分支计算值（`run`），以 Promise 交付。
+     * Result: Return the branch-computed value (`run`) through a Promise.
+     * 协作入口 / Collaborators: `controlCalls.push`, `projectIdentityRunSchema.parse`, `'a'.repeat`, `runs.set`.
+     */
     prepare: async (_vm: string, identity: ReturnType<typeof projectIdentitySchema.parse>, options: { runId?: string }) => {
       controlCalls.push('prepare');
       const runId = options.runId!;
@@ -98,32 +178,132 @@ async function fixture() {
         cgroupName: 'sakura-identity-' + runId, namespace: identity.networkIsolation === 'private' ? 'sk-' + identity.projectId : '' });
       runs.set(runId, run); return run;
     },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _vm: string; _identity: unknown; runId: string。
+     * 结果：返回分支计算值（`runs.get(runId)!`），以 Promise 交付。
+     * Result: Return the branch-computed value (`runs.get(runId)!`) through a Promise.
+     * 协作入口 / Collaborators: `runs.get`.
+     */
     run: async (_vm: string, _identity: unknown, runId: string) => runs.get(runId)!,
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _vm: string; _identity: unknown; runId: string。
+     * 结果：返回分支计算值（`runs.get(runId)!`），以 Promise 交付。
+     * Result: Return the branch-computed value (`runs.get(runId)!`) through a Promise.
+     * 协作入口 / Collaborators: `runs.get`.
+     */
     runReadonly: async (_vm: string, _identity: unknown, runId: string) => runs.get(runId)!,
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: _vm: string; _identity: unknown; run: ReturnType<typeof projectIdentityRunSchema.parse>。
+     * 结果：返回分支计算值（`closed`），以 Promise 交付。
+     * Result: Return the branch-computed value (`closed`) through a Promise.
+     * 协作入口 / Collaborators: `controlCalls.push`, `runs.set`.
+     */
     stop: async (_vm: string, _identity: unknown, run: ReturnType<typeof projectIdentityRunSchema.parse>) => {
       controlCalls.push('stop'); const closed = { ...run, phase: 'closed' as const }; runs.set(run.runId, closed); return closed;
     },
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `controlCalls.push`.
+     */
     retireTerminal: async () => { controlCalls.push('retire'); },
   };
   const options = { scopes: new ProjectRunScopes(machines, { identities: core }), identities: {
+    /**
+     * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+     * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+     * 输入 / Inputs: _vm: string; _identity: unknown; run: ReturnType<typeof projectIdentityRunSchema.parse>; name: string; options: { create?: boolean } = {}。
+     * 结果：返回受控对象，公开字段包括 `version, terminalId, run, name, serverPid, serverTicks, sessionId`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `version, terminalId, run, name, serverPid, serverTicks, sessionId`; the actual branch determines its shape.
+     * 失败 / Failure: `new AppError('终端窗格未处于项目网络空间', 409)`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `controlCalls.push`.
+     */
     terminal: async (_vm: string, _identity: unknown, run: ReturnType<typeof projectIdentityRunSchema.parse>, name: string,
       options: { create?: boolean } = {}) => {
       controlCalls.push(options.create ? 'create' : 'probe');
       if (!verified) throw new AppError('终端窗格未处于项目网络空间', 409);
       return { version: 1 as const, terminalId: run.runId, run, name, serverPid: 123, serverTicks: '4', sessionId: '$0' };
     },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _identity: unknown; run: ReturnType<typeof projectIdentityRunSchema.parse>; name: string; readOnly: boolean。
+     * 结果：返回分支计算值（``/fixed/project-terminal --run ${run.runId} --name ${name} --readonly ${readOnly…`），以 Promise 交付。
+     * Result: Return the branch-computed value (``/fixed/project-terminal --run ${run.runId} --name ${name} --readonly ${readOnly…`) through a Promise.
+     */
     terminalCommand: async (_identity: unknown, run: ReturnType<typeof projectIdentityRunSchema.parse>, name: string, readOnly: boolean) =>
       `/fixed/project-terminal --run ${run.runId} --name ${name} --readonly ${readOnly}`,
   } };
   const terminals = new ProjectTerminals(machines, workspaces, undefined, options);
   return { id, bootId, machines, commands, workspaces, terminals, options, identities, runs, controlCalls,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: string。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `status`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     status: (value: string) => { status = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `persistent`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     persistent: (value: boolean) => { persistent = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `verified`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     verified: (value: boolean) => { verified = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: typeof migration。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `migration`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     migration: (value: typeof migration) => { migration = value; },
+    /**
+     * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+     * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `terminals.close`, `workspaces.close`.
+     */
     close: async () => { await terminals.close(); await workspaces.close(); } };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: terminal leases bind to the selected project and block directory or network edits until disconnected
+ * 协作入口 / Collaborators: `fixture`, `t.mock.method`, `f.workspaces.save`, `f.terminals.prepare`.
+ * 检查边界 / Checked boundaries: `assert.match(privateShell.command, /project-terminal --run/)`; `assert.equal([...f.runs.values()][0].namespace, 'sk-default')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('terminal leases bind to the selected project and block directory or network edits until disconnected', async t => {
   const f = await fixture();
   // Workspaces uses its own scope instance. Stub only the native guest boundary;
@@ -162,9 +342,31 @@ test('terminal leases bind to the selected project and block directory or networ
   } finally { await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: task preparation refuses a missing original directory without creating it or issuing a lease
+ * 状态影响 / State effects: `f.machines.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `f.machines.exec.bind`, `assert.rejects`, `f.terminals.prepare`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.terminals.prepare(f.id, 'default', null, false, undefined, undefined, { mode: 'task' }), { code: 'PROJECT_IDENTIT…`; `assert.ok(task.includes("[ ! -d '/workspace' ]") && task.includes("[ -L '/workspace' ]"))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('task preparation refuses a missing original directory without creating it or issuing a lease', async () => {
   const f = await fixture(), execute = f.machines.exec.bind(f.machines);
-  f.machines.exec = async (...args) => {
+  f.machines.exec = /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: args。
+   * 结果：返回分支计算值（`args[1].includes('SAKURA_TASK_DIRECTORY_MISSING:') ? { code: 74, stdout: '', std…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`args[1].includes('SAKURA_TASK_DIRECTORY_MISSING:') ? { code: 74, stdout: '', std…`) through a Promise.
+   * 验证场景 / Scenario: task preparation refuses a missing original directory without creating it or issuing a lease
+   * 协作入口 / Collaborators: `execute`, `args[1].includes`.
+   */
+  async (...args) => {
     const result = await execute(...args);
     return args[1].includes('SAKURA_TASK_DIRECTORY_MISSING:') ? { code: 74, stdout: '',
       stderr: 'SAKURA_TASK_DIRECTORY_MISSING: 项目目录不存在或是链接，请先显式准备并迁移原目录' } : result;
@@ -200,6 +402,17 @@ test('task preparation refuses a missing original directory without creating it 
 });
 
 for (const phase of ['applying', 'failed', 'directory-applied', 'invalid'] as const) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `fixture`, `f.migration`, `assert.rejects`, `f.terminals.prepare`.
+   * 检查边界 / Checked boundaries: `assert.rejects(f.terminals.prepare(f.id, 'default', 'main', readOnly), { code: phase === 'invalid' ? 'PROJECT_DIRECTORY_LATCH_CHAN…`; `assert.equal(f.commands.length, before + 1, 'Only the read-only admission check may run.')`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   test(`${phase} directory migration prevents new terminals and shared reconnects before guest preparation`, async () => {
     const f = await fixture();
     try {
@@ -216,6 +429,18 @@ for (const phase of ['applying', 'failed', 'directory-applied', 'invalid'] as co
   });
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: prepared direct terminal leases block migration across terminal instances until the exact connection releases
+ * 协作入口 / Collaborators: `fixture`, `f.terminals.prepare`, `other.prepare`, `assert.throws`.
+ * 检查边界 / Checked boundaries: `assert.throws(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'), { code: 'PROJECT_DIRECTORY_RUNS_MUST_STOP' })`; `assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, '1111111111111111'))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('prepared direct terminal leases block migration across terminal instances until the exact connection releases', async () => {
   const f = await fixture(), other = new ProjectTerminals(f.machines, f.workspaces, undefined, f.options);
   try {
@@ -232,6 +457,18 @@ test('prepared direct terminal leases block migration across terminal instances 
   } finally { await other.close(); await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: disconnected tmux sessions and paused guests still guard project binding changes
+ * 协作入口 / Collaborators: `fixture`, `f.persistent`, `assert.rejects`, `f.workspaces.save`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/changed' }), /所有终端/)`; `assert.equal((await f.workspaces.config(f.id)).directory, '/workspace')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('disconnected tmux sessions and paused guests still guard project binding changes', async () => {
   const f = await fixture();
   try {
@@ -251,6 +488,18 @@ test('disconnected tmux sessions and paused guests still guard project binding c
   } finally { await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: terminal fallback reads the persisted active project even when the projects plugin is disabled
+ * 协作入口 / Collaborators: `fixture`, `f.workspaces.projects.create`, `fallback.prepare`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal(shell.projectId, index.active)`; `assert.match(shell.command, /project-terminal --run/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('terminal fallback reads the persisted active project even when the projects plugin is disabled', async () => {
   const f = await fixture();
   try {
@@ -271,6 +520,19 @@ test('terminal fallback reads the persisted active project even when the project
   } finally { await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: task preparation captures one configuration and keeps its lease after caller cancellation
+ * 状态影响 / State effects: `prepared`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `f.workspaces.save`, `f.workspaces.config`, `f.terminals.prepare`.
+ * 检查边界 / Checked boundaries: `assert.equal(prepared.captured?.configVersion, projectVersion(project))`; `assert.deepEqual(prepared.captured?.project, project)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('task preparation captures one configuration and keeps its lease after caller cancellation', async () => {
   const f = await fixture(), controller = new AbortController();
   let prepared: Awaited<ReturnType<InstanceType<typeof ProjectTerminals>['prepare']>> | undefined;
@@ -294,6 +556,19 @@ test('task preparation captures one configuration and keeps its lease after call
   } finally { prepared?.release(); await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: closing waits for explicit task cleanup and keeps configuration guards until that release
+ * 状态影响 / State effects: `prepared`, `closing`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `f.terminals.prepare`, `assert.equal`, `f.terminals.close().then`.
+ * 检查边界 / Checked boundaries: `assert.equal(connection.captured, undefined)`; `assert.equal(prepared.signal?.aborted, true)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('closing waits for explicit task cleanup and keeps configuration guards until that release', async () => {
   const f = await fixture();
   let prepared: Awaited<ReturnType<InstanceType<typeof ProjectTerminals>['prepare']>> | undefined;
@@ -318,6 +593,19 @@ test('closing waits for explicit task cleanup and keeps configuration guards unt
   } finally { prepared?.release(); await closing; await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: verification-only task binding holds a lease without network repair, packages or native issuance
+ * 状态影响 / State effects: `f.commands.length`, `f.controlCalls.length`, `prepared`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `f.workspaces.save`, `f.terminals.prepare`, `f.commands.find`.
+ * 检查边界 / Checked boundaries: `assert.ok(check.includes('SAKURA_TASK_NETWORK_MISSING:'))`; `assert.doesNotMatch(check, /apk add|apt-get|mkdir|netns add|useradd|adduser|tmux/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('verification-only task binding holds a lease without network repair, packages or native issuance', async () => {
   const f = await fixture();
   let prepared: Awaited<ReturnType<InstanceType<typeof ProjectTerminals>['prepare']>> | undefined;
@@ -338,11 +626,33 @@ test('verification-only task binding holds a lease without network repair, packa
   } finally { await prepared?.release(); await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: verification-only task binding refuses a missing namespace without issuing a lease
+ * 状态影响 / State effects: `f.machines.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `f.workspaces.save`, `assert.rejects`, `f.terminals.prepare`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.terminals.prepare(f.id, 'default', null, false, undefined, undefined, { mode: 'task', verifyOnly: true }), { stat…`; `assert.deepEqual(f.controlCalls, [])`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('verification-only task binding refuses a missing namespace without issuing a lease', async () => {
   const f = await fixture(), execute = f.machines.exec;
   try {
     await f.workspaces.save(f.id, { directory: '/workspace/readonly', networkIsolation: 'private' });
-    f.machines.exec = async (...args) => args[1].includes('SAKURA_TASK_NETWORK_MISSING:') ?
+    f.machines.exec = /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: args。
+     * 结果：返回分支计算值（`args[1].includes('SAKURA_TASK_NETWORK_MISSING:') ? { code: 74, stdout: '', stder…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`args[1].includes('SAKURA_TASK_NETWORK_MISSING:') ? { code: 74, stdout: '', stder…`) through a Promise.
+     * 验证场景 / Scenario: verification-only task binding refuses a missing namespace without issuing a lease
+     * 协作入口 / Collaborators: `args[1].includes`, `execute`.
+     */
+    async (...args) => args[1].includes('SAKURA_TASK_NETWORK_MISSING:') ?
       { code: 74, stdout: '', stderr: 'SAKURA_TASK_NETWORK_MISSING: missing original namespace' } : execute(...args);
     await assert.rejects(f.terminals.prepare(f.id, 'default', null, false, undefined, undefined,
       { mode: 'task', verifyOnly: true }), { status: 409 });
@@ -351,6 +661,18 @@ test('verification-only task binding refuses a missing namespace without issuing
   } finally { await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: task preparation rejects attaching a tmux or read-only connection before guest actions
+ * 协作入口 / Collaborators: `fixture`, `assert.rejects`, `f.terminals.prepare`, `assert.deepEqual`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.terminals.prepare(f.id, 'default', 'main', false, undefined, undefined, { mode: 'task' }), { status: 400 })`; `assert.rejects(f.terminals.prepare(f.id, 'default', null, true, undefined, undefined, { mode: 'task' }), { status: 400 })`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('task preparation rejects attaching a tmux or read-only connection before guest actions', async () => {
   const f = await fixture();
   try {
@@ -364,9 +686,31 @@ test('task preparation rejects attaching a tmux or read-only connection before g
   } finally { await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a replaced live instance cannot inherit a preparation lease or its captured configuration
+ * 状态影响 / State effects: `f.machines.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `assert.rejects`, `f.terminals.prepare`, `assert.doesNotThrow`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.terminals.prepare(f.id, 'default', null, false, undefined, undefined, { mode: 'task' }), /客户机运行身份在准备期间改变/)`; `assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('a replaced live instance cannot inherit a preparation lease or its captured configuration', async () => {
   const f = await fixture(), execute = f.machines.exec;
-  f.machines.exec = async (...args) => {
+  f.machines.exec = /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: args。
+   * 结果：返回分支计算值（`result`），以 Promise 交付。
+   * Result: Return the branch-computed value (`result`) through a Promise.
+   * 验证场景 / Scenario: a replaced live instance cannot inherit a preparation lease or its captured configuration
+   * 协作入口 / Collaborators: `execute`, `args[1].includes`, `f.machines.live.set`.
+   */
+  async (...args) => {
     const result = await execute(...args);
     if (args[1].includes('SAKURA_TASK_DIRECTORY_MISSING:')) f.machines.live.set(f.id, {} as never);
     return result;
@@ -378,6 +722,18 @@ test('a replaced live instance cannot inherit a preparation lease or its capture
   } finally { await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: named terminals survive disconnect and reload while readonly reconnection does not prepare guest tools
+ * 协作入口 / Collaborators: `fixture`, `f.terminals.prepare`, `first.release`, `f.controlCalls.filter`.
+ * 检查边界 / Checked boundaries: `assert.equal(view.terminalId, first.terminalId)`; `assert.match(view.command, /--readonly true/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('named terminals survive disconnect and reload while readonly reconnection does not prepare guest tools', async () => {
   const f = await fixture(), reopened = new ProjectTerminals(f.machines, f.workspaces, undefined, f.options);
   try {
@@ -397,6 +753,18 @@ test('named terminals survive disconnect and reload while readonly reconnection 
   } finally { await reopened.close(); await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: recreating the same terminal label cannot revive an old shared terminal ID
+ * 协作入口 / Collaborators: `fixture`, `f.terminals.prepare`, `first.release`, `f.terminals.stop`.
+ * 检查边界 / Checked boundaries: `assert.notEqual(first.terminalId, next.terminalId)`; `assert.rejects(f.terminals.prepare(f.id, 'default', 'main', true, undefined, first.terminalId), { code: 'PROJECT_TERMINAL_SHARE_ST…`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('recreating the same terminal label cannot revive an old shared terminal ID', async () => {
   const f = await fixture();
   try {
@@ -413,10 +781,33 @@ test('recreating the same terminal label cannot revive an old shared terminal ID
   } finally { await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a failed anonymous terminal cleanup retains the lease and retries its original run
+ * 状态影响 / State effects: `f.options.scopes.stopTerminal`, `failing`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `f.options.scopes.stopTerminal.bind`, `f.terminals.prepare`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.rejects(Promise.resolve(connection.release()), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' })`; `assert.throws(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'), { code: 'PROJECT_DIRECTORY_RUNS_MUST_STOP' })`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('a failed anonymous terminal cleanup retains the lease and retries its original run', async () => {
   const f = await fixture(), stop = f.options.scopes.stopTerminal.bind(f.options.scopes);
   let failing = true;
-  f.options.scopes.stopTerminal = async (...args) => {
+  f.options.scopes.stopTerminal = /**
+   * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+   * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+   * 输入 / Inputs: args。
+   * 结果：返回分支计算值（`stop(...args)`），以 Promise 交付。
+   * Result: Return the branch-computed value (`stop(...args)`) through a Promise.
+   * 验证场景 / Scenario: a failed anonymous terminal cleanup retains the lease and retries its original run
+   * 失败 / Failure: `new AppError('owned cleanup lost', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `stop`.
+   */
+  async (...args) => {
     if (failing) throw new AppError('owned cleanup lost', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
     return stop(...args);
   };
@@ -432,6 +823,18 @@ test('a failed anonymous terminal cleanup retains the lease and retries its orig
   } finally { failing = false; await f.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: recovery stops only unconnected anonymous runs and preserves a live connection and named server
+ * 协作入口 / Collaborators: `fixture`, `f.terminals.prepare`, `named.release`, `f.workspaces.config`.
+ * 检查边界 / Checked boundaries: `assert.ok(!active.some(entry => entry.runId === orphanId))`; `assert.ok(active.some(entry => entry.runId === first.terminalId))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('recovery stops only unconnected anonymous runs and preserves a live connection and named server', async () => {
   const f = await fixture();
   try {

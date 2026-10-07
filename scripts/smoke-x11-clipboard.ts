@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实 X11 应用及工具包剪贴板策略、身份和受控清理。 */
+/** 烟雾验收：验证真实 X11 应用及工具包剪贴板策略、身份和受控清理。
+ * Smoke acceptance for real X11/toolkit clipboard policies, identities and controlled cleanup. */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -39,12 +40,16 @@ let vmId = '';
 const program = '/usr/local/lib/sakura-x11-test/fixture',
   qtProgram = '/usr/local/lib/sakura-x11-test/fixture-qt',
   forkProgram = '/usr/local/lib/sakura-x11-test/fixture-fork';
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function command(script: string, timeout = 30000) {
   const result = await machines.exec(vmId, script, timeout);
   if (result.code !== 0 && result.stdout) console.log(result.stdout);
   assert.equal(result.code, 0, result.stderr || result.stdout);
   return result.stdout.trim();
 }
+/** 读取仓库原生源码并通过 SFTP 上传到专用来宾构建目录，0600 权限且等待流完成。
+ * Read native repository source/upload via SFTP to the dedicated guest build directory with mode 0600, awaiting completion. */
 async function upload(name: string) {
   const bytes = await readFile(resolve('native/linux-clipboard', name));
   await machines.sftp(vmId, async (ftp) => {
@@ -54,6 +59,8 @@ async function upload(name: string) {
     );
   });
 }
+/** 等待真实 KDE ready，错误立即失败、总期限二十分钟，每四十五秒输出诊断尾部。
+ * Await real KDE readiness, failing immediately on error/after twenty minutes and reporting diagnostic tails every forty-five seconds. */
 async function ready() {
   const deadline = Date.now() + 1200000;
   let progress = Date.now();
@@ -69,9 +76,13 @@ async function ready() {
     await delay(1000);
   }
 }
+/** 把自有实例和输入委托真实原生剪贴板服务，返回原结果并保留权限错误。
+ * Delegate owned VM/input to the real native clipboard service, preserving its result/authority errors. */
 async function action(input: object) {
   return await native.action(vmId, input);
 }
+/** 识别可执行文件摘要后按当前版本保存应用规则，要求服务视图无错误再返回。
+ * Identify executable hash and save application rules against the current version, returning only an error-free service view. */
 async function save(image: string, rule = defaultClipboardRule()) {
   const identity = (await action({ action: 'identify', image })) as { image: string; sha256: string };
   const state = await native.view(vmId);
@@ -83,6 +94,8 @@ async function save(image: string, rule = defaultClipboardRule()) {
   assert.ok(!value.error, value.error);
   return value;
 }
+/** 按当前版本启动固定应用与参数，要求 running 且 active，返回精确会话票据。
+ * Launch the fixed application/args at the current version, require running/active and return the exact session receipt. */
 async function launch(image: string, args: string[]) {
   const state = await native.view(vmId);
   const value = (await action({
@@ -95,9 +108,13 @@ async function launch(image: string, args: string[]) {
   assert.equal(value.active, true);
   return value;
 }
+/** 通过原生服务停止指定精确会话，由服务处理该会话的完整进程域。
+ * Stop the exact session through the native service, which owns full-domain cleanup. */
 async function stop(id: string) {
   await action({ action: 'stop', id });
 }
+/** 有限轮询自有探针文件并返回标记；未写出结果失败，防止非执行被误判为策略通过。
+ * Poll the owned probe file with a bound and return its marker; absence fails so nonexecution cannot count as policy acceptance. */
 async function marker(path: string) {
   for (let i = 0; i < 100; i++) {
     const found = await machines.exec(vmId, `test -f ${quote(path)} && cat ${quote(path)}`, 10000);
@@ -193,6 +210,8 @@ try {
     throw error;
   }
   const project = await workspaces.config(vmId);
+  /** 构造桌面普通账号的无新增权限读取命令并放入项目网络域，作为受控策略之外的真实工具包对照。
+   * Build a no-new-privileges ordinary-desktop read command within the project network domain as a real toolkit control outside managed policy. */
   const plainRead = (toolkit: string) =>
     projectNetworkCommand(
       project,
@@ -268,6 +287,8 @@ try {
   await machines.sftp(vmId, async (ftp) => {
     await pipeline(Readable.from([largeData]), ftp.createWriteStream(largeFile, { flags: 'w', mode: 0o644 }));
   });
+  /** 只把普通读取命令的输入换为大正文文件，保持账号、工具包和网络域一致以验证大传输。
+   * Replace only the normal read input with the large-body file, preserving account/toolkit/network domain for large-transfer verification. */
   const largeRead = (toolkit: string) => plainRead(toolkit).replace(dataFile, largeFile);
   await save(program);
   await save(qtProgram);

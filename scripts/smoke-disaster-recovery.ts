@@ -1,4 +1,5 @@
-/** 烟雾验收：验证已校验备份恢复到新实例、真实启动及演练清理。 */
+/** 烟雾验收：验证已校验备份恢复到新实例、真实启动及演练清理。
+ * Smoke acceptance for verified backup recovery into a fresh VM, real boot and owned-drill cleanup. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -20,6 +21,8 @@ const bundles = new Bundles(machines);
 const backups = new Backups(machines, bundles);
 const drill = new DisasterRecoveryDrill(machines, backups, bundles);
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 300_000;

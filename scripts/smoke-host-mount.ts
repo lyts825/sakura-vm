@@ -1,4 +1,5 @@
-/** 烟雾验收：验证宿主挂载的来宾可见性、卸载及策略关闭。 */
+/** 烟雾验收：验证宿主挂载的来宾可见性、卸载及策略关闭。
+ * Smoke acceptance for guest visibility of host mounts, unmount and policy disablement. */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

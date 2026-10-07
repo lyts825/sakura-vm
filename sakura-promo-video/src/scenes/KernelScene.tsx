@@ -1,9 +1,12 @@
-/** Linux 内核章节及 ManimClip 时间映射组件，将预渲染流程片段按当前场景帧播放。 */
+/** Linux 内核章节及 ManimClip 时间映射组件，将预渲染流程片段按当前场景帧播放。
+ * Map prerendered Manim clips to local scene frames and freeze the last frame while longer narration continues. */
 import {Video} from '@remotion/media';
 import {Freeze, Interactive, Sequence, staticFile, useVideoConfig} from 'remotion';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Tag, useScene} from '../stage';
 import {colors, font} from '../theme';
 
+/** 将指定流程短片播放 seconds 秒后冻结其最后一帧，保持旁白剩余时间内图解稳定；片段静音且提前加载，避免重复播放和黑帧。
+ * Play the specified flow clip for seconds, then freeze its final frame for the remaining narration; muted, premounted playback avoids loops and black frames. */
 export const ManimClip = ({src, seconds}: {src: string; seconds: number}) => {
   // 流程短片结束后固定在最后一帧，让较长旁白继续讲解，避免重复播放或黑帧。
   const {fps} = useVideoConfig();
@@ -12,6 +15,8 @@ export const ManimClip = ({src, seconds}: {src: string; seconds: number}) => {
     <Sequence name="图解停留" from={seconds * fps} premountFor={fps}><Freeze frame={seconds * fps - 1}><Video src={staticFile(src)} muted premountFor={fps} style={{width: '100%', height: '100%'}}/></Freeze></Sequence>
   </>;
 };
+/** 组合 QEMU/PosixLoom 分工说明和冻结式 Manim 内核流程图，按旁白 cue 显示技术层次。
+ * Combine QEMU/PosixLoom responsibilities with the held Manim kernel flow diagram, revealing technical layers at narration cues. */
 const KernelInner: React.FC<SceneProps> = ({style}) => {
   const {cue} = useScene('kernel');
   return <ScenePaper id="kernel" style={style}>

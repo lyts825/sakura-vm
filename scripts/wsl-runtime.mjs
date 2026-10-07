@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/** WSL 运行入口，检查宿主环境和所需运行时，再按参数启动服务或输出预检结果。 */
+/** WSL 运行入口，检查宿主环境和所需运行时，再按参数启动服务或输出预检结果。
+ * Check the host and required WSL runtime, then start the requested service or report preflight results. */
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

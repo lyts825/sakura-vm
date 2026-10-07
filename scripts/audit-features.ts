@@ -1,9 +1,12 @@
-/** 汇总功能实现与验收状态，生成未完成功能清单文档；目录读取与报告生成本身不代表功能测试通过。 */
+/** 汇总功能实现与验收状态，生成未完成功能清单文档；目录读取与报告生成本身不代表功能测试通过。
+ * Summarize feature implementation and acceptance states into the unfinished-feature document; report generation itself does not prove feature tests passed. */
 import { readFile, writeFile } from 'node:fs/promises';
 import { featureCatalogView } from '../server/feature-suite.ts';
 import { extendedFeatureCatalog } from '../server/extended-features.ts';
 import { nextFeatureCatalog } from '../server/next-features.ts';
 
+/** 把固定六列功能行转为字段对象，保持 ID、优先级和状态与目录一一对应。
+ * Convert fixed six-column feature rows to named objects, preserving ID/priority/state correspondence. */
 const convert = (rows: readonly (readonly string[])[]) =>
   rows.map(([id, name, category, priority, summary, state]) => ({
     id, name, category, priority, summary, state,
@@ -15,6 +18,8 @@ const groups = [
 ];
 const all = groups.flatMap((group) => group.rows);
 const unfinished = all.filter((item) => item.state !== 'available');
+/** 按给定状态筛选功能目录并返回条目数，用于报告汇总。
+ * Count feature catalog entries matching the supplied state for report totals. */
 const count = (rows: typeof all, state: string) => rows.filter((item) => item.state === state).length;
 
 // Implementation and acceptance are independent: changing catalog state must

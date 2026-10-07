@@ -1,5 +1,6 @@
 /**
  * 模块职责：汇集自动化功能、指标告警和实例动作，并将后台采样与策略执行交给统一调度。
+ * Module purpose: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
  */
 import { jsonValueSchema } from '../shared/contracts/json-values.ts';
 import type { HostMountsV1, IdeV1, MediaDevicesV1, ProcessInteropV1, WorkspacesV1 } from './service-contracts/v1.ts';
@@ -131,6 +132,14 @@ type FeatureState = {
   >;
 };
 
+/**
+ * 入口 / Entry: defaultState.
+ * 功能：从当前输入或状态计算 `({ settings: {}, history: {}, events: [], lastAlerts: {}, featureRuns: {}, })`，供调用方后续验证或使用。
+ * Purpose: Computes `({ settings: {}, history: {}, events: [], lastAlerts: {}, featureRuns: {}, })` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: FeatureState；结果来自 / values from `({ settings: {}, history: {}, events: [], lastAlerts: {}, featureRuns: {}, })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const defaultState = (): FeatureState => ({
   settings: {},
   history: {},
@@ -139,7 +148,25 @@ const defaultState = (): FeatureState => ({
   featureRuns: {},
 });
 
+/**
+ * 入口 / Entry: defaultSchedule.
+ * 功能：把本层请求转交 `scheduleSchema.parse`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `scheduleSchema.parse` and propagates the provider result or rejection.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: Schedule；结果来自 / values from `scheduleSchema.parse({})`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const defaultSchedule = (): Schedule => scheduleSchema.parse({});
+/**
+ * 入口 / Entry: defaultAlerts.
+ * 功能：把本层请求转交 `alertSchema.parse`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `alertSchema.parse` and propagates the provider result or rejection.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: AlertConfig；结果来自 / values from `alertSchema.parse({})`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const defaultAlerts = (): AlertConfig => alertSchema.parse({});
 const packageName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9+_.-]{0,127}$/, '软件包名称无效')
   .refine((value) => !/[+-]$/.test(value), '软件包名称不能以 + 或 - 结尾');
@@ -285,22 +312,124 @@ export class FeatureSuite {
   private lastSampleAt = new Map<string, number>();
   private ticking = false;
   private powerAbort = new AbortController();
+  /**
+   * 入口 / Entry: FeatureSuite.processInterop.
+   * 功能：向调用者提供 `this.domains.processInterop` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.processInterop` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: ProcessInteropV1 | undefined；结果来自 / values from `this.domains.processInterop`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get processInterop(): ProcessInteropV1 | undefined { return this.domains.processInterop; }
+  /**
+   * 入口 / Entry: FeatureSuite.mediaDevices.
+   * 功能：向调用者提供 `this.domains.mediaDevices` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.mediaDevices` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: MediaDevicesV1 | undefined；结果来自 / values from `this.domains.mediaDevices`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get mediaDevices(): MediaDevicesV1 | undefined { return this.domains.mediaDevices; }
+  /**
+   * 入口 / Entry: FeatureSuite.hostMounts.
+   * 功能：向调用者提供 `this.domains.hostMounts` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.hostMounts` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: HostMountsV1 | undefined；结果来自 / values from `this.domains.hostMounts`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get hostMounts(): HostMountsV1 | undefined { return this.domains.hostMounts; }
+  /**
+   * 入口 / Entry: FeatureSuite.projectTerminals.
+   * 功能：向调用者提供 `this.domains.projectTerminals` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.projectTerminals` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: ProjectTerminals | undefined；结果来自 / values from `this.domains.projectTerminals`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get projectTerminals(): ProjectTerminals | undefined { return this.domains.projectTerminals; }
   private domains: AutomationDomainServices;
+  /**
+   * 入口 / Entry: FeatureSuite.packageWorkbench.
+   * 功能：向调用者提供 `this.domains.packageWorkbench` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.packageWorkbench` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.packageWorkbench`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get packageWorkbench() { return this.domains.packageWorkbench; }
 
+  /**
+   * 入口 / Entry: FeatureSuite.constructor.
+   * 功能：建立 FeatureSuite 的汇集自动化功能、指标告警和实例动作上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the FeatureSuite context for this module's responsibility: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; observations: { editor?: () => Pick<IdeV1, 'profile'> | undefined; jobs?: () => JobView[]; services… default={}; devTaskOptions: FeatureDevTaskOptions default={}; dependencies: HostServiceResolver default=noHostServices
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.domains`.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
     private observations: {
+      /**
+       * 签名 / Signature: FeatureSuite.constructor.editor.
+       * 功能：为汇集自动化功能、指标告警和实例动作声明 editor 的输入与结果契约，所属容器为 FeatureSuite.constructor。
+       * Purpose: Declares the input/result contract for editor in FeatureSuite.constructor. Module responsibility: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: Pick<IdeV1, 'profile'> | undefined.
+       * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+       * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+       */
       editor?: () => Pick<IdeV1, 'profile'> | undefined;
+      /**
+       * 签名 / Signature: FeatureSuite.constructor.jobs.
+       * 功能：为汇集自动化功能、指标告警和实例动作声明 jobs 的输入与结果契约，所属容器为 FeatureSuite.constructor。
+       * Purpose: Declares the input/result contract for jobs in FeatureSuite.constructor. Module responsibility: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: JobView[].
+       * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+       * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+       */
       jobs?: () => JobView[];
+      /**
+       * 签名 / Signature: FeatureSuite.constructor.services.
+       * 功能：为汇集自动化功能、指标告警和实例动作声明 services 的输入与结果契约，所属容器为 FeatureSuite.constructor。
+       * Purpose: Declares the input/result contract for services in FeatureSuite.constructor. Module responsibility: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+       * 输入 / Inputs: id: string
+       * 输出 / Returns: Array<HealthView & { projectId: string }>.
+       * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+       * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+       */
       services?: (id: string) => Array<HealthView & { projectId: string }>;
+      /**
+       * 签名 / Signature: FeatureSuite.constructor.secrets.
+       * 功能：为汇集自动化功能、指标告警和实例动作声明 secrets 的输入与结果契约，所属容器为 FeatureSuite.constructor。
+       * Purpose: Declares the input/result contract for secrets in FeatureSuite.constructor. Module responsibility: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+       * 输入 / Inputs: id: string
+       * 输出 / Returns: Promise<SecretRotationItem[] | undefined>.
+       * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+       * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+       */
       secrets?: (id: string) => Promise<SecretRotationItem[] | undefined>;
+      /**
+       * 签名 / Signature: FeatureSuite.constructor.power.
+       * 功能：为汇集自动化功能、指标告警和实例动作声明 power 的输入与结果契约，所属容器为 FeatureSuite.constructor。
+       * Purpose: Declares the input/result contract for power in FeatureSuite.constructor. Module responsibility: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+       * 输入 / Inputs: signal: AbortSignal
+       * 输出 / Returns: Promise<PowerSample>.
+       * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+       * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+       */
       power?: (signal: AbortSignal) => Promise<PowerSample>;
+      /**
+       * 签名 / Signature: FeatureSuite.constructor.privateDatabase.
+       * 功能：为汇集自动化功能、指标告警和实例动作声明 privateDatabase 的输入与结果契约，所属容器为 FeatureSuite.constructor。
+       * Purpose: Declares the input/result contract for privateDatabase in FeatureSuite.constructor. Module responsibility: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+       * 输入 / Inputs: id: string; input: { database: 'postgres' | 'mysql' | 'redis'; password: string; name?: string; port?: n…; signal: AbortSignal; log: (text: string) => void
+       * 输出 / Returns: Promise<void>.
+       * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+       * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+       */
       privateDatabase?: (id: string,
         input: { database: 'postgres' | 'mysql' | 'redis'; password: string; name?: string; port?: number },
         signal: AbortSignal, log: (text: string) => void) => Promise<void>;
@@ -315,6 +444,18 @@ export class FeatureSuite {
   
   
   
+  /**
+   * 入口 / Entry: FeatureSuite.enableBackground.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `cleanupReceipt(() => { if (this.powerAbort === controller) this.backgroundEnabled = false; controller.abort(); })` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `cleanupReceipt(() => { if (this.powerAbort === controller) this.backgroundEnabled = false; controller.abort(); })` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `cleanupReceipt` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `cleanupReceipt`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.powerAbort.signal.aborted`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `cleanupReceipt(() => { if (this.powerAbort === controller) this.backgroundEnabled = false; controller.abort(); })`.
+   * 副作用 / Effects: 更新 / updates `this.powerAbort`, `this.backgroundEnabled`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   enableBackground() {
     if (this.powerAbort.signal.aborted) this.powerAbort = new AbortController();
     const controller = this.powerAbort;
@@ -324,11 +465,53 @@ export class FeatureSuite {
       controller.abort();
     });
   }
+  /**
+   * 入口 / Entry: FeatureSuite.file.
+   * 功能：把本层请求转交 `join`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `join` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `join(DATA, 'feature-suite.json')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private file() {
     return join(DATA, 'feature-suite.json');
   }
+  /**
+   * 入口 / Entry: FeatureSuite.store.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `metadataFile(this.file(), defaultState)` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `metadataFile(this.file(), defaultState)` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `metadataFile`, `this.file` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `metadataFile`, `this.file`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `metadataFile(this.file(), defaultState)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private store() { return metadataFile(this.file(), defaultState); }
+  /**
+   * 入口 / Entry: FeatureSuite.state.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `(await this.store().read()).value` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `(await this.store().read()).value` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.store().read`, `this.store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.store().read`, `this.store`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `(await this.store().read()).value`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async state() { return (await this.store().read()).value; }
+  /**
+   * 入口 / Entry: FeatureSuite.settingsFor.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `value` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `defaultSchedule`, `defaultAlerts`, `scheduleSchema.parse`, `alertSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `defaultSchedule`, `defaultAlerts`, `scheduleSchema.parse`, `alertSchema.parse`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: state: FeatureState; id: string
+   * 输出 / Returns: `value`.
+   * 副作用 / Effects: 更新 / updates `value.schedule`, `value.alerts`, `state.settings[id]`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private settingsFor(state: FeatureState, id: string) {
     const value = state.settings[id] || {
       schedule: defaultSchedule(),
@@ -340,6 +523,17 @@ export class FeatureSuite {
     state.settings[id] = value;
     return value;
   }
+  /**
+   * 入口 / Entry: FeatureSuite.catalog.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ features: implementedFeatureCatalogView(), capabilities: capabilityViews('suite'), presets: resourcePresets, generatedAt: n…` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `{ features: implementedFeatureCatalogView(), capabilities: capabilityViews('suite'), presets: resourcePresets, generatedAt: n…` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `implementedFeatureCatalogView`, `capabilityViews` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `implementedFeatureCatalogView`, `capabilityViews`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ features: implementedFeatureCatalogView(), capabilities: capabilityViews('suite'), presets: resourcePresets, generatedAt: n…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async catalog() {
     return {
       features: implementedFeatureCatalogView(),
@@ -348,9 +542,31 @@ export class FeatureSuite {
       generatedAt: new Date().toISOString(),
     };
   }
+  /**
+   * 入口 / Entry: FeatureSuite.alertEvents.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `structuredClone((await this.state()).events)` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `structuredClone((await this.state()).events)` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `structuredClone`, `this.state` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `structuredClone`, `this.state`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `structuredClone((await this.state()).events)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async alertEvents() {
     return structuredClone((await this.state()).events);
   }
+  /**
+   * 入口 / Entry: FeatureSuite.view.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ projectId: this.workspaces.projects.current(id), settings, history: (state.history[id] || []).slice(-size), events: state.e…` 供上层消费（`FeatureSuite`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `FeatureSuite`; this entry produces `{ projectId: this.workspaces.projects.current(id), settings, history: (state.history[id] || []).slice(-size), events: state.e…` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.machines.get`, `this.state`, `this.settingsFor`, `this.workspaces.projects.current` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.state`, `this.settingsFor`, `this.workspaces.projects.current`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; limit: default=120
+   * 输出 / Returns: `{ projectId: this.workspaces.projects.current(id), settings, history: (state.history[id] || []).slice(-size), events: state.e…`.
+   * 副作用 / Effects: `this.settingsFor`; 更新 / updates `state.featureRuns`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async view(id: string, limit = 120) {
     this.machines.get(id);
     const state = await this.state();
@@ -383,6 +599,17 @@ export class FeatureSuite {
   }
 
   /** Record generic capability checks without claiming their named actions ran. */
+  /**
+   * 入口 / Entry: FeatureSuite.feature.
+   * 功能：组合选定自动化能力的配置、状态和限制，返回当前实例的功能视图。
+   * Purpose: Combines settings/state/limits for a selected automation capability into the current VM feature view.
+   * 设计：读取分支依据实际实例和工具能力；尚未准备的领域给出不可用状态，不创建运行副作用。
+   * Design: Branches inspect actual VM/tool support, reporting unprepared domains without inventing a running resource.
+   * 输入 / Inputs: id: string; input: { featureId: FeatureId; action: 'check' | 'run'; options?: Record<string, unknown> }; signal: AbortSignal optional
+   * 输出 / Returns: `this.processInterop.action(id, options, 'check', signal)`; `this.jobs.start( this.workspaces.projects.key(id) + ':process-interop', async (log, taskSignal, _update, saveResult) => { con…`; `runner.check(id, featureId, signal)`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: `this.jobs.start`; `this.machines.exec().catch`; `this.machines.exec`; `this.store().update`; 更新 / updates `result.ready`, `result.reason`, `result.architecture`, `result.qemu`.
+   * 拒绝 / Refusals: 条件 / conditions `featureId === 'process-interop'`; `!this.processInterop`; 异常 / errors `new AppError('进程互操作服务尚未启动', 503)`.
+   */
   async feature(
     id: string,
     input: { featureId: FeatureId; action: 'check' | 'run'; options?: Record<string, unknown> },
@@ -398,6 +625,15 @@ export class FeatureSuite {
       const options = processInteropInput.parse(input.options || {});
       if (input.action === 'check') return this.processInterop.action(id, options, 'check', signal);
       this.machines.requireUnlocked(id);
+      /**
+       * 入口 / Entry: FeatureSuite.feature.callback@403.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.jobs.start）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.jobs.start).
+       * 输入 / Inputs: log; taskSignal; _update; saveResult
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: `saveResult`.
+       * 拒绝 / Refusals: 条件 / conditions `!result.ready`; 异常 / errors `new AppError('进程互操作失败', 409)`.
+       */
       return this.jobs.start(
         this.workspaces.projects.key(id) + ':process-interop',
         async (log, taskSignal, _update, saveResult) => {
@@ -415,6 +651,15 @@ export class FeatureSuite {
       if (input.action === 'check') return runner.check(id, featureId, signal);
       this.machines.requireUnlocked(id);
       const parameters = capabilityParameters(featureId, input.options || {});
+      /**
+       * 入口 / Entry: FeatureSuite.feature.callback@420.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.jobs.start）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.jobs.start).
+       * 输入 / Inputs: log; taskSignal; _update; saveResult
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: `saveResult`.
+       * 拒绝 / Refusals: 条件 / conditions `!result.ready`; 异常 / errors `new AppError('能力执行失败', 409)`.
+       */
       return this.jobs.start(
         this.workspaces.projects.key(id) + ':capability:' + featureId,
         async (log, taskSignal, _update, saveResult) => {
@@ -577,6 +822,15 @@ export class FeatureSuite {
       result.controlPlane = 'signed-isolated-wasm-extensions';
       result.reason = '插件中心支持签名 WebAssembly 插件、脱敏事件订阅、定时触发、管理员 HTTP 操作及声明式表单面板；插件不能执行宿主 I/O 或注入前端代码。';
     }
+    /**
+     * 入口 / Entry: FeatureSuite.feature.callback@580.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.store().update）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.store().update).
+     * 输入 / Inputs: state
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `history.push`; `history.shift`; 更新 / updates `state.featureRuns`, `state.featureRuns[id]`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     await this.store().update(state => {
       state.featureRuns ||= {};
       const history = (state.featureRuns[id] ||= []);
@@ -586,10 +840,31 @@ export class FeatureSuite {
     signal?.throwIfAborted();
     return result;
   }
+  /**
+   * 入口 / Entry: FeatureSuite.update.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，校验并提交领域状态变更；本入口产生 `result.result` 供上层消费（`FeatureSuite`）。
+   * Purpose: Validates and commits a domain state change in `FeatureSuite`; this entry produces `result.result` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.machines.get`, `featureSuiteUpdateRequest.parse`, `this.store().update`, `this.store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `featureSuiteUpdateRequest.parse`, `this.store().update`, `this.store`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `value.schedule`.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: `result.result`.
+   * 副作用 / Effects: `this.store().update`; `this.idleSince.delete`; `this.lastSampleAt.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async update(id: string, input: unknown) {
     this.machines.get(id);
     const value = featureSuiteUpdateRequest
       .parse(input);
+    /**
+     * 入口 / Entry: FeatureSuite.update.callback@593.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.store().update）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.store().update).
+     * 输入 / Inputs: state
+     * 输出 / Returns: `settings`.
+     * 副作用 / Effects: `this.settingsFor`; 更新 / updates `settings.schedule`, `settings.alerts`, `settings.updatedAt`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const result = await this.store().update(state => {
       const settings = this.settingsFor(state, id);
       if (value.schedule) settings.schedule = value.schedule;
@@ -600,11 +875,31 @@ export class FeatureSuite {
     if (value.schedule) { this.idleSince.delete(id); this.lastSampleAt.delete(id); }
     return result.result;
   }
+  /**
+   * 入口 / Entry: FeatureSuite.sample.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `point` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `point` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.machines.live.get`, `this.workspaces.metrics`, `this.store().update`, `this.store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.live.get`, `this.workspaces.metrics`, `this.store().update`, `this.store`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `point`.
+   * 副作用 / Effects: `this.store().update`.
+   * 拒绝 / Refusals: 条件 / conditions `boot !== this.machines.live?.get(id)?.startedAt`; 异常 / errors `new AppError('实例已重启，本次采样已失效', 409)`.
+   */
   async sample(id: string) {
     const boot = this.machines.live?.get(id)?.startedAt;
     const point = await this.workspaces.metrics(id);
     if (boot !== this.machines.live?.get(id)?.startedAt)
       throw new AppError('实例已重启，本次采样已失效', 409);
+    /**
+     * 入口 / Entry: FeatureSuite.sample.callback@608.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.store().update）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.store().update).
+     * 输入 / Inputs: state
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: `history.push`; `history.shift`; 更新 / updates `state.history[id]`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     await this.store().update(state => {
       const history = (state.history[id] ||= []);
       if (history.some((entry) => entry.sampledAt === point.sampledAt)) return;
@@ -625,10 +920,32 @@ export class FeatureSuite {
     });
     return point;
   }
+  /**
+   * 入口 / Entry: FeatureSuite.memoryTarget.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.machines.setMemoryTarget(id, target)` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `this.machines.setMemoryTarget(id, target)` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `z.number().int().min().max().parse`, `z.number().int().min().max`, `z.number().int().min`, `z.number().int` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `z.number().int().min().max().parse`, `z.number().int().min().max`, `z.number().int().min`, `z.number().int`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; memoryMiB: number
+   * 输出 / Returns: `this.machines.setMemoryTarget(id, target)`.
+   * 副作用 / Effects: `this.machines.setMemoryTarget`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async memoryTarget(id: string, memoryMiB: number) {
     const target = z.number().int().min(256).max(8192).parse(memoryMiB);
     return this.machines.setMemoryTarget(id, target);
   }
+  /**
+   * 入口 / Entry: FeatureSuite.applyPreset.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.machines.update(id, { name: vm.name, memoryMiB: target.memoryMiB, cpus: target.cpus, diskGiB: vm.diskGiB, accelerator: v…` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `this.machines.update(id, { name: vm.name, memoryMiB: target.memoryMiB, cpus: target.cpus, diskGiB: vm.diskGiB, accelerator: v…` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `z.enum().parse`, `z.enum`, `this.machines.get`, `distroInfo` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `z.enum().parse`, `z.enum`, `this.machines.get`, `distroInfo`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; preset: ResourcePresetId
+   * 输出 / Returns: `this.machines.update(id, { name: vm.name, memoryMiB: target.memoryMiB, cpus: target.cpus, diskGiB: vm.diskGiB, accelerator: v…`.
+   * 副作用 / Effects: `this.machines.update`.
+   * 拒绝 / Refusals: 条件 / conditions `target.memoryMiB < minimumMemory`; 异常 / errors `new AppError(`${target.name} 预设的内存低于 ${distro.name} 的最低要求（${minimumMemory} MiB）`)`.
+   */
   async applyPreset(id: string, preset: ResourcePresetId) {
     const key = z.enum(['light', 'development', 'build', 'desktop']).parse(preset) as ResourcePresetId;
     const vm = this.machines.get(id);
@@ -648,6 +965,17 @@ export class FeatureSuite {
       forwards: vm.forwards,
     });
   }
+  /**
+   * 入口 / Entry: FeatureSuite.diskAnalysis.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ path, entries, checkedAt: new Date().toISOString() }` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `{ path, entries, checkedAt: new Date().toISOString() }` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.machines.get`, `guestPath`, `this.machines.exec`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `guestPath`, `this.machines.exec`, `quote`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; input: { path?: string }; signal: AbortSignal optional
+   * 输出 / Returns: `{ path, entries, checkedAt: new Date().toISOString() }`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `result.code !== 0 && !result.stdout.trim()`; 异常 / errors `new AppError(result.stderr.trim() || '磁盘分析失败', 502)`.
+   */
   async diskAnalysis(id: string, input: { path?: string }, signal?: AbortSignal) {
     this.machines.get(id);
     const path = guestPath(input.path || '/workspace');
@@ -667,11 +995,33 @@ export class FeatureSuite {
       .filter((entry) => Number.isSafeInteger(entry.bytes) && entry.bytes >= 0);
     return { path, entries, checkedAt: new Date().toISOString() };
   }
+  /**
+   * 入口 / Entry: FeatureSuite.cleanupDependencyStage.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`FeatureSuite`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `FeatureSuite`; the calls and state transitions below complete the operation. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.machines.exec` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.exec`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; command: string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; 异常 / errors `new AppError('项目依赖暂存目录清理失败；请恢复实例连接后重试', 502)`.
+   */
   private async cleanupDependencyStage(id: string, command: string) {
     const result = await this.machines.exec(id, command, 10_000);
     if (result.code !== 0)
       throw new AppError('项目依赖暂存目录清理失败；请恢复实例连接后重试', 502);
   }
+  /**
+   * 入口 / Entry: FeatureSuite.dev.
+   * 功能：按开发动作生成并执行受限项目任务，包括环境锁、仓库和诊断流程。
+   * Purpose: Builds/runs bounded project development tasks including environment locks, repository work and diagnostics.
+   * 设计：工作目录、分支及输入先校验；执行复用原项目任务预算，产物和日志仍受边界与脱敏限制。
+   * Design: Directory/branch/input validation precedes execution; original task admission is reused and outputs remain bounded/redacted.
+   * 输入 / Inputs: id: string; input: Omit<Extract<FeatureAction, { action: 'dev' }>, 'action'>; signal: AbortSignal optional
+   * 输出 / Returns: `this.jobs.start( `${this.workspaces.projects.key(id)}:dev`, async (log, taskSignal, _update, saveResult) => this.workspaces.p…`.
+   * 副作用 / Effects: `path.startsWith`; `this.jobs.start`; 更新 / updates `input`.
+   * 拒绝 / Refusals: 条件 / conditions `operation === 'worktree-add' && (!branch || !/^(?!-)[A-Za-z0-9_./-]{1,128}$/.test(branch))`; `['worktree-add', 'worktree-remove'].includes(operation)`; `!path || path.startsWith('/') || path.split('/').includes('..') || !/^[A-Za-z0-9_./-]{1,160}$/.test(path)`; 异常 / errors `new AppError('分支名称无效')`; `new AppError('工作树路径必须是仓库内的相对路径')`.
+   */
   dev(id: string, input: Omit<Extract<FeatureAction, { action: 'dev' }>, 'action'>, signal?: AbortSignal) {
     const operation = z
       .enum([
@@ -727,9 +1077,42 @@ export class FeatureSuite {
     }
     const vm = this.machines.get(id);
     const original = { projectId: this.workspaces.projects.current(id), live: this.machines.live.get(id) };
+    /**
+     * 入口 / Entry: FeatureSuite.dev.callback@732.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.workspaces.projects.inScope）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.workspaces.projects.inScope).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: `AbortSignal.any`; `settings.map().join`; `settings.map`; 更新 / updates `cachePlan`, `command`.
+     * 拒绝 / Refusals: 条件 / conditions `!['prefetch-dependencies', 'database'].includes(operation)`; `prefetch`; `authentication`; 异常 / errors `new AppError('没有此开发执行器', 400, 'FEATURE_DEV_OPERATION_UNSUPPORTED')`; `error`.
+     * 收尾：退出 try 区域时始终执行 `output.flush();`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `output.flush();`; these steps also apply to exceptional exits.
+     * 失败处理：catch 分支执行 `if (error instanceof AppError && error.status === 503) throw error;`; `throw new AppError(redactValues((error as Error).message, authentication.privateValues), error instanceof AppError ? error.st…`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `if (error instanceof AppError && error.status === 503) throw error;`; `throw new AppError(redactValues((error as Error).message, authentication.privateValues), error instanceof AppError ? error.st…`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:dev`,
-      async (log, taskSignal, _update, saveResult) => this.workspaces.projects.inScope(id, original.projectId, async () => {
+      async (log, taskSignal, _update, saveResult) => this.workspaces.projects.inScope(id, original.projectId,
+      /**
+       * 中文功能：分派捕获项目的工程/开发任务，依赖预取仅读取网络认证，数据库按共享或私有网络执行，并对输出和异常脱敏。
+       * English: Dispatches captured-project engineering/development tasks, uses only network authentication for dependency prefetch, selects shared/private database execution and redacts output/errors.
+       * 所属 / Owner: FeatureSuite.dev.
+       * 输入 / Inputs: 无显式参数 / no explicit parameters.
+       * 设计：每次等待后核对原项目/取消信号；认证暂存走独立清理，日志在 finally 刷新，不把项目 secrets 导出给共享预取。
+       * Design: Recheck original-project/cancellation state after waits; authentication staging has separate cleanup and logs flush in finally without exporting project secrets to shared prefetch.
+       */
+      async () => {
+        /**
+         * 入口 / Entry: FeatureSuite.dev.assertLive.
+         * 功能：在汇集自动化功能、指标告警和实例动作中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`FeatureSuite`）。
+         * Purpose: Checks admission, input or resource ownership in `FeatureSuite`; the calls and state transitions below complete the operation. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+         * 处理：通过 `this.machines.live.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `this.machines.live.get`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 拒绝 / Refusals: 条件 / conditions `this.machines.live.get(id) !== original.live`; 异常 / errors `new AppError('开发任务客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`.
+         */
         const assertLive = () => {
           if (this.machines.live.get(id) !== original.live)
             throw new AppError('开发任务客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
@@ -742,7 +1125,19 @@ export class FeatureSuite {
             'format-lint',
             { mode: operation },
             combined,
-            { expectedLive: original.live, onEngineeringResult: async result => {
+            { expectedLive: original.live,
+            /**
+             * 入口 / Entry: FeatureSuite.dev.onEngineeringResult.
+             * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`FeatureSuite`）。
+             * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; the calls and state transitions below complete the operation. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+             * 处理：通过 `assertLive`, `combined.throwIfAborted`, `saveResult` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `assertLive`, `combined.throwIfAborted`, `saveResult`; the branches below determine continuation, return or refusal.
+             * 输入 / Inputs: result
+             * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+             * 副作用 / Effects: `saveResult`.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
+            onEngineeringResult: async result => {
               assertLive(); combined.throwIfAborted();
               await saveResult(result);
               assertLive(); combined.throwIfAborted();
@@ -772,6 +1167,15 @@ export class FeatureSuite {
           if (authentication) {
             const output = privateLog(log, authentication.privateValues);
             try {
+              /**
+               * 入口 / Entry: FeatureSuite.dev.callback@780.
+               * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（withDependencyAuthentication）。
+               * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (withDependencyAuthentication).
+               * 输入 / Inputs: paths
+               * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+               * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+               * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; 异常 / errors `new AppError( redactValues(result.stderr.trim(), authentication.privateValues) || `认证依赖预取失败（${result.code}）`, )`.
+               */
               await withDependencyAuthentication(
                 this.machines,
                 id,
@@ -905,6 +1309,18 @@ export class FeatureSuite {
       },
     );
   }
+  /**
+   * 入口 / Entry: FeatureSuite.checkAlerts.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，核对调用资格、输入或资源归属；本入口产生 `void` 供上层消费（`FeatureSuite`）。
+   * Purpose: Checks admission, input or resource ownership in `FeatureSuite`; this entry produces `void` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.settingsFor`, `state.events.push`, `state.events.splice` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.settingsFor`, `state.events.push`, `state.events.splice`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!settings.enabled`; `!Number.isFinite(value) || value < threshold`; `Date.now() - last < settings.cooldownMinutes * 60_000`.
+   * 输入 / Inputs: id: string; point: MetricPoint; state: FeatureState
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.settingsFor`; `state.events.push`; `state.events.splice`; 更新 / updates `state.lastAlerts[id]`, `previous[kind]`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private checkAlerts(id: string, point: MetricPoint, state: FeatureState) {
     const settings = this.settingsFor(state, id).alerts;
     if (!settings.enabled) return;
@@ -940,6 +1356,18 @@ export class FeatureSuite {
     }
     if (state.events.length > 500) state.events.splice(0, state.events.length - 500);
   }
+  /**
+   * 入口 / Entry: FeatureSuite.checkOperationalAlerts.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，核对调用资格、输入或资源归属；本入口产生 `void` 供上层消费（`FeatureSuite`）。
+   * Purpose: Checks admission, input or resource ownership in `FeatureSuite`; this entry produces `void` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.settingsFor`, `this.observations.jobs().filter`, `this.observations.jobs`, `seen.has` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.settingsFor`, `this.observations.jobs().filter`, `this.observations.jobs`, `seen.has`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!settings.alerts.enabled`; `!job.id || seen.has(job.id) || !['error', 'interrupted'].includes(job.status)`; `!(service ? settings.alerts.serviceFailures : settings.alerts.taskFailures) || !Number.isFinite(Date…`.
+   * 输入 / Inputs: id: string; state: FeatureState; secrets: SecretRotationItem[] optional
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.settingsFor`; `seen.add`; `state.events.push`; `state.events.splice`; 更新 / updates `state.lastAlerts[id]`, `state.notifiedJobs`, `state.notifiedJobs[id]`, `state.notifiedSecretRotations`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private checkOperationalAlerts(id: string, state: FeatureState, secrets?: SecretRotationItem[]) {
     const settings = this.settingsFor(state, id);
     if (!settings.alerts.enabled) return;
@@ -1016,8 +1444,28 @@ export class FeatureSuite {
       }
     if (state.events.length > 500) state.events.splice(0, state.events.length - 500);
   }
+  /**
+   * 入口 / Entry: FeatureSuite.acknowledge.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `(await this.store().update(state => { const event = state.events.find((value) => value.vmId === id && value.id === eventId); …` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `(await this.store().update(state => { const event = state.events.find((value) => value.vmId === id && value.id === eventId); …` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.machines.get`, `this.store().update`, `this.store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.store().update`, `this.store`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; eventId: string
+   * 输出 / Returns: `(await this.store().update(state => { const event = state.events.find((value) => value.vmId === id && value.id === eventId); …`.
+   * 副作用 / Effects: `this.store().update`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async acknowledge(id: string, eventId: string) {
     this.machines.get(id);
+    /**
+     * 入口 / Entry: FeatureSuite.acknowledge.callback@1021.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.store().update）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.store().update).
+     * 输入 / Inputs: state
+     * 输出 / Returns: `event`.
+     * 副作用 / Effects: 更新 / updates `event.acknowledged`.
+     * 拒绝 / Refusals: 条件 / conditions `!event`; 异常 / errors `new AppError('告警不存在', 404)`.
+     */
     return (await this.store().update(state => {
       const event = state.events.find((value) => value.vmId === id && value.id === eventId);
       if (!event) throw new AppError('告警不存在', 404);
@@ -1025,6 +1473,17 @@ export class FeatureSuite {
       return event;
     })).result;
   }
+  /**
+   * 入口 / Entry: FeatureSuite.search.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ query, path, content: input.content !== false, matches: result.stdout.split(/\r?\n/).filter(Boolean).slice(0, 200), }` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `{ query, path, content: input.content !== false, matches: result.stdout.split(/\r?\n/).filter(Boolean).slice(0, 200), }` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.machines.get`, `searchText.parse`, `guestPath`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `searchText.parse`, `guestPath`, `quote`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; input: { query: string; path?: string; content?: boolean }; signal: AbortSignal optional
+   * 输出 / Returns: `{ query, path, content: input.content !== false, matches: result.stdout.split(/\r?\n/).filter(Boolean).slice(0, 200), }`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `result.code && !result.stdout.trim()`; 异常 / errors `new AppError(result.stderr.trim() || '搜索失败', 502)`.
+   */
   async search(id: string, input: { query: string; path?: string; content?: boolean }, signal?: AbortSignal) {
     this.machines.get(id);
     const query = searchText.parse(input.query);
@@ -1042,6 +1501,17 @@ export class FeatureSuite {
       matches: result.stdout.split(/\r?\n/).filter(Boolean).slice(0, 200),
     };
   }
+  /**
+   * 入口 / Entry: FeatureSuite.package.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.jobs.start( `${this.workspaces.projects.key(id)}:package`, async (log, taskSignal) => { const combined = taskSignal && s…` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `this.jobs.start( `${this.workspaces.projects.key(id)}:package`, async (log, taskSignal) => { const combined = taskSignal && s…` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `z.enum().parse`, `z.enum`, `packageName.parse`, `inline.includes` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `z.enum().parse`, `z.enum`, `packageName.parse`, `inline.includes`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; input: Omit<Extract<FeatureAction, { action: 'package' }>, 'action'>; signal: AbortSignal optional
+   * 输出 / Returns: `this.jobs.start( `${this.workspaces.projects.key(id)}:package`, async (log, taskSignal) => { const combined = taskSignal && s…`.
+   * 副作用 / Effects: `operation.startsWith`; `this.jobs.start`.
+   * 拒绝 / Refusals: 条件 / conditions `['search', 'install', 'remove', 'upgrade'].includes(operation) && !name`; 异常 / errors `new AppError('此操作需要软件包名称')`.
+   */
   package(
     id: string,
     input: Omit<Extract<FeatureAction, { action: 'package' }>, 'action'>,
@@ -1096,6 +1566,17 @@ export class FeatureSuite {
       },
     );
   }
+  /**
+   * 入口 / Entry: FeatureSuite.networkTest.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ target: host, output: JSON.stringify(result, null, 2), code: result.code, }` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `{ target: host, output: JSON.stringify(result, null, 2), code: result.code, }` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `hostTarget.parse`, `runEngineeringOperation`, `capabilityParameters` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `hostTarget.parse`, `runEngineeringOperation`, `capabilityParameters`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; target: string; signal: AbortSignal optional
+   * 输出 / Returns: `{ target: host, output: JSON.stringify(result, null, 2), code: result.code, }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async networkTest(id: string, target: string, signal?: AbortSignal) {
     const host = hostTarget.parse(target);
     const result = await runEngineeringOperation(
@@ -1112,6 +1593,18 @@ export class FeatureSuite {
       code: result.code,
     };
   }
+  /**
+   * 入口 / Entry: FeatureSuite.discoverPorts.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ports: [...ports].filter((port) => port > 0 && port < 65536).sort((a, b) => a - b) }` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `{ ports: [...ports].filter((port) => port > 0 && port < 65536).sort((a, b) => a - b) }` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.machines.exec`, `result.stdout.split`, `line.match`, `ports.add` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.exec`, `result.stdout.split`, `line.match`, `ports.add`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `match`.
+   * 输入 / Inputs: id: string; signal: AbortSignal optional
+   * 输出 / Returns: `{ ports: [...ports].filter((port) => port > 0 && port < 65536).sort((a, b) => a - b) }`.
+   * 副作用 / Effects: `this.machines.exec`; `ports.add`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async discoverPorts(id: string, signal?: AbortSignal) {
     const result = await this.machines.exec(
       id,
@@ -1126,6 +1619,17 @@ export class FeatureSuite {
     }
     return { ports: [...ports].filter((port) => port > 0 && port < 65536).sort((a, b) => a - b) };
   }
+  /**
+   * 入口 / Entry: FeatureSuite.securityScan.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ checkedAt: new Date().toISOString(), findings, output, code: result.code, vulnerabilityScan }` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `{ checkedAt: new Date().toISOString(), findings, output, code: result.code, vulnerabilityScan }` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.machines.exec`, `inline.trim`, `scanGuestVulnerabilities`, `inline.join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.exec`, `inline.trim`, `scanGuestVulnerabilities`, `inline.join`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; signal: AbortSignal optional
+   * 输出 / Returns: `{ checkedAt: new Date().toISOString(), findings, output, code: result.code, vulnerabilityScan }`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async securityScan(id: string, signal?: AbortSignal) {
     const result = await this.machines.exec(
       id,
@@ -1156,6 +1660,18 @@ export class FeatureSuite {
     return { checkedAt: new Date().toISOString(), findings, output, code: result.code,
       vulnerabilityScan };
   }
+  /**
+   * 入口 / Entry: FeatureSuite.action.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.sample(id)` / `this.memoryTarget(id, value.memoryMiB)` 供上层消费（`FeatureSuite`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `FeatureSuite`; this entry produces `this.sample(id)` / `this.memoryTarget(id, value.memoryMiB)` for its caller. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `featureSuiteActionRequest.parse`, `this.sample`, `this.memoryTarget`, `this.applyPreset` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `featureSuiteActionRequest.parse`, `this.sample`, `this.memoryTarget`, `this.applyPreset`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `value.action === 'sample'`; `value.action === 'memory-target'`; `value.action === 'apply-preset'`.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal optional
+   * 输出 / Returns: `this.sample(id)`; `this.memoryTarget(id, value.memoryMiB)`; `this.applyPreset(id, value.preset)`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async action(id: string, input: unknown, signal?: AbortSignal) {
     const value = featureSuiteActionRequest
       .parse(input) as FeatureAction;
@@ -1173,6 +1689,21 @@ export class FeatureSuite {
     if (value.action === 'feature-run') return this.feature(id, { ...value, action: 'run' }, signal);
     return this.acknowledge(id, value.id);
   }
+  /**
+   * 入口 / Entry: FeatureSuite.tick.
+   * 功能：周期采样指标、告警与实例调度策略，并触发符合条件的受管动作。
+   * Purpose: Periodically samples metrics/alerts/schedules and triggers eligible managed actions.
+   * 设计：跳过关闭、维护或活动冲突的对象；采样失败不使整个周期停止，动作仍需当前领域准入。
+   * Design: Closed/maintenance/conflicting work is skipped; sampling failures do not stop the whole cycle and effects still require current admission.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.settingsFor`; `this.store().update`; `this.idleSince.delete`; `this.idleSince.set`; `this.lastSampleAt.set`; 更新 / updates `this.ticking`, `point`, `sampled`, `powerSample`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `this.ticking = false;`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.ticking = false;`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 ，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute ; these statements determine whether a failure is absorbed or rejected again.
+   */
   async tick() {
     if (this.closed || this.ticking) return;
     const signal = this.powerAbort.signal;
@@ -1278,6 +1809,17 @@ export class FeatureSuite {
       this.ticking = false;
     }
   }
+  /**
+   * 入口 / Entry: FeatureSuite.close.
+   * 功能：在汇集自动化功能、指标告警和实例动作中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`, `this.backgroundEnabled`（`FeatureSuite`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `FeatureSuite`; the outcome is recorded in `this.closed`, `this.backgroundEnabled`. Module context: Collects automation, metric alerts and VM actions, delegating background sampling and policy execution to shared scheduling.
+   * 处理：通过 `this.powerAbort.abort`, `this.jobs.close`, `this.store().flush`, `this.store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.powerAbort.abort`, `this.jobs.close`, `this.store().flush`, `this.store`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.powerAbort.abort`; `this.jobs.close`; 更新 / updates `this.closed`, `this.backgroundEnabled`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true;
     this.powerAbort.abort();

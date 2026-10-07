@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理本地 HTTP 入口、别名和客户端证书，维护 TLS 入口及转发资源生命周期。
+ * Module purpose: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
  */
 import type { IngressCertificatesV1 } from './service-contracts/v1.ts';
 import { networkFor, type NetworkScope } from './network/index.ts';
@@ -41,6 +42,18 @@ const hopHeaders = new Set([
   'forwarded',
 ]);
 
+/**
+ * 入口 / Entry: cleanHeaders.
+ * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `next` 供上层消费（`http-ingress.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-ingress.ts`; this entry produces `next` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+ * 处理：通过 `hopHeaders.has`, `listed.includes`, `key.startsWith` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `hopHeaders.has`, `listed.includes`, `key.startsWith`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `hopHeaders.has(key) || listed.includes(key) || key.startsWith('x-forwarded-')`.
+ * 输入 / Inputs: headers: IncomingMessage['headers']
+ * 输出 / Returns: `next`.
+ * 副作用 / Effects: `key.startsWith`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function cleanHeaders(headers: IncomingMessage['headers']) {
   const next = { ...headers };
   const listed = String(headers.connection || '')
@@ -52,10 +65,33 @@ function cleanHeaders(headers: IncomingMessage['headers']) {
   return next;
 }
 
+/**
+ * 入口 / Entry: matching.
+ * 功能：从当前输入或状态计算 `prefix === '/' || path === prefix || path.startsWith(`${prefix}/`)`，供调用方后续验证或使用。
+ * Purpose: Computes `prefix === '/' || path === prefix || path.startsWith(`${prefix}/`)` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: path: string; prefix: string
+ * 输出 / Returns: `prefix === '/' || path === prefix || path.startsWith(`${prefix}/`)`.
+ * 副作用 / Effects: `path.startsWith`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function matching(path: string, prefix: string) {
   return prefix === '/' || path === prefix || path.startsWith(`${prefix}/`);
 }
 
+/**
+ * 入口 / Entry: localClient.
+ * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `false` / `true` 供上层消费（`http-ingress.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-ingress.ts`; this entry produces `false` / `true` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+ * 处理：通过 `req.headers.host.toLowerCase`, `aliases.has`, `origin.host.toLowerCase` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `req.headers.host.toLowerCase`, `aliases.has`, `origin.host.toLowerCase`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `host && host !== `127.0.0.1:${port}` && host !== `localhost:${port}` && !aliases.has(host)`; `!req.headers.origin`; `!host`.
+ * 输入 / Inputs: req: IncomingMessage; port: number; aliases: Set<string>
+ * 输出 / Returns: `false`; `true`; `origin.host.toLowerCase() === host && origin.protocol === ((req.socket as { encrypted?: boolean }).encrypted ? 'https:' : 'ht…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ * 失败处理：catch 分支执行 `return false;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `return false;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 function localClient(req: IncomingMessage, port: number, aliases: Set<string>) {
   const host = req.headers.host?.toLowerCase();
   if (host && host !== `127.0.0.1:${port}` && host !== `localhost:${port}` && !aliases.has(host))
@@ -71,6 +107,19 @@ function localClient(req: IncomingMessage, port: number, aliases: Set<string>) {
   }
 }
 
+/**
+ * 入口 / Entry: clientCertificate.
+ * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new X509Certificate(pem)` 供上层消费（`http-ingress.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-ingress.ts`; this entry produces `new X509Certificate(pem)` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+ * 处理：通过 `pem.match` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `pem.match`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: pem: string
+ * 输出 / Returns: `new X509Certificate(pem)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `(pem.match(/-----BEGIN CERTIFICATE-----/g) || []).length !== 1 || (pem.match(/-----END CERTIFICATE-----/g) || []).length !== …`; 异常 / errors `new AppError('每个客户端证书字段只能包含一张 PEM 证书', 409)`; `new AppError('客户端证书不是有效的 PEM 证书', 409)`.
+ * 失败处理：catch 分支执行 `throw new AppError('客户端证书不是有效的 PEM 证书', 409);`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `throw new AppError('客户端证书不是有效的 PEM 证书', 409);`; these statements determine whether a failure is absorbed or rejected again.
+ */
 function clientCertificate(pem: string) {
   if ((pem.match(/-----BEGIN CERTIFICATE-----/g) || []).length !== 1 ||
       (pem.match(/-----END CERTIFICATE-----/g) || []).length !== 1)
@@ -82,6 +131,18 @@ function clientCertificate(pem: string) {
   }
 }
 
+/**
+ * 入口 / Entry: validateClientAuth.
+ * 功能：在管理本地 HTTP 入口、别名和客户端证书中，核对调用资格、输入或资源归属；本入口产生 `void` 供上层消费（`http-ingress.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `http-ingress.ts`; this entry produces `void` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+ * 处理：通过 `clientCertificate`, `validateIssuer` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `clientCertificate`, `validateIssuer`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!policy`; `rotateAt === null || rotateAt > now`; `rotateAt !== null`.
+ * 输入 / Inputs: policy: IngressClientAuth | null; protocol: 'http' | 'https'
+ * 输出 / Returns: `void`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `protocol !== 'https'`; `replacement && current.fingerprint256 === replacement.fingerprint256`; `Date.parse(active.validFrom) > now || Date.parse(active.validTo) <= now`; 异常 / errors `new AppError('mTLS 策略只能用于 HTTPS 入口', 409)`; `new AppError('替换证书须与当前客户端证书不同', 409)`.
+ */
 function validateClientAuth(policy: IngressClientAuth | null, protocol: 'http' | 'https') {
   if (!policy) return;
   if (protocol !== 'https') throw new AppError('mTLS 策略只能用于 HTTPS 入口', 409);
@@ -89,6 +150,17 @@ function validateClientAuth(policy: IngressClientAuth | null, protocol: 'http' |
   const current = clientCertificate(policy.currentPem);
   const rotateAt = policy.rotateAt ? Date.parse(policy.rotateAt) : null;
   const replacement = policy.replacementPem ? clientCertificate(policy.replacementPem) : null;
+  /**
+   * 入口 / Entry: validateClientAuth.validateIssuer.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，核对调用资格、输入或资源归属；本入口产生 `void` 供上层消费（`http-ingress.ts`）。
+   * Purpose: Checks admission, input or resource ownership in `http-ingress.ts`; this entry produces `void` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `leaf.verify`, `clientCertificate`, `leaf.checkIssued` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `leaf.verify`, `clientCertificate`, `leaf.checkIssued`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: leaf: X509Certificate; issuerPem: string | undefined; at: number
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!issuerPem`; `!leaf.verify(leaf.publicKey)`; `!issuer.ca || !leaf.checkIssued(issuer) || !leaf.verify(issuer.publicKey)`; 异常 / errors `new AppError('非自签名的客户端证书须填写直接签发 CA', 409)`; `new AppError('客户端证书不是由所填 CA 直接签发', 409)`.
+   */
   const validateIssuer = (leaf: X509Certificate, issuerPem: string | undefined, at: number) => {
     if (!issuerPem) {
       if (!leaf.verify(leaf.publicKey))
@@ -120,6 +192,18 @@ function validateClientAuth(policy: IngressClientAuth | null, protocol: 'http' |
   }
 }
 
+/**
+ * 入口 / Entry: allowedClient.
+ * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `true` / `false` 供上层消费（`http-ingress.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-ingress.ts`; this entry produces `true` / `false` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+ * 处理：通过 `req.socket.getPeerCertificate`, `clientCertificate` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `req.socket.getPeerCertificate`, `clientCertificate`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!policy`; `!(req.socket instanceof TLSSocket) || !req.socket.authorized`; `!peer.raw`.
+ * 输入 / Inputs: req: IncomingMessage; policy: IngressClientAuth | null
+ * 输出 / Returns: `true`; `false`; `Date.parse(active.validFrom) <= now && Date.parse(active.validTo) > now && peer.fingerprint256 === active.fingerprint256`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function allowedClient(req: IncomingMessage, policy: IngressClientAuth | null) {
   if (!policy) return true;
   if (!(req.socket instanceof TLSSocket) || !req.socket.authorized) return false;
@@ -142,10 +226,28 @@ export class HttpIngress {
   private listenerErrors: Record<string, string> = {};
   private health = new Map<string, IngressHealth>();
   private timer?: ScheduleHandle;
+  /**
+   * 签名 / Signature: HttpIngress.unsubscribe.
+   * 功能：为管理本地 HTTP 入口、别名和客户端证书声明 unsubscribe 的输入与结果契约，所属容器为 HttpIngress。
+   * Purpose: Declares the input/result contract for unsubscribe in HttpIngress. Module responsibility: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   private unsubscribe?: () => void;
   private closed = false;
   private file: string;
 
+  /**
+   * 入口 / Entry: HttpIngress.constructor.
+   * 功能：建立 HttpIngress 的管理本地 HTTP 入口、别名和客户端证书上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the HttpIngress context for this module's responsibility: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; file: string | PluginMetadata default=join(DATA, 'plugins', 'network', 'ingress.json'); certificates: IngressCertificatesV1 optional; networking: NetworkScope default=networkFor('core:http-ingress')
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.file`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   constructor(
     private machines: Machines,
     file: string | PluginMetadata = join(DATA, 'plugins', 'network', 'ingress.json'),
@@ -153,6 +255,20 @@ export class HttpIngress {
     private networking: NetworkScope = networkFor('core:http-ingress'),
   ) { this.file = metadataPath(file); }
 
+  /**
+   * 入口 / Entry: HttpIngress.init.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，初始化并核对当前领域状态；处理结果记录到 `this.entries`, `this.unsubscribe`, `this.listenerErrors[String(port)]`（`HttpIngress`）。
+   * Purpose: Initializes and verifies current domain state in `HttpIngress`; the outcome is recorded in `this.entries`, `this.unsubscribe`, `this.listenerErrors[String(port)]`. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `storedSchema.parse`, `readStore`, `this.certificates.onChange`, `this.entries.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `storedSchema.parse`, `readStore`, `this.certificates.onChange`, `this.entries.map`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.certificates`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.listeners.keys`; `this.listeners.set`; `this.listen`; `scheduler.register`; 更新 / updates `this.entries`, `this.unsubscribe`, `this.listenerErrors[String(port)]`, `this.timer`.
+   * 拒绝 / Refusals: 条件 / conditions `protocols.size !== 1`; `protocols.has('https')`; `!this.certificates`; 异常 / errors `new AppError('同一端口不能混用 HTTP 与 HTTPS', 409)`; `new AppError('HTTPS 证书服务未启用', 503)`.
+   * 失败处理：catch 分支执行 `this.machines.reserveHostPorts(OWNER, this.listeners.keys());`; `this.listenerErrors[String(port)] = (error as Error).message;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.machines.reserveHostPorts(OWNER, this.listeners.keys());`; `this.listenerErrors[String(port)] = (error as Error).message;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async init() {
     this.entries = storedSchema.parse(await readStore(this.file, () => []));
     if (this.certificates)
@@ -184,9 +300,28 @@ export class HttpIngress {
       }
     }
     this.timer = scheduler.register({ owner: 'plugin:network', label: 'HTTP 入口健康检查', intervalMs: 15000,
-      immediate: true, overlap: 'skip', run: () => this.checkAll() });
+      immediate: true, overlap: 'skip',
+      /**
+       * 入口 / Entry: HttpIngress.init.run.
+       * 功能：把本层请求转交 `this.checkAll`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `this.checkAll` and propagates the provider result or rejection.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `this.checkAll()`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
+      run: () => this.checkAll() });
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.view.
+   * 功能：从当前输入或状态计算 `{ entries: this.entries.map((entry) => ({ ...entry, url: `${entry.protocol}://${entry.domainAlias ? ingressAlias(entry.id) : …`，供调用方后续验证或使用。
+   * Purpose: Computes `{ entries: this.entries.map((entry) => ({ ...entry, url: `${entry.protocol}://${entry.domainAlias ? ingressAlias(entry.id) : …` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: IngressView；结果来自 / values from `{ entries: this.entries.map((entry) => ({ ...entry, url: `${entry.protocol}://${entry.domainAlias ? ingressAlias(entry.id) : …`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   view(): IngressView {
     return {
       entries: this.entries.map((entry) => ({
@@ -198,10 +333,32 @@ export class HttpIngress {
     };
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.aliasNames.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.entries.filter((entry) => entry.domainAlias).map((entry) => ingressAlias(entry.id))` 供上层消费（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; this entry produces `this.entries.filter((entry) => entry.domainAlias).map((entry) => ingressAlias(entry.id))` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `this.entries.filter().map`, `this.entries.filter` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.entries.filter().map`, `this.entries.filter`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.entries.filter((entry) => entry.domainAlias).map((entry) => ingressAlias(entry.id))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   aliasNames() {
     return this.entries.filter((entry) => entry.domainAlias).map((entry) => ingressAlias(entry.id));
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.action.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.view()` / `this.machines.locked('launch', async () => { if (this.closed) throw new AppError('入口服务正在关闭', 503); let next: IngressEntry[]; …` 供上层消费（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; this entry produces `this.view()` / `this.machines.locked('launch', async () => { if (this.closed) throw new AppError('入口服务正在关闭', 503); let next: IngressEntry[]; …` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `ingressActionSchema.parse`, `this.entries.filter`, `Promise.all`, `entries.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `ingressActionSchema.parse`, `this.entries.filter`, `Promise.all`, `entries.map`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<IngressView>；结果来自 / values from `this.view()`; `this.machines.locked('launch', async () => { if (this.closed) throw new AppError('入口服务正在关闭', 503); let next: IngressEntry[]; …`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `action.action === 'check'`; `action.id && !entries.length`; 异常 / errors `new AppError('服务入口不存在', 404)`.
+   */
   async action(input: unknown): Promise<IngressView> {
     const action = ingressActionSchema.parse(input) as IngressAction;
     if (action.action === 'check') {
@@ -210,6 +367,15 @@ export class HttpIngress {
       await Promise.all(entries.map((entry) => this.check(entry)));
       return this.view();
     }
+    /**
+     * 入口 / Entry: HttpIngress.action.callback@213.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.machines.locked / launch）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.machines.locked / launch).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view()`.
+     * 副作用 / Effects: `this.listeners.has`; 更新 / updates `next`.
+     * 拒绝 / Refusals: 条件 / conditions `this.closed`; `action.action === 'delete'`; `!this.entries.some((entry) => entry.id === action.id)`; 异常 / errors `new AppError('入口服务正在关闭', 503)`; `new AppError('服务入口不存在', 404)`.
+     */
     return this.machines.locked('launch', async () => {
       if (this.closed) throw new AppError('入口服务正在关闭', 503);
       let next: IngressEntry[];
@@ -255,6 +421,20 @@ export class HttpIngress {
     });
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.apply.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.entries`, `this.listenerErrors`（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; the outcome is recorded in `this.entries`, `this.listenerErrors`. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `this.listeners.keys`, `next.map`, `this.machines.reserveHostPorts`, `next.some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.listeners.keys`, `next.map`, `this.machines.reserveHostPorts`, `next.some`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `next.some((entry) => entry.protocol === 'https' && entry.domainAlias)`; `this.listeners.has(port)`; `protocol === 'https'`.
+   * 输入 / Inputs: next: IngressEntry[]
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.listeners.keys`; `this.listeners.has`; `added.set`; `this.listen`; `inline.setSecureContext`; 更新 / updates `this.entries`, `this.listenerErrors`.
+   * 拒绝 / Refusals: 异常 / errors `error`.
+   * 失败处理：catch 分支执行 `for (const [port, server] of this.listeners) if (this.entries.some((entry) => entry.listenPort === port && entry.protocol ===…`; `for (const [port, server] of added) await this.closeListener(port, server);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `for (const [port, server] of this.listeners) if (this.entries.some((entry) => entry.listenPort === port && entry.protocol ===…`; `for (const [port, server] of added) await this.closeListener(port, server);`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async apply(next: IngressEntry[]) {
     const oldPorts = [...this.listeners.keys()];
     const nextPorts = [...new Set(next.map((entry) => entry.listenPort))];
@@ -293,6 +473,17 @@ export class HttpIngress {
     void this.checkAll().catch(() => {});
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.trustAnchors.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `[...new Set(entries.filter((entry) => entry.listenPort === port) .flatMap((entry) => entry.clientAuth ? [entry.clientAuth.cur…` 供上层消费（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; this entry produces `[...new Set(entries.filter((entry) => entry.listenPort === port) .flatMap((entry) => entry.clientAuth ? [entry.clientAuth.cur…` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `entries.filter().flatMap`, `entries.filter` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `entries.filter().flatMap`, `entries.filter`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: port: number; entries: IngressEntry[]
+   * 输出 / Returns: `[...new Set(entries.filter((entry) => entry.listenPort === port) .flatMap((entry) => entry.clientAuth ? [entry.clientAuth.cur…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private trustAnchors(port: number, entries: IngressEntry[]) {
     return [...new Set(entries.filter((entry) => entry.listenPort === port)
       .flatMap((entry) => entry.clientAuth
@@ -302,6 +493,17 @@ export class HttpIngress {
         : []))];
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.secureOptions.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ...this.certificates!.tlsOptions(), ca: this.trustAnchors(port, entries), requestCert: true, rejectUnauthorized: false, }` 供上层消费（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; this entry produces `{ ...this.certificates!.tlsOptions(), ca: this.trustAnchors(port, entries), requestCert: true, rejectUnauthorized: false, }` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `inline.tlsOptions`, `this.trustAnchors` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `inline.tlsOptions`, `this.trustAnchors`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: port: number; entries: IngressEntry[]
+   * 输出 / Returns: `{ ...this.certificates!.tlsOptions(), ca: this.trustAnchors(port, entries), requestCert: true, rejectUnauthorized: false, }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private secureOptions(port: number, entries: IngressEntry[]) {
     return {
       ...this.certificates!.tlsOptions(),
@@ -311,7 +513,27 @@ export class HttpIngress {
     };
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.listen.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `new Promise<Server>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', () => { server.off(…` 供上层消费（`HttpIngress`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `HttpIngress`; this entry produces `new Promise<Server>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', () => { server.off(…` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `this.networking.createHttpsServer`, `this.secureOptions`, `this.networking.createHttpServer`, `server.on` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.networking.createHttpsServer`, `this.secureOptions`, `this.networking.createHttpServer`, `server.on`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: port: number; protocol: 'http' | 'https'; entries: IngressEntry[]
+   * 输出 / Returns: `new Promise<Server>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', () => { server.off(…`.
+   * 副作用 / Effects: `this.networking.createHttpsServer`; `this.networking.createHttpServer`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private listen(port: number, protocol: 'http' | 'https', entries: IngressEntry[]) {
+    /**
+     * 入口 / Entry: HttpIngress.listen.listener.
+     * 功能：把本层请求转交 `this.proxy`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.proxy` and propagates the provider result or rejection.
+     * 输入 / Inputs: req: IncomingMessage; res: ServerResponse
+     * 输出 / Returns: `this.proxy(req, res, port)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const listener = (req: IncomingMessage, res: ServerResponse) => this.proxy(req, res, port);
     const server: Server =
       protocol === 'https'
@@ -331,6 +553,17 @@ export class HttpIngress {
     });
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.trackSocket.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; the calls and state transitions below complete the operation. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `this.sockets.get`, `sockets.add`, `this.sockets.set`, `socket.once` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.sockets.get`, `sockets.add`, `this.sockets.set`, `socket.once`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: port: number; socket: Duplex
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `sockets.add`; `this.sockets.set`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private trackSocket(port: number, socket: Duplex) {
     const sockets = this.sockets.get(port) || new Set<Duplex>();
     sockets.add(socket);
@@ -338,6 +571,17 @@ export class HttpIngress {
     socket.once('close', () => sockets.delete(socket));
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.closeListener.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，结束、撤销或清理本次拥有的领域资源；本入口产生 `new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); })` 供上层消费（`HttpIngress`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `HttpIngress`; this entry produces `new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); })` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `this.sockets.get`, `socket.destroy`, `this.sockets.delete` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.sockets.get`, `socket.destroy`, `this.sockets.delete`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: port: number; server: Server
+   * 输出 / Returns: `new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); })`.
+   * 副作用 / Effects: `socket.destroy`; `this.sockets.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private closeListener(port: number, server: Server) {
     for (const socket of this.sockets.get(port) || []) socket.destroy();
     this.sockets.delete(port);
@@ -347,6 +591,17 @@ export class HttpIngress {
     });
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.aliases.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new Set( this.entries .filter((entry) => entry.listenPort === port && entry.domainAlias) .map((entry) => `${ingressAlias(entr…` 供上层消费（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; this entry produces `new Set( this.entries .filter((entry) => entry.listenPort === port && entry.domainAlias) .map((entry) => `${ingressAlias(entr…` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `this.entries.filter().map`, `this.entries.filter` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.entries.filter().map`, `this.entries.filter`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: port: number
+   * 输出 / Returns: `new Set( this.entries .filter((entry) => entry.listenPort === port && entry.domainAlias) .map((entry) => `${ingressAlias(entr…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private aliases(port: number) {
     return new Set(
       this.entries
@@ -355,6 +610,20 @@ export class HttpIngress {
     );
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.target.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `null` / `{ entry, path: `${path}${url.search}` }` 供上层消费（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; this entry produces `null` / `{ entry, path: `${path}${url.search}` }` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `raw.startsWith`, `req.headers.host.toLowerCase().replace`, `req.headers.host.toLowerCase`, `this.entries.filter().sort` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `raw.startsWith`, `req.headers.host.toLowerCase().replace`, `req.headers.host.toLowerCase`, `this.entries.filter().sort`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!raw.startsWith('/') || raw.startsWith('//')`; `url.origin !== 'http://127.0.0.1'`; `!entry`.
+   * 输入 / Inputs: req: IncomingMessage; port: number
+   * 输出 / Returns: `null`; `{ entry, path: `${path}${url.search}` }`.
+   * 副作用 / Effects: `raw.startsWith`; `req.headers.host.toLowerCase().replace`; 更新 / updates `url`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `return null;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `return null;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private target(req: IncomingMessage, port: number) {
     const raw = req.url || '/';
     if (!raw.startsWith('/') || raw.startsWith('//')) return null;
@@ -384,6 +653,20 @@ export class HttpIngress {
     return { entry, path: `${path}${url.search}` };
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.availability.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ status: 'unhealthy', error: this.listenerErrors[String(entry.listenPort)] }` / `{ status: 'unhealthy', error: this.listenerErrors[String(entry.listenPort)] || '监听端口不可用', }` 供上层消费（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; this entry produces `{ status: 'unhealthy', error: this.listenerErrors[String(entry.listenPort)] }` / `{ status: 'unhealthy', error: this.listenerErrors[String(entry.listenPort)] || '监听端口不可用', }` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `this.listeners.has`, `this.machines.get`, `vm.forwards.some`, `this.machines.state` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.listeners.has`, `this.machines.get`, `vm.forwards.some`, `this.machines.state`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.listenerErrors[String(entry.listenPort)]`; `!this.listeners.has(entry.listenPort)`; `!vm.forwards.some((forward) => forward.host === entry.upstreamPort)`.
+   * 输入 / Inputs: entry: IngressEntry
+   * 输出 / Returns: IngressHealth | null；结果来自 / values from `{ status: 'unhealthy', error: this.listenerErrors[String(entry.listenPort)] }`; `{ status: 'unhealthy', error: this.listenerErrors[String(entry.listenPort)] || '监听端口不可用', }`; `{ status: 'unconfigured', error: '上游端口转发已移除' }`.
+   * 副作用 / Effects: `this.listeners.has`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `return { status: 'unconfigured', error: '实例已移除' };`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `return { status: 'unconfigured', error: '实例已移除' };`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private availability(entry: IngressEntry): IngressHealth | null {
     if (this.listenerErrors[String(entry.listenPort)])
       return { status: 'unhealthy', error: this.listenerErrors[String(entry.listenPort)] };
@@ -403,6 +686,18 @@ export class HttpIngress {
     return null;
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.proxy.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; this entry produces `void` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `localClient`, `this.aliases`, `res.writeHead().end`, `res.writeHead` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `localClient`, `this.aliases`, `res.writeHead().end`, `res.writeHead`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!localClient(req, port, this.aliases(port))`; `!target`; `!allowedClient(req, target.entry.clientAuth)`.
+   * 输入 / Inputs: req: IncomingMessage; res: ServerResponse; port: number
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `res.writeHead().end`; `res.writeHead`; 更新 / updates `headers.host`, `headers['x-forwarded-for']`, `headers['x-forwarded-host']`, `headers['x-forwarded-proto']`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private proxy(req: IncomingMessage, res: ServerResponse, port: number) {
     if (!localClient(req, port, this.aliases(port))) {
       res.writeHead(403).end('Forbidden');
@@ -427,6 +722,15 @@ export class HttpIngress {
     headers['x-forwarded-host'] = req.headers.host || `127.0.0.1:${port}`;
     headers['x-forwarded-proto'] = target.entry.protocol;
     if (target.entry.pathPrefix !== '/') headers['x-forwarded-prefix'] = target.entry.pathPrefix;
+    /**
+     * 入口 / Entry: HttpIngress.proxy.callback@439.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.networking.httpRequest）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.networking.httpRequest).
+     * 输入 / Inputs: response
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `res.writeHead`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const upstream = this.networking.httpRequest(
       {
         hostname: '127.0.0.1',
@@ -453,6 +757,18 @@ export class HttpIngress {
     req.pipe(upstream);
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.upgrade.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`HttpIngress`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HttpIngress`; this entry produces `void` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `localClient`, `this.aliases`, `socket.end`, `this.target` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `localClient`, `this.aliases`, `socket.end`, `this.target`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!localClient(req, port, this.aliases(port))`; `!target || req.headers.upgrade?.toLowerCase() !== 'websocket'`; `!allowedClient(req, target.entry.clientAuth)`.
+   * 输入 / Inputs: req: IncomingMessage; socket: Duplex; head: Buffer; port: number
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 更新 / updates `headers.host`, `headers.connection`, `headers.upgrade`, `headers['x-forwarded-for']`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, port: number) {
     if (!localClient(req, port, this.aliases(port))) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
@@ -486,6 +802,15 @@ export class HttpIngress {
       headers,
       timeout: 30000,
     });
+    /**
+     * 入口 / Entry: HttpIngress.upgrade.callback@489.
+     * 功能：响应登记事件，按下述条件处理当前连接或资源的数据（upstream.on / upgrade）。
+     * Purpose: Handles the registered event and processes current connection/resource data under the conditions below (upstream.on / upgrade).
+     * 输入 / Inputs: response; peer; peerHead
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `lines.push`; `socket.write`; `peer.write`; 更新 / updates `i`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     upstream.on('upgrade', (response, peer, peerHead) => {
       this.trackSocket(port, peer);
       const lines = [
@@ -508,12 +833,33 @@ export class HttpIngress {
     upstream.end();
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.check.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，核对调用资格、输入或资源归属；本入口产生 `void` 供上层消费（`HttpIngress`）。
+   * Purpose: Checks admission, input or resource ownership in `HttpIngress`; this entry produces `void` for its caller. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `this.availability`, `this.health.set`, `this.entries.includes` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.availability`, `this.health.set`, `this.entries.includes`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `unavailable`; `this.entries.includes(entry)`.
+   * 输入 / Inputs: entry: IngressEntry
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.health.set`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async check(entry: IngressEntry) {
     const unavailable = this.availability(entry);
     if (unavailable) {
       this.health.set(entry.id, unavailable);
       return;
     }
+    /**
+     * 入口 / Entry: HttpIngress.check.callback@517.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（current continuation）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (current continuation).
+     * 输入 / Inputs: resolve
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.probes.add`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const status = await new Promise<IngressHealth>((resolve) => {
       const probe = this.networking.httpRequest(
         {
@@ -547,10 +893,33 @@ export class HttpIngress {
     if (this.entries.includes(entry)) this.health.set(entry.id, status);
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.checkAll.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`HttpIngress`）。
+   * Purpose: Checks admission, input or resource ownership in `HttpIngress`; the calls and state transitions below complete the operation. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `Promise.all`, `this.entries.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.all`, `this.entries.map`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async checkAll() {
     await Promise.all(this.entries.map((entry) => this.check(entry)));
   }
 
+  /**
+   * 入口 / Entry: HttpIngress.close.
+   * 功能：在管理本地 HTTP 入口、别名和客户端证书中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`HttpIngress`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `HttpIngress`; the outcome is recorded in `this.closed`. Module context: Owns local HTTP ingress, aliases and client certificates, coordinating TLS listeners and forwarding lifecycles.
+   * 处理：通过 `probe.destroy`, `this.timer.close`, `Promise.all`, `inline.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `probe.destroy`, `this.timer.close`, `Promise.all`, `inline.map`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `hadListeners`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `probe.destroy`; `this.timer.close`; `this.listeners.clear`; `this.networking.close`; 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true;
     for (const probe of this.probes) probe.destroy();

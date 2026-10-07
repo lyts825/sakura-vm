@@ -1,8 +1,25 @@
 /**
- * 模块职责：编辑项目依赖下载认证配置，按依赖管理器维护凭证引用与下载参数。
+ * 模块职责（中文）：编辑项目依赖下载认证配置，按依赖管理器维护凭证引用与下载参数。
+ * Module responsibility (English): UI interaction and state presentation for ports, network profiles, ingress and certificates.
+ * 详细范围（中文）：公开入口包括 DependencyDownloadsEditor；职责覆盖端口、网络档案、入口与证书的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include DependencyDownloadsEditor. The scope covers UI interaction and state presentation for ports, network profiles, ingress and certificates. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import type { DependencyAuthentication, NetworkProfile } from './contracts.ts';
 
+/**
+ * 中文：呈现端口、网络档案、入口与证书的界面交互与状态呈现中的 DependencyDownloadsEditor 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the DependencyDownloadsEditor surface for UI interaction and state presentation for ports, network profiles, ingress and certificates. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  value,
+  disabled,
+  change,
+} 提供 value（待校验、转换或保存的输入值）、disabled（disabled 状态）、change（change 状态） 上下文字段
+ * English: Inputs: {
+  value,
+  disabled,
+  change,
+} provides context fields value (input value to validate/transform/save), disabled (disabled state), change (change state)
+ */
 export function DependencyDownloadsEditor({
   value,
   disabled,
@@ -10,8 +27,16 @@ export function DependencyDownloadsEditor({
 }: {
   value: NetworkProfile;
   disabled: boolean;
-  change: (value: NetworkProfile['dependencyDownloads']) => void;
+  change: /** 中文：把修改后的字段或文档交给父级状态所有者；这是 DependencyDownloadsEditor 的调用契约 | English: Deliver modified fields/documents to the parent state owner; this is the callable contract of DependencyDownloadsEditor | 中文：输入：value：待校验、转换或保存的输入值 | English: Inputs: value: input value to validate/transform/save | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (value: NetworkProfile['dependencyDownloads']) => void;
 }) {
+  /**
+   * 中文：只修改指定包管理器的认证配置，保留其他管理器；三者全空时返回 undefined 删除整体配置。
+   * English: Update only the selected manager's authentication while preserving others; return undefined to remove the whole configuration when all three are empty.
+   * 中文：输入：manager：签名所示 'npm' | 'pip' | 'git' 业务值；authentication：签名所示 DependencyAuthentication 业务值
+   * English: Inputs: manager: the 'npm' | 'pip' | 'git' domain value in the signature; authentication: the DependencyAuthentication domain value in the signature
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const patch = (manager: 'npm' | 'pip' | 'git', authentication?: DependencyAuthentication) => {
     const next = { ...value.dependencyDownloads, [manager]: authentication };
     change(next.npm || next.pip || next.git ? next : undefined);
@@ -23,7 +48,14 @@ export function DependencyDownloadsEditor({
         应用此档案后，项目依赖预取和首次 Git 检出使用这里指定的仓库与私密配置。凭证仅用于该端点的域名、端口和目录，
         不进入项目环境或离线缓存。先在“开发设置 → 私密配置”保存只读下载凭证，再填写其名称。
       </p>
-      {(['npm', 'pip', 'git'] as const).map((manager) => {
+      {(['npm', 'pip', 'git'] as const).map(/**
+       * 中文功能：为 npm、pip、git 渲染授权配置行，按是否启用及 bearer/basic 类型显示字段，并把变更交给对应 manager 的 patch。
+       * English: Render authorization rows for npm/pip/git, select fields from enablement and bearer/basic kind, and send changes to the corresponding manager patch.
+       * 输入 / Inputs: manager.
+       * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+       * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+       */
+      (manager) => {
         const authentication = value.dependencyDownloads?.[manager];
         return (
           <div className="feature-card" key={manager}>

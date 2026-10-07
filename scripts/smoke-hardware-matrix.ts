@@ -1,4 +1,5 @@
-/** 烟雾验收：验证硬件/加速器能力矩阵与实际引擎检测结果的一致性。 */
+/** 烟雾验收：验证硬件/加速器能力矩阵与实际引擎检测结果的一致性。
+ * Smoke acceptance for consistency between hardware/accelerator capability matrices and actual engine detection. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,6 +17,8 @@ const engine = await createRuntime();
 try {
   const machines = {
     engine,
+    /** 用生产创建 schema 验证 matrix-real/自动加速器配置，返回合法默认值供真实硬件矩阵启动。
+     * Validate matrix-real/auto-accelerator settings with the production creation schema and return valid defaults for real hardware-matrix boot. */
     get: () => createSchema.parse({ name: 'matrix-real', accelerator: 'auto' }),
   } as unknown as Machines;
   const report = await hardwareCompatibility(machines, 'matrix-real');

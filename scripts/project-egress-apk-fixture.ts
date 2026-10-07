@@ -1,4 +1,5 @@
-/** 自有 Alpine APK 包源夹具，按清单提供受控依赖文件，支持项目出站网络规则的真实安装验证。 */
+/** 自有 Alpine APK 包源夹具，按清单提供受控依赖文件，支持项目出站网络规则的真实安装验证。
+ * Serve pinned Alpine package fixtures through a controlled HTTP endpoint for real project-egress verification. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -20,10 +21,14 @@ const manifestSchema = z.object({
   distro: z.literal('v3.23'), arch: z.literal('x86_64'),
   files: z.array(fileSchema).min(3).max(256),
 }).strict();
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const digest = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 
 // This server serves a frozen, official package fixture to a new test guest.
 // The production installer and Alpine's installed signature keys stay intact.
+/** 验证绝对物理 manifest、大小和官方 Alpine URL/本地摘要后，在回环提供固定只读 APK 内容；限制缓存总量，保留请求与连接证据而不访问外网补包。
+ * Verify physical absolute manifest/budget/official Alpine URLs/local hashes, then serve fixed read-only APKs on loopback; bound total cached bytes and retain request/connection evidence without fetching missing packages. */
 export async function startAlpineApkFixture(manifestFile: string) {
   assert.ok(isAbsolute(manifestFile), 'APK fixture manifest must be absolute');
   assert.equal(await realpath(manifestFile), manifestFile);
@@ -75,7 +80,8 @@ export async function startAlpineApkFixture(manifestFile: string) {
     cacheUnchanged: false, changed: [] as string[], activeSockets: -1,
     productionInstallCommandUnchanged: true, defaultPublicRepositoryPerformanceValidated: false,
   };
-  const server = createServer((request, response) => {
+  const server = createServer(/** 仅从已冻结且校验哈希的 APK 映射提供 GET/HEAD；未知路径和方法分别拒绝，并记录开始、finish 与 close 证据，固定长度不从请求路径读磁盘。
+ * Serve GET/HEAD only from the frozen hash-verified APK map, rejecting unknown paths/methods and recording start/finish/close evidence; fixed lengths never trigger request-path disk reads. */ (request, response) => {
     const path = request.url || '';
     const method = request.method || '';
     const file = files.get(path);
@@ -112,8 +118,11 @@ export async function startAlpineApkFixture(manifestFile: string) {
   return {
     proof, hostPort: address.port,
     repositories: ['main', 'community'].map(repo => 'http://10.0.2.2:' + address.port + '/' + repo).join('\n') + '\n',
+    /** 复用关闭 Promise，停止监听并关闭所有夹具连接后等待实际 socket close；再次核对 manifest/包摘要，记录缓存变化并释放内存。
+     * Reuse one close promise, stop listening/close fixture connections and await actual socket closure; recheck manifest/package hashes, record cache changes and release memory. */
     close() {
-      if (!closing) closing = (async () => {
+      if (!closing) closing = (/** 关闭监听器并等待本次所有 socket 关闭后，重验每个资源的物理路径与哈希和 manifest 哈希；记录变化并释放内存映射，不修改源缓存。
+ * Close the listener and await every owned socket before rechecking each resource’s physical path/hash and the manifest hash; record changes and release the memory map without modifying the source cache. */ async () => {
         const socketClosures = [...sockets.values()];
         await new Promise<void>((done, reject) => {
           server.close(error => error ? reject(error) : done());

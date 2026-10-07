@@ -1,4 +1,5 @@
-/** LSP/DAP 自有 VM 验证支撑，提供协议探针、项目 UID 断言和精确运行票据清理。 */
+/** LSP/DAP 自有 VM 验证支撑，提供协议探针、项目 UID 断言和精确运行票据清理。
+ * Manage source/runtime-pinned protocol smoke fixtures and prove project UID, QEMU ownership, run tickets and stopped-state evidence. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -13,6 +14,8 @@ import type { ProjectProtocolStreamRecord } from '../server/project-protocol-str
 import type { ProjectTerminals } from '../server/project-terminals.ts';
 
 const environment = 'exec /usr/bin/env -i HOME=/ USER=root LOGNAME=root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C ';
+/** 将输入编码成单个 POSIX shell 字面参数，嵌入单引号用结束/转义/重开方式保留原值；调用方仍负责命令和路径授权。
+ * Encode input as one literal POSIX shell argument, preserving embedded quotes by closing/escaping/reopening; callers still authorize the command/path. */
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 export const protocolSmokeObserver = String.raw`import glob,json,os,stat,sys
 r=json.load(sys.stdin);run=r['run'];identity=r['identity']
@@ -118,9 +121,15 @@ type Observation = { bootId: string; domain: { device: string; inode: string } |
   members: any[]; reports: any[]; children: { pid: number; ticks: string; sameProcessAlive: boolean; process: any }[]; controlPathPresent: boolean };
 type Captured = { record: ProjectProtocolStreamRecord; active: Observation; children: { pid: number; ticks: string }[] };
 export type ProtocolSmokeContext = { machines: Machines; features: Features; vmId: string; directory: string; identity: ProjectIdentity;
-  marker: string; frameEnv: string; prove: (token: string, report: boolean) => Promise<void>;
-  lsp: <T>(operation: () => Promise<T>) => Promise<T>; stopped: (token: string) => Promise<void> };
+  marker: string; frameEnv: string; prove: /** 以精确入场 token 核验 UID 协议运行及原生域，report 要求协议观察报告；Promise 仅在身份、票据、能力与进程证据一致时成功。
+ * Verify UID protocol execution and its native domain by exact admission token; report requires protocol observations and the promise succeeds only when identity, receipt, capabilities and process evidence agree. */ (token: string, report: boolean) => Promise<void>;
+  lsp: /** 在 LSP 项目身份作用域中执行 operation 并返回其类型 T 结果，保证正式服务入口解析到选定项目。
+ * Run operation within the LSP project-identity scope and return its typed T result so the formal service entry resolves the selected project. */ <T>(operation: /** 在项目身份作用域内调用的 LSP 操作返回 T；作用域控制项目归属，操作错误不被转换为成功。
+ * The LSP operation called inside the project-identity scope returns T; scope determines project ownership and operation errors are never converted to success. */ () => Promise<T>) => Promise<T>; stopped: /** 对 token 对应的原运行检查域、控制路径、原 PID+ticks 子进程与主机/原生归档均已关闭；未证明清理时拒绝 Promise。
+ * For the token’s original run verify domain/control path, original PID-plus-ticks children and host/native archives are closed; reject unless cleanup is proven. */ (token: string) => Promise<void> };
 
+/** 对协议进程的全部 UID/GID、空附加组、Home/目录/环境、cgroup/网络票据和零 capabilities 作一致性断言；不接受仅首 UID 相同的近似身份。
+ * Assert all UID/GID values, empty supplementary groups, home/cwd/environment, cgroup/network receipts and zero capabilities; matching only the first UID is insufficient. */
 export function assertProtocolUidProcess(value: any, identity: ProjectIdentity, record: ProjectProtocolStreamRecord,
   marker: string, frameEnv: string) {
   assert.deepEqual(value.uid, [identity.uid, identity.uid, identity.uid, identity.uid]);
@@ -133,6 +142,8 @@ export function assertProtocolUidProcess(value: any, identity: ProjectIdentity, 
   for (const key of ['CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb']) assert.match(value.caps[key], /^0+$/);
   assert.equal(value.caps.NoNewPrivs, '1'); assert.deepEqual(value.authorityDescriptors, []);
 }
+/** 按 QEMU 可执行文件名和本夹具根目录/实例参数精确筛选主机进程，返回观测数量；该数量是残留证据，不赋予终止其他进程的权限。
+ * Count host processes matching QEMU executable names and this fixture’s root/VM arguments; the count is residue evidence and grants no authority to terminate other processes. */
 function exactQemu(disk: string) {
   if (process.platform !== 'win32') {
     const lines = execFileSync('ps', ['-eo', 'args='], { encoding: 'utf8', timeout: 15000 });
@@ -147,6 +158,8 @@ function exactQemu(disk: string) {
   assert.match(text.trim(), /^[0-9]+$/); return Number(text.trim());
 }
 
+/** 建立自有真实实例与项目协议身份，冻结精确 live 并截获正式 LSP/DAP 入场记录；让场景使用 prove/stopped 核验完整域，finally 收集清理失败并保存证据。
+ * Create an owned real VM/protocol identity, pin exact live state and capture production LSP/DAP admission records; expose prove/stopped for full-domain verification and collect cleanup failures/evidence in finally. */
 export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context: ProtocolSmokeContext) => Promise<void>,
   prepare: (machines: Machines, vmId: string, directory: string) => Promise<void>) {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-' + kind + '-uid-smoke-')), invocation = randomUUID();
@@ -157,6 +170,8 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
     guestDirectory, source: 'formal public service entry with real native launcher', runs: [], cleanupErrors: [],
     rootCommands: [], retained: true, passed: false };
   let proofQueue = Promise.resolve();
+  /** 快照报告后串行排队写入证据文件，上一轮写失败不使后续保存永久失效；返回本次写入 Promise。
+   * Snapshot proof and serialize writes to its evidence file, allowing later persistence after a failed earlier write; return this write promise. */
   const persist = () => { const bytes = JSON.stringify(proof, null, 2) + '\n';
     proofQueue = proofQueue.catch(() => {}).then(() => writeFile(proofFile, bytes)); return proofQueue; };
   await writeFile(join(directory, 'owned-fixture.json'), JSON.stringify({ version: 1, invocation, kind, directory,
@@ -170,7 +185,8 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
   const distro = selected as 'alpine' | 'debian' | 'ubuntu', isolated = process.env[kind === 'lsp' ? 'SAKURA_LSP_PRIVATE' : 'SAKURA_DAP_PRIVATE'] === '1';
   proof.distro = distro; proof.isolated = isolated;
   let machines: Machines | undefined, features: Features | undefined, engine: Awaited<ReturnType<typeof import('../server/runtime.ts')['createRuntime']>> | undefined;
-  let vmId: string | undefined, restoreOpen: (() => void) | undefined;
+  let vmId: string | undefined, restoreOpen: (/** 保存恢复原 ProjectProtocolStreams.open 方法的无参数动作，测试退出时撤回全局原型观测器。
+ * Hold the zero-argument action restoring the original ProjectProtocolStreams.open method, removing the global prototype observer on test exit. */ () => void) | undefined;
   let preparation: ProjectTerminals | undefined, prepared: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
   let originalExec: Machines['exec'] | undefined, originalInput: Machines['execInput'] | undefined;
   const activeEngineRuns = new Set<object>(), owned = new Map<string, Captured>();
@@ -182,7 +198,8 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
       import('../server/project-run-scope.ts'), import('../server/project-protocol-stream.ts'), import('../server/model.ts'),
     ]);
     engine = await createRuntime(); const originalRun = engine.run;
-    engine.run = async (...args) => {
+    engine.run = /** 透明转发 runtime.run 并记录工具、参数与未完成集合；finally 标记 settled 和持久化，让退出证明可判断本次工具进程是否已结算。
+ * Forward runtime.run transparently while recording tool/argv and outstanding runs; mark settled and persist in finally so exit evidence can establish whether owned tool processes completed. */ async (...args) => {
       const receipt = { tool: args[0], args: [...args[1]], startedAt: new Date().toISOString(), settled: false };
       activeEngineRuns.add(receipt); proof.engineRuns ||= []; proof.engineRuns.push(receipt); await persist();
       try { return await originalRun(...args); } finally { receipt.settled = true; activeEngineRuns.delete(receipt); await persist(); }
@@ -199,10 +216,12 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
     }
     const currentLive = machines.live.get(vm.id); assert.ok(currentLive);
     originalExec = machines.exec; originalInput = machines.execInput;
-    machines.exec = async (...args) => { const row = { command: args[1], input: false }; proof.rootCommands.push(row);
+    machines.exec = /** 在原 exec 前记录 root 命令并拒绝项目环境标记进入 argv；保持 this、参数与原结果，观测不得替代正式执行。
+ * Record root commands and reject project environment markers in argv before original exec; preserve this, arguments and results so observation never replaces real execution. */ async (...args) => { const row = { command: args[1], input: false }; proof.rootCommands.push(row);
       assert.ok(!args[1].includes(marker) && !args[1].includes(frameEnv), 'Project environment reached Root argv');
       return originalExec!.apply(machines!, args); };
-    machines.execInput = async (...args) => { const row = { command: args[1], input: true, bytes: args[2].length,
+    machines.execInput = /** 在原 execInput 前记录正文长度/哈希并拒绝项目标记泄漏到 root argv；正文仍经原 stdin 通道，保持返回结果。
+ * Before original execInput record body size/hash and reject project markers leaking to root argv; keep the original stdin transport and return value. */ async (...args) => { const row = { command: args[1], input: true, bytes: args[2].length,
       sha256: createHash('sha256').update(args[2]).digest('hex') }; proof.rootCommands.push(row);
       assert.ok(!args[1].includes(marker) && !args[1].includes(frameEnv), 'Project environment reached Root argv');
       return originalInput!.apply(machines!, args); };
@@ -230,6 +249,8 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
       await prepared.release(); await preparation.close(); proof.fixedNamespacePrepared = true;
     }
     const core = new identityModule.ProjectIdentities(machines), scopes = new ProjectRunScopes(machines);
+    /** 核实原 live 未变化，以 JSON stdin 向隔离来宾观测器传入身份/票据/子进程；执行前后重验 live，返回解析观测。
+     * Verify original live identity, send identity/receipt/children via JSON stdin to the isolated guest observer and recheck live after execution before returning parsed observations. */
     const observe = async (record: ProjectProtocolStreamRecord, children: Captured['children']) => {
       assert.equal(machines!.live.get(vm.id), currentLive, 'Original owned live changed');
       const result = await machines!.execInput(vm.id, environment + '/usr/bin/python3 -I -S -c ' + quote(protocolSmokeObserver),
@@ -237,6 +258,8 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
       assert.equal(result.code, 0, result.stderr); assert.equal(machines!.live.get(vm.id), currentLive);
       return JSON.parse(result.stdout) as Observation;
     };
+    /** 按精确入场 token 对比主机与原生身份/正文哈希/运行票据，有限等待 UID 协议进程报告后验证原域和进程凭据，保留真实证据。
+     * Compare host/native identity/body hash/run receipt using the exact admission token, await bounded UID-protocol reports and verify original domain/process credentials before retaining evidence. */
     const prove = async (token: string, report: boolean) => {
       const entry = owned.get(token); assert.ok(entry, 'No exact public UID admission observed');
       const native = await scopes.readonlyTask(vm.id, identity.projectId, token);
@@ -269,6 +292,8 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
           assert.equal(value.process.session, value.pid, 'Expected own detached child session'); } }
       entry.active = observation; proof.runs = [...owned.values()]; await persist();
     };
+    /** 验证原协议域、控制路径和精确 PID+ticks 子进程均消失，主机/原生运行及归档记录一致关闭；不以流句柄 close 代替整个域清理。
+     * Verify original protocol domain/control path/exact PID+ticks children vanished and host/native/archive records agree on closure; stream close alone is not whole-domain cleanup. */
     const stopped = async (token: string) => {
       const entry = owned.get(token); assert.ok(entry);
       const observation = await observe(entry.record, entry.children);
@@ -285,15 +310,20 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
       Object.assign(entry, { stopped: observation, closedNative: native, closedHost: host, closedProtocol: archived }); await persist();
     };
     const originalOpen = streamModule.ProjectProtocolStreams.prototype.open;
-    streamModule.ProjectProtocolStreams.prototype.open = async function (...args) {
+    streamModule.ProjectProtocolStreams.prototype.open = /** 截获真实协议入场 owner，按 runId 登记原票据并立刻验证 UID；观测失败先关闭该 owner，清理失败与原失败合并以保留证据。
+ * Capture the real admitted protocol owner, register its original receipt by runId and immediately prove UID; close that owner after observation failure, aggregating cleanup and original errors to retain evidence. */ async function (...args) {
       assert.equal(args[0], vm.id); assert.equal(args[1], kind);
       const owner = await originalOpen.apply(this, args), record = owner.record();
       owned.set(record.runId, { record, active: undefined as never, children: [] }); proof.runs = [...owned.values()]; await persist();
       try { await prove(record.runId, kind === 'lsp'); return owner; }
       catch (error) { try { await owner.close(); } catch (cleanup) { throw new AggregateError([error, cleanup], 'Original UID observation/cleanup failed'); } throw error; }
     };
-    restoreOpen = () => { streamModule.ProjectProtocolStreams.prototype.open = originalOpen; };
-    const lsp = async <T>(operation: () => Promise<T>) => {
+    restoreOpen = /** 撤回本轮对协议流 open 的原型包装，后续服务调用恢复原始入口。
+ * Remove this run’s protocol-stream open prototype wrapper so later service calls use the original entry. */ () => { streamModule.ProjectProtocolStreams.prototype.open = originalOpen; };
+    /** 捕获一次公开 LSP 操作新增的唯一原生 token，验证该运行完全关闭后返回原操作结果；多入场或无入场均失败。
+     * Capture the unique native token added by one public LSP operation, verify complete closure and return its result; zero/multiple admissions fail. */
+    const lsp = async <T>(operation: /** 在项目身份作用域内调用的 LSP 操作返回 T；作用域控制项目归属，操作错误不被转换为成功。
+ * The LSP operation called inside the project-identity scope returns T; scope determines project ownership and operation errors are never converted to success. */ () => Promise<T>) => {
       const before = new Set(owned.keys()), result = await operation(), additions = [...owned.keys()].filter(token => !before.has(token));
       assert.equal(additions.length, 1, 'Public LSP request must own one exact full native run'); await stopped(additions[0]); return result;
     };
@@ -302,7 +332,10 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
   } catch (error) { proof.error = error instanceof Error ? error.stack : String(error); }
   finally {
     restoreOpen?.();
-    const close = async (component: string, operation: () => Promise<unknown>) => {
+    /** 执行指定组件清理，将异常保存至 cleanupErrors 以继续其余清理，最终总体验收据此判断是否残留失败。
+     * Run component cleanup and retain errors in cleanupErrors so other teardown continues; final acceptance uses these failures. */
+    const close = async (component: string, operation: /** 组件清理回调返回异步关闭结果；调用方逐项尝试并记录错误，某个组件失败不阻止其余清理。
+ * A component cleanup callback returns its asynchronous closure result; the caller attempts every component and records errors without skipping later cleanup. */ () => Promise<unknown>) => {
       try { await operation(); } catch (error) { proof.cleanupErrors.push({ component, error: error instanceof Error ? error.stack : String(error) }); }
     };
     if (prepared) await close('Original namespace preparation lease', async () => prepared!.release());

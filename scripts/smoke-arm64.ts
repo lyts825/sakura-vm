@@ -1,4 +1,5 @@
-/** 烟雾验收：验证QEMU virt 上 Debian ARM64 启动、架构记录和再次启动。 */
+/** 烟雾验收：验证QEMU virt 上 Debian ARM64 启动、架构记录和再次启动。
+ * Smoke acceptance for Debian ARM64 boot on QEMU virt, architecture records and repeated startup. */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,6 +17,8 @@ const { createRuntime } = await import('../server/runtime.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 let id: string | undefined;
+/** 针对给定实例轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * For the specified VM, poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function waitRunning(vmId: string) {
   const deadline = Date.now() + 600_000;
   while (machines.state(vmId) !== 'running') {

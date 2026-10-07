@@ -1,4 +1,5 @@
-/** 烟雾验收：验证编译 HTTP/SDK 主进程的命名空间、后代、幂等和失败清理重试。 */
+/** 烟雾验收：验证编译 HTTP/SDK 主进程的命名空间、后代、幂等和失败清理重试。
+ * Smoke acceptance for compiled HTTP/SDK main-process namespaces/descendants/idempotence and cleanup retries. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile, realpath, writeFile, rm } from 'node:fs/promises';
@@ -60,7 +61,11 @@ const projects = [], checks = [], path = { vmId: vm.id };
 server.stdout.on('data', chunk => output = (output + chunk).slice(-65536));
 server.stderr.on('data', chunk => output = (output + chunk).slice(-65536));
 const exited = new Promise((done, fail) => { server.once('exit', done); server.once('error', fail); });
+/** 将输入编码成单个 POSIX shell 字面参数，嵌入单引号用结束/转义/重开方式保留原值；调用方仍负责命令和路径授权。
+ * Encode input as one literal POSIX shell argument, preserving embedded quotes by closing/escaping/reopening; callers still authorize the command/path. */
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+/** 发送本机认证 HTTP JSON 并限定三十秒，失败附响应正文，返回成功 JSON。
+ * Send authenticated local HTTP JSON within thirty seconds, report failed bodies and return successful JSON. */
 async function http(url, method = 'GET', body) {
   const result = await fetch(origin + url, { method,
     headers: { 'x-sakura-token': token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -68,17 +73,25 @@ async function http(url, method = 'GET', body) {
   assert.equal(result.ok, true, await result.clone().text());
   return result.json();
 }
+/** 通过 SDK 实例执行入口执行自有命令并要求零退出，返回标准输出。
+ * Execute owned commands through SDK instance entry, require zero exit and return stdout. */
 async function guest(command) {
   const result = await sdk.call('core.vms.exec', { path, body: { scope: 'instance', command } });
   assert.equal(result.code, 0, result.stderr + result.stdout);
   return result.stdout.trim();
 }
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const py = source => '/usr/bin/python3 -I -S -c ' + quote(source);
 const methods = { view: 'GET', save: 'PUT', action: 'POST', runtime: 'GET' };
+/** 按 runtime/项目能力选择 SDK 路径与约定方法，附精确项目查询和可选正文。
+ * Select SDK runtime/project paths and declared methods with exact project query/optional body. */
 const call = (operation, project, body) => sdk.request('/api/vms/' + vm.id + '/' +
   (operation === 'runtime' ? 'project-runtime' : 'project'), {
     method: methods[operation], query: { project }, ...(body ? { body } : {}),
   });
+/** 提交主进程操作并在四分钟内跟踪原任务 ID，确保服务未退出后返回终态记录。
+ * Submit main-process work/track its original job ID within four minutes and require the service remains alive before returning the final record. */
 async function action(project, operation) {
   const initial = await call('action', project, { action: operation });
   const deadline = Date.now() + 240000;
@@ -91,6 +104,8 @@ async function action(project, operation) {
     await delay(100);
   }
 }
+/** 有限次轮询自有应用的结果文件，出现后返回；期限内未发布则失败，避免使用上一阶段缺失结果。
+ * Poll the owned application result file for a bounded number of attempts, returning when published and failing on absence rather than using missing prior-stage evidence. */
 async function waitFile(file) {
   for (let n = 0; n < 150; ++n) {
     const result = await sdk.call('core.vms.exec', { path, body: {
@@ -100,6 +115,8 @@ async function waitFile(file) {
   }
   throw Error('Owned main process marker did not arrive.');
 }
+/** 生成自有主进程及脱离组/会话后代的凭据/出生信息报告，保持进程存活用于完整域清理验证。
+ * Generate credential/birth reports from owned main/group-or-session-detached descendants and keep them alive for whole-domain cleanup verification. */
 const app = directory => py([
   'import json,os,signal,time',
   'signal.signal(signal.SIGTERM,signal.SIG_IGN)',
@@ -125,6 +142,8 @@ const app = directory => py([
   'os.waitpid(first,0)',
   'stay()',
 ].join('\n'));
+/** 核对原 PID 的出生 ticks 且状态不为僵尸/死亡，消失返回 false；HTTP 包装返回来宾文本，由场景比较。
+ * Check original PID birth ticks/nonzombie-nondead state and return false on disappearance; the HTTP wrapper returns guest text for scenario comparison. */
 const alive = process => guest(py([
   'try:',
   " fields=open('/proc/" + process.pid + "/stat').read().rsplit(') ',1)[1].split()",

@@ -1,4 +1,5 @@
 # 自有单窗口桌面探针，观察运行域、端点和网络状态，并经私有请求文件驱动受控动作。
+# Observe the independent single-app account, FD/namespace boundaries and owned VNC port isolation, publishing only complete fixture records.
 """Ordinary xterm child for the owned current-UID public SingleApp smoke."""
 import errno
 import json
@@ -20,6 +21,8 @@ child = None
 os.umask(0o077)
 
 
+# 先写完整有界 0600 临时记录，再用独占硬链接发布而不覆盖既有项目条目，失败清理自有临时文件。
+# Write a complete bounded 0600 temporary and publish via a unique hard link without overwriting existing entries, cleaning only owned temporaries.
 def publish(path, value):
     # Readers only see the complete record. A unique link publishes it without
     # replacing any existing project entry, including a symlink.
@@ -45,6 +48,8 @@ def publish(path, value):
         temporary.unlink()
 
 
+# 核对独立应用 UID/GID、空组、NNP/能力及网络/挂载身份，返回实际内核观察。
+# Validate application UID/GID, empty groups, NNP/caps and network/mount identity, returning actual kernel observations.
 def observe():
     pid = os.getpid()
     fields = Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()
@@ -67,6 +72,8 @@ def observe():
             'mountDevice': str(os.stat('/proc/self/ns/mnt').st_dev), 'mountInode': str(os.stat('/proc/self/ns/mnt').st_ino)}
 
 
+# 有界等待固定请求文件，核对账号、0600 单链接与 schema 后读取，超时或替代对象失败。
+# Await the fixed request file boundedly, checking account/0600/single-link/schema before reading; timeout/replacement fails.
 def request(path, kind, timeout=180):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -89,6 +96,8 @@ def request(path, kind, timeout=180):
     raise TimeoutError('owned request missing: ' + str(path))
 
 
+# 按自有请求和实际会话身份检查本 VNC 端口放行、其他端口拒绝并发布精确证据。
+# Check allowed owned VNC port/denied other ports against request/session identity and publish exact evidence.
 def network_ports():
     value = request(marker.with_name(marker.name + '.ports.start'), 'owned-single-app-port-check')
     current = observe()

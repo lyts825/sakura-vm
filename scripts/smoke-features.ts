@@ -1,4 +1,5 @@
-/** 烟雾验收：验证可选功能在真实来宾中的集成行为和任务结果。 */
+/** 烟雾验收：验证可选功能在真实来宾中的集成行为和任务结果。
+ * Smoke acceptance for optional feature integration and actual guest-task results. */
 import { PLUGINS } from '../shared/plugins.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
@@ -24,7 +25,11 @@ const features = await Features.create(
   PLUGINS.map((item) => item.id),
 );
 const ids: string[] = [];
+/** 返回指定毫秒后兑现的 Promise，为状态轮询让出事件循环。
+ * Return a promise resolving after the requested milliseconds, yielding the event loop during state polling. */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   const started = Date.now();
   await machines.start(id);
@@ -40,7 +45,10 @@ async function boot(id: string) {
   }
   throw new Error('Boot timed out: ' + machines.logs.get(id));
 }
-async function job(jobs: { view(key: string): any }, id: string) {
+/** 在二十分钟内轮询任务结束并要求 done，返回任务记录；期限或错误附任务诊断。
+ * Poll job completion for at most twenty minutes and require done before returning its record; expiry/failure includes diagnostics. */
+async function job(jobs: { /** 按任务键读取当前观测记录，供 job 轮询判断是否运行或完成；不提交任务。
+ * Read a job observation by key for running/completion polling without submitting work. */ view(key: string): any }, id: string) {
   const until = Date.now() + 1200000;
   while (jobs.view(id)?.status === 'running') {
     if (Date.now() > until) throw new Error('Job timed out');
@@ -50,6 +58,8 @@ async function job(jobs: { view(key: string): any }, id: string) {
   assert.equal(result?.status, 'done', result?.error + '\n' + result?.log);
   return result;
 }
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function command(id: string, cmd: string) {
   const result = await machines.exec(id, cmd, 30000);
   assert.equal(result.code, 0, result.stderr);
@@ -73,6 +83,8 @@ try {
       id,
       '/workspace/files/test.bin',
       new Writable({
+        /** 把接收到的恢复数据块保存在夹具数组并调用流完成回调，供重建数据一致性比较。
+         * Retain received recovery chunks in the fixture array and invoke stream completion for reconstructed-data comparison. */
         write(chunk, _enc, cb) {
           chunks.push(chunk);
           cb();
@@ -87,6 +99,8 @@ try {
     );
     await features.files.upload(id, '/workspace/files/test.bin', Readable.from(binary), true);
     const interrupted = new Readable({
+      /** 先输出部分传输字节再人为销毁流，复现中断恢复必须清理暂存的失败路径。
+       * Emit partial transfer bytes before deliberately destroying the stream to exercise cleanup after interrupted recovery. */
       read() {
         this.push(Buffer.from('partial'));
         this.destroy(new Error('interrupted transfer'));
@@ -140,7 +154,8 @@ try {
     const hostPort = await freePort();
     await machines.setForwards(id, [{ name: 'SSH test', host: hostPort, guest: 22 }]);
     const { createConnection } = await import('node:net');
-    await new Promise<void>((res, rej) => {
+    await new Promise<void>(/** 连接实际主机转发端口并在十秒内验证 SSH banner；首包成功或超时都销毁 socket，错误拒绝等待。
+ * Connect to the real host-forwarded port and verify its SSH banner within ten seconds; destroy the socket on first-packet success/timeout and reject errors. */ (res, rej) => {
       const socket = createConnection(hostPort, '127.0.0.1');
       socket.setTimeout(10000);
       socket.on('timeout', () => {

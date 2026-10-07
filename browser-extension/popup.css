@@ -1,4 +1,5 @@
-/** 扩展配对表单和只读实例清单的样式，包含可读状态、错误提示及隐藏区块规则。 */
+/** 扩展配对表单和只读实例清单的样式，包含可读状态、错误提示及隐藏区块规则。
+ * Style local pairing/read-only VM inventory, including readable state/error feedback and hidden sections. */
 :root { color-scheme: light dark; font: 14px/1.45 system-ui, sans-serif; }
 body { margin: 0; width: 320px; background: #fbf7fb; color: #382b3d; }
 main { padding: 16px; }

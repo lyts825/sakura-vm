@@ -1,4 +1,5 @@
-/** 烟雾验收：验证Linux TPM/Secure Boot 来宾、重启停止、可信快照回滚与历史导出启动。 */
+/** 烟雾验收：验证Linux TPM/Secure Boot 来宾、重启停止、可信快照回滚与历史导出启动。
+ * Smoke acceptance for Linux TPM/Secure Boot/restart-stop/trusted rollback and historical export boot. */
 import assert from 'node:assert/strict';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
@@ -26,7 +27,8 @@ const { Bundles } = await import('../server/bundles.ts');
 const engine = await createRuntime();
 const machines = new Machines(engine);
 const service = new TrustedBootService(machines);
-const bundles = new Bundles(machines, undefined, { optional: id => (id === 'trustedBoot' ? service : undefined) as never });
+const bundles = new Bundles(machines, undefined, { /** 仅将 trustedBoot 服务注入夹具可选依赖，其他 ID 返回 undefined。
+ * Inject only trustedBoot into fixture optional dependencies and return undefined for other IDs. */ optional: id => (id === 'trustedBoot' ? service : undefined) as never });
 let id = '', restoredId = '';
 try {
   await machines.init();
@@ -37,6 +39,8 @@ try {
     accelerator: 'tcg', forwards: [] });
   id = vm.id;
   await service.action(id, { operation: 'configure', policy: { enabled: true } });
+  /** 在五分钟内启动实例后通过生产观测确认 EFI、TPM、Secure Boot、非 setupMode 和 ready 全部成立。
+   * Boot within five minutes and use production observation to require EFI/TPM/Secure Boot/non-setup mode/readiness together. */
   const verifyBoot = async (targetId: string) => {
     await machines.start(targetId);
     const deadline = Date.now() + 300_000;

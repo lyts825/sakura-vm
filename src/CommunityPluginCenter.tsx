@@ -1,5 +1,8 @@
 /**
- * 模块职责：管理社区插件安装、授权与运行状态，并在插件边界内加载其扩展面板。
+ * 模块职责（中文）：管理社区插件安装、授权与运行状态，并在插件边界内加载其扩展面板。
+ * Module responsibility (English): Installing, authorizing and managing community plugins and their isolated surfaces.
+ * 详细范围（中文）：公开入口包括 CommunityPluginCenter；职责覆盖安装、授权和管理社区插件及其独立界面，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include CommunityPluginCenter. The scope covers Installing, authorizing and managing community plugins and their isolated surfaces. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useAction, type Request } from './feature-shared';
@@ -32,6 +35,14 @@ type View = {
   eventError?: string;
   runtime?: import('../shared/plugins').PluginRuntimeView;
 };
+/**
+ * 中文：核对社区插件返回值的必要对象、字符串和集合形状，拒绝把不受控响应直接当作扩展界面描述。
+ * English: Check the required object/string/collection shapes in a community-plugin reply rather than treating unchecked data as an extension UI description.
+ * 中文：输入：value：待校验、转换或保存的输入值
+ * English: Inputs: value: input value to validate/transform/save
+ * 中文：结果：value is View，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: value is View carrying the described computation/transport result; throwing branches do not provide success
+ */
 const validView = (value: unknown): value is View => {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<View>;
@@ -44,6 +55,14 @@ const validView = (value: unknown): value is View => {
   );
 };
 
+/**
+ * 中文：呈现安装、授权和管理社区插件及其独立界面中的 CommunityExtensionPanel 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the CommunityExtensionPanel surface for Installing, authorizing and managing community plugins and their isolated surfaces. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ pluginId, panel, request } 提供 pluginId（pluginId 状态）、panel（panel 状态）、request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { pluginId, panel, request } provides context fields pluginId (pluginId state), panel (panel state), request (transport capability bound to identity/authority scope)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 function CommunityExtensionPanel({ pluginId, panel, request }: {
   pluginId: string; panel: NonNullable<Entry['extensions']>['panels'][number]; request: Request;
 }) {
@@ -57,9 +76,13 @@ function CommunityExtensionPanel({ pluginId, panel, request }: {
       field.type === 'number' && value !== undefined && value !== '' &&
         !Number.isFinite(Number(value));
   });
+  /**
+   * 中文：提交 POST /community-plugins/extensions/{pluginId}/{panel.routeId}，完成安装、授权和管理社区插件及其独立界面的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /community-plugins/extensions/{pluginId}/{panel.routeId} for Installing, authorizing and managing community plugins and their isolated surfaces. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const submit = () => {
     if (invalid) return;
-    return run(async signal => {
+    return run(/** 中文：提交 POST /community-plugins/extensions/{pluginId}/{panel.routeId}，完成安装、授权和管理社区插件及其独立界面的数据交互并更新操作结果；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /community-plugins/extensions/{pluginId}/{panel.routeId} for Installing, authorizing and managing community plugins and their isolated surfaces and update operation result. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：取消边界：执行前或关键异步步骤检查已取消信号，取消后不继续提交下一步工作 | English: Cancellation boundary: check aborted signals before execution/key asynchronous steps; canceled work must not submit the next step */ async signal => {
       const body: Record<string, unknown> = {};
       for (const field of panel.fields) {
         const value = values[field.key];
@@ -94,6 +117,12 @@ function CommunityExtensionPanel({ pluginId, panel, request }: {
   </section>;
 }
 
+/**
+ * 中文：呈现安装、授权和管理社区插件及其独立界面中的 CommunityPluginCenter 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the CommunityPluginCenter surface for Installing, authorizing and managing community plugins and their isolated surfaces. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ */
 export function CommunityPluginCenter({ request }: { request: Request }) {
   const [view, setView] = useState<View | null>(null);
   const [publisherName, setPublisherName] = useState('');
@@ -106,6 +135,16 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  /**
+   * 中文：读取 GET /community-plugins，完成安装、授权和管理社区插件及其独立界面的数据交互并更新服务端视图；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform GET /community-plugins for Installing, authorizing and managing community plugins and their isolated surfaces and update server view. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：signal：本次调用的取消寿命
+   * English: Inputs: signal: cancellation lifetime for this invocation
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：拒绝原因：第三方插件目录响应无效。这些错误交给直接调用者或本函数 catch 处理
+   * English: Refusal reasons: 第三方插件目录响应无效. These errors reach the direct caller or this function's catch handler
+   */
   const load = useCallback(
     async (signal?: AbortSignal) => {
       const data = await request<View>('/community-plugins', 'GET', undefined, signal);
@@ -115,13 +154,29 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
     },
     [request],
   );
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [load] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [load] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     const abort = new AbortController();
     void load(abort.signal).catch((e) => {
       if (!abort.signal.aborted) setError((e as Error).message);
     });
+    /**
+     * 中文：在安装、授权和管理社区插件及其独立界面流程中取消捕获的异步寿命；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Installing, authorizing and managing community plugins and their isolated surfaces, abort the captured asynchronous lifetime. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     */
     return () => abort.abort();
   }, [load]);
+  /**
+   * 中文：提交 POST /community-plugins，完成安装、授权和管理社区插件及其独立界面的数据交互并更新忙碌标记、错误反馈、notice 状态、操作结果、服务端视图；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /community-plugins for Installing, authorizing and managing community plugins and their isolated surfaces and update busy flag, error feedback, notice state, operation result, server view. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：operation：签名所示 Record<string, unknown> 业务值；success：签名所示 string 业务值
+   * English: Inputs: operation: the Record<string, unknown> domain value in the signature; success: the string domain value in the signature
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：拒绝原因：第三方插件目录响应无效。这些错误交给直接调用者或本函数 catch 处理
+   * English: Refusal reasons: 第三方插件目录响应无效. These errors reach the direct caller or this function's catch handler
+   * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+   * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+   */
   const act = async (operation: Record<string, unknown>, success: string) => {
     if (busy) return;
     setBusy(true);
@@ -252,7 +307,16 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                     移除目录源
                   </button>
                 </div>
-                {(view.catalogs[source.id] || []).map((entry) => {
+                {(view.catalogs[source.id] || []).map(/**
+                 * 中文功能：关联目录项的已安装版本与发布者信任状态，渲染摘要和安装/更新入口；忙碌、未信任或相同版本摘要时禁用操作。
+                 * English: Associate catalog entries with installed versions/publisher trust, render digest and install/update actions, and disable them while busy, untrusted or already matching version/digest.
+                 * 输入 / Inputs: entry.
+                 * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+                 * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+                 * 设计思路：这里的信任状态只决定界面准入；实际下载与签名验证由 act 对应的控制面执行，不以按钮状态代替验证。
+                 * Design: Trust state here governs UI admission only; the act control-plane operation performs download/signature checks, so button state does not replace verification.
+                 */
+                (entry) => {
                   const installed = view.installed.find((item) => item.id === entry.id);
                   const trusted = view.publishers.some((item) => item.fingerprint === entry.publisher);
                   return (
@@ -313,7 +377,14 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                       <small role="status"> · 清理待恢复，请重试卸载</small>}
                   </span>
                   <div className="community-plugin-actions">
-                    {(() => {
+                    {(/**
+                     * 中文功能：读取当前插件的订阅与定时配置，渲染暂停、恢复、移除和间隔调整操作，默认间隔为 60 分钟。
+                     * English: Read the plugin subscription/schedule configuration and render pause/resume/remove/interval actions, defaulting the interval to 60 minutes.
+                     * 输入 / Inputs: 无 / none.
+                     * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+                     * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+                     */
+                    () => {
                       const subscription = view.subscriptions?.find((value) => value.pluginId === item.id);
                       const schedule = view.schedules?.find((value) => value.pluginId === item.id);
                       const minutes = scheduleMinutes[item.id] ?? schedule?.intervalMinutes ?? 60;
@@ -349,7 +420,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                     <button
                       className="secondary compact"
                       disabled={busy}
-                      onClick={() => {
+                      onClick={/** 中文：在安装、授权和管理社区插件及其独立界面流程中错误反馈，按指定 Schema 校验并解码；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Installing, authorizing and managing community plugins and their isolated surfaces, error feedback, validate/decode with the specified schema. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
                         try {
                           void act(
                             { operation: 'run', pluginId: item.id, input: JSON.parse(input) },

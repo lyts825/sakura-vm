@@ -1,4 +1,5 @@
-/** 烟雾验收：验证已释放自有夹具中 guest-task 控制、回调及票据撤销。 */
+/** 烟雾验收：验证已释放自有夹具中 guest-task 控制、回调及票据撤销。
+ * Smoke acceptance for guest-task control, callbacks and ticket revocation in released owned fixtures. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -18,6 +19,8 @@ const prior = JSON.parse(priorBytes.toString());
 assert.equal(prior.vmId, vmId); assert.equal(prior.passed, true); assert.equal(prior.vmStopped, true);
 const records = JSON.parse(await readFile(join(root, 'machines.json'), 'utf8'));
 assert.equal(records.length, 1); assert.equal(records[0].id, vmId); assert.equal(records[0].distro, 'debian');
+/** 按 QEMU 可执行文件名和本夹具根目录/实例参数精确筛选主机进程，返回观测数量；该数量是残留证据，不赋予终止其他进程的权限。
+ * Count host processes matching QEMU executable names and this fixture’s root/VM arguments; the count is residue evidence and grants no authority to terminate other processes. */
 const exactQemu = () => Number(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
   "$r='" + root.replaceAll("'", "''") + "';$v='" + vmId + "';@(" +
   "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(sakura-qemu|qemu-system[^.]*)\\.exe$' -and $_.CommandLine -and $_.CommandLine.Contains($r) -and $_.CommandLine.Contains($v) }).Count"
@@ -31,6 +34,8 @@ const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
 const { guestTask, guestTaskControlPaths, guestTaskControlRoot } = await import('../server/guest-task.ts');
 const { quote } = await import('../server/files.ts');
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const sourceFiles = ['server/guest-task.ts', 'server/machines.ts', 'scripts/smoke-guest-task-control.ts'];
 const sources: Record<string, string> = {};
@@ -43,14 +48,20 @@ const proof: any = { version: 1, vmId, fixture: root, invocation, distro: 'debia
   previousEvidence: { file: priorFile, sha256: digest(priorBytes) }, sourceSha256: sources, checks: [], cleanup: {} };
 const machines = new Machines(await createRuntime());
 const nativeExec = machines.exec.bind(machines);
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string) => {
   const result = await nativeExec(vmId, command, 10_000);
   assert.equal(result.code, 0, result.stderr + result.stdout); return result.stdout.trim();
 };
+/** 按运行 ID 断言专属 cgroup 和任务控制目录均不存在，证明停止后控制资源已撤销。
+ * Assert the run-specific cgroup/task-control directory are absent, proving stop revoked control resources. */
 const absent = async (runId: string) => {
   await run('test ! -e ' + quote('/sys/fs/cgroup/sakura-task-' + runId) + '\n' +
     'test ! -e ' + quote(guestTaskControlPaths(runId).directory));
 };
+/** 将已经通过断言的命名证据加入本轮检查报告并输出进度；调用者先完成核验，这里只负责保留结论。
+ * Add named evidence already validated by assertions to this run’s checks and print progress; callers validate first and this helper retains the result. */
 const check = (name: string, evidence: object = {}) => {
   proof.checks.push({ name, ...evidence, passed: true }); console.log('PASS ' + name);
 };
@@ -84,8 +95,10 @@ try {
     await absent(runId); check(name, { runId, expected, actual, exitCode: result.code, controlRetired: true });
   }
   const execInput = machines.execInput.bind(machines); let attempted = 0;
-  machines.exec = async (...args) => { attempted++; return nativeExec(...args); };
-  machines.execInput = async (...args) => { attempted++; return execInput(...args); };
+  machines.exec = /** 计数实际进入 root 传输的调用并原样转发参数和结果，用于证明预检拒绝路径完全没有发出 exec/execInput。
+ * Count calls actually entering root transport and forward arguments/results unchanged, proving preflight refusal paths never issue exec/execInput. */ async (...args) => { attempted++; return nativeExec(...args); };
+  machines.execInput = /** 计数实际进入 root 传输的调用并原样转发参数和结果，用于证明预检拒绝路径完全没有发出 exec/execInput。
+ * Count calls actually entering root transport and forward arguments/results unchanged, proving preflight refusal paths never issue exec/execInput. */ async (...args) => { attempted++; return execInput(...args); };
   try {
     await assert.rejects(guestTask(machines, vmId, 'true', new AbortController().signal, undefined,
       15_000, undefined, undefined, { input: Buffer.alloc(131073) }), { code: 'GUEST_INPUT_INVALID' });
@@ -134,7 +147,8 @@ try {
   check('cancel-removes-descendant-scope-and-private-controls', { runId, child, controlRetired: true });
 
   const acknowledgementRun = randomUUID(); let retirements = 0, callbacks = 0;
-  machines.exec = (async (...args: Parameters<typeof nativeExec>) => {
+  machines.exec = (/** 先真实完成退役命令，仅第一次故意丢失确认回包；重试应依靠原票据幂等验收，不能重复创建权限或把传输失败当成未执行。
+ * Execute retirement for real, then lose only the first acknowledgement deliberately; retries must validate idempotently by original receipt instead of issuing fresh authority or assuming transport failure means no execution. */ async (...args: Parameters<typeof nativeExec>) => {
     const result = await nativeExec(...args);
     if (args[1].startsWith('# SAKURA_GUEST_TASK_RETIRE\n') && ++retirements === 1)
       throw new Error('Owned retirement acknowledgement lost after successful execution');

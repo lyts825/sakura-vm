@@ -1,5 +1,6 @@
 /**
  * 模块职责：以受限分块缓冲上传对象文件，核对文件长度并处理 multipart 上传回执。
+ * Module purpose: Uploads files with bounded part buffers, checking source length and multipart server receipts.
  */
 import { open } from 'node:fs/promises';
 import {
@@ -20,6 +21,21 @@ export const OBJECT_UPLOAD_BUFFERS = 2 * OBJECT_PART_BYTES + 1024 ** 2;
 
 /** Both workers settle before aborting the remote multipart and releasing buffers.
  * Unlike an abort-raced SDK promise, returning here confirms transport settlement. */
+/**
+ * 入口 / Entry: uploadObjectFile.
+ * 功能：从固定文件描述符以单部或 multipart 模式上传备份对象。
+ * Purpose: Uploads a backup from a pinned file descriptor using single-part or multipart transfer.
+ * 设计：读取长度必须保持一致，缓冲分块有界；成功需服务端 part/完成回执，失败中止原 multipart 并关闭文件。
+ * Design: Lengths remain fixed and buffers bounded; server part/completion receipts prove success while failure aborts the original multipart and closes files.
+ * 输入 / Inputs: client: S3Client; bucket: string; key: string; file: string; bytes: number; signal: AbortSignal; lease: StorageLease
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `AbortSignal.any`; `client.send`; `handle.close`; 更新 / updates `createAttempted`, `uploadId`, `completeAttempted`, `completed`.
+ * 拒绝 / Refusals: 条件 / conditions `(await handle.stat()).size !== bytes`; `!uploadId`; `failure?.status === 'rejected'`; 异常 / errors `new AppError('上传前备份长度已变化', 409)`; `new AppError('对象存储未返回 multipart 标识', 502)`.
+ * 收尾：退出 try 区域时始终执行 `try { await handle.close(); } catch (error) { lease.cleanupPending(error); throw error; }`；这些步骤也适用于异常退出。
+ * Finalization: Leaving the try region always executes `try { await handle.close(); } catch (error) { lease.cleanupPending(error); throw error; }`; these steps also apply to exceptional exits.
+ * 失败处理：catch 分支执行 `await withoutOperationContext(async () => { const cleanupSignal = AbortSignal.timeout(30_000); if (createAttempted && !upload…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `await withoutOperationContext(async () => { const cleanupSignal = AbortSignal.timeout(30_000); if (createAttempted && !upload…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function uploadObjectFile(
   client: S3Client,
   bucket: string,
@@ -50,6 +66,19 @@ export async function uploadObjectFile(
     let offset = 0,
       number = 0;
     const parts: { ETag: string; PartNumber: number }[] = [];
+    /**
+     * 入口 / Entry: uploadObjectFile.worker.
+     * 功能：在以受限分块缓冲上传对象文件中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`object-upload.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `object-upload.ts`; the calls and state transitions below complete the operation. Module context: Uploads files with bounded part buffers, checking source length and multipart server receipts.
+     * 处理：通过 `active.throwIfAborted`, `handle.read`, `client.send`, `parts.push` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `active.throwIfAborted`, `handle.read`, `client.send`, `parts.push`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `client.send`; `parts.push`; `stop.abort`; 更新 / updates `offset`, `read`.
+     * 拒绝 / Refusals: 条件 / conditions `!result.bytesRead`; `!uploaded.ETag`; 异常 / errors `new AppError('上传过程中备份被截断', 409)`; `new AppError('对象存储未返回分片回执', 502)`.
+     * 失败处理：catch 分支执行 `stop.abort(error);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `stop.abort(error);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     const worker = async () => {
       try {
         while (offset < bytes || (!bytes && number === 0)) {
@@ -102,6 +131,17 @@ export async function uploadObjectFile(
     );
     completed = true;
   } catch (error) {
+    /**
+     * 入口 / Entry: uploadObjectFile.callback@105.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（withoutOperationContext）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (withoutOperationContext).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `AbortSignal.timeout`; `client.send`; 更新 / updates `keyMarker`, `uploadMarker`.
+     * 拒绝 / Refusals: 条件 / conditions `createAttempted && !uploadId`; `page >= 99 || !listed.NextKeyMarker || !listed.NextUploadIdMarker`; `uploadId && !completed`; 异常 / errors `new AppError('无法完整核对未确认的 multipart 创建', 503)`; `cleanup`.
+     * 失败处理：catch 分支执行 `lease.cleanupPending(cleanup);`; `throw cleanup;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `lease.cleanupPending(cleanup);`; `throw cleanup;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     await withoutOperationContext(async () => {
       const cleanupSignal = AbortSignal.timeout(30_000);
       if (createAttempted && !uploadId) {

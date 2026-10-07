@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实沙箱工作台的执行、日志、产物和停止行为。 */
+/** 烟雾验收：验证真实沙箱工作台的执行、日志、产物和停止行为。
+ * Smoke acceptance for real sandbox execution/logs/artifacts and stopping. */
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -27,6 +28,8 @@ await once(host, 'listening');
 const hostPort = (host.address() as { port: number }).port;
 await machines.init();
 const lines: string[] = [];
+/** 同时输出并保存本次验收结论，供最终报告按原顺序汇总；记录本身不替代此前的断言。
+ * Print and retain this verification result for ordered final reporting; recording does not replace the preceding assertions. */
 const record = (message: string) => {
   lines.push(message);
   console.log(message);

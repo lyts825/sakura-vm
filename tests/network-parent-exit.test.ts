@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - Windows host death reaps original CPU-less backend and worker handles before and after QMP readiness
- * - Linux parent-death exec handoff reaps original CPU-less backend and worker handles
- * - Linux parent-death helper refuses a stale parent before executing the program
+ * 模块职责：回归验证模块，围绕 `network-parent-exit` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `network-parent-exit`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: Windows host death reaps original CPU-less backend and worker handles before and after QMP readiness; Linux parent-death exec handoff reaps original CPU-less backend and worker handles.
  */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
@@ -17,6 +18,14 @@ const run = promisify(execFile);
 
 // Diskless, CPU-less backend only. A .NET Process handle is opened before killing
 // the parent and retained through assertion/finally; never reap by a recycled PID.
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: phase: 'starting' | 'ready'; detached: boolean。
+ * 结果：返回分支计算值（`JSON.parse(stdout.trim()) as { backendExited: boolean; workerExited: boolean }`），以 Promise 交付。
+ * Result: Return the branch-computed value (`JSON.parse(stdout.trim()) as { backendExited: boolean; workerExited: boolean }`) through a Promise.
+ * 协作入口 / Collaborators: `JSON.stringify`, `Buffer.from(probe).toString`, `Buffer.from`, `run`.
+ */
 async function crashParent(phase: 'starting' | 'ready', detached: boolean) {
   const probe = `
     import { HostNetworkPool } from './server/network/host-pool.ts';
@@ -62,6 +71,16 @@ async function crashParent(phase: 'starting' | 'ready', detached: boolean) {
   return JSON.parse(stdout.trim()) as { backendExited: boolean; workerExited: boolean };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Windows host death reaps original CPU-less backend and worker handles before and after QMP readiness
+ * 协作入口 / Collaborators: `assert.deepEqual`, `crashParent`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(await crashParent(phase, false), { backendExited: true, workerExited: true }, phase)`; `assert.deepEqual(await crashParent('ready', true), { backendExited: false, workerExited: true })`.
+ */
 test('Windows host death reaps original CPU-less backend and worker handles before and after QMP readiness', {
   skip: process.platform !== 'win32' || !existsSync(binary), timeout: 70000,
 }, async () => {
@@ -73,6 +92,14 @@ test('Windows host death reaps original CPU-less backend and worker handles befo
   assert.deepEqual(await crashParent('ready', true), { backendExited: false, workerExited: true });
 });
 
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: phase: 'starting' | 'ready'; unmanaged: boolean。
+ * 结果：返回分支计算值（`JSON.parse(stdout.trim())`），以 Promise 交付。
+ * Result: Return the branch-computed value (`JSON.parse(stdout.trim())`) through a Promise.
+ * 协作入口 / Collaborators: `join`, `JSON.stringify`, `run`, `JSON.parse`.
+ */
 async function crashLinuxParent(phase: 'starting' | 'ready', unmanaged: boolean) {
   const linuxBinary = join(process.env.SAKURA_QEMU_DIR || '/usr/bin', 'qemu-system-x86_64');
   const probe = `
@@ -112,6 +139,16 @@ finally:
   return JSON.parse(stdout.trim());
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Linux parent-death exec handoff reaps original CPU-less backend and worker handles
+ * 协作入口 / Collaborators: `assert.deepEqual`, `crashLinuxParent`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(await crashLinuxParent(phase, false), { backendExited: true, workerExited: true }, phase)`; `assert.deepEqual(await crashLinuxParent('ready', true), { backendExited: false, workerExited: true })`.
+ */
 test('Linux parent-death exec handoff reaps original CPU-less backend and worker handles', {
   skip: process.platform !== 'linux' || !existsSync(join(process.env.SAKURA_QEMU_DIR || '/usr/bin', 'qemu-system-x86_64')),
   timeout: 70000,
@@ -121,6 +158,16 @@ test('Linux parent-death exec handoff reaps original CPU-less backend and worker
   assert.deepEqual(await crashLinuxParent('ready', true), { backendExited: false, workerExited: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Linux parent-death helper refuses a stale parent before executing the program
+ * 协作入口 / Collaborators: `assert.rejects`, `run`, `join`.
+ * 检查边界 / Checked boundaries: `assert.rejects(run('python3', ['-I', '-S', join(ROOT, 'server/network/parent-exec.py'), '1', '/usr/bin/true']), (error: any) => er…`.
+ */
 test('Linux parent-death helper refuses a stale parent before executing the program', {
   skip: process.platform !== 'linux',
 }, async () => {

@@ -1,5 +1,8 @@
 /**
- * 模块职责：根据能力动作的 Schema 生成输入表单，执行选定动作并呈现结果与就绪状态。
+ * 模块职责（中文）：根据能力动作的 Schema 生成输入表单，执行选定动作并呈现结果与就绪状态。
+ * Module responsibility (English): Editing capability inputs from schemas and executing ready actions.
+ * 详细范围（中文）：公开入口包括 CapabilityActionsPanel；职责覆盖按 Schema 编辑能力输入并执行已就绪动作，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include CapabilityActionsPanel. The scope covers Editing capability inputs from schemas and executing ready actions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
@@ -19,11 +22,37 @@ type Props = {
   definitions?: CapabilityActionView[];
   jobs?: JobView[];
   selected: string;
-  onSelected: (id: string) => void;
+  onSelected: /** 中文：通知当前实例选择变化，由外层同步项目与导航；这是 Props 的调用契约 | English: Notify VM selection changes so the owner synchronizes project/navigation state; this is the callable contract of Props | 中文：输入：id：目标资源标识 | English: Inputs: id: target resource identifier | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (id: string) => void;
   running: boolean;
-  reload: () => unknown;
+  reload: /** 中文：使当前资源重新核对，供成功写入后恢复列表或详情；这是 Props 的调用契约 | English: Reconcile the current resource after successful mutations to restore list/detail state; this is the callable contract of Props | 中文：结果：unknown；调用者依赖此类型约定 | English: Result: unknown; callers depend on this type contract */ () => unknown;
 };
 
+/**
+ * 中文：呈现按 Schema 编辑能力输入并执行已就绪动作中的 CapabilityActionsPanel 界面，订阅 /jobs/{job?.id}/result，组合 SchemaFields、HostDiskHealthReport，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the CapabilityActionsPanel surface for Editing capability inputs from schemas and executing ready actions, subscribing to /jobs/{job?.id}/result and composing SchemaFields, HostDiskHealthReport. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  request,
+  path,
+  scope,
+  definitions = [],
+  jobs = [],
+  selected,
+  onSelected,
+  running,
+  reload,
+} 提供 request（带身份和权限作用域的传输能力）、path（目标文件或请求路径）、scope（scope 状态）、definitions（definitions 状态）、jobs（jobs 状态）、selected（当前选择）、onSelected（onSelected 状态）、running（running 状态）、reload（reload 状态） 上下文字段
+ * English: Inputs: {
+  request,
+  path,
+  scope,
+  definitions = [],
+  jobs = [],
+  selected,
+  onSelected,
+  running,
+  reload,
+} provides context fields request (transport capability bound to identity/authority scope), path (target file/request path), scope (scope state), definitions (definitions state), jobs (jobs state), selected (current selection), onSelected (onSelected state), running (running state), reload (reload state)
+ */
 export function CapabilityActionsPanel({
   request,
   path,
@@ -39,6 +68,12 @@ export function CapabilityActionsPanel({
   const [parameters, setParameters] = useState('{}');
   const [ideAccess, setIdeAccess] = useState<{ password: string; expiresAt: string } | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, boolean>>({});
+  /**
+   * 中文：在按 Schema 编辑能力输入并执行已就绪动作流程中formErrors 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Editing capability inputs from schemas and executing ready actions, formErrors state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：key：签名所示 string 业务值；invalid：签名所示 boolean 业务值
+   * English: Inputs: key: the string domain value in the signature; invalid: the boolean domain value in the signature
+   */
   const reportFormError = useCallback(
     (key: string, invalid: boolean) =>
       setFormErrors((current) =>
@@ -48,17 +83,17 @@ export function CapabilityActionsPanel({
   );
   const definition = definitions.find((item) => item.id === selected);
   const vmId = /^\/vms\/([^/]+)\/next-features$/.exec(path)?.[1];
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [selected, path, request] 变化时parameters 状态，ideAccess 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [selected, path, request] change, parameters state, ideAccess state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setParameters(JSON.stringify(definition?.example || {}, null, 2));
     setIdeAccess(null);
   }, [selected, path, request]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [ideAccess] 变化时timeout 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [ideAccess] change, timeout state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     if (!ideAccess) return;
     const timer = setTimeout(() => setIdeAccess(null),
       Math.max(0, new Date(ideAccess.expiresAt).getTime() - Date.now()));
     return () => clearTimeout(timer);
   }, [ideAccess]);
-  const parsed = useMemo(() => {
+  const parsed = useMemo(/** 中文：在按 Schema 编辑能力输入并执行已就绪动作流程中按指定 Schema 校验并解码；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Editing capability inputs from schemas and executing ready actions, validate/decode with the specified schema. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation */ () => {
     try {
       const value = JSON.parse(parameters);
       return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -118,7 +153,20 @@ export function CapabilityActionsPanel({
             <div className="feature-grid">
               {parsed.fields
                 .filter((field: any) => typeof field?.name === 'string')
-                .map((field: any) => {
+                .map(/**
+                 * 中文功能：根据能力返回的字段类型渲染 choice、boolean、number 或文本输入，并将字段变更合并回 parameters JSON。
+                 * English: Render choice/boolean/number/text inputs from capability-provided field types and merge field changes back into parameters JSON.
+                 * 输入 / Inputs: field: any.
+                 * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+                 * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+                 */
+                (field: any) => {
+                  /**
+                   * 中文：在按 Schema 编辑能力输入并执行已就绪动作流程中parameters 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+                   * English: In Editing capability inputs from schemas and executing ready actions, parameters state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+                   * 中文：输入：value：待校验、转换或保存的输入值
+                   * English: Inputs: value: input value to validate/transform/save
+                   */
                   const update = (value: unknown) =>
                     setParameters(
                       JSON.stringify(
@@ -184,7 +232,7 @@ export function CapabilityActionsPanel({
               (definition.requiresGuest && !running)
             }
             onClick={() =>
-              action.run(async () => {
+              action.run(/** 中文：提交 POST path，完成按 Schema 编辑能力输入并执行已就绪动作的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST path for Editing capability inputs from schemas and executing ready actions. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                 await request(path, 'POST', {
                   action: scope === 'suite' ? 'feature-run' : 'run',
                   featureId: selected,
@@ -281,10 +329,10 @@ export function CapabilityActionsPanel({
               {result.session?.status === 'running' && vmId && <button
                 className="secondary compact"
                 disabled={action.busy}
-                onClick={() => {
+                onClick={/** 中文：读取 GET /vms/{vmId}/notebook-link，完成按 Schema 编辑能力输入并执行已就绪动作的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vmId}/notebook-link for Editing capability inputs from schemas and executing ready actions. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
                   const tab = window.open('about:blank', '_blank');
                   if (tab) tab.opener = null;
-                  void action.run(async () => {
+                  void action.run(/** 中文：读取 GET /vms/{vmId}/notebook-link，完成按 Schema 编辑能力输入并执行已就绪动作的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vmId}/notebook-link for Editing capability inputs from schemas and executing ready actions. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：拒绝原因：浏览器阻止了新标签页，请允许弹窗后重试。这些错误交给直接调用者或本函数 catch 处理 | English: Refusal reasons: 浏览器阻止了新标签页，请允许弹窗后重试. These errors reach the direct caller or this function's catch handler */ async () => {
                     if (!tab) throw new Error('浏览器阻止了新标签页，请允许弹窗后重试');
                     try {
                       const link = await request<{ url: string }>(`/vms/${vmId}/notebook-link`);
@@ -308,10 +356,10 @@ export function CapabilityActionsPanel({
               {result.session?.status === 'running' && vmId && <button
                 className="secondary compact"
                 disabled={action.busy}
-                onClick={() => {
+                onClick={/** 中文：读取 GET /vms/{vmId}/browser-ide-link，完成按 Schema 编辑能力输入并执行已就绪动作的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vmId}/browser-ide-link for Editing capability inputs from schemas and executing ready actions. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
                   const tab = window.open('about:blank', '_blank');
                   if (tab) tab.opener = null;
-                  void action.run(async () => {
+                  void action.run(/** 中文：读取 GET /vms/{vmId}/browser-ide-link，完成按 Schema 编辑能力输入并执行已就绪动作的数据交互并更新ideAccess 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vmId}/browser-ide-link for Editing capability inputs from schemas and executing ready actions and update ideAccess state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：拒绝原因：浏览器阻止了新标签页，请允许弹窗后重试。这些错误交给直接调用者或本函数 catch 处理 | English: Refusal reasons: 浏览器阻止了新标签页，请允许弹窗后重试. These errors reach the direct caller or this function's catch handler */ async () => {
                     if (!tab) throw new Error('浏览器阻止了新标签页，请允许弹窗后重试');
                     try {
                       const link = await request<{ url: string; password: string; expiresAt: string }>(

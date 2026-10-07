@@ -1,5 +1,8 @@
 /**
- * 模块职责：选择基础/目标快照并发起差异比较，展示变更统计和文件条目。
+ * 模块职责（中文）：选择基础/目标快照并发起差异比较，展示变更统计和文件条目。
+ * Module responsibility (English): UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles.
+ * 详细范围（中文）：公开入口包括 SnapshotDiffPanel；职责覆盖快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include SnapshotDiffPanel. The scope covers UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
@@ -8,6 +11,12 @@ import type { SnapshotDiffView } from './view-types';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import { saveText } from '../../src/export-file';
 
+/**
+ * 中文：呈现快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现中的 SnapshotDiffPanel 界面，订阅 /vms/{vm.id}/snapshot-diff、/jobs/{job?.id}/result，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the SnapshotDiffPanel surface for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles, subscribing to /vms/{vm.id}/snapshot-diff, /jobs/{job?.id}/result. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { vm, request } provides context fields vm (vm state), request (transport capability bound to identity/authority scope)
+ */
 export function SnapshotDiffPanel({ vm, request }: FeatureProps) {
   const [from, setFrom] = useState(vm.snapshots.at(-1)?.id || '');
   const [to, setTo] = useState('current');
@@ -85,7 +94,7 @@ export function SnapshotDiffPanel({ vm, request }: FeatureProps) {
           className="primary compact"
           disabled={!from || from === to || vm.poweredOn || action.busy || job?.status === 'running'}
           onClick={() =>
-            void action.run(async (signal) => {
+            void action.run(/** 中文：提交 POST /vms/{vm.id}/snapshot-diff，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/snapshot-diff for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
               await request(`/vms/${vm.id}/snapshot-diff`, 'POST', { from, to, path, partition }, signal);
               remote.reload();
             }, '比较任务已提交。')
@@ -107,7 +116,7 @@ export function SnapshotDiffPanel({ vm, request }: FeatureProps) {
               className="secondary compact"
               disabled={cancellation.busy}
               onClick={() =>
-                void cancellation.run(async (signal) => {
+                void cancellation.run(/** 中文：提交 POST /jobs/{job.id}/cancel，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /jobs/{job.id}/cancel for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                   await request(`/jobs/${job.id}/cancel`, 'POST', undefined, signal);
                   remote.reload();
                 })
@@ -124,7 +133,14 @@ export function SnapshotDiffPanel({ vm, request }: FeatureProps) {
             磁盘内容：{result.data.diskChanged ? '不同' : '相同'}；文件：新增 {result.data.counts.added}、删除{' '}
             {result.data.counts.removed}、修改 {result.data.counts.modified}。
           </p>
-          {(['added', 'removed', 'modified'] as const).map((kind) => {
+          {(['added', 'removed', 'modified'] as const).map(/**
+           * 中文功能：为新增、删除和修改文件分别生成可折叠列表，显示总数但仅渲染前 100 项，并提示下载完整结果。
+           * English: Generate collapsible added/removed/modified file lists, display totals but render only the first 100 entries and direct users to the full downloadable result.
+           * 输入 / Inputs: kind.
+           * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+           * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+           */
+          (kind) => {
             const rows = result.data![kind];
             return (
               <details key={kind}>

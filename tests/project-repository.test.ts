@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - first-checkout repository URLs are credential-free HTTPS or guest loopback HTTP
- * - only an applied matching Git scope resolves its separate secret
- * - bundle checkout pins the default branch and object hash in a clean project command
+ * 模块职责：回归验证模块，围绕 `project-repository` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `project-repository`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: first-checkout repository URLs are credential-free HTTPS or guest loopback HTTP; only an applied matching Git scope resolves its separate secret.
  */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
@@ -26,6 +27,16 @@ after(async () => {
   await rm(owned, { recursive: true, force: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: first-checkout repository URLs are credential-free HTTPS or guest loopback HTTP
+ * 协作入口 / Collaborators: `assert.equal`, `repositoryUrl.parse`, `projectSchema.parse`, `repositoryUrl.safeParse`.
+ * 检查边界 / Checked boundaries: `assert.equal(repositoryUrl.parse(value), value)`; `assert.equal(projectSchema.parse({ repository: value }).repository, value)`.
+ */
 test('first-checkout repository URLs are credential-free HTTPS or guest loopback HTTP', () => {
   for (const value of ['https://git.example.com/org/repo.git', 'http://127.0.0.1:8899/repo.git', 'http://[::1]:8899/repo.git']) {
     assert.equal(repositoryUrl.parse(value), value);
@@ -41,6 +52,19 @@ test('first-checkout repository URLs are credential-free HTTPS or guest loopback
   assert.equal(repositoryAuthorizationScope('https://foreign.example.com/org/repo.git', 'https://git.example.com/org/'), false);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: only an applied matching Git scope resolves its separate secret
+ * 状态影响 / State effects: `appliedAt`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `randomUUID`, `machines.records.set`, `new Date().toISOString`, `assert.deepEqual`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(networkSchema.parse({ dependencyDownloads: { git: configuration } }).dependencyDownloads?.git, configuration)`; `assert.equal((await spaces.repositoryDownloadAuthentication(id, 'https://git.example.com/org/one.git'))?.authorization, 'Bearer ow…`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('only an applied matching Git scope resolves its separate secret', async () => {
   const machines = new Machines({} as any, fakeVmNetwork), id = randomUUID();
   machines.records.set(id, { id, template: 'none' } as any);
@@ -48,8 +72,34 @@ test('only an applied matching Git scope resolves its separate secret', async ()
   const configuration = { kind: 'bearer' as const, endpoint: 'https://git.example.com/org/', tokenSecret: 'git-reader' };
   assert.deepEqual(networkSchema.parse({ dependencyDownloads: { git: configuration } }).dependencyDownloads?.git, configuration);
   const calls: string[] = [];
-  const spaces = new Workspaces(machines, { network: { state: async () => ({ appliedAt, config: { dependencyDownloads: { git: configuration } } }) } as any,
-    secrets: { value: async (_id: string, name: string) => { calls.push(name); return 'owned-secret'; },
+  const spaces = new Workspaces(machines, { network: { /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`({ appliedAt, config: { dependencyDownloads: { git: configuration } } })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`({ appliedAt, config: { dependencyDownloads: { git: configuration } } })`) through a Promise.
+   * 验证场景 / Scenario: only an applied matching Git scope resolves its separate secret
+   */
+  state: async () => ({ appliedAt, config: { dependencyDownloads: { git: configuration } } }) } as any,
+    secrets: { /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: _id: string; name: string。
+     * 结果：返回分支计算值（`'owned-secret'`），以 Promise 交付。
+     * Result: Return the branch-computed value (`'owned-secret'`) through a Promise.
+     * 验证场景 / Scenario: only an applied matching Git scope resolves its separate secret
+     * 协作入口 / Collaborators: `calls.push`.
+     */
+    value: async (_id: string, name: string) => { calls.push(name); return 'owned-secret'; },
+      /**
+       * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+       * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: only an applied matching Git scope resolves its separate secret
+       * 失败 / Failure: `new Error('project secrets must not be resolved here')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+       */
       resolve: async () => { throw new Error('project secrets must not be resolved here'); } } as any });
   try {
     assert.equal((await spaces.repositoryDownloadAuthentication(id, 'https://git.example.com/org/one.git'))?.authorization, 'Bearer owned-secret');
@@ -61,6 +111,16 @@ test('only an applied matching Git scope resolves its separate secret', async ()
   } finally { await spaces.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: bundle checkout pins the default branch and object hash in a clean project command
+ * 协作入口 / Collaborators: `randomUUID`, `identityId.replaceAll('-', '').slice`, `identityId.replaceAll`, `'a'.repeat`.
+ * 检查边界 / Checked boundaries: `assert.match(command, /GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=\/dev\/null GIT_CONFIG_GLOBAL=\/dev\/null/)`; `assert.match(command, /--branch='main'/)`.
+ */
 test('bundle checkout pins the default branch and object hash in a clean project command', () => {
   const identityId = randomUUID();
   const identity = { version: 1 as const, phase: 'active' as const, registryId: randomUUID(), projectId: 'default', identityId,
@@ -80,6 +140,16 @@ test('bundle checkout pins the default branch and object hash in a clean project
   assert.throws(() => repositoryCheckoutCommand('https://git.example.com/repo.git', '/run/sakura-repository-download.' + 'c'.repeat(32), { ...download, bundleSha256: null }, identity));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: system Git broker performs real authenticated HTTP and object bundle handoff
+ * 协作入口 / Collaborators: `spawnSync`, `resolve`, `assert.equal`, `assert.match`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.status, 0, result.error?.message || result.stdout + result.stderr)`; `assert.match(result.stderr, /Ran 9 tests/)`.
+ */
 test('system Git broker performs real authenticated HTTP and object bundle handoff', () => {
   const result = spawnSync(process.env.SAKURA_TEST_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'),
     ['-I', '-B', 'tests/project-repository-broker.test.py', resolve('server/project-repository-broker.py')],

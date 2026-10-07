@@ -1,4 +1,5 @@
-/** 烟雾验收：验证来宾文件系统冻结、QMP 在线快照、解冻及停机恢复。 */
+/** 烟雾验收：验证来宾文件系统冻结、QMP 在线快照、解冻及停机恢复。
+ * Smoke acceptance for guest filesystem freeze/QMP online snapshot/thaw and stopped recovery. */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,6 +18,8 @@ const { createRuntime } = await import('../server/runtime.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 270000;

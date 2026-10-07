@@ -1,5 +1,6 @@
 /**
  * 模块职责：汇集平台功能配置和动作，连接 Notebook、浏览器 IDE、HA 等领域服务。
+ * Module purpose: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
  */
 import { jsonValueSchema } from '../shared/contracts/json-values.ts';
 import type { BrowserIdeV1, ColdMigrationsV1, CommunityPluginsV1, DisasterRecoveryDrillV1, HaHostFailoverV1, HaLocalFailoversV1, HostMountsV1, HostPeersV1, MediaDevicesV1, NotebookEnvironmentsV1, ProcessInteropV1, SnapshotMergeV1, SnapshotReplicationsV1, VirtioFsSharesV1, WorkspacesV1 } from './service-contracts/v1.ts';
@@ -78,6 +79,14 @@ type NextState = {
   executions: Record<string, NextExecution[]>;
   records: Record<string, Record<string, unknown>>;
 };
+/**
+ * 入口 / Entry: defaultState.
+ * 功能：从当前输入或状态计算 `({ settings: {}, executions: {}, records: {} })`，供调用方后续验证或使用。
+ * Purpose: Computes `({ settings: {}, executions: {}, records: {} })` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: NextState；结果来自 / values from `({ settings: {}, executions: {}, records: {} })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const defaultState = (): NextState => ({ settings: {}, executions: {}, records: {} });
 
 const guestChecks: Partial<Record<NextFeatureId, string>> = {
@@ -88,8 +97,25 @@ const guestChecks: Partial<Record<NextFeatureId, string>> = {
   'code-search-index': 'command -v rg >/dev/null && rg --version',
 };
 
+/**
+ * 入口 / Entry: now.
+ * 功能：从当前输入或状态计算 `new Date().toISOString()`，供调用方后续验证或使用。
+ * Purpose: Computes `new Date().toISOString()` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `new Date().toISOString()`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const now = () => new Date().toISOString();
 
+/**
+ * 入口 / Entry: compactProfileResult.
+ * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result` / `{ ...result, download: { ...metadata, bytes: Buffer.byteLength(content) } }` 供上层消费（`next-features.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `next-features.ts`; this entry produces `result` / `{ ...result, download: { ...metadata, bytes: Buffer.byteLength(content) } }` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+ * 分支 / Branches: `!download || typeof download.content !== 'string'`.
+ * 输入 / Inputs: result: Record<string, unknown>
+ * 输出 / Returns: `result`; `{ ...result, download: { ...metadata, bytes: Buffer.byteLength(content) } }`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 function compactProfileResult(result: Record<string, unknown>) {
   const download = result.download as Record<string, unknown> | undefined;
   if (!download || typeof download.content !== 'string') return result;
@@ -126,44 +152,332 @@ export const nextFeatureActionRequest = z
 export class NextFeatures {
   private readonly domains: PlatformDomainServices;
   jobs = new Jobs('next-features');
+  /**
+   * 入口 / Entry: NextFeatures.storageTiering.
+   * 功能：向调用者提供 `this.domains.storageTiering` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.storageTiering` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.storageTiering`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get storageTiering() { return this.domains.storageTiering; }
+  /**
+   * 入口 / Entry: NextFeatures.serviceMesh.
+   * 功能：向调用者提供 `this.domains.serviceMesh` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.serviceMesh` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.serviceMesh`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get serviceMesh() { return this.domains.serviceMesh; }
+  /**
+   * 入口 / Entry: NextFeatures.vtpmEnrollment.
+   * 功能：向调用者提供 `this.domains.vtpmEnrollment` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.vtpmEnrollment` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.vtpmEnrollment`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get vtpmEnrollment() { return this.domains.vtpmEnrollment; }
+  /**
+   * 入口 / Entry: NextFeatures.acmeRenewal.
+   * 功能：向调用者提供 `this.domains.acmeRenewal` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.acmeRenewal` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.acmeRenewal`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get acmeRenewal() { return this.domains.acmeRenewal; }
+  /**
+   * 入口 / Entry: NextFeatures.teamTemplates.
+   * 功能：向调用者提供 `this.domains.teamTemplates` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.teamTemplates` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.teamTemplates`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get teamTemplates() { return this.domains.teamTemplates; }
+  /**
+   * 入口 / Entry: NextFeatures.haFailureMonitor.
+   * 功能：向调用者提供 `this.domains.haFailureMonitor` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.haFailureMonitor` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.haFailureMonitor`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get haFailureMonitor() { return this.domains.haFailureMonitor; }
+  /**
+   * 入口 / Entry: NextFeatures.haLocalFailovers.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: HaLocalFailoversV1 | undefined；结果来自 / values from `this.dependencies.optional('haLocalFailovers')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get haLocalFailovers(): HaLocalFailoversV1 | undefined { return this.dependencies.optional('haLocalFailovers'); }
+  /**
+   * 入口 / Entry: NextFeatures.haHostFailover.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: HaHostFailoverV1 | undefined；结果来自 / values from `this.dependencies.optional('haHostFailover')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get haHostFailover(): HaHostFailoverV1 | undefined { return this.dependencies.optional('haHostFailover'); }
+  /**
+   * 入口 / Entry: NextFeatures.scoreHosts.
+   * 功能：从当前输入或状态计算 `this.dependencies.optional('capabilityChecks')?.scoreHosts`，供调用方后续验证或使用。
+   * Purpose: Computes `this.dependencies.optional('capabilityChecks')?.scoreHosts` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.dependencies.optional('capabilityChecks')?.scoreHosts`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get scoreHosts() { return this.dependencies.optional('capabilityChecks')?.scoreHosts; }
+  /**
+   * 入口 / Entry: NextFeatures.hostPeers.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: HostPeersV1 | undefined；结果来自 / values from `this.dependencies.optional('hostPeers')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get hostPeers(): HostPeersV1 | undefined { return this.dependencies.optional('hostPeers'); }
+  /**
+   * 入口 / Entry: NextFeatures.liveMigrationRunner.
+   * 功能：向调用者提供 `this.hostPeers ? new LiveMigrationRunner(this.machines, this.hostPeers) : undefined` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.hostPeers ? new LiveMigrationRunner(this.machines, this.hostPeers) : undefined` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.hostPeers ? new LiveMigrationRunner(this.machines, this.hostPeers) : undefined`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get liveMigrationRunner() { return this.hostPeers ? new LiveMigrationRunner(this.machines, this.hostPeers) : undefined; }
+  /**
+   * 入口 / Entry: NextFeatures.coldMigrations.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: ColdMigrationsV1 | undefined；结果来自 / values from `this.dependencies.optional('coldMigrations')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get coldMigrations(): ColdMigrationsV1 | undefined { return this.dependencies.optional('coldMigrations'); }
+  /**
+   * 入口 / Entry: NextFeatures.snapshotReplications.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: SnapshotReplicationsV1 | undefined；结果来自 / values from `this.dependencies.optional('snapshotReplications')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get snapshotReplications(): SnapshotReplicationsV1 | undefined { return this.dependencies.optional('snapshotReplications'); }
+  /**
+   * 入口 / Entry: NextFeatures.notebookEnvironments.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: NotebookEnvironmentsV1 | undefined；结果来自 / values from `this.dependencies.optional('notebookEnvironments')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get notebookEnvironments(): NotebookEnvironmentsV1 | undefined { return this.dependencies.optional('notebookEnvironments'); }
+  /**
+   * 入口 / Entry: NextFeatures.browserIde.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: BrowserIdeV1 | undefined；结果来自 / values from `this.dependencies.optional('browserIde')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get browserIde(): BrowserIdeV1 | undefined { return this.dependencies.optional('browserIde'); }
+  /**
+   * 入口 / Entry: NextFeatures.disasterRecovery.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: DisasterRecoveryDrillV1 | undefined；结果来自 / values from `this.dependencies.optional('disasterRecovery')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get disasterRecovery(): DisasterRecoveryDrillV1 | undefined { return this.dependencies.optional('disasterRecovery'); }
+  /**
+   * 入口 / Entry: NextFeatures.objectBackup.
+   * 功能：向调用者提供 `this.domains.optional.objectBackup` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.optional.objectBackup` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.optional.objectBackup`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get objectBackup() { return this.domains.optional.objectBackup; }
+  /**
+   * 入口 / Entry: NextFeatures.wireGuardOverlay.
+   * 功能：向调用者提供 `this.domains.optional.wireGuardOverlay` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.optional.wireGuardOverlay` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.optional.wireGuardOverlay`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get wireGuardOverlay() { return this.domains.optional.wireGuardOverlay; }
+  /**
+   * 入口 / Entry: NextFeatures.processInterop.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: ProcessInteropV1 | undefined；结果来自 / values from `this.dependencies.optional('processInterop')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get processInterop(): ProcessInteropV1 | undefined { return this.dependencies.optional('processInterop'); }
+  /**
+   * 入口 / Entry: NextFeatures.mediaDevices.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: MediaDevicesV1 | undefined；结果来自 / values from `this.dependencies.optional('mediaDevices')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get mediaDevices(): MediaDevicesV1 | undefined { return this.dependencies.optional('mediaDevices'); }
+  /**
+   * 入口 / Entry: NextFeatures.hostMounts.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: HostMountsV1 | undefined；结果来自 / values from `this.dependencies.optional('hostMounts')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get hostMounts(): HostMountsV1 | undefined { return this.dependencies.optional('hostMounts'); }
+  /**
+   * 入口 / Entry: NextFeatures.virtioFsShares.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: VirtioFsSharesV1 | undefined；结果来自 / values from `this.dependencies.optional('virtioFsShares')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get virtioFsShares(): VirtioFsSharesV1 | undefined { return this.dependencies.optional('virtioFsShares'); }
+  /**
+   * 入口 / Entry: NextFeatures.snapshotMerge.
+   * 功能：把本层请求转交 `this.domains.optional.snapshotMerge`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.domains.optional.snapshotMerge` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.optional.snapshotMerge?.()`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get snapshotMerge() { return this.domains.optional.snapshotMerge?.(); }
+  /**
+   * 入口 / Entry: NextFeatures.communityPlugins.
+   * 功能：把本层请求转交 `this.dependencies.optional`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.optional` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: CommunityPluginsV1 | undefined；结果来自 / values from `this.dependencies.optional('communityPlugins')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get communityPlugins(): CommunityPluginsV1 | undefined { return this.dependencies.optional('communityPlugins'); }
+  /**
+   * 入口 / Entry: NextFeatures.sharedDesktopCheck.
+   * 功能：从当前输入或状态计算 `this.dependencies.optional('capabilityChecks')?.sharedDesktopCheck`，供调用方后续验证或使用。
+   * Purpose: Computes `this.dependencies.optional('capabilityChecks')?.sharedDesktopCheck` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.dependencies.optional('capabilityChecks')?.sharedDesktopCheck`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get sharedDesktopCheck() { return this.dependencies.optional('capabilityChecks')?.sharedDesktopCheck; }
+  /**
+   * 入口 / Entry: NextFeatures.sharedTerminalCheck.
+   * 功能：从当前输入或状态计算 `this.dependencies.optional('capabilityChecks')?.sharedTerminalCheck`，供调用方后续验证或使用。
+   * Purpose: Computes `this.dependencies.optional('capabilityChecks')?.sharedTerminalCheck` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.dependencies.optional('capabilityChecks')?.sharedTerminalCheck`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get sharedTerminalCheck() { return this.dependencies.optional('capabilityChecks')?.sharedTerminalCheck; }
+  /**
+   * 入口 / Entry: NextFeatures.passkeyCheck.
+   * 功能：从当前输入或状态计算 `this.dependencies.optional('capabilityChecks')?.passkeyCheck`，供调用方后续验证或使用。
+   * Purpose: Computes `this.dependencies.optional('capabilityChecks')?.passkeyCheck` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.dependencies.optional('capabilityChecks')?.passkeyCheck`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get passkeyCheck() { return this.dependencies.optional('capabilityChecks')?.passkeyCheck; }
+  /**
+   * 入口 / Entry: NextFeatures.accountModeReady.
+   * 功能：从当前输入或状态计算 `this.dependencies.optional('capabilityChecks')?.accountModeReady`，供调用方后续验证或使用。
+   * Purpose: Computes `this.dependencies.optional('capabilityChecks')?.accountModeReady` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.dependencies.optional('capabilityChecks')?.accountModeReady`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get accountModeReady() { return this.dependencies.optional('capabilityChecks')?.accountModeReady; }
+  /**
+   * 入口 / Entry: NextFeatures.mobileCheck.
+   * 功能：从当前输入或状态计算 `this.dependencies.optional('capabilityChecks')?.mobileCheck`，供调用方后续验证或使用。
+   * Purpose: Computes `this.dependencies.optional('capabilityChecks')?.mobileCheck` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.dependencies.optional('capabilityChecks')?.mobileCheck`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get mobileCheck() { return this.dependencies.optional('capabilityChecks')?.mobileCheck; }
+  /**
+   * 入口 / Entry: NextFeatures.remoteAuditCheck.
+   * 功能：从当前输入或状态计算 `this.dependencies.optional('capabilityChecks')?.remoteAuditCheck`，供调用方后续验证或使用。
+   * Purpose: Computes `this.dependencies.optional('capabilityChecks')?.remoteAuditCheck` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.dependencies.optional('capabilityChecks')?.remoteAuditCheck`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get remoteAuditCheck() { return this.dependencies.optional('capabilityChecks')?.remoteAuditCheck; }
+  /**
+   * 入口 / Entry: NextFeatures.constructor.
+   * 功能：建立 NextFeatures 的汇集平台功能配置和动作上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the NextFeatures context for this module's responsibility: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; dependencies: HostServiceResolver default=noHostServices; domains: { objectBackup?: ObjectBackup; wireGuardOverlay?: WireGuardOverlay; snapshotMerge?: (… default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.domains`.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
     private dependencies: HostServiceResolver = noHostServices,
-    domains: { objectBackup?: ObjectBackup; wireGuardOverlay?: WireGuardOverlay; snapshotMerge?: () => SnapshotMergeV1 | undefined } = {},
+    domains: { objectBackup?: ObjectBackup; wireGuardOverlay?: WireGuardOverlay;
+    /**
+     * 签名 / Signature: NextFeatures.constructor.snapshotMerge.
+     * 功能：为汇集平台功能配置和动作声明 snapshotMerge 的输入与结果契约，所属容器为 NextFeatures.constructor。
+     * Purpose: Declares the input/result contract for snapshotMerge in NextFeatures.constructor. Module responsibility: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: SnapshotMergeV1 | undefined.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
+    snapshotMerge?: () => SnapshotMergeV1 | undefined } = {},
   ) { this.domains = new PlatformDomainServices(machines, workspaces, dependencies, () => this.haPolicies(),
       async id => (await this.state()).settings[id]?.['service-mesh']?.enabled !== false, domains); }
 
+  /**
+   * 入口 / Entry: NextFeatures.haPolicies.
+   * 功能：把本层请求转交 `this.state`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.state` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `Object.fromEntries(Object.entries(state.settings).flatMap(([id, settings]) => { const policy = settings['ha-failover']; retur…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async haPolicies() {
     const state = await this.state();
     return Object.fromEntries(Object.entries(state.settings).flatMap(([id, settings]) => {
@@ -175,6 +489,15 @@ export class NextFeatures {
   
   
 
+  /**
+   * 入口 / Entry: NextFeatures.init.
+   * 功能：把本层请求转交 `this.domains.init`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.domains.init` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.init()`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   init() { return this.domains.init(); }
 
   
@@ -199,6 +522,17 @@ export class NextFeatures {
 
   
 
+  /**
+   * 入口 / Entry: NextFeatures.notebookLink.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.notebookEnvironments.link(id)` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `this.notebookEnvironments.link(id)` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `this.machines.requireUnlocked`, `this.notebookEnvironments.link` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.requireUnlocked`, `this.notebookEnvironments.link`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.notebookEnvironments.link(id)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!this.notebookEnvironments`; 异常 / errors `new AppError('Notebook 服务尚未启用', 503)`.
+   */
   notebookLink(id: string) {
     if (!this.notebookEnvironments) throw new AppError('Notebook 服务尚未启用', 503);
     this.machines.requireUnlocked(id);
@@ -218,26 +552,98 @@ export class NextFeatures {
   
   
 
+  /**
+   * 入口 / Entry: NextFeatures.browserIdeLink.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.browserIde.link(id)` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `this.browserIde.link(id)` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `this.machines.requireUnlocked`, `this.browserIde.link` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.requireUnlocked`, `this.browserIde.link`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.browserIde.link(id)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!this.browserIde`; 异常 / errors `new AppError('浏览器 IDE 服务尚未启用', 503)`.
+   */
   browserIdeLink(id: string) {
     if (!this.browserIde) throw new AppError('浏览器 IDE 服务尚未启用', 503);
     this.machines.requireUnlocked(id);
     return this.browserIde.link(id);
   }
 
+  /**
+   * 入口 / Entry: NextFeatures.file.
+   * 功能：把本层请求转交 `join`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `join` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `join(DATA, 'next-features.json')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private file() {
     return join(DATA, 'next-features.json');
   }
+  /**
+   * 入口 / Entry: NextFeatures.store.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `metadataFile(this.file(), defaultState, raw => { const value = raw as NextState; value.settings ||= {}; value.executions ||= …` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `metadataFile(this.file(), defaultState, raw => { const value = raw as NextState; value.settings ||= {}; value.executions ||= …` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `metadataFile`, `this.file` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `metadataFile`, `this.file`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `metadataFile(this.file(), defaultState, raw => { const value = raw as NextState; value.settings ||= {}; value.executions ||= …`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private store() {
+    /**
+     * 入口 / Entry: NextFeatures.store.callback@231.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（metadataFile）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (metadataFile).
+     * 输入 / Inputs: raw
+     * 输出 / Returns: `value`.
+     * 副作用 / Effects: 更新 / updates `value.settings`, `value.executions`, `value.records`.
+     */
     return metadataFile(this.file(), defaultState, raw => {
       const value = raw as NextState;
       value.settings ||= {}; value.executions ||= {}; value.records ||= {}; return value;
     });
   }
+  /**
+   * 入口 / Entry: NextFeatures.state.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `(await this.store().read()).value` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `(await this.store().read()).value` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `this.store().read`, `this.store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.store().read`, `this.store`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `(await this.store().read()).value`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async state() { return (await this.store().read()).value; }
+  /**
+   * 入口 / Entry: NextFeatures.spec.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `catalog.find((item) => item.id === id)!` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `catalog.find((item) => item.id === id)!` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `idSchema.parse`, `catalog.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `idSchema.parse`, `catalog.find`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: featureId: string
+   * 输出 / Returns: `catalog.find((item) => item.id === id)!`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private spec(featureId: string) {
     const id = idSchema.parse(featureId) as NextFeatureId;
     return catalog.find((item) => item.id === id)!;
   }
+  /**
+   * 入口 / Entry: NextFeatures.catalog.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ features: catalog, capabilities: capabilityViews('next'), count: catalog.length, generatedAt: now(), }` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `{ features: catalog, capabilities: capabilityViews('next'), count: catalog.length, generatedAt: now(), }` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `capabilityViews`, `now` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `capabilityViews`, `now`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ features: catalog, capabilities: capabilityViews('next'), count: catalog.length, generatedAt: now(), }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async catalog() {
     return {
       features: catalog,
@@ -246,6 +652,18 @@ export class NextFeatures {
       generatedAt: now(),
     };
   }
+  /**
+   * 入口 / Entry: NextFeatures.view.
+   * 功能：在汇集平台功能配置和动作中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ projectId, features: catalog, capabilities: capabilityViews('next'), settings, records: state.records[id] || {}, haFailover…` 供上层消费（`NextFeatures`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `NextFeatures`; this entry produces `{ projectId, features: catalog, capabilities: capabilityViews('next'), settings, records: state.records[id] || {}, haFailover…` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `this.machines.get`, `this.state`, `this.workspaces.projects.current`, `this.acmeRenewal.view` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.state`, `this.workspaces.projects.current`, `this.acmeRenewal.view`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `acmePolicy`.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ projectId, features: catalog, capabilities: capabilityViews('next'), settings, records: state.records[id] || {}, haFailover…`.
+   * 副作用 / Effects: 更新 / updates `settings['acme-renewal']`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async view(id: string) {
     this.machines.get(id);
     const state = await this.state();
@@ -271,6 +689,18 @@ export class NextFeatures {
         .slice(0, 40),
     };
   }
+  /**
+   * 入口 / Entry: NextFeatures.configure.
+   * 功能：在汇集平台功能配置和动作中，校验并提交领域状态变更；本入口产生 `{ enabled: value.enabled, options: { intervalHours: result.policy!.intervalHours }, updatedAt: now(), policy: result.policy }` / `this.serviceMesh.configure(id, value.enabled, async () => { return (await this.store().update(state => { const settings = (st…` 供上层消费（`NextFeatures`）。
+   * Purpose: Validates and commits a domain state change in `NextFeatures`; this entry produces `{ enabled: value.enabled, options: { intervalHours: result.policy!.intervalHours }, updatedAt: now(), policy: result.policy }` / `this.serviceMesh.configure(id, value.enabled, async () => { return (await this.store().update(state => { const settings = (st…` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `this.machines.get`, `z.object().strict().parse`, `z.object().strict`, `z.object` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `z.object().strict().parse`, `z.object().strict`, `z.object`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `value.featureId === 'acme-renewal'`; `value.featureId === 'service-mesh'`; `value.featureId === 'vtpm-key-enrollment' || value.featureId === 'pci-usb-passthrough'`.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: `{ enabled: value.enabled, options: { intervalHours: result.policy!.intervalHours }, updatedAt: now(), policy: result.policy }`; `this.serviceMesh.configure(id, value.enabled, async () => { return (await this.store().update(state => { const settings = (st…`; `setting`.
+   * 副作用 / Effects: `this.acmeRenewal.save`; `this.machines.releaseHaWitness`; `this.store().update`; 更新 / updates `value.options`.
+   * 拒绝 / Refusals: 条件 / conditions `value.featureId === 'ha-failover'`; `wantsWitness && !haOptions.targetHostId`; `wantsWitness && !this.haHostFailover?.configured()`; 异常 / errors `new AppError('请先选择已配对的故障接管目标主机', 409)`; `new AppError('启用宿主失联接管前须配置独立见证节点', 409)`.
+   */
   async configure(id: string, input: unknown) {
     this.machines.get(id);
     const value = z
@@ -349,6 +779,17 @@ export class NextFeatures {
     return setting;
   }
 
+  /**
+   * 入口 / Entry: NextFeatures.hostSnapshot.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ hostname: hostname(), platform: platform(), release: release(), arch: arch(), cpus: cpus().length, load: loadavg(), memory:…` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `{ hostname: hostname(), platform: platform(), release: release(), arch: arch(), cpus: cpus().length, load: loadavg(), memory:…` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `hostname`, `platform`, `release`, `arch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `hostname`, `platform`, `release`, `arch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ hostname: hostname(), platform: platform(), release: release(), arch: arch(), cpus: cpus().length, load: loadavg(), memory:…`.
+   * 副作用 / Effects: `release`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private hostSnapshot() {
     return {
       hostname: hostname(),
@@ -363,6 +804,20 @@ export class NextFeatures {
     };
   }
 
+  /**
+   * 入口 / Entry: NextFeatures.guestProbe.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: false, executed: false, reason: '请先启动发行版后再检查客户机能力。' }` / `{ ready: result.code === 0, executed: result.code === 0, output: `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''…` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `{ ready: false, executed: false, reason: '请先启动发行版后再检查客户机能力。' }` / `{ ready: result.code === 0, executed: result.code === 0, output: `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''…` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `this.machines.state`, `signal.throwIfAborted`, `this.machines.exec`, `inline.slice` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.state`, `signal.throwIfAborted`, `this.machines.exec`, `inline.slice`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.machines.state(id) !== 'running'`.
+   * 输入 / Inputs: id: string; command: string; signal: AbortSignal optional
+   * 输出 / Returns: `{ ready: false, executed: false, reason: '请先启动发行版后再检查客户机能力。' }`; `{ ready: result.code === 0, executed: result.code === 0, output: `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''…`; `{ ready: false, executed: false, reason: String((error as Error).message || error) }`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `return { ready: false, executed: false, reason: String((error as Error).message || error) };`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `return { ready: false, executed: false, reason: String((error as Error).message || error) };`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async guestProbe(id: string, command: string, signal?: AbortSignal) {
     if (this.machines.state(id) !== 'running')
       return { ready: false, executed: false, reason: '请先启动发行版后再检查客户机能力。' };
@@ -380,6 +835,19 @@ export class NextFeatures {
     }
   }
 
+  /**
+   * 入口 / Entry: NextFeatures.probe.
+   * 功能：按平台功能选择只读检查或明确请求的执行动作，返回真实可用性与结果。
+   * Purpose: Selects platform feature inspection or explicitly requested execution and returns measured availability/results.
+   * 设计：功能启用、平台与客户机条件先验证；复杂效果交给对应领域，不把目录中的声明当作已实现能力。
+   * Design: Enablement/platform/guest prerequisites are verified and effects use owning domains; declarations alone do not prove capability availability.
+   * 输入 / Inputs: id: string; spec: NextFeature; signal: AbortSignal optional; options: Record<string, unknown> default={}; action: 'check' | 'run' default='check'; log: (line: string) => void default=() => {}
+   * 输出 / Returns: `{ ready: true, executed: false, adapter, message: '启用备份策略插件，在停止实例的快照页使用“备份文件恢复”，选择备份、分区和文件；提取后下载，不覆盖当前磁盘。', }`; `{ ready: true, executed: false, adapter, message: '启用文件工作台插件，在编辑器中获取文件锁。锁定后自动续租；保存、恢复、上传和文件操作会检查冲突，关闭编辑器可释放锁。', }`; `{ ready: true, executed: false, adapter, message: '实例 → 桌面 → 录制与回放，在浏览器中录制、暂停、停止、回放并导出 WebM。系统设置中的录制库可管理已主动保存的本浏览器视频；无需客户机录制工…`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: `blockers.push`; `this.machines.exec`; `this.machines.setIncidentLockdown`; 更新 / updates `mount`.
+   * 拒绝 / Refusals: 条件 / conditions `action === 'run' && configured?.enabled === false && spec.id !== 'acme-renewal'`; `action === 'run' && spec.state !== 'available'`; 异常 / errors `new AppError('此能力已禁用', 409)`; `new AppError('此功能尚未完成实现；保存配置不会执行对应能力', 501)`.
+   * 失败处理：catch 分支执行 `signal?.throwIfAborted();`; `return { ready: false, executed: false, adapter, reason: (error as Error).message };`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `signal?.throwIfAborted();`; `return { ready: false, executed: false, adapter, reason: (error as Error).message };`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async probe(
     id: string,
     spec: NextFeature,
@@ -944,6 +1412,17 @@ export class NextFeatures {
     };
   }
 
+  /**
+   * 入口 / Entry: NextFeatures.executeFeature.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `result` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `now`, `this.probe`, `compactProfileResult`, `this.store().update` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `now`, `this.probe`, `compactProfileResult`, `this.store().update`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; spec: NextFeature; action: 'check' | 'run'; signal: AbortSignal optional; options: Record<string, unknown> optional; log: (line: string) => void optional
+   * 输出 / Returns: `result`.
+   * 副作用 / Effects: `this.store().update`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async executeFeature(
     id: string,
     spec: NextFeature,
@@ -956,6 +1435,15 @@ export class NextFeatures {
     const result = await this.probe(id, spec, signal, options, action, log);
     const historyResult = spec.id === 'flamegraph' || spec.id === 'ebpf-profiler'
       ? compactProfileResult(result) : result;
+    /**
+     * 入口 / Entry: NextFeatures.executeFeature.callback@959.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.store().update）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.store().update).
+     * 输入 / Inputs: state
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `history.push`; `history.shift`; 更新 / updates `state.executions[id]`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     await this.store().update(state => {
       const history = (state.executions[id] ||= []);
       history.push({
@@ -972,6 +1460,18 @@ export class NextFeatures {
     return result;
   }
 
+  /**
+   * 入口 / Entry: NextFeatures.action.
+   * 功能：在汇集平台功能配置和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.configure(id, configuration)` / `this.haLocalFailovers.rejoin(id, operation.dataReconciled)` 供上层消费（`NextFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NextFeatures`; this entry produces `this.configure(id, configuration)` / `this.haLocalFailovers.rejoin(id, operation.dataReconciled)` for its caller. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `nextFeatureActionRequest.parse`, `this.machines.requireUnlocked`, `this.configure`, `z.object().strict().parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `nextFeatureActionRequest.parse`, `this.machines.requireUnlocked`, `this.configure`, `z.object().strict().parse`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `value.featureId !== 'incident-lockdown' && value.action !== 'check'`; `value.action === 'configure'`; `value.action === 'check' || spec.id === 'incident-lockdown'`.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal optional
+   * 输出 / Returns: `this.configure(id, configuration)`; `this.haLocalFailovers.rejoin(id, operation.dataReconciled)`; `this.haHostFailover.rejoin(id, operation.dataReconciled)`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: `this.executeFeature`; `this.jobs.start`.
+   * 拒绝 / Refusals: 条件 / conditions `value.featureId === 'ha-failover' && value.action === 'run'`; `this.machines.get(id).haPromotion`; `!this.haLocalFailovers`; 异常 / errors `new AppError('本机故障接管服务尚未启用', 503)`; `new AppError('宿主失联接管服务尚未启用', 503)`.
+   */
   async action(id: string, input: unknown, signal?: AbortSignal) {
     const value = nextFeatureActionRequest
       .parse(input);
@@ -1004,6 +1504,15 @@ export class NextFeatures {
       capabilityParameters(spec.id, { ...configured, ...value.options });
     }
     const projectId = this.workspaces.projects.current(id);
+    /**
+     * 入口 / Entry: NextFeatures.action.callback@1009.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.jobs.start）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.jobs.start).
+     * 输入 / Inputs: log; taskSignal; _update; saveResult
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.executeFeature`; `saveResult`.
+     * 拒绝 / Refusals: 条件 / conditions `!result.ready`; 异常 / errors `new AppError('能力尚未就绪或执行失败', 409)`.
+     */
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:${spec.id}`,
       async (log, taskSignal, _update, saveResult) => {
@@ -1017,5 +1526,16 @@ export class NextFeatures {
     );
   }
 
+  /**
+   * 入口 / Entry: NextFeatures.close.
+   * 功能：在汇集平台功能配置和动作中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`NextFeatures`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `NextFeatures`; the calls and state transitions below complete the operation. Module context: Collects platform settings/actions and connects Notebook, browser IDE, HA and other domain services.
+   * 处理：通过 `Promise.all`, `this.jobs.close`, `this.domains.close`, `this.store().flush` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.all`, `this.jobs.close`, `this.domains.close`, `this.store().flush`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.jobs.close`; `this.domains.close`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() { await Promise.all([this.jobs.close(), this.domains.close()]); await this.store().flush(); }
 }

@@ -1,11 +1,20 @@
 /**
- * 模块职责：读取控制面 API 文档，按操作契约构造请求并展示响应及下载结果。
+ * 模块职责（中文）：读取控制面 API 文档，按操作契约构造请求并展示响应及下载结果。
+ * Module responsibility (English): Building API requests from published operation contracts and presenting responses.
+ * 详细范围（中文）：公开入口包括 ApiExplorer；职责覆盖依据公开操作契约构造 API 请求并呈现响应，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ApiExplorer. The scope covers Building API requests from published operation contracts and presenting responses. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useEffect, useState } from 'react';
 import { apiPath, type ApiDocument } from '../shared/api-document';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 import { saveBlob } from './export-file';
 
+/**
+ * 中文：呈现依据公开操作契约构造 API 请求并呈现响应中的 ApiExplorer 界面，订阅 /openapi，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ApiExplorer surface for Building API requests from published operation contracts and presenting responses, subscribing to /openapi. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ */
 export function ApiExplorer({ request }: { request: Request }) {
   const remote = useRemote<ApiDocument>(request, '/openapi', true, 0);
   const action = useAction();
@@ -23,11 +32,17 @@ export function ApiExplorer({ request }: { request: Request }) {
       .includes(filter.trim().toLowerCase()),
   );
   const operation = operations.find((item) => item.operationId === selected);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [selected] 变化时parameters 状态，操作结果；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [selected] change, parameters state, operation result. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setParameters({});
     setResult('');
     action.clear();
   }, [selected]);
+  /**
+   * 中文：在依据公开操作契约构造 API 请求并呈现响应流程中把二进制内容导出为下载；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Building API requests from published operation contracts and presenting responses, export binary content through a download. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：name：目标名称或文件名；content：当前文件文本内容；type：此处理器的调用值（缺省 'application/json'）
+   * English: Inputs: name: target name/filename; content: current file text; type: the invocation value for this handler (default 'application/json')
+   */
   const download = (name: string, content: string, type = 'application/json') =>
     saveBlob(name, new Blob([content], { type }));
   return (
@@ -50,7 +65,7 @@ export function ApiExplorer({ request }: { request: Request }) {
           className="secondary compact"
           disabled={action.busy}
           onClick={() =>
-            void action.run(async (signal) => {
+            void action.run(/** 中文：读取 GET /sdk，完成依据公开操作契约构造 API 请求并呈现响应的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /sdk for Building API requests from published operation contracts and presenting responses. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
               const file = await request<{ filename: string; content: string; mime: string }>(
                 '/sdk',
                 'GET',
@@ -130,7 +145,7 @@ export function ApiExplorer({ request }: { request: Request }) {
               operation.parameters.some((item) => item.required && !parameters[item.name])
             }
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：读取 GET apiPath(operation.path, path, query).slice(4)，完成依据公开操作契约构造 API 请求并呈现响应的数据交互并更新操作结果；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET apiPath(operation.path, path, query).slice(4) for Building API requests from published operation contracts and presenting responses and update operation result. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 const path = Object.fromEntries(
                   operation.parameters
                     .filter((item) => item.in === 'path')

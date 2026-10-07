@@ -1,4 +1,5 @@
-/** 烟雾验收：验证历史 UID-only 单窗口夹具；保留旧入口的 VNC、网络和剪贴板验证。 */
+/** 烟雾验收：验证历史 UID-only 单窗口夹具；保留旧入口的 VNC、网络和剪贴板验证。
+ * Smoke acceptance for the historical UID-only single-app fixture, retaining its VNC/network/clipboard checks. */
 // Historical fixture for the former UID-only controller. The current npm
 // entry uses smoke-project-desktop-identity.ts and requires --run-cow x11|wayland.
 import assert from 'node:assert/strict';
@@ -34,8 +35,10 @@ const desktops = new Desktops(machines, workspaces);
 const privateNetwork = process.env.SAKURA_SINGLE_APP_PRIVATE === '1';
 let browser: WebSocket | undefined;
 let bridge: WebSocketServer | undefined;
-let preview: { close(): Promise<void> } | undefined;
-let webBrowser: { close(): Promise<void> } | undefined;
+let preview: { /** 关闭本夹具桌面或单应用服务并等待完成，释放会话与传输；关闭失败拒绝 Promise，不能仅报告调用已发出。
+ * Close this fixture desktop/single-app service and await session/transport release; reject teardown failures rather than merely report that shutdown was requested. */ close(): Promise<void> } | undefined;
+let webBrowser: { /** 关闭本夹具桌面或单应用服务并等待完成，释放会话与传输；关闭失败拒绝 Promise，不能仅报告调用已发出。
+ * Close this fixture desktop/single-app service and await session/transport release; reject teardown failures rather than merely report that shutdown was requested. */ close(): Promise<void> } | undefined;
 try {
   const vm = await machines.create({ name: `single-app-${distro}`, distro: distro as
     'alpine' | 'debian' | 'ubuntu', memoryMiB: 1024, cpus: 2, diskGiB: 4 });
@@ -48,6 +51,8 @@ try {
   }
   await workspaces.save(vm.id, { networkIsolation: privateNetwork ? 'private' : 'host' });
   const project = await workspaces.config(vm.id);
+  /** 把应用命令放入项目生产网络域，作为 Windows 浏览器对 Linux 单应用的真实访问路径。
+   * Wrap application commands in the production project network domain for the Windows browser’s real Linux single-app path. */
   const network = (command: string) => projectNetworkCommand(project, command);
   const session = await desktops.apps.start(vm.id, { program: 'xterm',
     args: ['-hold', '-e', 'sh', '-c',
@@ -199,12 +204,16 @@ DISPLAY=:${other.display} XAUTHORITY="$auth" "$config" -get AcceptCutText`, 1000
   const { DESECBCipher } = await import(new URL(
     '../node_modules/@novnc/novnc/core/crypto/des.js', import.meta.url).href);
   browser.terminate();
+  /** 通过真实 RFB 3.8 握手和 VNC 挑战响应检查密码接受/拒绝，只允许密码安全类型；接受后核对服务初始化，finally 关闭自有 WebSocket。
+   * Use real RFB 3.8/VNC challenge-response to check password acceptance/denial with password-only security types; verify initialization on acceptance and close the owned WebSocket in finally. */
   const authenticate = async (password: string, accept: boolean) => {
     const client = new WebSocket(`ws://127.0.0.1:${address.port}`);
     let received = Buffer.alloc(0), ended = false;
     client.on('message', (data) => { received = Buffer.concat([received, Buffer.from(data as Buffer)]); });
     client.on('close', () => { ended = true; });
     client.on('error', () => { ended = true; });
+    /** 从累计 RFB 缓冲消费指定字节前缀，十秒内不足或流已结束拒绝，避免认证步骤读到重复数据。
+     * Consume the requested prefix from buffered RFB bytes, rejecting insufficient data after ten seconds/stream end to avoid rereading authentication data. */
     const read = async (length: number) => {
       const deadline = Date.now() + 10000;
       while (received.length < length) {
@@ -244,6 +253,8 @@ DISPLAY=:${other.display} XAUTHORITY="$auth" "$config" -get AcceptCutText`, 1000
     const vite = await createServer({ optimizeDeps: { entries: ['single-app.html'] },
       server: { host: '127.0.0.1', port: 0 }, plugins: [{
       name: 'single-app-smoke-opener',
+      /** 只为单应用验收页面响应最小 HTML，其余请求交给 Vite，维持虚拟页面的明确作用域。
+       * Serve minimal HTML only for the single-app check page and pass other requests to Vite, keeping the virtual page scope explicit. */
       configureServer(server) {
         server.middlewares.use((request, response, next) => {
           if (request.url !== '/single-app-smoke') return next();
@@ -269,6 +280,8 @@ DISPLAY=:${other.display} XAUTHORITY="$auth" "$config" -get AcceptCutText`, 1000
     await page.evaluate(({ vmId, session }) => {
       const nonce = crypto.randomUUID();
       const popup = window.open(`/single-app.html?nonce=${nonce}`, '_blank')!;
+      /** 同时核验 popup 源窗口、同源 origin 和随机 nonce 后移除一次性监听，再向精确窗口发送初始化会话。
+       * Verify popup source window/same-origin/random nonce together, remove the one-shot listener and initialize that exact window session. */
       const receive = (event: MessageEvent) => {
         if (event.source !== popup || event.origin !== location.origin || event.data?.nonce !== nonce)
           return;

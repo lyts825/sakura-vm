@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目依赖缓存的原子发布、故障拒绝及保留夹具证据。 */
+/** 烟雾验收：验证项目依赖缓存的原子发布、故障拒绝及保留夹具证据。
+ * Smoke acceptance for dependency-cache atomic publication, fault refusal and retained owned evidence. */
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -47,11 +48,15 @@ const cacheParent = '/var/cache/sakura/project-deps/' + nonce;
 const cache = cacheParent + '/pip';
 const evidence: object[] = [];
 let suite: InstanceType<typeof FeatureSuite> | undefined;
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string, timeout = 30_000) => {
   const result = await machines.exec(vm.id, command, timeout);
   assert.equal(result.code, 0, result.stdout + result.stderr);
   return result.stdout.trim();
 };
+/** 用 SFTP wx/0600 创建专用夹具文件，拒绝覆盖已存在资源，等待流写入完成。
+ * Create a dedicated fixture file with SFTP wx/0600, rejecting overwrite and awaiting stream completion. */
 const write = async (path: string, content: string) =>
   machines.sftp(vm.id, (ftp) =>
     pipeline(
@@ -60,6 +65,8 @@ const write = async (path: string, content: string) =>
     ),
   );
 
+/** 生成调用真实 pip 发布算法的故障注入 Python：拦截 rename 系统调用前后、信号死亡和不支持/碰撞，记录阶段以验证原子可见性。
+ * Generate fault-injection Python around the real pip publication algorithm, intercepting rename phases/signals/unsupported-or-collision cases and recording events for atomic-visibility checks. */
 function fixturePublication(label: string, phase = 'normal', death = '', injected = '') {
   return `import ctypes, errno, json, os, shutil, signal, sys, threading, time
 namespace = {'__name__': 'publication_fixture'}
@@ -103,6 +110,8 @@ except Exception as error:
 `;
 }
 
+/** 读取缓存代次和 WHEELS，逐文件核对摘要及 LOCKSUMS，要求预期缺失或完整代次，不接受半发布目录。
+ * Read cache generation/WHEELS and verify each digest/LOCKSUMS, requiring expected absence or a complete generation rather than partially published directories. */
 const verify = async (expected: string | null) => {
   const result = JSON.parse(
     await run(
@@ -175,7 +184,8 @@ try {
       username: 'reader',
       passwordSecret: 'atomic-pip-read',
     },
-    { value: async () => tokens.pip } as any,
+    { /** 向本夹具认证解析器提供当前 pip 令牌，只经生产认证桥传递。
+ * Supply the current pip token to this fixture authentication resolver through the production authentication bridge. */ value: async () => tokens.pip } as any,
   );
   await write(project + '/requirements.txt', 'owned-auth-probe==1.0.0\n');
   console.log(
@@ -186,6 +196,8 @@ try {
     ),
   );
 
+  /** 用真实认证桥与 guestTask 执行预取，可替换发布段注入故障；finally 清理临时目录/所有者票据，再核验退出模式、事件和缓存代次。
+   * Run prefetch through the real authentication bridge/guestTask with optional publication fault injection; finally remove staging/owner receipts, then verify exit mode/events/cache generation. */
   const prefetch = async (
     label: string,
     expected: string | null,
@@ -204,6 +216,8 @@ try {
         new AbortController().signal,
         async (paths) => {
           plan = projectDependencyCachePlan(project, nonce, 'pip', 'prefetch-dependencies', {}, paths);
+          /** 对源码做两层 POSIX 引号编码并取内层内容，以精确替换嵌套 shell 命令中的发布段。
+           * Double-encode source with POSIX quoting and take its inner content for exact publication replacement inside nested shell commands. */
           const nested = (source: string) => quote(quote(source)).slice(1, -1);
           const command = instrument
             ? plan.command.replace(
@@ -284,18 +298,28 @@ print(json.dumps({'exchanges':1000,'samples':samples[0],'missing':len(errors)}))
   }
   let managedAuth = true;
   const spaces = {
-    projects: { key: () => vm.id + ':' + nonce, current: () => nonce },
+    projects: { /** 返回实例 ID 与本次 nonce 的组合配置键，保证原子缓存验收和其他项目状态不混用。
+ * Return VM-ID/nonce configuration key so atomic-cache checks cannot mix other project state. */ key: () => vm.id + ':' + nonce, /** 返回本轮固定 nonce 作为项目上下文，保持所有操作绑定同一验收项目。
+ * Return this run’s fixed nonce as project context to bind all operations to one verification project. */ current: () => nonce },
+    /** 提供私有网络、固定目录及故意不可解析的秘密配置，验证预取不依赖项目正文或秘密。
+     * Provide private-network/fixed-directory/intentionally unresolvable secrets to verify prefetch does not depend on project bodies/secrets. */
     config: async () => ({
       directory: project,
       networkIsolation: 'private',
       environment: {},
       secrets: { MISSING: 'must-not-resolve' },
     }),
+    /** 立即失败，确保预取路径不能尝试解析项目秘密；若被调用，验收暴露越界依赖。
+     * Fail immediately to prove prefetch cannot resolve project secrets; invocation exposes an unauthorized dependency. */
     resolvedConfig: async () => {
       throw new Error('prefetch resolved project secrets');
     },
+    /** 按认证模式提供空环境或专用公开 pip 地址，分开验证受管理认证与匿名下载路径。
+     * Return empty environment or the dedicated public pip index according to authentication mode to test managed-auth/anonymous paths separately. */
     networkEnvironment: async () =>
       managedAuth ? {} : { PIP_INDEX_URL: `http://127.0.0.1:${ready.port}/public/simple/` },
+    /** 只在管理认证模式返回本夹具认证描述，匿名模式返回 undefined。
+     * Return this fixture authentication descriptor only in managed mode, otherwise undefined. */
     dependencyDownloadAuthentication: async () => (managedAuth ? authentication : undefined),
   };
   suite = new FeatureSuite(machines, spaces as any);
@@ -303,7 +327,8 @@ print(json.dumps({'exchanges':1000,'samples':samples[0],'missing':len(errors)}))
   const originalExec = machines.exec.bind(machines);
   let failCleanupOnce = false;
   let stageCleanups = 0;
-  machines.exec = async (...args: Parameters<typeof machines.exec>) => {
+  machines.exec = /** 只对识别出的 staging 清理命令计数并丢一次 SSH 确认，其他 exec 原样转发，验证原子缓存事务的清理重试。
+ * Count only recognized staging-cleanup commands and lose one SSH acknowledgement, forwarding other exec unchanged to test atomic-cache cleanup retries. */ async (...args: Parameters<typeof machines.exec>) => {
     if (args[1].startsWith('set -eu\nif [ -f') && args[1].includes('sakura_stage_state')) {
       stageCleanups++;
       if (failCleanupOnce) {

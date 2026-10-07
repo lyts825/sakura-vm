@@ -1,5 +1,6 @@
 /**
  * 模块职责：汇集存储诊断、磁盘整理及扩容维护，返回脱敏报告并协调客户机维护动作。
+ * Module purpose: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
  */
 import { networkFor } from './network/index.ts';
 import { stat, statfs, readdir } from 'node:fs/promises';
@@ -30,6 +31,17 @@ export type DiagnosticCheck = {
   detail: string;
   suggestion?: string;
 };
+/**
+ * 入口 / Entry: redact.
+ * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `text .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[密钥已隐藏]') .replace( /(["']?(?:token…` 供上层消费（`maintenance.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `maintenance.ts`; this entry produces `text .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[密钥已隐藏]') .replace( /(["']?(?:token…` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+ * 处理：通过 `text.replace().replace().replace().replace().replace().replace`, `text.replace().replace().replace().replace().replace`, `text.replace().replace().replace().replace`, `text.replace().replace().replace` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `text.replace().replace().replace().replace().replace().replace`, `text.replace().replace().replace().replace().replace`, `text.replace().replace().replace().replace`, `text.replace().replace().replace`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: text: string
+ * 输出 / Returns: `text .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[密钥已隐藏]') .replace( /(["']?(?:token…`.
+ * 副作用 / Effects: `text.replace().replace().replace().replace().replace().replace`; `text.replace().replace().replace().replace().replace`; `text.replace().replace().replace().replace`; `text.replace().replace().replace`; `text.replace().replace`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function redact(text: string) {
   return text
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[密钥已隐藏]')
@@ -42,6 +54,14 @@ export function redact(text: string) {
     .replace(/https?:\/\/[^\s/@]+:[^\s/@]+@/g, 'https://[凭证已隐藏]@')
     .replace(/[A-Za-z]:[\\/][^\r\n"<>]+/g, '[本机路径已隐藏]');
 }
+/**
+ * 入口 / Entry: hostPortIssue.
+ * 功能：从当前输入或状态计算 `new Promise((resolve) => { const server = createServer(); server.once('error', (error: NodeJS.ErrnoException) => resolve(erro…`，供调用方后续验证或使用。
+ * Purpose: Computes `new Promise((resolve) => { const server = createServer(); server.once('error', (error: NodeJS.ErrnoException) => resolve(erro…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: port: number
+ * 输出 / Returns: Promise<string | null>；结果来自 / values from `new Promise((resolve) => { const server = createServer(); server.once('error', (error: NodeJS.ErrnoException) => resolve(erro…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export function hostPortIssue(port: number): Promise<string | null> {
   return new Promise((resolve) => {
     const server = createServer();
@@ -70,6 +90,18 @@ root_kib=$(df -Pk / | awk 'NR==2 { print $2 }')
 export class Maintenance {
   jobs = new Jobs('maintenance');
   private reports = new Map<string, { createdAt: string; checks: DiagnosticCheck[]; log: string }>();
+  /**
+   * 入口 / Entry: Maintenance.onChange.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; the calls and state transitions below complete the operation. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.machines.records.values`, `this.machines.state`, `this.resizeAttempted.has`, `this.resizeAttempted.add` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.records.values`, `this.machines.state`, `this.resizeAttempted.has`, `this.resizeAttempted.add`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `vm.pendingResize && this.machines.state(vm.id) === 'running' && !this.resizeAttempted.has(vm.id)`; `!this.machines.live.has(vm.id)`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.resizeAttempted.add`; `this.resizeAttempted.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private onChange = () => {
     for (const vm of this.machines.records.values()) {
       if (vm.pendingResize && this.machines.state(vm.id) === 'running' && !this.resizeAttempted.has(vm.id)) {
@@ -84,22 +116,67 @@ export class Maintenance {
   private ticking?: Promise<void>;
   private timer?: ScheduleHandle;
   private initialized = false;
+  /**
+   * 入口 / Entry: Maintenance.constructor.
+   * 功能：建立 Maintenance 的汇集存储诊断、磁盘整理及扩容维护上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the Maintenance context for this module's responsibility: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; options: { deferInitialization?: boolean } default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   constructor(private machines: Machines, options: { deferInitialization?: boolean } = {}) {
     if (!options.deferInitialization) this.init();
   }
+  /**
+   * 入口 / Entry: Maintenance.init.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，初始化并核对当前领域状态；本入口产生 `void` 供上层消费（`Maintenance`）。
+   * Purpose: Initializes and verifies current domain state in `Maintenance`; this entry produces `void` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.machines.on`, `scheduler.register`, `this.machines.off` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.on`, `scheduler.register`, `this.machines.off`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.initialized`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `scheduler.register`; 更新 / updates `this.timer`, `this.initialized`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; 异常 / errors `new AppError('磁盘维护服务已关闭', 503)`; `error`.
+   * 失败处理：catch 分支执行 `this.machines.off('change', this.onChange);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.machines.off('change', this.onChange);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   init() {
     if (this.closed) throw new AppError('磁盘维护服务已关闭', 503);
     if (this.initialized) return;
     try {
       this.machines.on('change', this.onChange);
       this.timer = scheduler.register({ owner: 'plugin:maintenance', label: '磁盘维护检查', intervalMs: 60000,
-        overlap: 'skip', backoff: { initialMs: 60000, maxMs: 600000 }, run: () => this.tick() });
+        overlap: 'skip', backoff: { initialMs: 60000, maxMs: 600000 },
+        /**
+         * 入口 / Entry: Maintenance.init.run.
+         * 功能：把本层请求转交 `this.tick`，沿用该实现的结果与失败路径。
+         * Purpose: Delegates this request to `this.tick` and propagates the provider result or rejection.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `this.tick()`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
+        run: () => this.tick() });
       this.initialized = true;
     } catch (error) {
       this.machines.off('change', this.onChange);
       throw error;
     }
   }
+  /**
+   * 入口 / Entry: Maintenance.storage.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ total: filesystem.blocks * filesystem.bsize, available: filesystem.bavail * filesystem.bsize, images, backupBytes, deduplic…` 供上层消费（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; this entry produces `{ total: filesystem.blocks * filesystem.bsize, available: filesystem.bavail * filesystem.bsize, images, backupBytes, deduplic…` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `statfs`, `Promise.all`, `this.machines.list`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `statfs`, `Promise.all`, `this.machines.list`, `join`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!dir.isDirectory() || !/^[0-9a-f-]{36}$/.test(dir.name)`; `file.isFile() && /\.sakura(?:\.enc)?$/.test(file.name)`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ total: filesystem.blocks * filesystem.bsize, available: filesystem.bavail * filesystem.bsize, images, backupBytes, deduplic…`.
+   * 副作用 / Effects: 更新 / updates `backupBytes`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async storage() {
     const filesystem = await statfs(DATA);
     const images = await Promise.all(
@@ -135,10 +212,32 @@ export class Maintenance {
       warning: filesystem.bavail / filesystem.blocks < 0.1 ? 'Sakura 所在磁盘剩余空间不足 10%' : '',
     };
   }
+  /**
+   * 入口 / Entry: Maintenance.compact.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.diskRun(id, 'compact')` 供上层消费（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; this entry produces `this.diskRun(id, 'compact')` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.machines.requireStopped`, `this.diskRun` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.requireStopped`, `this.diskRun`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.diskRun(id, 'compact')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   compact(id: string) {
     this.machines.requireStopped(id);
     return this.diskRun(id, 'compact');
   }
+  /**
+   * 入口 / Entry: Maintenance.diskView.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ...(await diskMaintenanceState(id)), job: this.jobs.view(id), maintenance: await inMaintenance(id), }` 供上层消费（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; this entry produces `{ ...(await diskMaintenanceState(id)), job: this.jobs.view(id), maintenance: await inMaintenance(id), }` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.machines.get`, `diskMaintenanceState`, `this.jobs.view`, `inMaintenance` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `diskMaintenanceState`, `this.jobs.view`, `inMaintenance`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ ...(await diskMaintenanceState(id)), job: this.jobs.view(id), maintenance: await inMaintenance(id), }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async diskView(id: string) {
     this.machines.get(id);
     return {
@@ -147,10 +246,32 @@ export class Maintenance {
       maintenance: await inMaintenance(id),
     };
   }
+  /**
+   * 入口 / Entry: Maintenance.diskPolicy.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `saveDiskMaintenancePolicy(this.machines, id, input)` 供上层消费（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; this entry produces `saveDiskMaintenancePolicy(this.machines, id, input)` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.jobs.view`, `saveDiskMaintenancePolicy` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.jobs.view`, `saveDiskMaintenancePolicy`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: `saveDiskMaintenancePolicy(this.machines, id, input)`.
+   * 副作用 / Effects: `saveDiskMaintenancePolicy`.
+   * 拒绝 / Refusals: 条件 / conditions `this.jobs.view(id)?.status === 'running'`; 异常 / errors `new AppError('请等待磁盘维护任务完成', 409)`.
+   */
   diskPolicy(id: string, input: unknown) {
     if (this.jobs.view(id)?.status === 'running') throw new AppError('请等待磁盘维护任务完成', 409);
     return saveDiskMaintenancePolicy(this.machines, id, input);
   }
+  /**
+   * 入口 / Entry: Maintenance.diskRun.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.jobs.start( id, async (log, signal, update, saveResult) => { await saveResult(await runDiskMaintenance(this.machines, id…` 供上层消费（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; this entry produces `this.jobs.start( id, async (log, signal, update, saveResult) => { await saveResult(await runDiskMaintenance(this.machines, id…` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.machines.get`, `this.machines.requireUnlocked`, `this.jobs.start` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.machines.requireUnlocked`, `this.jobs.start`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; operation: DiskOperation
+   * 输出 / Returns: `this.jobs.start( id, async (log, signal, update, saveResult) => { await saveResult(await runDiskMaintenance(this.machines, id…`.
+   * 副作用 / Effects: `this.jobs.start`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   diskRun(id: string, operation: DiskOperation) {
     this.machines.get(id);
     this.machines.requireUnlocked(id);
@@ -162,9 +283,32 @@ export class Maintenance {
       { title: operation === 'trim' ? '回收 Linux 未使用块' : '压缩与整理磁盘', vmId: id, action: operation },
     );
   }
+  /**
+   * 入口 / Entry: Maintenance.tick.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `Promise.resolve()` / `this.ticking` 供上层消费（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; this entry produces `Promise.resolve()` / `this.ticking` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `Promise.resolve`, `inline().finally`, `inline` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.resolve`, `inline().finally`, `inline`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed`; `this.ticking`.
+   * 输入 / Inputs: now: default=Date.now()
+   * 输出 / Returns: Promise<void>；结果来自 / values from `Promise.resolve()`; `this.ticking`.
+   * 副作用 / Effects: 更新 / updates `this.ticking`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   tick(now = Date.now()): Promise<void> {
     if (this.closed) return Promise.resolve();
     if (this.ticking) return this.ticking;
+    /**
+     * 入口 / Entry: Maintenance.tick.callback@168.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     * 失败处理：catch 分支执行 ，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute ; these statements determine whether a failure is absorbed or rejected again.
+     */
     this.ticking = (async () => {
       for (const vm of this.machines.records.values()) {
         if (this.closed) break;
@@ -184,16 +328,60 @@ export class Maintenance {
     });
     return this.ticking;
   }
+  /**
+   * 入口 / Entry: Maintenance.report.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.reports.get(id) || null` 供上层消费（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; this entry produces `this.reports.get(id) || null` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.machines.get`, `this.reports.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.reports.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.reports.get(id) || null`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   report(id: string) {
     this.machines.get(id);
     return this.reports.get(id) || null;
   }
+  /**
+   * 入口 / Entry: Maintenance.diagnose.
+   * 功能：登记诊断任务，组合宿主存储、实例、网络与客户机检查并返回脱敏报告。
+   * Purpose: Registers diagnostics that combine host storage/VM/network/guest checks into a redacted report.
+   * 设计：单项失败保留检查结论而不终止全部诊断；输出按既有脱敏规则过滤，检查本身不擅自修复配置。
+   * Design: Individual failures remain report entries; redaction applies and observation does not silently repair configuration.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.jobs.start( id, async (log, signal) => { const checks: DiagnosticCheck[] = []; const add = (check: DiagnosticCheck) => {…`.
+   * 副作用 / Effects: `this.jobs.start`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   diagnose(id: string) {
     const vm = this.machines.get(id);
+    /**
+     * 入口 / Entry: Maintenance.diagnose.callback@195.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.jobs.start）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.jobs.start).
+     * 输入 / Inputs: log; signal
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `add`; `this.machines.exec`; `this.reports.set`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     * 失败处理：catch 分支执行 `signal.throwIfAborted();`; `add({ name, status: 'error', detail: redact((error as Error).message), suggestion });`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `signal.throwIfAborted();`; `add({ name, status: 'error', detail: redact((error as Error).message), suggestion });`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.jobs.start(
       id,
       async (log, signal) => {
         const checks: DiagnosticCheck[] = [];
+        /**
+         * 入口 / Entry: Maintenance.diagnose.add.
+         * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Maintenance`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; the calls and state transitions below complete the operation. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+         * 处理：通过 `checks.push`, `log` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `checks.push`, `log`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: check: DiagnosticCheck
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: `checks.push`.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         const add = (check: DiagnosticCheck) => {
           checks.push(check);
           log(`${check.name}：${check.detail}${check.suggestion ? `；${check.suggestion}` : ''}\n`);
@@ -281,6 +469,17 @@ export class Maintenance {
       { title: '一键故障诊断', vmId: id, action: 'diagnose' },
     );
   }
+  /**
+   * 入口 / Entry: Maintenance.resize.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.jobs.start( id, async (log, signal) => { log('创建扩容前快照并扩大磁盘…\n'); await this.machines.resize(id, size, signal); log('磁盘已扩…` 供上层消费（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; this entry produces `this.jobs.start( id, async (log, signal) => { log('创建扩容前快照并扩大磁盘…\n'); await this.machines.resize(id, size, signal); log('磁盘已扩…` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.machines.get`, `this.machines.requireStopped`, `this.jobs.start` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.machines.requireStopped`, `this.jobs.start`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; size: number
+   * 输出 / Returns: `this.jobs.start( id, async (log, signal) => { log('创建扩容前快照并扩大磁盘…\n'); await this.machines.resize(id, size, signal); log('磁盘已扩…`.
+   * 副作用 / Effects: `this.jobs.start`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   resize(id: string, size: number) {
     this.machines.get(id);
     this.machines.requireStopped(id);
@@ -294,9 +493,30 @@ export class Maintenance {
       { title: '磁盘扩容', vmId: id },
     );
   }
+  /**
+   * 入口 / Entry: Maintenance.finishResize.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` / `this.jobs.start( id, async (log, signal) => { const result = await guestTask(this.machines, id, growFilesystem, signal, log);…` 供上层消费（`Maintenance`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Maintenance`; this entry produces `void` / `this.jobs.start( id, async (log, signal) => { const result = await guestTask(this.machines, id, growFilesystem, signal, log);…` for its caller. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.jobs.view`, `this.machines.get`, `this.jobs.start` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.jobs.view`, `this.machines.get`, `this.jobs.start`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.jobs.view(id)?.status === 'running'`.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `void`; `this.jobs.start( id, async (log, signal) => { const result = await guestTask(this.machines, id, growFilesystem, signal, log);…`.
+   * 副作用 / Effects: `this.jobs.start`.
+   * 拒绝 / Refusals: 条件 / conditions `!this.machines.get(id).pendingResize`; 异常 / errors `new AppError('没有待完成的文件系统扩容')`.
+   */
   finishResize(id: string) {
     if (this.jobs.view(id)?.status === 'running') return;
     if (!this.machines.get(id).pendingResize) throw new AppError('没有待完成的文件系统扩容');
+    /**
+     * 入口 / Entry: Maintenance.finishResize.callback@302.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.jobs.start）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.jobs.start).
+     * 输入 / Inputs: log; signal
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; 异常 / errors `new AppError(result.stderr || '文件系统扩容失败，可重试或手动扩容')`.
+     */
     return this.jobs.start(
       id,
       async (log, signal) => {
@@ -308,6 +528,17 @@ export class Maintenance {
       { title: '扩展 Linux 文件系统', vmId: id, action: 'finish-resize' },
     );
   }
+  /**
+   * 入口 / Entry: Maintenance.close.
+   * 功能：在汇集存储诊断、磁盘整理及扩容维护中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`Maintenance`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `Maintenance`; the outcome is recorded in `this.closed`. Module context: Collects storage diagnostics, compaction and resize work, returning redacted reports and coordinating guest maintenance.
+   * 处理：通过 `this.machines.off`, `this.timer.close`, `this.jobs.close` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.off`, `this.timer.close`, `this.jobs.close`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.timer.close`; `this.jobs.close`; 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true;
     this.machines.off('change', this.onChange);

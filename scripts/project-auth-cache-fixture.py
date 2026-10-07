@@ -1,4 +1,5 @@
 # 自有认证包源 HTTP 夹具，为 npm/pip 等依赖请求提供固定包与凭据检查，并记录请求证据。
+# Provide an owned authenticated npm/pip fixture with fixed packages and sanitized request evidence for cache checks.
 """Owned smoke-test registry; no external service or user credential is used."""
 import base64
 import hashlib
@@ -18,6 +19,8 @@ requests = []
 lock = threading.Lock()
 
 
+# 生成固定自有 npm tarball，含可观测安装钩子用于证明认证与生命周期脚本边界。
+# Generate an owned npm tarball with an observable install hook to prove authentication/lifecycle boundaries.
 def npm(version):
     output = io.BytesIO()
     files = {
@@ -34,6 +37,8 @@ def npm(version):
     return data, "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
 
 
+# 生成固定纯 Python wheel 与可选依赖元数据，供真实 pip 认证缓存链验证。
+# Generate an owned pure-Python wheel with optional dependency metadata for real pip authenticated-cache checks.
 def wheel(name, dependency=None):
     output = io.BytesIO()
     prefix = name + "-1.0.0.dist-info/"
@@ -63,9 +68,13 @@ public_wheel = wheel("owned_public_probe")
 
 
 class Handler(BaseHTTPRequestHandler):
+    # 抑制 HTTP 默认日志，避免认证信息或 URL 被非结构化输出。
+    # Suppress default HTTP logging to keep authentication/URLs out of unstructured output.
     def log_message(self, *args):
         pass
 
+    # 按 npm/pip/public 路由核对预期认证，记录仅是否授权并返回固定包元数据/字节或拒绝。
+    # Validate expected auth by npm/pip/public route, record only authorization status and return fixed package metadata/bytes or refusal.
     def do_GET(self):
         scope = "npm" if self.path.startswith("/npm/") else "pip" if self.path.startswith("/python/simple/") else "public"
         expected = "Bearer " + tokens["npm"] if scope == "npm" else "Basic " + base64.b64encode(

@@ -1,4 +1,5 @@
-/** 烟雾验收：验证新建未污染夹具中的项目目录迁移和初始绑定边界。 */
+/** 烟雾验收：验证新建未污染夹具中的项目目录迁移和初始绑定边界。
+ * Smoke acceptance for pristine owned-fixture directory migration and initial binding boundaries. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
@@ -53,16 +54,21 @@ for (const file of [
 let id = '',
   unavailable = false,
   guards = 0;
+/** 保存已完成断言的场景名称与证据并输出通过，供最终报告汇总；调用方负责实际核验。
+ * Retain the asserted case name/evidence and print acceptance for final reporting; callers perform the actual checks. */
 const checkpoint = (name: string, detail: object = {}) => {
   proof.cases.push({ name, ...detail, passed: true });
   console.log('PASS ' + name);
 };
+/** 调用保留的原始 exec 执行自有命令并要求零退出，返回输出，不经过本场景后装的故障注入替身。
+ * Call the saved original exec for owned commands/require zero exit and return stdout, bypassing this scenario’s later fault-injection wrappers. */
 const run = async (command: string) => {
   const result = await originalExec.call(machines, id, command, 10000);
   assert.equal(result.code, 0, result.stderr + result.stdout);
   return result.stdout.trim();
 };
-machines.exec = async function (vmId, command, ...args) {
+machines.exec = /** 只观测自有 VM 的首次目录迁移保护命令，断言单一 Python 调用并可将解释器替为 false，验证依赖缺失封闭失败；其他命令保持原 this 与参数。
+ * Observe only the owned VM’s initial directory-migration guard, assert a single Python call and optionally substitute false to test fail-closed missing dependencies; preserve original this/arguments elsewhere. */ async function (vmId, command, ...args) {
   assert.equal(vmId, id);
   if (command.includes('for sakura_migration_directory in / /var ')) {
     ++guards;

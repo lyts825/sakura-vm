@@ -1,5 +1,8 @@
 /**
- * 模块职责：开发工具、环境与项目编辑表单的布局及窄屏适配样式。
+ * 模块职责（中文）：开发工具、环境与项目编辑表单的布局及窄屏适配样式。
+ * Module responsibility (English): layout, theme and motion rules for the development surface, reused through component class selectors.
+ * 详细范围（中文）：布局与视觉规则由对应组件 class 使用，包含响应式尺寸、状态样式和已声明动效；更新选择器时需同步组件引用
+ * Detailed scope (English): Components consume these layout/visual rules through class selectors, including responsive sizes, state styles and declared motion; selector changes must stay aligned with component references
  */
 .development-row {
   display: flex;

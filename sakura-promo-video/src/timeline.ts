@@ -1,4 +1,5 @@
-/** 将 STORYBOARD 与实际 transcript 合并为场景帧时间线；旁白未就绪时用目标时长供预览，全片渲染依赖完整语音时间。 */
+/** 将 STORYBOARD 与实际 transcript 合并为场景帧时间线；旁白未就绪时用目标时长供预览，全片渲染依赖完整语音时间。
+ * Combine storyboard/actual transcript into scene-frame timing; previews use target durations only before audio readiness and final renders require complete speech timing. */
 import storyboard from '../STORYBOARD.json';
 import rawTranscript from '../public/audio/transcript.json';
 
@@ -22,6 +23,8 @@ export const timeline: SceneTiming[] = storyboard.scenes.map((scene) => {
   cursor += durationInFrames;
   return timing;
 });
+/** 按稳定章节 ID 查询统一时间线；未知 ID 抛错而不返回不完整时序，调用方据此设置剪辑起点和时长。
+ * Look up shared timing by stable scene ID; throw on unknown IDs instead of returning incomplete timing used for clip starts and durations. */
 export const getScene = (id: SceneId) => {
   const scene = timeline.find((entry) => entry.id === id);
   if (!scene) throw new Error(`Unknown scene ${id}`);

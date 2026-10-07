@@ -1,4 +1,5 @@
-/** 宣传视频配色、字体和本地字体加载声明，供所有场景与封面复用品牌视觉。 */
+/** 宣传视频配色、字体和本地字体加载声明，供所有场景与封面复用品牌视觉。
+ * Share brand colors/fonts and local font-loading declarations across all film scenes and the cover. */
 import {loadFont} from '@remotion/fonts';
 import {staticFile} from 'remotion';
 

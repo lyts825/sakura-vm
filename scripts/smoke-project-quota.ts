@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目存储配额预检、超限与配置状态。 */
+/** 烟雾验收：验证项目存储配额预检、超限与配置状态。
+ * Smoke acceptance for project quota preflight, excess writes and configuration state. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,6 +18,8 @@ const machines = new Machines(await createRuntime());
 await machines.init();
 const workspaces = new Workspaces(machines);
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时将抛错。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout fails. */
 const boot = async (id: string) => {
   await machines.start(id);
   const deadline = Date.now() + 270000;
@@ -25,6 +28,8 @@ const boot = async (id: string) => {
     await delay(250);
   }
 };
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (id: string, command: string, timeout = 30000) => {
   const result = await machines.exec(id, command, timeout);
   assert.equal(result.code, 0, result.stderr || result.stdout || command);

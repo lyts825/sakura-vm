@@ -1,4 +1,7 @@
-/** 固定 setuid 项目启动器：在同一注册锁下核实二进制票据、网络及目录身份，封闭继承描述符并降权后执行受摘要保护的负载。 */
+/**
+ * 中文：项目身份特权入口：从 root 私有定长记录校验绑定、运行、网络及 cgroup 身份，降权后执行已验证的瞬时负载。授权锁覆盖验证和负载接收，拒绝路径以固定码结束。
+ * English: Privileged project-identity entry point: validates binding, run, network and cgroup identities from root-private fixed-size records, then drops privileges and executes a validated transient payload. The authority lock covers validation and payload acceptance; refusal exits with a fixed code.
+ */
 #define _GNU_SOURCE
 #include "protocol.h"
 #include <errno.h>
@@ -30,15 +33,30 @@
 #error Unsupported record byte order
 #endif
 
+/**
+ * 中文：向 stderr 输出固定项目身份拒绝码并以 126 结束当前启动器。
+ * English: Reports a fixed project-identity refusal code to stderr and exits the current launcher with status 126.
+ * 参数 / Parameters: `refuse(const char *code)`.
+ */
 static _Noreturn void refuse(const char *code) {
     fprintf(stderr, "SAKURA_PROJECT_IDENTITY:%s\n", code);
     exit(126);
 }
+/**
+ * 中文：检查指定长度的小写十六进制文本及其终止 NUL，返回格式是否有效。
+ * English: Checks a fixed-length lowercase hexadecimal string and its terminating NUL, returning format validity.
+ * 参数 / Parameters: `hex(const char *p, size_t size)`.
+ */
 static bool hex(const char *p, size_t size) {
     for (size_t i = 0; i < size; ++i)
         if (!((p[i] >= '0' && p[i] <= '9') || (p[i] >= 'a' && p[i] <= 'f'))) return false;
     return p[size] == 0;
 }
+/**
+ * 中文：检查精确 36 字符小写 UUID 和固定连字符位置。
+ * English: Checks an exact 36-character lowercase UUID with fixed hyphen positions.
+ * 参数 / Parameters: `uuid(const char *p)`.
+ */
 static bool uuid(const char *p) {
     if (strlen(p) != 36) return false;
     for (size_t i = 0; i < 36; ++i) {
@@ -47,20 +65,47 @@ static bool uuid(const char *p) {
     }
     return true;
 }
+/**
+ * 中文：接受 default 或 16 字符小写十六进制项目 ID。
+ * English: Accepts default or a 16-character lowercase hexadecimal project ID.
+ * 参数 / Parameters: `project_id(const char *p)`.
+ */
 static bool project_id(const char *p) { return !strcmp(p, "default") || (strlen(p) == 16 && hex(p, 16)); }
+/**
+ * 中文：检查整个保留字节区是否全零，拒绝 ABI 未定义字段携带数据。
+ * English: Checks whether an entire reserved byte region is zero, preventing data in undefined ABI fields.
+ * 参数 / Parameters: `zero(const void *p, size_t size)`.
+ */
 static bool zero(const void *p, size_t size) {
     const unsigned char *b = p;
     for (size_t i = 0; i < size; ++i) if (b[i]) return false;
     return true;
 }
+/**
+ * 中文：要求定长字符字段存在 NUL 且从终止位置至尾部全部为零。
+ * English: Requires a NUL in a fixed string field with a zero-filled tail from the terminator.
+ * 参数 / Parameters: `fixed_string(const char *p, size_t size)`.
+ */
 static bool fixed_string(const char *p, size_t size) {
     const char *end = memchr(p, 0, size);
     return end && zero(end, size - (size_t)(end - p));
 }
+/**
+ * 中文：在给定输出容量内格式化受控路径，截断或格式化失败立即拒绝。
+ * English: Formats a controlled path within the supplied output capacity, refusing truncation or formatting failure.
+ * 参数 / Parameters: `path(char *out, size_t size, const char *format, const char *a, const char *b)`.
+ * 拒绝码 / Refusal codes: PATH_BOUND.
+ */
 static void path(char *out, size_t size, const char *format, const char *a, const char *b) {
     int n = snprintf(out, size, format, a, b);
     if (n < 0 || (size_t)n >= size) refuse("PATH_BOUND");
 }
+/**
+ * 中文：核验记录或目录的预期类型、root 所有者及非组/其他可写权限。
+ * English: Checks expected record/directory type, root ownership and absence of group/other write permissions.
+ * 参数 / Parameters: `trusted(const struct stat *s, bool directory)`.
+ * 拒绝码 / Refusal codes: UNTRUSTED_RECORD.
+ */
 static void trusted(const struct stat *s, bool directory) {
     if ((directory ? !S_ISDIR(s->st_mode) : !S_ISREG(s->st_mode)) || s->st_uid != 0 || (s->st_mode & 022))
         refuse("UNTRUSTED_RECORD");
@@ -68,6 +113,14 @@ static void trusted(const struct stat *s, bool directory) {
 /* Walk every component: O_NOFOLLOW on a final filename alone does not protect
  * a privileged program from a substituted parent directory. */
 /* 逐级以目录描述符打开并拒绝链接，保护父目录替换边界；仅检查最终文件的 O_NOFOLLOW 不够。 */
+/**
+ * 中文：逐级以 O_NOFOLLOW 固定绝对目录路径，按需核验 root 归属，返回由调用方关闭的目录 FD。
+ * English: Pins an absolute directory path component by component with O_NOFOLLOW, optionally checks root ownership and returns a directory FD for caller disposal.
+ * 参数 / Parameters: `open_directory(const char *name, bool root_owned)`.
+ * 拒绝码 / Refusal codes: DIRECTORY_PATH, DIRECTORY_OPEN, UNTRUSTED_DIRECTORY, DIRECTORY_REPLACED.
+ * 设计 / Design: 只对末级文件使用 O_NOFOLLOW 不能固定父目录；每次 openat 都基于前一个已打开目录。
+ * O_NOFOLLOW on a final file cannot pin its parents; every openat is relative to the previously opened directory.
+ */
 static int open_directory(const char *name, bool root_owned) {
     if (name[0] != '/' || strlen(name) > 1023) refuse("DIRECTORY_PATH");
     char copy[1024]; strcpy(copy, name);
@@ -85,6 +138,12 @@ static int open_directory(const char *name, bool root_owned) {
     }
     return fd;
 }
+/**
+ * 中文：打开 root 私有的单链接 0600 普通授权记录，返回只读且不随 exec 继承的 FD。
+ * English: Opens a root-private single-link 0600 regular authority record, returning a read-only close-on-exec FD.
+ * 参数 / Parameters: `record_fd(const char *name)`.
+ * 拒绝码 / Refusal codes: PATH_BOUND, RECORD_PATH, RECORD_ABSENT, RECORD_STAT, RECORD_PERMISSIONS.
+ */
 static int record_fd(const char *name) {
     char copy[1024];
     if (strlen(name) >= sizeof(copy)) refuse("PATH_BOUND");
@@ -102,6 +161,12 @@ static int record_fd(const char *name) {
     if ((s.st_mode & 0777) != 0600 || s.st_nlink != 1) refuse("RECORD_PERMISSIONS");
     return fd;
 }
+/**
+ * 中文：要求记录物理长度与 ABI 大小完全一致，处理短读和 EINTR 后填充输出缓冲。
+ * English: Requires record length to equal its ABI size and fills the output buffer while handling short reads and EINTR.
+ * 参数 / Parameters: `record(const char *name, void *out, size_t size)`.
+ * 拒绝码 / Refusal codes: RECORD_SIZE, RECORD_READ.
+ */
 static void record(const char *name, void *out, size_t size) {
     int fd = record_fd(name);
     struct stat s;
@@ -115,6 +180,12 @@ static void record(const char *name, void *out, size_t size) {
     }
     close(fd);
 }
+/**
+ * 中文：核验本项目网络释放守卫的完整身份及阶段，pending/deleting 阻止同锁下的新启动。
+ * English: Checks the project network-release guard's full identity/phase, blocking new launches under the same lock while pending/deleting.
+ * 参数 / Parameters: `network_ready(const struct sk_binding *b)`.
+ * 拒绝码 / Refusal codes: NETWORK_GUARD_INVALID, NETWORK_GUARD_STALE, NETWORK_RETIREMENT_PENDING.
+ */
 static void network_ready(const struct sk_binding *b) {
     int parent = open_directory(SK_ID_RUNTIME "/networks", true);
     char name[64]; path(name, sizeof(name), "%s%s.release.bin", b->project, "");
@@ -143,6 +214,12 @@ static void network_ready(const struct sk_binding *b) {
         guard.revision != b->revision || b->network != SK_NETWORK_PRIVATE) refuse("NETWORK_GUARD_STALE");
     if (guard.flags != SK_NETWORK_RELEASED) refuse("NETWORK_RETIREMENT_PENDING");
 }
+/**
+ * 中文：有界重试取得注册记录共享 flock，十秒左右仍忙则拒绝启动。
+ * English: Retries acquisition of the registry shared flock within a bound, refusing launch if busy for roughly ten seconds.
+ * 参数 / Parameters: `locked(int fd)`.
+ * 拒绝码 / Refusal codes: REGISTRY_LOCK, REGISTRY_BUSY.
+ */
 static void locked(int fd) {
     const struct timespec pause = {0, 10000000};
     for (int i = 0; i < 1000; ++i) {
@@ -152,6 +229,12 @@ static void locked(int fd) {
     }
     refuse("REGISTRY_BUSY");
 }
+/**
+ * 中文：读取并验证内核 boot_id，写入规范 UUID 输出字段。
+ * English: Reads/validates the kernel boot_id and writes its canonical UUID into the output field.
+ * 参数 / Parameters: `boot_id(char out[37])`.
+ * 拒绝码 / Refusal codes: BOOT_ID.
+ */
 static void boot_id(char out[37]) {
     int fd = open("/proc/sys/kernel/random/boot_id", O_RDONLY | O_CLOEXEC);
     char raw[38] = {0};
@@ -160,9 +243,20 @@ static void boot_id(char out[37]) {
     if (!uuid(raw)) refuse("BOOT_ID");
     memcpy(out, raw, 37);
 }
+/**
+ * 中文：比较 stat 设备与 inode 是否等于持久票据记录的物理身份。
+ * English: Compares stat device/inode with the physical identity recorded in the durable ticket.
+ * 参数 / Parameters: `same_stat(const struct stat *s, uint64_t device, uint64_t inode)`.
+ */
 static bool same_stat(const struct stat *s, uint64_t device, uint64_t inode) {
     return (uint64_t)s->st_dev == device && (uint64_t)s->st_ino == inode;
 }
+/**
+ * 中文：有界读取当前统一 cgroup 成员路径，拒绝多行、非 cgroup2 或过长表示。
+ * English: Reads the current unified cgroup membership path within bounds, refusing multiline, non-cgroup2 or overlong representations.
+ * 参数 / Parameters: `current_cgroup(char out[64])`.
+ * 拒绝码 / Refusal codes: CGROUP_MEMBERSHIP.
+ */
 static void current_cgroup(char out[64]) {
     int fd = open("/proc/self/cgroup", O_RDONLY | O_CLOEXEC);
     char raw[4097];
@@ -176,6 +270,11 @@ static void current_cgroup(char out[64]) {
     if (strlen(raw + 4) >= 64) refuse("CGROUP_MEMBERSHIP");
     strcpy(out, raw + 4);
 }
+/**
+ * 中文：核验运行票据的 cgroup 名属于独立运行或允许继承的任务/服务命名模式。
+ * English: Checks that a run ticket's cgroup name matches independent-run or allowed inherited task/service naming patterns.
+ * 参数 / Parameters: `cgroup_name(const struct sk_run *r, const struct sk_binding *b)`.
+ */
 static bool cgroup_name(const struct sk_run *r, const struct sk_binding *b) {
     if (r->mode == SK_RUN_INDEPENDENT) {
         char expected[64]; path(expected, sizeof(expected), "sakura-identity-%s%s", r->run, "");
@@ -191,6 +290,12 @@ static bool cgroup_name(const struct sk_run *r, const struct sk_binding *b) {
     path(expected, sizeof(expected), "system.slice/sakura-ssh-%s.service", b->project, "");
     return !strcmp(r->cgroup, expected);
 }
+/**
+ * 中文：在核验 root cgroup 根下逐级打开票据目录，拒绝点路径和链接替换。
+ * English: Opens the ticket directory component by component under the checked root cgroup directory, rejecting dot paths and symlink replacement.
+ * 参数 / Parameters: `cgroup_directory(const char *name)`.
+ * 拒绝码 / Refusal codes: CGROUP_REPLACED.
+ */
 static int cgroup_directory(const char *name) {
     char copy[64];
     if (!name[0] || name[0] == '/' || strlen(name) >= sizeof(copy)) refuse("CGROUP_REPLACED");
@@ -209,6 +314,12 @@ static int cgroup_directory(const char *name) {
         part = slash + 1;
     }
 }
+/**
+ * 中文：核验活动绑定 ABI、项目修订、账户数据库和原 home 设备/inode，拒绝 UID、组或目录被替换。
+ * English: Checks active binding ABI, project revision, account databases and original home device/inode, refusing replaced UID/group/directory identity.
+ * 参数 / Parameters: `validate_binding(const struct sk_binding *b, const char *project)`.
+ * 拒绝码 / Refusal codes: BINDING_INVALID, BINDING_STRING, BINDING_IDENTITY, ACCOUNT_BINDING, ACCOUNT_REPLACED, UID_REPLACED, GROUP_REPLACED, SUPPLEMENTARY_GROUP_CHANGED, HOME_REPLACED.
+ */
 static void validate_binding(const struct sk_binding *b, const char *project) {
     if (memcmp(b->magic, "SKIDB001", 8) || b->version != SK_ID_VERSION || b->flags != SK_ID_ACTIVE ||
         b->uid < 20000 || b->uid > 59999 || b->gid != b->uid || !b->revision ||
@@ -247,6 +358,12 @@ static void validate_binding(const struct sk_binding *b, const char *project) {
         s.st_gid != b->gid || (s.st_mode & 0777) != 0700) refuse("HOME_REPLACED");
     close(home_fd);
 }
+/**
+ * 中文：核验运行记录的状态、注册/项目/执行票据、当前 boot、构建摘要及网络绑定。
+ * English: Checks run-record state, registry/project/run tickets, current boot, build digest and network binding.
+ * 参数 / Parameters: `validate_run(const struct sk_run *r, const struct sk_binding *b, const char *run)`.
+ * 拒绝码 / Refusal codes: RUN_CLOSED_OR_INVALID, RUN_STRING, RUN_IDENTITY, NETWORK_BINDING.
+ */
 static void validate_run(const struct sk_run *r, const struct sk_binding *b, const char *run) {
     if (memcmp(r->magic, "SKIDR001", 8) || r->version != SK_ID_VERSION || r->flags != SK_RUN_ACTIVE ||
         (r->mode != SK_RUN_INDEPENDENT && r->mode != SK_RUN_INHERIT) || r->reserved_word ||
@@ -262,6 +379,12 @@ static void validate_run(const struct sk_run *r, const struct sk_binding *b, con
     if (b->network == SK_NETWORK_PRIVATE) path(namespace_name, sizeof(namespace_name), "sk-%s%s", b->project, "");
     if (strcmp(r->namespace_name, namespace_name)) refuse("NETWORK_BINDING");
 }
+/**
+ * 中文：要求当前 setuid 映像正是摘要目录中的单链接 root 04755 launch 文件。
+ * English: Requires the current setuid image to be the single-link root-owned 04755 launch file in its digest directory.
+ * 参数 / Parameters: `native_image(void)`.
+ * 拒绝码 / Refusal codes: LAUNCHER_IMAGE.
+ */
 static void native_image(void) {
     char expected[1024], actual[1024];
     path(expected, sizeof(expected), SK_ID_BUILDS "/%s/%s", PROJECT_BUILD, "launch");
@@ -281,6 +404,14 @@ static void native_image(void) {
     close(fd);
 }
 /* 同时移除补充组、saved IDs、capability 与提升权限能力，再读回核实，不能只切换 effective UID。 */
+/**
+ * 中文：清除补充组、saved IDs、ambient/bounding capabilities，并降为项目 UID/GID 后读回验证。
+ * English: Clears supplementary groups, saved IDs and ambient/bounding capabilities, then drops to project UID/GID and verifies the resulting state.
+ * 参数 / Parameters: `capabilities_drop(uint32_t uid, uint32_t gid)`.
+ * 拒绝码 / Refusal codes: CAPABILITIES_DROP, CAPABILITIES_BOUNDING, ACCOUNT_DROP, NO_NEW_PRIVILEGES, ACCOUNT_DROP_VERIFY.
+ * 设计 / Design: 有效 UID 改变不足以撤销权限；NO_NEW_PRIVS 和各 UID/GID/capability 读回检查共同防止后续 exec 恢复特权。
+ * Changing effective UID alone cannot revoke authority; NO_NEW_PRIVS plus UID/GID/capability readback checks prevent later exec from restoring privilege.
+ */
 static void capabilities_drop(uint32_t uid, uint32_t gid) {
     if (prctl(PR_SET_KEEPCAPS, 0L, 0L, 0L, 0L) || prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0L, 0L, 0L))
         refuse("CAPABILITIES_DROP");
@@ -301,6 +432,12 @@ static void capabilities_drop(uint32_t uid, uint32_t gid) {
  * setns()/setresuid(). Never pass an already-open network socket to a project
  * through stdio or the inherited SSH channel. OpenSSH uses pipes, AF_UNIX
  * socketpairs or a PTY for these channels. */
+/**
+ * 中文：核验已打开标准/会话通道，socket 仅接受 AF_UNIX，避免继承原网络域或文件凭证。
+ * English: Checks already-open standard/session channels, accepting sockets only from AF_UNIX to avoid inherited network-namespace or file-credential authority.
+ * 参数 / Parameters: `local_transport(int fd)`.
+ * 拒绝码 / Refusal codes: NETWORK_CHANNEL.
+ */
 static void local_transport(int fd) {
     struct stat s;
     if (fstat(fd, &s)) {
@@ -312,6 +449,11 @@ static void local_transport(int fd) {
     if (getsockopt(fd, SOL_SOCKET, SO_DOMAIN, &family, &size) || size != sizeof(family) || family != AF_UNIX)
         refuse("NETWORK_CHANNEL");
 }
+/**
+ * 中文：核验入口时 fd 3 是可读 FIFO、socket 或真实 tty，而非 O_PATH 或授权文件。
+ * English: Checks that entry-time fd 3 is a readable FIFO/socket/real tty rather than O_PATH or an authority file.
+ * 参数 / Parameters: `session_input_valid(void)`.
+ */
 static bool session_input_valid(void) {
     struct stat s;
     int flags = fcntl(3, F_GETFL);
@@ -319,6 +461,12 @@ static bool session_input_valid(void) {
         ((flags & O_ACCMODE) == O_RDONLY || (flags & O_ACCMODE) == O_RDWR) &&
         !fstat(3, &s) && (S_ISFIFO(s.st_mode) || S_ISSOCK(s.st_mode) || (S_ISCHR(s.st_mode) && isatty(3)));
 }
+/**
+ * 中文：关闭额外继承 FD，仅保留本次授权锁和明确核验的可选会话 fd 3。
+ * English: Closes extra inherited FDs, preserving only this invocation's authority lock and explicitly validated optional session fd 3.
+ * 参数 / Parameters: `close_extra_fds_except(int preserve, bool keep_session)`.
+ * 拒绝码 / Refusal codes: FD_CLEANUP, FD_BOUND.
+ */
 static void close_extra_fds_except(int preserve, bool keep_session) {
 #ifdef SYS_close_range
     unsigned start = keep_session ? 4u : 3u;
@@ -331,7 +479,17 @@ static void close_extra_fds_except(int preserve, bool keep_session) {
     if (limit < 0 || limit > 1048576) refuse("FD_BOUND");
     for (int fd = 3; fd < limit; ++fd) if (fd != preserve && (!keep_session || fd != 3)) close(fd);
 }
+/**
+ * 中文：执行 SHA-256 使用的 32 位循环右移。
+ * English: Performs the 32-bit right rotation used by SHA-256.
+ * 参数 / Parameters: `rotate(uint32_t v, unsigned n)`.
+ */
 static uint32_t rotate(uint32_t v, unsigned n) { return (v >> n) | (v << (32u - n)); }
+/**
+ * 中文：把一个 64 字节块扩展并压缩到八字 SHA-256 状态。
+ * English: Expands/compresses one 64-byte block into the eight-word SHA-256 state.
+ * 参数 / Parameters: `sha_block(uint32_t state[8], const unsigned char block[64])`.
+ */
 static void sha_block(uint32_t state[8], const unsigned char block[64]) {
     static const uint32_t constants[64] = {
         0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
@@ -358,6 +516,11 @@ static void sha_block(uint32_t state[8], const unsigned char block[64]) {
     }
     state[0]+=a;state[1]+=b;state[2]+=c;state[3]+=d;state[4]+=e;state[5]+=f;state[6]+=g;state[7]+=h;
 }
+/**
+ * 中文：对完整负载字节计算带标准填充的 SHA-256，并输出 NUL 终止的小写摘要。
+ * English: Computes padded SHA-256 over the complete payload bytes and outputs a NUL-terminated lowercase digest.
+ * 参数 / Parameters: `sha256(const unsigned char *data, size_t size, char result[65])`.
+ */
 static void sha256(const unsigned char *data, size_t size, char result[65]) {
     uint32_t state[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
     size_t done = 0;
@@ -374,6 +537,11 @@ static void sha256(const unsigned char *data, size_t size, char result[65]) {
     }
     result[64]=0;
 }
+/**
+ * 中文：验证完整 UTF-8 字节序列，拒绝 NUL、过长编码、孤立续字节和 surrogate。
+ * English: Validates complete UTF-8 bytes, rejecting NUL, overlong encodings, orphan continuation bytes and surrogates.
+ * 参数 / Parameters: `utf8(const unsigned char *text, size_t size)`.
+ */
 static bool utf8(const unsigned char *text, size_t size) {
     for (size_t i = 0; i < size;) {
         unsigned char a=text[i++]; if (!a) return false;
@@ -389,6 +557,12 @@ static bool utf8(const unsigned char *text, size_t size) {
     }
     return true;
 }
+/**
+ * 中文：读取单调时钟毫秒用于负载接收截止时间，时钟失败拒绝。
+ * English: Reads monotonic milliseconds for the payload-reception deadline, refusing clock failure.
+ * 参数 / Parameters: `milliseconds(void)`.
+ * 拒绝码 / Refusal codes: PAYLOAD_CLOCK.
+ */
 static long long milliseconds(void) {
     struct timespec now; if (clock_gettime(CLOCK_MONOTONIC,&now)) refuse("PAYLOAD_CLOCK");
     return (long long)now.tv_sec*1000 + now.tv_nsec/1000000;
@@ -399,7 +573,20 @@ struct payload {
     unsigned environment_count, flags;
     char *keys[SK_PAYLOAD_ENV_LIMIT], *values[SK_PAYLOAD_ENV_LIMIT];
 };
+/**
+ * 中文：从四个字节解码不依赖对齐的小端 uint32_t。
+ * English: Decodes an unaligned little-endian uint32_t from four bytes.
+ * 参数 / Parameters: `little(const unsigned char *p)`.
+ */
 static uint32_t little(const unsigned char *p) { return p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24); }
+/**
+ * 中文：降权后从 FIFO/socket 有界读取到准确 EOF，验证帧、摘要、UTF-8、环境条目及 stdin 模式。
+ * English: After dropping privileges, reads a FIFO/socket to exact EOF within bounds and validates frame, digest, UTF-8, environment entries and stdin mode.
+ * 参数 / Parameters: `payload_read(const char *expected, bool session_input)`.
+ * 拒绝码 / Refusal codes: PAYLOAD_INPUT_TYPE, PAYLOAD_INPUT, PAYLOAD_MEMORY, PAYLOAD_TIMEOUT, PAYLOAD_BOUND, PAYLOAD_TRUNCATED, PAYLOAD_HEADER, PAYLOAD_LENGTH, PAYLOAD_DIGEST, PAYLOAD_UTF8, PAYLOAD_TERMINAL_REQUIRED, PAYLOAD_SESSION_REQUIRED ….
+ * 设计 / Design: 只在完整帧和摘要通过后返回；HOME/USER/LOGNAME 不接受覆盖，重复环境键和尾随字节拒绝，注册锁由调用方保留至本次验收完成。
+ * Returns only after full-frame/digest acceptance; HOME/USER/LOGNAME overrides, duplicate environment keys and trailing bytes are refused, while the caller retains the registry lock through acceptance.
+ */
 static struct payload payload_read(const char *expected, bool session_input) {
     struct payload value = {0}; struct stat input_info;
     if (fstat(STDIN_FILENO,&input_info) || (!S_ISFIFO(input_info.st_mode) && !S_ISSOCK(input_info.st_mode))) refuse("PAYLOAD_INPUT_TYPE");
@@ -462,8 +649,21 @@ static struct payload payload_read(const char *expected, bool session_input) {
     if (offset!=value.wire_size) refuse("PAYLOAD_TRAILING");
     return value;
 }
+/**
+ * 中文：通过 volatile 逐字节清零已接收的敏感负载及环境内存。
+ * English: Zeroes accepted sensitive payload/environment memory byte by byte through volatile writes.
+ * 参数 / Parameters: `wipe(void *buffer, size_t size)`.
+ */
 static void wipe(void *buffer, size_t size) { volatile unsigned char *p=buffer; while (size--) *p++=0; }
 /* 负载已在降权后验摘要和完整 EOF；脚本文本封入只读 memfd，身份字段不能被环境条目覆盖。 */
+/**
+ * 中文：把已核验脚本封入只读 sealed memfd，安装准许的环境和 stdin 后以 fd 3 交给 /bin/sh。
+ * English: Seals the accepted script in a read-only memfd and hands fd 3 to /bin/sh after installing approved environment/stdin.
+ * 参数 / Parameters: `payload_exec(struct payload *value)`.
+ * 拒绝码 / Refusal codes: PAYLOAD_STDIN, PAYLOAD_MEMFD, PAYLOAD_SEAL, PROJECT_ENVIRONMENT, COMMAND_EXEC.
+ * 设计 / Design: 先释放原会话 fd 3，再将 sealed 脚本占用 fd 3；清除正文内存和所有授权 FD，exec 失败以固定码拒绝。
+ * Releases the original session fd 3 before assigning the sealed script to it; clears payload memory and authority FDs, refusing exec failure with a fixed code.
+ */
 static _Noreturn void payload_exec(struct payload *value) {
     if (value->flags & SK_PAYLOAD_SESSION) {
         if (dup2(3,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
@@ -503,6 +703,14 @@ static _Noreturn void payload_exec(struct payload *value) {
     execv(arguments[0],arguments); refuse("COMMAND_EXEC");
 }
 /* 顺序属于授权边界：先锁定票据并进入真实域，封闭继承权限，降权后再接收正文。 */
+/**
+ * 中文：在同一注册锁下核验 root/UID 准入、原项目票据、网络及 cgroup，再降权接收摘要绑定负载。
+ * English: Under one registry lock, verifies root/UID admission, original project tickets, network and cgroup before dropping privilege and receiving a digest-bound payload.
+ * 参数 / Parameters: `main(int argc, char **argv)`.
+ * 拒绝码 / Refusal codes: ELEVATION_REQUIRED, CLEAN_ENVIRONMENT, ROOT_EXPLICIT_PROJECT_REQUIRED, UID_MAPPING, ROOT_OR_UID_AUTHORIZATION, REVISION, REQUEST_IDENTITY, REGISTRY_REPLACED, REQUEST_STALE, PAYLOAD_REQUIRED, DIRECTORY_REPLACED, NETWORK_REPLACED ….
+ * 设计 / Design: 入口先捕获原 fd 3 类型，不能让后续授权文件复用空 fd 后冒充会话；真实 setns/cgroup 核验先于降权，完整 payload 验收后才释放锁并执行。
+ * Captures original fd 3 type before an authority file can reuse an empty descriptor; real setns/cgroup checks precede privilege drop, and only complete payload acceptance releases the lock before execution.
+ */
 int main(int argc, char **argv) {
     for (int fd = 0; fd <= 3; ++fd) local_transport(fd);
     /* Snapshot fd 3 before native_image/record_fd can reuse an absent fd for a

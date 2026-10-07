@@ -1,5 +1,6 @@
 /**
  * 模块职责：过滤只读 RFB 客户端消息，允许协议握手及画面请求，阻止输入事件到达桌面。
+ * Module purpose: Filters read-only RFB traffic, retaining handshake/framebuffer requests while preventing input delivery to the desktop.
  */
 import { Transform, type TransformCallback } from 'node:stream';
 import { readOnlyRfbPolicy as policy } from '../shared/contracts/websocket.ts';
@@ -10,6 +11,20 @@ export class ReadOnlyRfb extends Transform {
   private pending = Buffer.alloc(0);
   private stage: 'version' | 'security' | 'init' | 'messages' = 'version';
 
+  /**
+   * 入口 / Entry: ReadOnlyRfb._transform.
+   * 功能：在过滤只读 RFB 客户端消息中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.pending`, `this.stage`（`ReadOnlyRfb`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ReadOnlyRfb`; the outcome is recorded in `this.pending`, `this.stage`. Module context: Filters read-only RFB traffic, retaining handshake/framebuffer requests while preventing input delivery to the desktop.
+   * 处理：通过 `this.pending.subarray().toString`, `this.pending.subarray`, `policy.versions.some`, `this.pending.readUInt16BE` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.pending.subarray().toString`, `this.pending.subarray`, `policy.versions.some`, `this.pending.readUInt16BE`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.pending.length < length`; `type === setPixelFormat`; `this.pending.length < 4`.
+   * 输入 / Inputs: chunk: Buffer; _encoding: BufferEncoding; callback: TransformCallback
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `values.push`; `safe.writeUInt16BE`; `this.push`; 更新 / updates `this.pending`, `length`, `offset`, `safe[0]`.
+   * 拒绝 / Refusals: 条件 / conditions `this.pending.length + chunk.length > policy.maxPendingBytes`; `this.stage === 'version'`; `!policy.versions.some(version => banner === 'RFB ' + version + '\n')`; 异常 / errors `new Error('RFB read-only request is too large')`; `new Error('Unsupported RFB version')`.
+   * 失败处理：catch 分支执行 `callback(error as Error);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `callback(error as Error);`; these statements determine whether a failure is absorbed or rejected again.
+   */
   override _transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback) {
     try {
       if (this.pending.length + chunk.length > policy.maxPendingBytes)

@@ -1,5 +1,6 @@
 /**
  * 模块职责：生成 USB 与 PCI 设备的只读安全预览；检查声明和宿主能力，不连接实际设备。
+ * Module purpose: Builds read-only USB/PCI safety previews from declarations and host capabilities; it does not attach devices.
  */
 import { basename, join } from 'node:path';
 import { readlink, readdir, stat } from 'node:fs/promises';
@@ -26,6 +27,18 @@ export const devicePassthroughInput = z.discriminatedUnion('mode', [
 ]);
 
 /** A read-only declaration preview. USB attachment uses the separate USB hotplug service. */
+/**
+ * 入口 / Entry: devicePassthroughPreview.
+ * 功能：在生成 USB 与 PCI 设备的只读安全预览中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: true, executed: false, usbController: vm.architecture !== 'aarch64', pciHostSupported: hostPlatform === 'linux', mes…` / `{ ready: true, executed: action === 'run', device: input.device, prerequisitesMet: supported, checks: { guestUsbController: s…` 供上层消费（`device-passthrough-preview.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `device-passthrough-preview.ts`; this entry produces `{ ready: true, executed: false, usbController: vm.architecture !== 'aarch64', pciHostSupported: hostPlatform === 'linux', mes…` / `{ ready: true, executed: action === 'run', device: input.device, prerequisitesMet: supported, checks: { guestUsbController: s…` for its caller. Module context: Builds read-only USB/PCI safety previews from declarations and host capabilities; it does not attach devices.
+ * 处理：通过 `devicePassthroughInput.parse`, `machines.get`, `join`, `stat().catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `devicePassthroughInput.parse`, `machines.get`, `join`, `stat().catch`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `input.mode === 'status'`; `input.device.kind === 'usb'`.
+ * 输入 / Inputs: machines: Machines; id: string; raw: unknown; action: 'check' | 'run'; sysfsRoot: default='/sys/bus/pci/devices'; hostPlatform: default=process.platform
+ * 输出 / Returns: `{ ready: true, executed: false, usbController: vm.architecture !== 'aarch64', pciHostSupported: hostPlatform === 'linux', mes…`; `{ ready: true, executed: action === 'run', device: input.device, prerequisitesMet: supported, checks: { guestUsbController: s…`; `{ ready: true, executed: action === 'run', device: input.device, prerequisitesMet, checks: { linuxHost: hostPlatform === 'lin…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export async function devicePassthroughPreview(
   machines: Machines,
   id: string,

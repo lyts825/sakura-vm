@@ -1,4 +1,5 @@
 # 单窗口应用控制器：固定 root 引导核实项目运行域、目录视图及网络，再以永久独立 UID 监督 VNC、窗口管理器和应用。
+# Fixed root bootstrap for one-window applications: verify run domains/IDMAP views/networks, permanently drop to an independent UID and supervise VNC/window manager/application.
 """Fixed Root preparation and permanent UID launcher for a single GUI window.
 
 Application arguments and environment are JSON data, never Root shell text.
@@ -35,16 +36,22 @@ DIGEST = re.compile(r'^[a-f0-9]{64}$')
 
 
 class Failure(RuntimeError):
+    # 保存稳定单窗口拒绝码并作为异常文本，供入口返回机器可识别失败。
+    # Store the stable single-app refusal code as exception text for machine-readable failures.
     def __init__(self, code):
         self.code = code
         super().__init__(code)
 
 
+# 检查失败立即抛出稳定 Failure，不继续启动或清理不明资源。
+# Raise a stable Failure immediately, preventing launch/cleanup of unverified resources.
 def require(condition, message):
     if not condition:
         raise Failure(message)
 
 
+# 逐级核实绝对 root 目录与不可写权限，可按需创建固定模式，拒绝点段和符号链接。
+# Verify absolute root-owned nonwritable directories componentwise, optionally creating fixed modes and refusing dot segments/links.
 def secure_directory(path, create=False, mode=0o700):
     path = Path(path)
     require(path.is_absolute() and '..' not in path.parts, 'SINGLE_APP_PATH_INVALID')
@@ -62,6 +69,8 @@ def secure_directory(path, create=False, mode=0o700):
     return path
 
 
+# 无跟随读取单链接 root 普通文件，要求非空且大小/权限正确，实际长度变化拒绝。
+# Read a nonempty bounded single-link root regular file without links, refusing mode/size/read-length changes.
 def protected(path, maximum=262144):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
@@ -75,6 +84,8 @@ def protected(path, maximum=262144):
         os.close(descriptor)
 
 
+# 以独占 0600 临时文件原子持久化 JSON 收据并同步父目录，失败移除本次临时文件。
+# Persist JSON receipts using exclusive 0600 temporaries and parent fsync, removing only this temporary on failure.
 def atomic(path, value):
     temporary = path.parent / ('.' + uuid.uuid4().hex + '.new')
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
@@ -93,6 +104,8 @@ def atomic(path, value):
         temporary.unlink(missing_ok=True)
 
 
+# 核对固定安装路径、清单和全部源摘要后加载共享目录视图实现，拒绝被替代代码。
+# Verify install path/manifest/all source hashes before loading shared directory-view code, refusing replacement.
 def load_package():
     folder = secure_directory(Path(__file__).resolve().parent)
     require(DIGEST.fullmatch(BUILD) and str(folder) == '/usr/local/lib/sakura-single-app/' + BUILD,
@@ -115,6 +128,8 @@ def load_package():
     return namespace
 
 
+# 核实指定项目身份构建的三份源摘要与聚合身份，再加载控制实现供锁与票据验证。
+# Verify the project-identity build’s three source hashes/aggregate identity before loading lock/ticket validation code.
 def native(build):
     require(isinstance(build, str) and DIGEST.fullmatch(build), 'SINGLE_APP_NATIVE_CHANGED')
     folder = secure_directory(Path('/usr/local/lib/sakura-project-identity') / build)
@@ -137,10 +152,14 @@ def native(build):
     return namespace
 
 
+# 除 phase 外精确比较两个运行记录的键与值，允许仅生命周期阶段推进。
+# Compare exact run keys/values except phase, allowing only lifecycle advancement.
 def same_run(left, right):
     return set(left) == set(right) and all(left[key] == right[key] for key in left if key != 'phase')
 
 
+# 取得原生注册锁并核实完整身份、运行、boot 和迁移/网络边界，返回持锁上下文；失败关闭锁。
+# Acquire the native registry lock and validate full identity/run/boot/migration/network context, closing the lock on failure.
 def context(value, active=True, exclusive=False):
     core = native(value['run']['build'])
     lock = core['initialize']() if exclusive else core['initialize_readonly']()
@@ -163,11 +182,15 @@ def context(value, active=True, exclusive=False):
         raise
 
 
+# 验证会话 UUID 并构造固定 session.json 路径。
+# Validate the session UUID and construct its fixed session.json path.
 def receipt_path(identifier):
     require(isinstance(identifier, str) and UUID.fullmatch(identifier), 'SINGLE_APP_SESSION_INVALID')
     return BASE / identifier / 'session.json'
 
 
+# 核对可信收据的完整固定字段、会话/构建及原 origin，拒绝跨会话或来源变化。
+# Validate full trusted receipt fields, session/build and original origin, refusing changed or cross-session provenance.
 def read_receipt(identifier, origin):
     secure_directory(receipt_path(identifier).parent)
     value = json.loads(protected(receipt_path(identifier), 65536))
@@ -189,6 +212,8 @@ def read_receipt(identifier, origin):
     return value
 
 
+# 核对永久独立账号与 Home 物理身份、所有权及 0700 模式，返回系统账号对象。
+# Validate the permanent account/Home physical identity, ownership and mode 0700 before returning the system account.
 def account(value):
     user = pwd.getpwnam(value['user'])
     info = Path(value['home']).lstat()
@@ -200,6 +225,8 @@ def account(value):
     return user
 
 
+# 校验固定可执行 FD 的类型、模式、能力及前后摘要身份，privileged 额外要求可信 root 工具来源。
+# Validate pinned executable type/mode/capabilities/hash stability; privileged additionally requires trusted root-tool provenance.
 def image_descriptor(descriptor, path, privileged=False):
     before = os.fstat(descriptor)
     require(stat.S_ISREG(before.st_mode) and not before.st_mode & 0o6000 and before.st_mode & 0o111
@@ -229,6 +256,8 @@ def image_descriptor(descriptor, path, privileged=False):
     return {'path': str(path), 'device': str(before.st_dev), 'inode': str(before.st_ino), 'sha256': digest.hexdigest()}
 
 
+# 规范映像路径并无跟随打开，委托 FD 身份校验后总是关闭。
+# Canonicalize/open the image without links and always close after descriptor validation.
 def image(path, privileged=False):
     path = Path(path).resolve(strict=True)
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
@@ -238,6 +267,8 @@ def image(path, privileged=False):
         os.close(descriptor)
 
 
+# 只从固定工具目录选取可执行项并固定 root 映像身份，缺失拒绝。
+# Select executables only from fixed tool directories and pin root image identity, refusing absence.
 def tool(name):
     for parent in ('/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'):
         candidate = Path(parent) / name
@@ -246,6 +277,8 @@ def tool(name):
     raise Failure('SINGLE_APP_TOOL_MISSING')
 
 
+# 在清洁环境中执行固定控制器工具参数，不传应用输入；preexec 重核并执行固定映像，限制十秒。
+# Run fixed controller tool arguments in a clean environment without application input; preexec revalidates/executes the image under ten seconds.
 def root_tool(expected, arguments, check=True):
     # Root tools and arguments are fixed controller operations. No application
     # body or environment is given to this path, including account creation.
@@ -254,6 +287,8 @@ def root_tool(expected, arguments, check=True):
                           preexec_fn=lambda: pinned_execute(expected, arguments, CLEAN_ENV, True))
 
 
+# 校验完整原身份/运行、程序名、字面参数、分辨率与剪贴板配置，禁止附加控制字段。
+# Validate complete original identity/run, program/literal args/resolution/clipboard config and exclude extra control fields.
 def validate_origin(origin, identifier):
     require(isinstance(origin, dict) and set(origin) == {'identity', 'run', 'program', 'args', 'resolution', 'clipboard', 'configVersion'}
             and origin['run']['runId'] == identifier and UUID.fullmatch(identifier)
@@ -265,6 +300,8 @@ def validate_origin(origin, identifier):
             and DIGEST.fullmatch(origin['configVersion']), 'SINGLE_APP_REQUEST_INVALID')
 
 
+# 限制环境键名、值长度、数量与总 JSON 字节，拒绝 NUL，环境仅在降权后应用。
+# Bound environment names/value lengths/count/JSON bytes and reject NUL; apply it only after privilege drop.
 def validate_environment(environment):
     require(isinstance(environment, dict) and len(environment) <= 64 and all(isinstance(key, str)
             and re.fullmatch('[A-Za-z_][A-Za-z0-9_]*', key) and isinstance(data, str) and len(data) <= 8192
@@ -273,6 +310,8 @@ def validate_environment(environment):
 
 
 # 应用参数和环境只作为有界 JSON 数据校验；固定 root 引导不执行用户提供的 shell 文本。
+# 要求原独立运行未占用，先发布 prepared 收据再分配永久账号、工具和私有配置，已有请求仅复用相同 origin。
+# Require an unused independent run, publish prepared receipt before account/tools/private config and reuse only identical origins.
 def prepare(request):
     origin = request['origin']
     validate_origin(origin, request['id'])
@@ -388,6 +427,8 @@ def prepare(request):
     return value
 
 
+# 生成限制本应用 UID 访问 VNC 端口范围的 IPv4/IPv6 专属链与跳转，只放行本会话端口。
+# Build owned IPv4/IPv6 chains restricting this UID’s VNC range and allowing only this session port.
 def firewall_spec(value, family):
     chain = 'SAU_' + value['id'].replace('-', '')[:16]
     comment = 'sakura-single-app:' + value['id']
@@ -399,6 +440,8 @@ def firewall_spec(value, family):
     return chain, jump, rules
 
 
+# 核对精确专属链和 OUTPUT 跳转形状，按 empty/partial 允许明确的清理阶段，替代规则拒绝。
+# Validate exact owned chain/OUTPUT jump shape, allowing only explicit empty/partial cleanup states and refusing replacement rules.
 def firewall_validate(value, empty=False, partial=False):
     for family in ('ipv4', 'ipv6'):
         chain, jump, rules = firewall_spec(value, family)
@@ -424,6 +467,8 @@ def firewall_validate(value, empty=False, partial=False):
             require(len(matching) == 1, 'SINGLE_APP_FIREWALL_CHANGED')
 
 
+# 创建两族固定防火墙规则，验证后才把收据标为 active。
+# Install the fixed rules for both address families and mark receipt active only after validation.
 def firewall_install(value):
     for family in ('ipv4', 'ipv6'):
         chain, jump, rules = firewall_spec(value, family)
@@ -437,6 +482,8 @@ def firewall_install(value):
     atomic(receipt_path(value['id']), value)
 
 
+# 先核对原规则或合法半安装状态，再删除精确跳转/链并验证空状态，发布 closed。
+# Validate original/allowed partial rules, remove exact jumps/chains, verify absence and publish closed.
 def firewall_remove(value):
     firewall_validate(value, partial=True)
     for family in ('ipv4', 'ipv6'):
@@ -452,6 +499,8 @@ def firewall_remove(value):
     atomic(receipt_path(value['id']), value)
 
 
+# 前后核实进程创建 ticks 与真实 UID/GID、映像、网络/cgroup/挂载视图，返回精确运行成员。
+# Bracket birth checks around UID/GID/image/network/cgroup/mount-view validation and return the exact member.
 def process(pid, value, view_module, pending=False):
     root = Path('/proc') / str(pid)
     before = (root / 'stat').read_text()
@@ -489,6 +538,8 @@ def process(pid, value, view_module, pending=False):
             'device': str(executable.st_dev), 'inode': str(executable.st_ino)}
 
 
+# 有界读取固定 cgroup 成员并逐一核实原身份，正常已退出进程可略过，超量拒绝。
+# Read bounded pinned-cgroup members and validate ownership, tolerating normal exits but refusing excess.
 def members(group, value, core, view_module, pending=False):
     rows = []
     descriptor = os.open('cgroup.procs', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=group)
@@ -506,12 +557,16 @@ def members(group, value, core, view_module, pending=False):
         os.close(descriptor)
 
 
+# 将单窗口收据转为共享 IDMAP 证明校验输入，复用相同挂载与账号边界。
+# Adapt the single-app receipt to shared IDMAP proof validation with identical mount/account boundaries.
 def view_receipt(value, view_module):
     return view_module['directory_view_proof']({'desktop': {'identity': value['identity'], 'run': value['run']},
                 'bootId': value['run']['bootId'], 'directory': value['identity']['directory'],
                 'uid': value['uid'], 'gid': value['gid'], 'directoryView': value['directoryView']})
 
 
+# 从进程实际 FD 与 TCP 表交叉证明唯一自有回环 VNC listener，拒绝端口名义匹配。
+# Cross-check real process FDs/TCP table for the owned loopback VNC listener rather than port-name matching.
 def tcp_listener(row, value):
     root = Path('/proc') / str(row['pid'])
     held = set()
@@ -533,6 +588,8 @@ def tcp_listener(row, value):
     return matches[0]
 
 
+# 核对唯一 VNC 映像、原 argv、创建身份与 listener，再返回会话连接端点。
+# Verify the sole VNC image/original argv/birth/listener before returning the connection endpoint.
 def endpoint(value, rows):
     candidates = [row for row in rows if row['image'] == value['tools']['vnc']['path']]
     if not candidates:
@@ -548,6 +605,8 @@ def endpoint(value, rows):
     return {**row, 'kernelInode': inode} if inode is not None else None
 
 
+# 核对私有运行目录的 UID/GID、0700 模式与原设备/inode，替代对象拒绝。
+# Validate private runtime UID/GID, mode 0700 and recorded device/inode, refusing replacements.
 def runtime_check(value):
     secure_directory(RUNTIME)
     info = Path(value['runtime']).lstat()
@@ -557,6 +616,8 @@ def runtime_check(value):
             'SINGLE_APP_RUNTIME_CHANGED')
 
 
+# 只读核实运行、挂载视图、进程与端点；旧 boot 必须证明原域/运行目录均不存在才可报告停止。
+# Observe verified run/view/processes/endpoint; old boots report stopped only after original domain/runtime absence.
 def inspect(value, view_module):
     view_receipt(value, view_module)
     core, lock, run, boot = context(value, False)
@@ -601,6 +662,8 @@ def inspect(value, view_module):
         os.close(lock)
 
 
+# 只允许 prepared 单次启动，先固定源/网络/cgroup/视图和 starting 收据，再启动监督器等待提交；失败清理原资源。
+# Allow one prepared launch, pin source/network/cgroup/view and persist starting before supervisor startup/commit; failures clean original resources.
 def start(value, environment, view_module):
     require(value['state'] == 'prepared' and value['directoryView'] is None and value['supervisor'] is None,
             'SINGLE_APP_START_NOT_REPLAYABLE')
@@ -704,6 +767,8 @@ def start(value, environment, view_module):
                     child.wait()
 
 
+# 在 UID/挂载转换后重开映像核对摘要，再按 ELF/脚本处理执行 FD，避免旧挂载 FD 绕开真实权限。
+# Reopen/hash the image after UID/mount transitions and handle ELF/script FDs so old-mount descriptors cannot bypass execution permissions.
 def pinned_execute(expected, arguments, environment, privileged=False):
     # Reopen after the UID/namespace transition, so kernel exec permission uses
     # the mapped view too. An FD from the old project mount retains old IDs.
@@ -720,6 +785,8 @@ def pinned_execute(expected, arguments, environment, privileged=False):
         os.close(descriptor)
 
 
+# 在共同单调截止内读私有管道到 EOF，限制字节量，超时或过量拒绝。
+# Read the private pipe to EOF under one monotonic deadline and byte bound, refusing timeout/excess.
 def private_input(descriptor, maximum, timeout=10):
     deadline, result = time.monotonic() + timeout, bytearray()
     while True:
@@ -732,6 +799,8 @@ def private_input(descriptor, maximum, timeout=10):
         require(len(result) <= maximum, 'SINGLE_APP_REQUEST_TOO_LARGE')
 
 
+# 设置 NNP，清空补充组、三个 UID/GID 与能力/ambient，并核实永久降权结果。
+# Set NNP, clear groups, all UID/GID slots and capabilities/ambient, then verify permanent privilege drop.
 def drop_account(user):
     libc = ctypes.CDLL(None, use_errno=True)
     require(libc.prctl(38, 1, 0, 0, 0) == 0, 'SINGLE_APP_NNP_FAILED')
@@ -750,6 +819,8 @@ def drop_account(user):
             'SINGLE_APP_CAPABILITY_FAILED')
 
 
+# 构建固定回环 VncAuth 参数、私有密码/Xauthority 与方向策略，禁用公开 X11 TCP。
+# Build fixed loopback VncAuth/private password/Xauthority/direction options with public X11 TCP disabled.
 def vnc_arguments(value):
     clipboard = value['origin']['clipboard']
     return [':' + str(value['display']), '-geometry', value['origin']['resolution'], '-depth', '24',
@@ -760,6 +831,8 @@ def vnc_arguments(value):
             '-AcceptCutText=' + str(int(clipboard['paste'])), '-SetPrimary=' + str(int(clipboard['paste']))]
 
 
+# 要求六个唯一管理 FD 并全部重新设为不继承，防止监督器 preexec 子进程泄露 root 权限。
+# Require six unique management FDs and reseal inheritance to prevent root-authority leaks through supervisor preexec children.
 def seal_descriptors(descriptors):
     require(len(descriptors) == 6 and all(type(descriptor) is int and descriptor > 2 for descriptor in descriptors)
             and len(set(descriptors)) == 6, 'SINGLE_APP_SUPERVISOR_FDS_INVALID')
@@ -771,6 +844,8 @@ def seal_descriptors(descriptors):
 
 
 # root 阶段只建立并核实运行域，进入目录视图后永久降到应用账户，随后才应用项目环境。
+# 固定 root 引导核实原票据/FD 后进入网络/挂载并永久降权，再读取项目环境并监督 VNC、WM、应用；就绪通过私有管道发布。
+# Verify receipts/FDs in fixed root bootstrap, enter realms/drop permanently, then read project environment and supervise VNC/WM/app with private readiness publication.
 def supervise(identifier, descriptors, view_module):
     # No project environment is applied while this fixed process is Root.
     seal_descriptors(descriptors)
@@ -840,6 +915,8 @@ def supervise(identifier, descriptors, view_module):
     require(password.returncode == 0 and len(password.stdout) == 8, 'SINGLE_APP_PASSWORD_FAILED')
     password_path = Path(value['runtime']) / 'vnc-password'
     password_path.write_bytes(password.stdout)
+    # 在已降权监督器中以固定映像执行子进程，关闭输入与日志流，preexec 再次验证映像。
+    # Spawn pinned images from the dropped supervisor with closed input/log streams and preexec image revalidation.
     def spawn(expected, arguments, child_environment):
         return subprocess.Popen([expected['path'], *arguments], env=child_environment, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -884,6 +961,8 @@ def supervise(identifier, descriptors, view_module):
                     child.wait()
 
 
+# 固定原运行目录身份再有界清理，真实缺失幂等返回，缺少原 inode 或替代对象拒绝。
+# Pin original runtime identity before bounded cleanup; absence is idempotent and missing proof/replacements refuse.
 def runtime_remove(value):
     runtime = Path(value['runtime'])
     if not os.path.lexists(runtime):
@@ -897,6 +976,8 @@ def runtime_remove(value):
         require((str(original.st_dev), str(original.st_ino)) == (value['runtimeDevice'], value['runtimeInode'])
                 and original.st_uid in (0, value['uid']), 'SINGLE_APP_RUNTIME_CHANGED')
         remaining = [4096]
+        # 按深度与条目预算递归删除固定目录中的精确对象，每级无跟随重核 inode，拒绝替代。
+        # Recursively remove exact objects under depth/item budgets, reopening each level without links and rechecking inodes.
         def clear(folder, depth):
             require(depth < 32, 'SINGLE_APP_RUNTIME_CLEANUP_LIMIT')
             for name in os.listdir(folder):
@@ -929,6 +1010,8 @@ def runtime_remove(value):
 
 
 # 清理重新核对运行域及目录视图证据，不能仅按 receipt 名称结束替代进程或删除替代路径。
+# 先持久 stopping，再在原生 EX 锁下核实并结束原 cgroup，清理精确运行目录/防火墙后发布停止。
+# Persist stopping before EX-locked verification/termination of the original cgroup, then retire exact runtime/firewall and publish stopped.
 def stop(value, view_module):
     view_receipt(value, view_module)
     value['state'] = 'stopping'
@@ -968,6 +1051,8 @@ def stop(value, view_module):
         os.close(lock)
 
 
+# 收据缺失只授权退休原生运行票据，要求运行目录和非空会话目录均不存在，不据此清理账号。
+# Missing receipts authorize only native-ticket retirement after proving runtime/nonempty session absence, never account cleanup.
 def stop_missing(request):
     # A guest prepare never mutates an account/runtime/firewall before its
     # receipt. Missing receipt therefore authorizes only native-run retirement.
@@ -994,6 +1079,8 @@ def stop_missing(request):
         os.close(lock)
 
 
+# 核对 boot/构建/身份后在 EX 锁内准备唯一独立原生运行，返回完整票据。
+# Validate boot/build/identity and prepare one independent native run under EX, returning the complete ticket.
 def prepare_native(request):
     require(set(request) == {'id', 'identity', 'bootId', 'nativeBuild'} and UUID.fullmatch(request['id'])
             and UUID.fullmatch(request['bootId']) and DIGEST.fullmatch(request['nativeBuild']), 'SINGLE_APP_REQUEST_INVALID')
@@ -1010,6 +1097,8 @@ def prepare_native(request):
         os.close(lock)
 
 
+# 只读核对原身份与本轮 intent，区分未创建、已发布和冲突，不复用替代运行域。
+# Read-only reconciliation of original identity/intent, distinguishing uncreated/published/conflicting state without adopting replacement domains.
 def recover_intent(request):
     require(set(request) == {'id', 'identity', 'bootId', 'nativeBuild'} and UUID.fullmatch(request['id'])
             and UUID.fullmatch(request['bootId']) and DIGEST.fullmatch(request['nativeBuild']), 'SINGLE_APP_REQUEST_INVALID')
@@ -1050,6 +1139,8 @@ def recover_intent(request):
         os.close(lock)
 
 
+# 前后核实运行端点，进入原项目网络再连接唯一 VNC socket，按有界流中继且拒绝陈旧会话。
+# Verify the run endpoint, enter the original network and connect the unique VNC socket for bounded relay, refusing stale sessions.
 def stream(value, view_module):
     before = inspect(value, view_module)
     require(value['state'] == before['state'] == 'running' and before['endpoint'] == value['endpoint'],
@@ -1110,6 +1201,8 @@ def stream(value, view_module):
         peer.close()
 
 
+# 清空 root 环境、核实包并严格路由固定动作；监督与流模式使用专用参数边界，应用环境只在降权后解释。
+# Clear root environment, verify the package and strictly route fixed actions; supervisor/stream modes use dedicated bounds and app environment is interpreted only after drop.
 def main():
     os.environ.clear()
     require(os.getuid() == 0, 'SINGLE_APP_ROOT_REQUIRED')

@@ -1,5 +1,6 @@
 /**
  * 模块职责：从操作声明选择 HTTP 线路请求契约，缺少明确契约的操作拒绝发布。
+ * Module purpose: Selects HTTP wire schemas from declared operations; operations lacking explicit request contracts cannot be published.
  */
 import { z } from 'zod';
 import type { OperationPolicy } from '../shared/contracts/operations.ts';
@@ -35,16 +36,48 @@ export type HttpRequestContract = {
   headers: z.ZodObject;
 };
 /** Extensible protocol fields remain JSON values in the published wire type. */
+/**
+ * 入口 / Entry: wireRequestSchema.
+ * 功能：在从操作声明选择 HTTP 线路请求契约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result` 供上层消费（`http-request-contracts.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-request-contracts.ts`; this entry produces `result` for its caller. Module context: Selects HTTP wire schemas from declared operations; operations lacking explicit request contracts cannot be published.
+ * 处理：通过 `z.toJSONSchema`, `visit` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.toJSONSchema`, `visit`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `extensions`.
+ * 输入 / Inputs: schema: z.ZodType; published: Record<string, unknown> optional
+ * 输出 / Returns: Record<string, unknown>；结果来自 / values from `result`.
+ * 副作用 / Effects: 更新 / updates `result.$defs`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function wireRequestSchema(
   schema: z.ZodType,
   published?: Record<string, unknown>,
 ): Record<string, unknown> {
   const json = published || (z.toJSONSchema(schema, { io: 'input' }) as Record<string, any>);
   let extensions = false;
+  /**
+   * 入口 / Entry: wireRequestSchema.jsonExtension.
+   * 功能：在从操作声明选择 HTTP 线路请求契约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ $ref: '#/$defs/requestJsonValue' }` 供上层消费（`http-request-contracts.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-request-contracts.ts`; this entry produces `{ $ref: '#/$defs/requestJsonValue' }` for its caller. Module context: Selects HTTP wire schemas from declared operations; operations lacking explicit request contracts cannot be published.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ $ref: '#/$defs/requestJsonValue' }`.
+   * 副作用 / Effects: 更新 / updates `extensions`.
+   */
   const jsonExtension = () => {
     extensions = true;
     return { $ref: '#/$defs/requestJsonValue' };
   };
+  /**
+   * 入口 / Entry: wireRequestSchema.visit.
+   * 功能：在从操作声明选择 HTTP 线路请求契约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `jsonExtension()` / `value` 供上层消费（`http-request-contracts.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-request-contracts.ts`; this entry produces `jsonExtension()` / `value` for its caller. Module context: Selects HTTP wire schemas from declared operations; operations lacking explicit request contracts cannot be published.
+   * 处理：通过 `jsonExtension`, `part[...].map`, `visit` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `jsonExtension`, `part[...].map`, `visit`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `value === true`; `!value || typeof value !== 'object'`; `!Object.keys(part).length`.
+   * 输入 / Inputs: value: unknown
+   * 输出 / Returns: unknown；结果来自 / values from `jsonExtension()`; `value`; `{ ...part }`.
+   * 副作用 / Effects: 更新 / updates `result[key]`, `result.additionalProperties`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const visit = (value: unknown): unknown => {
     if (value === true) return jsonExtension();
     if (!value || typeof value !== 'object') return value;
@@ -138,10 +171,61 @@ const binaryBody = new Set([
   'images.legacy.post.image-import',
   'snapshots.legacy.post.import',
 ]);
+/**
+ * 入口 / Entry: text.
+ * 功能：在从操作声明选择 HTTP 线路请求契约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `z.string().max(4096)` 供上层消费（`http-request-contracts.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-request-contracts.ts`; this entry produces `z.string().max(4096)` for its caller. Module context: Selects HTTP wire schemas from declared operations; operations lacking explicit request contracts cannot be published.
+ * 处理：通过 `z.string().max`, `z.string` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.string().max`, `z.string`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `z.string().max(4096)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const text = () => z.string().max(4096);
+/**
+ * 入口 / Entry: uuid.
+ * 功能：把本层请求转交 `z.uuid`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `z.uuid` and propagates the provider result or rejection.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `z.uuid()`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const uuid = () => z.uuid();
+/**
+ * 入口 / Entry: natural.
+ * 功能：在从操作声明选择 HTTP 线路请求契约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `z.string().regex(/^\d+$/).max(16)` 供上层消费（`http-request-contracts.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-request-contracts.ts`; this entry produces `z.string().regex(/^\d+$/).max(16)` for its caller. Module context: Selects HTTP wire schemas from declared operations; operations lacking explicit request contracts cannot be published.
+ * 处理：通过 `z.string().regex().max`, `z.string().regex`, `z.string` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.string().regex().max`, `z.string().regex`, `z.string`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `z.string().regex(/^\d+$/).max(16)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const natural = () => z.string().regex(/^\d+$/).max(16);
+/**
+ * 入口 / Entry: project.
+ * 功能：在从操作声明选择 HTTP 线路请求契约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `z.string().regex(/^(default|[a-f0-9]{16})$/)` 供上层消费（`http-request-contracts.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-request-contracts.ts`; this entry produces `z.string().regex(/^(default|[a-f0-9]{16})$/)` for its caller. Module context: Selects HTTP wire schemas from declared operations; operations lacking explicit request contracts cannot be published.
+ * 处理：通过 `z.string().regex`, `z.string` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.string().regex`, `z.string`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `z.string().regex(/^(default|[a-f0-9]{16})$/)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const project = () => z.string().regex(/^(default|[a-f0-9]{16})$/);
+/**
+ * 入口 / Entry: flag.
+ * 功能：把本层请求转交 `z.enum`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `z.enum` and propagates the provider result or rejection.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `z.enum(['0', '1'])`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const flag = () => z.enum(['0', '1']);
 type QueryShape = Record<string, z.ZodType>;
 const queries: Readonly<Record<string, QueryShape>> = {
@@ -222,6 +306,18 @@ const queries: Readonly<Record<string, QueryShape>> = {
 };
 const artifactInputs = { run: uuid(), artifact: uuid() };
 const fileHeaders = { 'x-sakura-file-lock': uuid().optional() };
+/**
+ * 入口 / Entry: requestContract.
+ * 功能：在从操作声明选择 HTTP 线路请求契约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ kind, required: kind !== 'none' && id !== 'snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore', ...(id === 'files.…` 供上层消费（`http-request-contracts.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `http-request-contracts.ts`; this entry produces `{ kind, required: kind !== 'none' && id !== 'snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore', ...(id === 'files.…` for its caller. Module context: Selects HTTP wire schemas from declared operations; operations lacking explicit request contracts cannot be published.
+ * 处理：通过 `z.fromJSONSchema`, `binaryBody.has`, `inline.includes`, `noBody.has` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.fromJSONSchema`, `binaryBody.has`, `inline.includes`, `noBody.has`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!schema && jsonSchema`.
+ * 输入 / Inputs: id: string; policy: OperationPolicy; method: string; supplied: z.ZodType optional; jsonSchema: Record<string, unknown> optional
+ * 输出 / Returns: HttpRequestContract；结果来自 / values from `{ kind, required: kind !== 'none' && id !== 'snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore', ...(id === 'files.…`.
+ * 副作用 / Effects: 更新 / updates `schema`.
+ * 拒绝 / Refusals: 条件 / conditions `!kind`; 异常 / errors `new Error('HTTP操作缺少请求契约：' + id)`.
+ */
 export function requestContract(
   id: string,
   policy: OperationPolicy,

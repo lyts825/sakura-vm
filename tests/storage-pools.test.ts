@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - pool assignment, verified moves and cleanup survive a controller restart
- * - a tampered ownership marker disables the external pool
- * - a failed cleanup receipt keeps its original admission until the existing pool recovery confirms deletion
+ * 模块职责：回归验证模块，围绕 `storage-pools` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `storage-pools`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: pool assignment, verified moves and cleanup survive a controller restart; a tampered ownership marker disables the external pool.
  */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
@@ -19,11 +20,31 @@ process.env.SAKURA_DATA_DIR = join(root, 'data');
 const { Machines } = await import('../server/machines.ts');
 const { DataMigration } = await import('../server/data-migration.ts');
 const { vmDir } = await import('../server/model.ts');
-const engine = { runtime: { close: async () => {} } } as unknown as Engine;
+const engine = { runtime: { /**
+ * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+ * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ */
+close: async () => {} } } as unknown as Engine;
 after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: pool assignment, verified moves and cleanup survive a controller restart
+ * 状态影响 / State effects: `machines`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `mkdir`, `Buffer.from`, `writeFile`.
+ * 检查边界 / Checked boundaries: `assert.equal(vmDir(vm.id), externalDir)`; `assert.deepEqual(await readFile(join(externalDir, 'disk.qcow2')), disk)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('pool assignment, verified moves and cleanup survive a controller restart', async () => {
   const external = join(root, 'external');
   await mkdir(external);
@@ -86,6 +107,18 @@ test('pool assignment, verified moves and cleanup survive a controller restart',
   await machines.close();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a tampered ownership marker disables the external pool
+ * 协作入口 / Collaborators: `join`, `mkdir`, `machines.init`, `machines.storagePools.create`.
+ * 检查边界 / Checked boundaries: `assert.rejects(machines.storagePools.ensure(pool.id), /标记不匹配/)`; `assert.equal( (await machines.storagePools.view()).pools.find((item) => item.id === pool.id)?.available, false, )`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('a tampered ownership marker disables the external pool', async () => {
   const external = join(root, 'tampered');
   await mkdir(external);
@@ -104,6 +137,19 @@ test('a tampered ownership marker disables the external pool', async () => {
   await machines.close();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a failed cleanup receipt keeps its original admission until the existing pool recovery confirms deletion
+ * 状态影响 / State effects: `machines.storagePools.clearCleanup`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `mkdir`, `writeFile`, `machines.init`.
+ * 检查边界 / Checked boundaries: `assert.rejects(machines.moveStoragePool(vm.id, pool.id), { code: 'STORAGE_CLEANUP_PENDING' })`; `assert.equal(held?.state, 'cleanup-pending')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('a failed cleanup receipt keeps its original admission until the existing pool recovery confirms deletion', async () => {
   const external = join(root, 'cleanup-receipt'),
     source = join(root, 'cleanup-source');
@@ -114,7 +160,16 @@ test('a failed cleanup receipt keeps its original admission until the existing p
   const pool = await machines.storagePools.create('cleanup-proof', external);
   const vm = await machines.adopt({ name: 'cleanup-proof' }, source, 'key', Buffer.from('seed'));
   const clear = machines.storagePools.clearCleanup.bind(machines.storagePools);
-  machines.storagePools.clearCleanup = async () => {
+  machines.storagePools.clearCleanup = /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: a failed cleanup receipt keeps its original admission until the existing pool recovery confirms deletion
+   * 失败 / Failure: `new Error('simulated metadata flush failure')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   */
+  async () => {
     throw new Error('simulated metadata flush failure');
   };
   try {

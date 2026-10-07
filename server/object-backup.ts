@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理对象存储备份策略和动作，解析私密凭证并协调备份校验及远端传输。
+ * Module purpose: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
  */
 import type { BackupsV1, BundlesV1, SecretsV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
@@ -125,6 +126,15 @@ export class ObjectBackup {
   private schedule: ScheduleHandle;
   private closed = false;
   private automaticAbort = new AbortController();
+  /**
+   * 入口 / Entry: ObjectBackup.constructor.
+   * 功能：建立 ObjectBackup 的管理对象存储备份策略和动作上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the ObjectBackup context for this module's responsibility: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; services: () => { backups?: BackupsV1; bundles?: BundlesV1; secrets?: SecretsV1 }
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: `scheduler.register`; 更新 / updates `this.schedule`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   constructor(
     private machines: Machines,
     private services: () => { backups?: BackupsV1; bundles?: BundlesV1; secrets?: SecretsV1 },
@@ -135,22 +145,84 @@ export class ObjectBackup {
       intervalMs: 60_000,
       overlap: 'skip',
       catchUp: 'once',
+      /**
+       * 入口 / Entry: ObjectBackup.constructor.run.
+       * 功能：把本层请求转交 `this.tick`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `this.tick` and propagates the provider result or rejection.
+       * 输入 / Inputs: { signal }
+       * 输出 / Returns: `this.tick(Date.now(), signal)`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       run: ({ signal }) => this.tick(Date.now(), signal),
     });
   }
 
+  /**
+   * 入口 / Entry: ObjectBackup.file.
+   * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `join(vmDir(vmId), 'object-backup.json')` 供上层消费（`ObjectBackup`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; this entry produces `join(vmDir(vmId), 'object-backup.json')` for its caller. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `join`, `vmDir` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `join`, `vmDir`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: `join(vmDir(vmId), 'object-backup.json')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private file(vmId: string) {
     return join(vmDir(vmId), 'object-backup.json');
   }
+  /**
+   * 入口 / Entry: ObjectBackup.syncFile.
+   * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `join(vmDir(vmId), 'object-backup-sync.json')` 供上层消费（`ObjectBackup`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; this entry produces `join(vmDir(vmId), 'object-backup-sync.json')` for its caller. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `join`, `vmDir` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `join`, `vmDir`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: `join(vmDir(vmId), 'object-backup-sync.json')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private syncFile(vmId: string) {
     return join(vmDir(vmId), 'object-backup-sync.json');
   }
+  /**
+   * 入口 / Entry: ObjectBackup.target.
+   * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `objectTargetSchema.nullable().parse(await readStore(this.file(vmId), () => null))` 供上层消费（`ObjectBackup`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; this entry produces `objectTargetSchema.nullable().parse(await readStore(this.file(vmId), () => null))` for its caller. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `objectTargetSchema.nullable().parse`, `objectTargetSchema.nullable`, `readStore`, `this.file` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `objectTargetSchema.nullable().parse`, `objectTargetSchema.nullable`, `readStore`, `this.file`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: `objectTargetSchema.nullable().parse(await readStore(this.file(vmId), () => null))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async target(vmId: string) {
     return objectTargetSchema.nullable().parse(await readStore(this.file(vmId), () => null));
   }
+  /**
+   * 入口 / Entry: ObjectBackup.syncState.
+   * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `syncStateSchema.parse(await readStore(this.syncFile(vmId), () => ({ mirrored: {} })))` 供上层消费（`ObjectBackup`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; this entry produces `syncStateSchema.parse(await readStore(this.syncFile(vmId), () => ({ mirrored: {} })))` for its caller. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `syncStateSchema.parse`, `readStore`, `this.syncFile` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `syncStateSchema.parse`, `readStore`, `this.syncFile`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: `syncStateSchema.parse(await readStore(this.syncFile(vmId), () => ({ mirrored: {} })))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async syncState(vmId: string) {
     return syncStateSchema.parse(await readStore(this.syncFile(vmId), () => ({ mirrored: {} })));
   }
+  /**
+   * 入口 / Entry: ObjectBackup.updateSync.
+   * 功能：把本层请求转交 `this.machines.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.machines.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: vmId: string; update: (state: SyncState) => void
+   * 输出 / Returns: `this.machines.locked(`object-backup-sync:${vmId}`, async () => { const result = await metadataFile( this.syncFile(vmId), () =…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async updateSync(vmId: string, update: (state: SyncState) => void) {
     return this.machines.locked(`object-backup-sync:${vmId}`, async () => {
       const result = await metadataFile(
@@ -161,7 +233,26 @@ export class ObjectBackup {
       return result.value;
     });
   }
+  /**
+   * 入口 / Entry: ObjectBackup.markMirrored.
+   * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`ObjectBackup`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; the calls and state transitions below complete the operation. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `this.updateSync` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.updateSync`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string; backupId: string; checksum: string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.updateSync`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async markMirrored(vmId: string, backupId: string, checksum: string) {
+    /**
+     * 入口 / Entry: ObjectBackup.markMirrored.callback@165.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.updateSync）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.updateSync).
+     * 输入 / Inputs: state
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 更新 / updates `state.mirrored[backupId]`, `state.lastAttemptAt`, `state.lastSuccessAt`.
+     */
     await this.updateSync(vmId, (state) => {
       state.mirrored[backupId] = checksum;
       state.lastAttemptAt = new Date().toISOString();
@@ -170,6 +261,20 @@ export class ObjectBackup {
     });
   }
   /** Retry failed automatic transfers after five minutes; local backups remain usable on failure. */
+  /**
+   * 入口 / Entry: ObjectBackup.tick.
+   * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`ObjectBackup`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; this entry produces `void` for its caller. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `AbortSignal.any`, `this.services`, `this.machines.records.keys`, `this.target` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `AbortSignal.any`, `this.services`, `this.machines.records.keys`, `this.target`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed`; `!backups || !bundles || !secrets`; `this.closed || active.aborted`.
+   * 输入 / Inputs: now: default=Date.now(); signal: AbortSignal optional
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `AbortSignal.any`; `this.updateSync`; 更新 / updates `state.mirrored[item.id]`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `if (this.closed || active.aborted) return;`; `await this.updateSync(vmId, (state) => { state.lastAttemptAt = new Date(now).toISOString(); state.lastError = String((error a…`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if (this.closed || active.aborted) return;`; `await this.updateSync(vmId, (state) => { state.lastAttemptAt = new Date(now).toISOString(); state.lastError = String((error a…`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async tick(now = Date.now(), signal?: AbortSignal) {
     const active = signal
       ? AbortSignal.any([signal, this.automaticAbort.signal])
@@ -207,6 +312,19 @@ export class ObjectBackup {
       }
     }
   }
+  /**
+   * 入口 / Entry: ObjectBackup.client.
+   * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new S3Client({ requestHandler: objectNetwork.requestHandler(), region: target.region, ...(target.endpoint ? { endpoint: targe…` 供上层消费（`ObjectBackup`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; this entry produces `new S3Client({ requestHandler: objectNetwork.requestHandler(), region: target.region, ...(target.endpoint ? { endpoint: targe…` for its caller. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `credentialSchema.parse`, `secrets.value`, `objectNetwork.requestHandler` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `credentialSchema.parse`, `secrets.value`, `objectNetwork.requestHandler`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string; target: z.infer<typeof objectTargetSchema>; secrets: SecretsV1
+   * 输出 / Returns: `new S3Client({ requestHandler: objectNetwork.requestHandler(), region: target.region, ...(target.endpoint ? { endpoint: targe…`.
+   * 副作用 / Effects: `objectNetwork.requestHandler`; 更新 / updates `credential`.
+   * 拒绝 / Refusals: 异常 / errors `new AppError('对象存储凭据必须是含 accessKeyId 和 secretAccessKey 的私密配置 JSON', 400)`.
+   * 失败处理：catch 分支执行 `throw new AppError('对象存储凭据必须是含 accessKeyId 和 secretAccessKey 的私密配置 JSON', 400);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `throw new AppError('对象存储凭据必须是含 accessKeyId 和 secretAccessKey 的私密配置 JSON', 400);`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async client(vmId: string, target: z.infer<typeof objectTargetSchema>, secrets: SecretsV1) {
     let credential: z.infer<typeof credentialSchema>;
     try {
@@ -225,9 +343,26 @@ export class ObjectBackup {
       maxAttempts: 1,
     });
   }
+  /**
+   * 入口 / Entry: ObjectBackup.base.
+   * 功能：从当前输入或状态计算 ``${target.prefix ? target.prefix + '/' : ''}sakura-backups/``，供调用方后续验证或使用。
+   * Purpose: Computes ``${target.prefix ? target.prefix + '/' : ''}sakura-backups/`` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: target: z.infer<typeof objectTargetSchema>
+   * 输出 / Returns: ``${target.prefix ? target.prefix + '/' : ''}sakura-backups/``.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private base(target: z.infer<typeof objectTargetSchema>) {
     return `${target.prefix ? target.prefix + '/' : ''}sakura-backups/`;
   }
+  /**
+   * 入口 / Entry: ObjectBackup.keys.
+   * 功能：从当前输入或状态计算 `{ metadata: `${base}.json`, data: `${base}.sakura${encrypted ? '.enc' : ''}` }`，供调用方后续验证或使用。
+   * Purpose: Computes `{ metadata: `${base}.json`, data: `${base}.sakura${encrypted ? '.enc' : ''}` }` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: target: z.infer<typeof objectTargetSchema>; sourceVmId: string; backupId: string; encrypted: boolean
+   * 输出 / Returns: `{ metadata: `${base}.json`, data: `${base}.sakura${encrypted ? '.enc' : ''}` }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private keys(
     target: z.infer<typeof objectTargetSchema>,
     sourceVmId: string,
@@ -237,6 +372,19 @@ export class ObjectBackup {
     const base = `${this.base(target)}${sourceVmId}/${backupId}`;
     return { metadata: `${base}.json`, data: `${base}.sakura${encrypted ? '.enc' : ''}` };
   }
+  /**
+   * 入口 / Entry: ObjectBackup.remoteMetadata.
+   * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `metadata` 供上层消费（`ObjectBackup`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; this entry produces `metadata` for its caller. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `remoteId.split`, `uuid.parse`, `this.keys`, `client.send` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `remoteId.split`, `uuid.parse`, `this.keys`, `client.send`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: client: S3Client; target: z.infer<typeof objectTargetSchema>; remoteId: string; signal: AbortSignal
+   * 输出 / Returns: `metadata`.
+   * 副作用 / Effects: `client.send`; `chunks.push`; `source.destroy`; 更新 / updates `bytes`.
+   * 拒绝 / Refusals: 条件 / conditions `!result.Body`; `result.ContentLength === undefined || result.ContentLength > 16384`; `bytes > 16384`; 异常 / errors `new AppError('对象备份清单缺失或过大', 409)`; `new AppError('对象备份清单超过 16 KiB', 409)`.
+   * 收尾：退出 try 区域时始终执行 `source.destroy();`; `await finished(source).catch(() => {});`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `source.destroy();`; `await finished(source).catch(() => {});`; these steps also apply to exceptional exits.
+   */
   private async remoteMetadata(
     client: S3Client,
     target: z.infer<typeof objectTargetSchema>,
@@ -273,6 +421,20 @@ export class ObjectBackup {
       throw new AppError('对象备份清单与对象路径不匹配', 409);
     return metadata;
   }
+  /**
+   * 入口 / Entry: ObjectBackup.remoteHash.
+   * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `storageRuntime.run( { owner: 'core:object-read', taskId: 'object-read:' + randomUUID(), label: 'Verify remote object', mode: …` 供上层消费（`ObjectBackup`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; this entry produces `storageRuntime.run( { owner: 'core:object-read', taskId: 'object-read:' + randomUUID(), label: 'Verify remote object', mode: …` for its caller. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `storageRuntime.run`, `randomUUID`, `lease.assertActive`, `lease.reserveTemporary` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `storageRuntime.run`, `randomUUID`, `lease.assertActive`, `lease.reserveTemporary`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!lease`; `file`.
+   * 输入 / Inputs: client: S3Client; target: z.infer<typeof objectTargetSchema>; metadata: Metadata; signal: AbortSignal; file: string optional; lease: StorageLease optional
+   * 输出 / Returns: Promise<void>；结果来自 / values from `storageRuntime.run( { owner: 'core:object-read', taskId: 'object-read:' + randomUUID(), label: 'Verify remote object', mode: …`.
+   * 副作用 / Effects: `client.send`; `createHash`; `createWriteStream`; `hash.update`; `source.destroy`; 更新 / updates `bytes`.
+   * 拒绝 / Refusals: 条件 / conditions `!result.Body`; `result.ContentLength !== metadata.bytes`; `bytes > metadata.bytes`; 异常 / errors `new AppError('远端备份对象长度不符', 409)`; `new AppError('远端备份对象超过声明长度', 409)`.
+   * 收尾：退出 try 区域时始终执行 `source.destroy();`; `await finished(source).catch(() => {});`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `source.destroy();`; `await finished(source).catch(() => {});`; these steps also apply to exceptional exits.
+   */
   private async remoteHash(
     client: S3Client,
     target: z.infer<typeof objectTargetSchema>,
@@ -312,6 +474,18 @@ export class ObjectBackup {
         await pipeline(
           source,
           new Transform({
+            /**
+             * 入口 / Entry: ObjectBackup.remoteHash.transform.
+             * 功能：在管理对象存储备份策略和动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `callback(new AppError('远端备份对象超过声明长度', 409))` 供上层消费（`ObjectBackup`）。
+             * Purpose: Executes the domain-specific processing steps and returns their outcome in `ObjectBackup`; this entry produces `callback(new AppError('远端备份对象超过声明长度', 409))` for its caller. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+             * 处理：通过 `callback`, `hash.update` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `callback`, `hash.update`; the branches below determine continuation, return or refusal.
+             * 分支 / Branches: `bytes > metadata.bytes`.
+             * 输入 / Inputs: chunk: Buffer; _encoding; callback
+             * 输出 / Returns: `callback(new AppError('远端备份对象超过声明长度', 409))`.
+             * 副作用 / Effects: `hash.update`; 更新 / updates `bytes`.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             transform(chunk: Buffer, _encoding, callback) {
               bytes += chunk.length;
               if (bytes > metadata.bytes) return callback(new AppError('远端备份对象超过声明长度', 409));
@@ -337,6 +511,21 @@ export class ObjectBackup {
       throw new AppError('远端备份 SHA-256 校验失败', 409);
   }
 
+  /**
+   * 入口 / Entry: ObjectBackup.action.
+   * 功能：校验对象备份模式并执行保存策略、上传、下载、恢复或删除对象动作。
+   * Purpose: Validates object-backup modes and saves policies/uploads/downloads/restores/deletes objects.
+   * 设计：私密凭证解析后限定客户端与目标，实际对象及本地备份均验证摘要；multipart、文件和存储租约在原流程收尾。
+   * Design: Resolved secrets constrain clients/targets, objects/local backups require digest checks, and original workflows own multipart/file/storage cleanup.
+   * 输入 / Inputs: vmId: string; input: unknown; action: 'check' | 'run'; signal: AbortSignal
+   * 输出 / Returns: `{ ready: false, executed: false, reason: '请先保存 S3/MinIO 目标；凭据需在当前实例的私密配置中保存为 JSON。', }`; `{ ready: false, executed: false, reason, ...(configured ? { target: configured, sync: await this.syncState(vmId) } : {}), }`; `{ ready: true, executed: action === 'run', target: options.target }`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: `client.send`; `client.destroy`; `statusClient.send`; `statusClient.destroy`; `key.startsWith`; 更新 / updates `statusClient`, `token`.
+   * 拒绝 / Refusals: 条件 / conditions `!backups || !bundles || !secrets`; `options.mode === 'save'`; `!options.target`; 异常 / errors `new AppError(reason, 409)`; `new AppError('请填写对象存储目标')`.
+   * 收尾：退出 try 区域时始终执行 `client.destroy();`; `statusClient?.destroy();`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `client.destroy();`; `statusClient?.destroy();`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `if (signal.aborted) throw error;`; `return { ready: false, executed: false, target, sync, reason: String((error as Error).message || error).slice(0, 500), };`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if (signal.aborted) throw error;`; `return { ready: false, executed: false, target, sync, reason: String((error as Error).message || error).slice(0, 500), };`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async action(vmId: string, input: unknown, action: 'check' | 'run', signal: AbortSignal) {
     this.machines.get(vmId);
     const options = objectBackupInput.parse(input);
@@ -431,6 +620,17 @@ export class ObjectBackup {
       }
       if (options.mode === 'upload') {
         if (!options.backupId) throw new AppError('请选择本机备份');
+        /**
+         * 入口 / Entry: ObjectBackup.action.callback@434.
+         * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.machines.locked）。
+         * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.machines.locked).
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `{ ready: true, executed: false, remoteId: `${vmId}/${item.id}`, metadata: existing, message: '远端备份已存在并通过校验。', }`; `{ ready: true, executed: true, remoteId: `${vmId}/${item.id}`, metadata }`.
+         * 副作用 / Effects: `client.send`.
+         * 拒绝 / Refusals: 条件 / conditions `!item`; `item.encrypted && !passwordName`; `existing.sha256 !== metadata.sha256 || existing.bytes !== metadata.bytes`; 异常 / errors `new AppError('本机备份不存在', 404)`; `new AppError('加密备份需要 passwordSecret 指向保存了备份密码的私密配置', 400)`.
+         * 失败处理：catch 分支执行 `if ( error instanceof AppError || !['NotFound', 'NoSuchKey', '404'].includes((error as Error).name) ) throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+         * Failure handling: Catch paths execute `if ( error instanceof AppError || !['NotFound', 'NoSuchKey', '404'].includes((error as Error).name) ) throw error;`; these statements determine whether a failure is absorbed or rejected again.
+         */
         return await this.machines.locked(`object-backup:${vmId}`, async () => {
           const item = (await backups.view(vmId)).items.find((entry) => entry.id === options.backupId);
           if (!item) throw new AppError('本机备份不存在', 404);
@@ -473,6 +673,19 @@ export class ObjectBackup {
             )
               throw error;
           }
+          /**
+           * 入口 / Entry: ObjectBackup.action.callback@481.
+           * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（backups.withVerifiedFile）。
+           * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (backups.withVerifiedFile).
+           * 输入 / Inputs: _verifiedFile; lease; file
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: `uploadObjectFile`; `client.send`; 更新 / updates `uploaded`.
+           * 拒绝 / Refusals: 条件 / conditions `(await stat(file)).size !== item.bytes || (await fileHash(file, signal)) !== item.checksum`; `uploaded`; 异常 / errors `new AppError('本机备份与记录的校验值不符', 409)`; `cleanup`.
+           * 收尾：退出 try 区域时始终执行 ；这些步骤也适用于异常退出。
+           * Finalization: Leaving the try region always executes ; these steps also apply to exceptional exits.
+           * 失败处理：catch 分支执行 `if (uploaded) { try { await withoutOperationContext(async () => { const cleanupSignal = AbortSignal.timeout(30_000); // A los…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+           * Failure handling: Catch paths execute `if (uploaded) { try { await withoutOperationContext(async () => { const cleanupSignal = AbortSignal.timeout(30_000); // A los…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+           */
           await backups.withVerifiedFile(
             vmId,
             item.id,
@@ -544,6 +757,19 @@ export class ObjectBackup {
         return { ready: true, executed: true, remoteId: options.remoteId, deleted: true };
       }
       const tempRoot = join(DATA, 'object-backup-temp');
+      /**
+       * 入口 / Entry: ObjectBackup.action.callback@559.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（storageRuntime.run）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (storageRuntime.run).
+       * 输入 / Inputs: lease
+       * 输出 / Returns: `{ ready: true, executed: true, remoteId: options.remoteId, verified: true, ...(restored ? { restoredVmId: restored.id, restor…`.
+       * 副作用 / Effects: `mkdir`; `createReadStream`; `rm`; 更新 / updates `restored`.
+       * 拒绝 / Refusals: 条件 / conditions `metadata.encrypted`; `!passwordName`; `options.mode === 'restore'`; 异常 / errors `new AppError('加密备份需要 passwordSecret 指向保存了备份密码的私密配置', 400)`; `new AppError('恢复需要新实例名称')`.
+       * 收尾：退出 try 区域时始终执行 `try { await rm(temp, { recursive: true, force: true }); } catch (error) { lease.cleanupPending(error); throw error; }`；这些步骤也适用于异常退出。
+       * Finalization: Leaving the try region always executes `try { await rm(temp, { recursive: true, force: true }); } catch (error) { lease.cleanupPending(error); throw error; }`; these steps also apply to exceptional exits.
+       * 失败处理：catch 分支执行 `lease.cleanupPending(error);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+       * Failure handling: Catch paths execute `lease.cleanupPending(error);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+       */
       return await storageRuntime.run(
         {
           owner: 'core:object-import',
@@ -568,6 +794,15 @@ export class ObjectBackup {
               if (!passwordName)
                 throw new AppError('加密备份需要 passwordSecret 指向保存了备份密码的私密配置', 400);
               const password = await secrets.value(vmId, passwordName);
+              /**
+               * 入口 / Entry: ObjectBackup.action.callback@574.
+               * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（withDecrypted）。
+               * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (withDecrypted).
+               * 输入 / Inputs: plain
+               * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+               * 副作用 / Effects: `createReadStream`; 更新 / updates `restored`.
+               * 拒绝 / Refusals: 条件 / conditions `options.mode === 'restore'`; `!options.restoreName`; 异常 / errors `new AppError('恢复需要新实例名称')`.
+               */
               await withDecrypted(
                 file,
                 password,
@@ -620,6 +855,17 @@ export class ObjectBackup {
       client.destroy();
     }
   }
+  /**
+   * 入口 / Entry: ObjectBackup.close.
+   * 功能：在管理对象存储备份策略和动作中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`ObjectBackup`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `ObjectBackup`; the outcome is recorded in `this.closed`. Module context: Owns object-storage backup settings/actions, resolving private credentials and coordinating verification/remote transfers.
+   * 处理：通过 `this.automaticAbort.abort`, `this.schedule.close` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.automaticAbort.abort`, `this.schedule.close`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.automaticAbort.abort`; `this.schedule.close`; 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true;
     this.automaticAbort.abort();

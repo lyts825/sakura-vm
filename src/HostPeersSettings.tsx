@@ -1,5 +1,8 @@
 /**
- * 模块职责：配置主机配对与监听，查看远端资源、健康评分、冷迁移及快照复制状态。
+ * 模块职责（中文）：配置主机配对与监听，查看远端资源、健康评分、冷迁移及快照复制状态。
+ * Module responsibility (English): Configuring host pairing, health scores and migration/replication state.
+ * 详细范围（中文）：公开入口包括 HostPeersSettings；职责覆盖配置主机配对、健康评分与迁移复制状态，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include HostPeersSettings. The scope covers Configuring host pairing, health scores and migration/replication state. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
@@ -32,8 +35,22 @@ type ReplicationView = { enabled: boolean; entries: Array<{ vmId: string; snapsh
   transferId: string; peerId: string; targetName: string;
   status: 'queued' | 'transferring' | 'replicated' | 'review';
   remoteVmId?: string; sha256?: string; error?: string; updatedAt: string }> };
+/**
+ * 中文：把主机资源字节换算为一位区域格式小数的 GiB。
+ * English: Convert host-resource bytes to GiB with one locale-formatted fractional digit.
+ * 中文：输入：bytes：签名所示 number 业务值
+ * English: Inputs: bytes: the number domain value in the signature
+ */
 const gib = (bytes: number) => formatDecimal((bytes / 1024 ** 3), 1) + ' GiB';
 
+/**
+ * 中文：呈现配置主机配对、健康评分与迁移复制状态中的 ResourceCard 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ResourceCard surface for Configuring host pairing, health scores and migration/replication state. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ title, status, error, checkedAt } 提供 title（title 状态）、status（status 状态）、error（错误反馈）、checkedAt（checkedAt 状态） 上下文字段
+ * English: Inputs: { title, status, error, checkedAt } provides context fields title (title state), status (status state), error (error feedback), checkedAt (checkedAt state)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 function ResourceCard({ title, status, error, checkedAt }: {
   title: string; status?: PeerStatus; error?: string; checkedAt?: number;
 }) {
@@ -47,6 +64,14 @@ function ResourceCard({ title, status, error, checkedAt }: {
   </div>;
 }
 
+/**
+ * 中文：呈现配置主机配对、健康评分与迁移复制状态中的 HostPeersSettings 界面，订阅 /host-peers、/cold-migrations、/snapshot-replications，组合 ResourceCard，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the HostPeersSettings surface for Configuring host pairing, health scores and migration/replication state, subscribing to /host-peers, /cold-migrations, /snapshot-replications and composing ResourceCard. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function HostPeersSettings({ request }: { request: Request }) {
   const remote = useRemote<HostPeersView>(request, '/host-peers', true, 5000);
   const migrations = useRemote<MigrationView>(request, '/cold-migrations', true, 15000);
@@ -62,24 +87,44 @@ export function HostPeersSettings({ request }: { request: Request }) {
   const [scores, setScores] = useState<ScoreView | null>(null);
   const listener = listenerDraft || remote.data?.listener ||
     { enabled: false, host: '127.0.0.1' as const, port: 7443 };
+  /**
+   * 中文：提交 POST /host-peers，完成配置主机配对、健康评分与迁移复制状态的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：operation：签名所示 string 业务值；data：签名所示 Record<string, unknown> 业务值（缺省 {}）；message：签名所示 string 业务值
+   * English: Inputs: operation: the string domain value in the signature; data: the Record<string, unknown> domain value in the signature (default {}); message: the string domain value in the signature
+   */
   const apply = (operation: string, data: Record<string, unknown> = {}, message?: string) =>
-    void action.run(async (signal) => {
+    void action.run(/** 中文：提交 POST /host-peers，完成配置主机配对、健康评分与迁移复制状态的数据交互并更新scores 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state and update scores state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
       await request('/host-peers', 'POST', { operation, ...data }, signal);
       setScores(null);
       remote.reload();
     }, message);
+  /**
+   * 中文：仅提交监听入口 enabled/host/port 配置，并反馈需要重启服务才生效；不把保存确认当作监听已重启。
+   * English: Submit only listener enabled/host/port and report that service restart is required, without treating save confirmation as a restarted listener.
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const saveListener = () => {
     apply('listener', { listener: { enabled: listener.enabled, host: listener.host,
       port: listener.port } }, '入口配置已保存，重启 Sakura 服务后生效');
   };
-  const connect = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /host-peers，完成配置主机配对、健康评分与迁移复制状态的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const connect = () => void action.run(/** 中文：提交 POST /host-peers，完成配置主机配对、健康评分与迁移复制状态的数据交互并更新address 状态、fingerprint 状态、code 状态、scores 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state and update address state, fingerprint state, code state, scores state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     await request('/host-peers', 'POST', { operation: 'connect', url: address.trim(),
       fingerprint: fingerprint.trim().toUpperCase(), code: code.trim().toUpperCase() }, signal);
     setAddress(''); setFingerprint(''); setCode('');
     setScores(null);
     remote.reload();
   }, '主机已配对');
-  const score = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /host-peers，完成配置主机配对、健康评分与迁移复制状态的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const score = () => void action.run(/** 中文：提交 POST /host-peers，完成配置主机配对、健康评分与迁移复制状态的数据交互并更新scores 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state and update scores state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     setScores(await request<ScoreView>('/host-peers', 'POST',
       { operation: 'score', requirements }, signal));
   }, '主机评分已更新');

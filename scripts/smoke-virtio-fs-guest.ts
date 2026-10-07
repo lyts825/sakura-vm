@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实 Linux 来宾 Virtio-FS 挂载、只读拒绝和可写宿主内容。 */
+/** 烟雾验收：验证真实 Linux 来宾 Virtio-FS 挂载、只读拒绝和可写宿主内容。
+ * Smoke acceptance for actual Virtio-FS guest mount/read-only refusal and writable host content. */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

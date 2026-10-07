@@ -1,4 +1,7 @@
-/** Xlib/XCB 真实选择所有者和读取器夹具，用不同目标格式及传输方式驱动剪贴板策略验证。 */
+/**
+ * 中文：真实 Xlib/XCB 选择 owner 与读取器夹具，规范化不同 API 的属性布局并驱动普通、INCR、MULTIPLE 和并发场景。恶意变体用于确认拒绝、完整性和旧属性重用边界。
+ * English: Real Xlib/XCB selection-owner and reader fixture, normalizing property layouts across APIs and exercising ordinary, INCR, MULTIPLE and concurrent scenarios. Hostile variants check refusal, completeness and stale-property reuse boundaries.
+ */
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib-xcb.h>
@@ -19,7 +22,17 @@
 #include <vector>
 
 using Clock=std::chrono::steady_clock;
+/**
+ * 中文：以二进制方式读取夹具输入文件，保留测试内容的所有字节。
+ * English: Reads fixture input in binary mode, preserving all test-content bytes.
+ * 参数 / Parameters: `input(const char* file)`.
+ */
 static std::string input(const char* file){std::ifstream stream(file,std::ios::binary);return {std::istreambuf_iterator<char>(stream),{}};}
+/**
+ * 中文：将指定缓冲区按字节编码为小写十六进制，便于无损输出测试内容。
+ * English: Encodes the supplied buffer byte-by-byte as lowercase hexadecimal for lossless fixture output.
+ * 参数 / Parameters: `hex(const void* raw,size_t length)`.
+ */
 static std::string hex(const void* raw,size_t length){
   const auto bytes=static_cast<const unsigned char*>(raw);std::string result;const char* digits="0123456789abcdef";
   for(size_t i=0;i<length;++i){result+=digits[bytes[i]>>4];result+=digits[bytes[i]&15];}return result;
@@ -29,6 +42,11 @@ struct Value {uint32_t type=0;int format=0;size_t count=0,after=0;std::vector<un
 class Connection {
  public:
   Display* display=nullptr;xcb_connection_t* wire=nullptr;bool xcb=false,mixed=false;uint32_t window=0;
+  /**
+   * 中文：按 xlib、xcb 或 mixed 模式打开连接并创建接收选择数据的测试窗口。
+   * English: Opens an Xlib, XCB or mixed connection and creates the fixture window that receives selection data.
+   * 参数 / Parameters: `Connection(const std::string& toolkit)`.
+   */
   explicit Connection(const std::string& toolkit):xcb(toolkit=="xcb"),mixed(toolkit=="mixed"){
     if(xcb){int index=0;wire=xcb_connect(nullptr,&index);if(xcb_connection_has_error(wire))std::exit(2);
       auto screens=xcb_setup_roots_iterator(xcb_get_setup(wire));while(index--)xcb_screen_next(&screens);
@@ -38,31 +56,86 @@ class Connection {
       window=XCreateSimpleWindow(display,DefaultRootWindow(display),0,0,1,1,0,0,0);XSelectInput(display,window,PropertyChangeMask);
     }
   }
+  /**
+   * 中文：关闭所持测试连接；混合模式由 Xlib 负责共享连接的最终关闭。
+   * English: Closes the owned fixture connection, leaving final shared-connection closure to Xlib in mixed mode.
+   * 参数 / Parameters: `~Connection()`.
+   */
   ~Connection(){if(display)XCloseDisplay(display);else xcb_disconnect(wire);}
+  /**
+   * 中文：按所选传输 API 查询名称对应的 atom，返回零表示未取得回复。
+   * English: Queries the atom for a name through the selected transport API, returning zero when no reply is obtained.
+   * 参数 / Parameters: `atom(const char* name)`.
+   */
   uint32_t atom(const char* name){if(display)return XInternAtom(display,name,False);
     auto reply=xcb_intern_atom_reply(wire,xcb_intern_atom(wire,0,std::strlen(name),name),nullptr);if(!reply)return 0;const auto value=reply->atom;free(reply);return value;
   }
+  /**
+   * 中文：通过 Xlib 或 XCB 将 atom 转为名称，释放各 API 分配的回复内存。
+   * English: Resolves an atom to its name through Xlib or XCB and frees reply memory allocated by that API.
+   * 参数 / Parameters: `name(uint32_t atom)`.
+   */
   std::string name(uint32_t atom){if(display){char* value=XGetAtomName(display,atom);std::string result=value?value:"";if(value)XFree(value);return result;}
     auto value=xcb_get_atom_name_reply(wire,xcb_get_atom_name(wire,atom),nullptr);if(!value)return {};std::string result(xcb_get_atom_name_name(value),xcb_get_atom_name_name_length(value));free(value);return result;
   }
+  /**
+   * 中文：将已排队的测试请求发送到 X 服务器。
+   * English: Flushes queued fixture requests to the X server.
+   * 参数 / Parameters: `flush()`.
+   */
   void flush(){if(display)XFlush(display);else xcb_flush(wire);}
+  /**
+   * 中文：为指定窗口启用属性变化事件，供 INCR 握手读取。
+   * English: Enables property-change events on the supplied window for INCR handshakes.
+   * 参数 / Parameters: `select(uint32_t destination)`.
+   */
   void select(uint32_t destination){if(display&&!mixed)XSelectInput(display,destination,PropertyChangeMask);
     else{uint32_t mask=XCB_EVENT_MASK_PROPERTY_CHANGE;xcb_change_window_attributes(wire,destination,XCB_CW_EVENT_MASK,&mask);}flush();
   }
+  /**
+   * 中文：按指定类型、格式和元素数替换属性，并处理 Xlib 32 位元素的本机宽度布局。
+   * English: Replaces a property using the requested type, format and element count, adapting 32-bit elements to Xlib's native-width layout.
+   * 参数 / Parameters: `change(uint32_t destination,uint32_t property,uint32_t type,int format,const void* bytes,size_t count,int mode=PropModeReplace)`.
+   */
   void change(uint32_t destination,uint32_t property,uint32_t type,int format,const void* bytes,size_t count,int mode=PropModeReplace){
     if(display&&!mixed){std::vector<unsigned long> longs;if(format==32){longs.resize(count);for(size_t i=0;i<count;++i){uint32_t value=0;std::memcpy(&value,static_cast<const unsigned char*>(bytes)+i*4,4);longs[i]=value;}bytes=longs.data();}
       XChangeProperty(display,destination,property,type,format,mode,static_cast<const unsigned char*>(bytes),count);
     }else{auto error=xcb_request_check(wire,xcb_change_property_checked(wire,mode,destination,property,type,format,count,bytes));if(error){std::cerr<<"property error "<<int(error->error_code)<<std::endl;free(error);std::exit(4);}}
     flush();
   }
+  /**
+   * 中文：删除当前测试窗口的属性，作为 INCR 的下一个分块确认。
+   * English: Deletes a property on the fixture window as acknowledgement for the next INCR chunk.
+   * 参数 / Parameters: `remove(uint32_t property)`.
+   */
   void remove(uint32_t property){if(display)XDeleteProperty(display,window,property);else xcb_delete_property(wire,window,property);flush();}
+  /**
+   * 中文：将当前测试窗口设为指定选择的 owner。
+   * English: Makes the fixture window the owner of the requested selection.
+   * 参数 / Parameters: `own(uint32_t selection)`.
+   */
   bool own(uint32_t selection){if(display){XSetSelectionOwner(display,selection,window,CurrentTime);flush();return XGetSelectionOwner(display,selection)==window;}
     free(xcb_request_check(wire,xcb_set_selection_owner_checked(wire,window,selection,XCB_CURRENT_TIME)));auto result=xcb_get_selection_owner_reply(wire,xcb_get_selection_owner(wire,selection),nullptr);const bool owned=result&&result->owner==window;free(result);return owned;
   }
+  /**
+   * 中文：为当前窗口请求选择转换，并及时发送排队请求。
+   * English: Requests selection conversion for the fixture window and flushes queued requests.
+   * 参数 / Parameters: `convert(uint32_t selection,uint32_t target,uint32_t property)`.
+   */
   void convert(uint32_t selection,uint32_t target,uint32_t property){if(display&&!mixed)XConvertSelection(display,selection,target,property,window,CurrentTime);else xcb_convert_selection_checked(wire,window,selection,target,property,XCB_CURRENT_TIME);flush();}
+  /**
+   * 中文：发送 SelectionNotify 回执，成功携带属性，拒绝时携带 None。
+   * English: Sends a SelectionNotify receipt with the property on success or None on refusal.
+   * 参数 / Parameters: `notify(const Event& request,uint32_t property)`.
+   */
   void notify(const Event& request,uint32_t property){if(display){XEvent response{};response.xselection={SelectionNotify,0,True,display,request.window,request.selection,request.target,property,request.time};XSendEvent(display,request.window,False,0,&response);}
     else{xcb_selection_notify_event_t response{};response.response_type=XCB_SELECTION_NOTIFY;response.requestor=request.window;response.selection=request.selection;response.target=request.target;response.property=property;response.time=request.time;char bytes[32]{};std::memcpy(bytes,&response,sizeof(response));xcb_send_event(wire,0,request.window,0,bytes);}flush();
   }
+  /**
+   * 中文：按 wait 参数等待或轮询一条 Xlib/XCB 事件并规范化，无事件返回 false。
+   * English: Waits for or polls one Xlib/XCB event according to wait and normalizes it, returning false when none is available.
+   * 参数 / Parameters: `event(Event& value,bool wait=false)`.
+   */
   bool event(Event& value,bool wait=false){
     if(display){if(!wait&&!XPending(display))return false;XEvent raw{};XNextEvent(display,&raw);value.type=raw.type;
       if(raw.type==SelectionRequest){auto& r=raw.xselectionrequest;value.window=r.requestor;value.property=r.property;value.selection=r.selection;value.target=r.target;value.time=r.time;}
@@ -74,6 +147,11 @@ class Connection {
       if(value.type==XCB_PROPERTY_NOTIFY){auto& r=*reinterpret_cast<xcb_property_notify_event_t*>(raw);value.window=r.window;value.property=r.atom;value.state=r.state;}free(raw);
     }return true;
   }
+  /**
+   * 中文：经指定直接、wait 或 poll 回复路径读取属性，规范化字节并支持混合 API 与删除参数。
+   * English: Reads a property through the selected direct, wait or poll reply path, normalizing bytes and supporting mixed APIs and deletion.
+   * 参数 / Parameters: `get(uint32_t property,long offset,long length,bool remove,const std::string& action,bool useXcb=false,uint32_t destination=0)`.
+   */
   Value get(uint32_t property,long offset,long length,bool remove,const std::string& action,bool useXcb=false,uint32_t destination=0){
     const auto readWindow=destination?destination:window;
     Value value;if(display&&!useXcb){Atom type=0;unsigned long count=0,after=0;unsigned char* bytes=nullptr;
@@ -88,6 +166,13 @@ class Connection {
     }return value;
   }
 };
+/**
+ * 中文：保持真实选择 owner 事件循环，回应元数据、文本及 MULTIPLE，并按变体制造不完整或错误的 INCR 流。
+ * English: Runs a real selection-owner loop responding to metadata, text and MULTIPLE while variants produce incomplete or malformed INCR streams.
+ * 参数 / Parameters: `owner(Connection& connection,int argc,char** argv,uint32_t selection,uint32_t target,uint32_t targets,uint32_t timestamp)`.
+ * 设计 / Design: 分块只有在请求方删除属性确认后继续；测试变体可故意省略终止块、改变类型或注入敏感内容。
+ * Chunks advance only after the requestor deletes the property; variants deliberately omit termination, change type or inject sensitive content.
+ */
 static int owner(Connection& connection,int argc,char** argv,uint32_t selection,uint32_t target,uint32_t targets,uint32_t timestamp){
   auto data=input(argv[4]);std::string mode=argc>6?argv[6]:"ordinary";const bool incremental=mode.rfind("incr",0)==0;
   const auto first=mode.find(':'),second=first==std::string::npos?first:mode.find(':',first+1);
@@ -134,6 +219,13 @@ static int owner(Connection& connection,int argc,char** argv,uint32_t selection,
     connection.notify(event,accepted?property:0);
   }
 }
+/**
+ * 中文：构造正常或恶意 MULTIPLE 列表，验证通知、子属性完整性、重用、缓存及并发回复行为。
+ * English: Builds ordinary or hostile MULTIPLE lists and checks notifications, complete child properties, reuse, caching and concurrent replies.
+ * 参数 / Parameters: `multiple(Connection& connection,int argc,char** argv,uint32_t selection,uint32_t parent,const std::string& action)`.
+ * 设计 / Design: 父列表必须保持目标与属性身份；每个 INCR 子项只在终止块后按完整预期内容判定，避免前缀误通过。
+ * The parent list must retain target/property identities; each INCR child is judged against complete expected content only after termination, preventing prefix-only success.
+ */
 static int multiple(Connection& connection,int argc,char** argv,uint32_t selection,uint32_t parent,const std::string& action){
   const auto variant=argc>6?std::string(argv[6]):"normal";const auto pairType=connection.atom("ATOM_PAIR"),target=connection.atom("MULTIPLE");
   std::vector<std::string> targets{"UTF8_STRING","text/plain","TARGETS","TIMESTAMP","SAKURA_UNKNOWN","DELETE","INSERT_SELECTION","INSERT_PROPERTY","MULTIPLE"};
@@ -163,11 +255,22 @@ static int multiple(Connection& connection,int argc,char** argv,uint32_t selecti
   if(variant=="mutable"){uint32_t replacement[2]{connection.atom("UTF8_STRING"),parent};connection.change(connection.window,parent,pairType,32,replacement,2);}
   if(variant=="cancel"){connection.remove(parent);}
   Event event;bool notified=false;size_t notifications=0;const auto deadline=Clock::now()+std::chrono::seconds(15);
-  if((action=="multiple-wait"||action=="multiple-self-block")&&connection.display){XEvent raw{};auto predicate=[](Display*,XEvent* next,XPointer value)->Bool{return next->type==SelectionNotify&&next->xselection.requestor==*reinterpret_cast<uint32_t*>(value);};
+  if((action=="multiple-wait"||action=="multiple-self-block")&&connection.display){XEvent raw{};
+  /**
+   * 中文：仅匹配当前请求窗口的 SelectionNotify，让 XIfEvent 变体等待对应回执。
+   * English: Matches only SelectionNotify for the fixture requestor so XIfEvent variants await the corresponding receipt.
+   * 参数 / Parameters: `(Display*,XEvent* next,XPointer value)->Bool`.
+   */
+  auto predicate=[](Display*,XEvent* next,XPointer value)->Bool{return next->type==SelectionNotify&&next->xselection.requestor==*reinterpret_cast<uint32_t*>(value);};
     XIfEvent(connection.display,&raw,predicate,reinterpret_cast<XPointer>(&connection.window));event.type=SelectionNotify;event.property=raw.xselection.property;notified=true;++notifications;
   }else while(!notified&&Clock::now()<deadline){while(connection.event(event)){if(event.type==SelectionNotify){notified=true;++notifications;break;}}if(!notified)usleep(1000);}
   if(!notified||!event.property){std::cout<<"DENIED"<<std::endl;return notified?0:3;}
   auto expected=input(argv[4]);
+  /**
+   * 中文：验证 MULTIPLE 父列表及每个子内容，收集 INCR 分块直到终止、错误或有界超时。
+   * English: Validates the MULTIPLE parent list and each child's content, collecting INCR chunks until termination, error or bounded timeout.
+   * 参数 / Parameters: `()`.
+   */
   auto inspect=[&](){const bool remove=action=="multiple-delete";auto probe=connection.get(parent,0,0,false,"read",connection.mixed);if(probe.type!=pairType||probe.format!=32||probe.count||probe.after!=pairs.size()*4)return std::string("DENIED");
     auto list=connection.get(parent,0,1024,false,"wait64",connection.mixed);if(list.type!=pairType||list.format!=32||list.count!=pairs.size()||list.after)return std::string("DENIED");
     std::string result;
@@ -186,8 +289,20 @@ static int multiple(Connection& connection,int argc,char** argv,uint32_t selecti
   };
   std::cout<<inspect()<<std::endl;
   if(action=="multiple-concurrent"){std::array<Value,4> values;std::vector<std::thread> workers;
-    for(unsigned i=0;i<4;++i)workers.emplace_back([&,i](){values[i]=connection.get(pairs[1],0,1048576,false,"poll64",connection.mixed&&i%2);});
-    for(auto& worker:workers)worker.join();const auto expected=input(argv[4]);const bool complete=std::all_of(values.begin(),values.end(),[&](const Value& value){return value.type&&std::string(value.bytes.begin(),value.bytes.end())==expected;});
+    for(unsigned i=0;i<4;++i)
+    /**
+     * 中文：在并行读取线程中取得一个子属性，用于验证共享传输状态和不同回复 API 的一致性。
+     * English: Reads one child property in a parallel worker to verify shared transfer state and consistency across reply APIs.
+     * 参数 / Parameters: `()`.
+     */
+    workers.emplace_back([&,i](){values[i]=connection.get(pairs[1],0,1048576,false,"poll64",connection.mixed&&i%2);});
+    for(auto& worker:workers)worker.join();const auto expected=input(argv[4]);
+    /**
+     * 中文：要求全部并发读取结果与完整预期字节一致。
+     * English: Requires every concurrent read result to equal the complete expected bytes.
+     * 参数 / Parameters: `(const Value& value)`.
+     */
+    const bool complete=std::all_of(values.begin(),values.end(),[&](const Value& value){return value.type&&std::string(value.bytes.begin(),value.bytes.end())==expected;});
     std::cout<<(complete?"COMPLETE":"DENIED")<<std::endl;}
   if(action=="multiple-cache"||action=="multiple-delete"){std::string line;std::getline(std::cin,line);std::cout<<inspect()<<std::endl;}
   if(action=="multiple-reuse"||action=="multiple-child-reuse"){
@@ -211,6 +326,11 @@ static int multiple(Connection& connection,int argc,char** argv,uint32_t selecti
   const size_t expectedNotifications=action=="multiple-reuse"||action=="multiple-child-reuse"?2:1;
   if(variant!="late"&&notifications!=expectedNotifications){std::cerr<<"unexpected notify count "<<notifications<<std::endl;return 5;}return 0;
 }
+/**
+ * 中文：解析测试工具包、动作与选择，分派 owner、MULTIPLE、容量压力及普通属性读取场景。
+ * English: Parses toolkit, action and selection arguments and dispatches ownership, MULTIPLE, capacity stress and ordinary property-read scenarios.
+ * 参数 / Parameters: `main(int argc,char** argv)`.
+ */
 int main(int argc,char** argv){
   XInitThreads();
   if(argc<4)return 1;const std::string toolkit=argv[1],action=argv[2];Connection connection(toolkit);
@@ -227,6 +347,11 @@ int main(int argc,char** argv){
   if(action=="multiple-self-block"&&!connection.own(selection))return 4;
   if(action.rfind("multiple",0)==0)return multiple(connection,argc,argv,selection,property,action);
   if(action=="maximum"){std::cout<<xcb_get_maximum_request_length(connection.wire)*4ull<<std::endl;return 0;}
+  /**
+   * 中文：输出读取得到的标记；probe 模式将结果写入指定文件后保持连接供外部重检。
+   * English: Emits a read-result marker; probe mode writes it to a file and keeps the connection alive for external rechecks.
+   * 参数 / Parameters: `(const std::string& result)`.
+   */
   auto print=[&](const std::string& result){std::cout<<result<<std::endl;if(action=="probe"){std::ofstream(argv[4])<<result;for(;;)usleep(1000000);}};
   if(action=="stress"){size_t accepted=0,refused=0;
     for(unsigned i=0;i<48;++i){const auto unique=connection.atom(("SAKURA_FIXTURE_STRESS_"+std::to_string(i)).c_str());connection.convert(selection,target,unique);Event next;bool ready=false;const auto until=Clock::now()+std::chrono::seconds(12);
@@ -239,8 +364,19 @@ int main(int argc,char** argv){
   if(!ready||!event.property){print("DENIED");return ready?0:3;}
   if(action=="concurrent"){
     std::array<Value,4> values;std::vector<std::thread> workers;
-    for(size_t i=0;i<values.size();++i)workers.emplace_back([&,i](){values[i]=connection.get(property,0,1024*1024,false,"read",connection.mixed&&i%2);});
+    for(size_t i=0;i<values.size();++i)
+    /**
+     * 中文：通过独立工作线程执行一次选择内容读取，为并发缓存检查提供结果。
+     * English: Performs one selection-content read in an independent worker, providing a result for concurrent-cache checks.
+     * 参数 / Parameters: `()`.
+     */
+    workers.emplace_back([&,i](){values[i]=connection.get(property,0,1024*1024,false,"read",connection.mixed&&i%2);});
     for(auto& worker:workers)worker.join();const auto expected=input(argv[4]);
+    /**
+     * 中文：检查全部读取均具有有效类型、完整内容且没有剩余字节。
+     * English: Checks that every read has a valid type, complete expected content and no remaining bytes.
+     * 参数 / Parameters: `(const Value& value)`.
+     */
     const bool valid=std::all_of(values.begin(),values.end(),[&](const Value& value){return value.type&&value.type!=incr&&std::string(value.bytes.begin(),value.bytes.end())==expected;});print(valid?"COMPLETE":"DENIED");return 0;
   }
   if(action=="reply-stress"){
@@ -249,6 +385,11 @@ int main(int argc,char** argv){
     print(value&&value->type?"EXPOSED":"DENIED");free(value);return 0;
   }
   if(action=="size"){auto probe=connection.get(property,0,0,false,action);if(!probe.type||probe.count){print("DENIED");return 0;}}
+  /**
+   * 中文：读取普通属性或完整 INCR 流，输出目标名列表、EMPTY、DENIED 或内容十六进制。
+   * English: Reads an ordinary property or complete INCR stream and emits target names, EMPTY, DENIED or hexadecimal content.
+   * 参数 / Parameters: `()`.
+   */
   auto read=[&](){const bool remove=action=="delete";auto value=connection.get(property,argc>6?std::strtol(argv[6],nullptr,10):0,action=="short"?1:1024*1024,remove,action,connection.mixed);
     if(value.type==incr){connection.remove(property);Value complete;const auto limit=Clock::now()+std::chrono::seconds(10);
       while(Clock::now()<limit){auto part=connection.get(property,0,1024*1024,false,action,connection.mixed);if(!part.type){usleep(1000);continue;}

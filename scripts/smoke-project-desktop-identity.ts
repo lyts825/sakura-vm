@@ -1,4 +1,9 @@
-/** 烟雾验收：验证桌面自有 COW 夹具中的项目 UID、网络、目录视图和精确清理。 */
+/**
+ * 模块职责：在明确自有 COW 桌面夹具上核对项目 UID、网络、私有目录、SingleApp 与 Wayland 的真实证据及精确清理。
+ * Module: Verify real project UID, network, private-directory, SingleApp and Wayland evidence and exact cleanup on an explicitly owned COW desktop fixture.
+ * 设计思路：先固定源码/二进制与自有夹具边界，再按完整 VM、boot、项目和运行身份记录生产回执及内核观察；不同层的完成/关闭证据分别核对，诊断输出不扩大实际验收范围。
+ * Design: Pin sources/binaries and fixture ownership first, then record production receipts/kernel observations against complete VM/boot/project/run identity. Check completion/closure at each layer separately; diagnostics do not broaden actual acceptance.
+ */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -13,6 +18,18 @@ import { defaultClipboardRule, type ClipboardRule } from '../shared/clipboard-po
 import { LinuxDesktopOwnedFixture, captureDesktopSources, closeOwnedDesktopSshClient, desktopFixtureParent, desktopFixtureSource, ownedDesktopBootstrapTimeout, parseOwnedDesktopBootstrapReply, sha256 } from './linux-desktop-owned-fixture.ts';
 import { probeOwnedDesktopRfb } from './linux-desktop-rfb-probe.ts';
 
+/**
+ * 中文功能：严格解析指定 ssh.service 或 cron.service 的有限 systemd 属性集，区分不存在服务与可重启的已加载服务。
+ * English: Strictly parse the bounded systemd property set for ssh.service or cron.service, distinguishing absent services from loaded restartable services.
+ * 输入 / Inputs: text: string; requested: 'ssh.service' | 'cron.service'。
+ * 结果：返回受控对象，公开字段包括 `restart`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `restart`; the actual branch determines its shape.
+ * 状态影响 / State effects: `fields[match[1]]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `assert.ok`, `text.includes`, `text.trim().split`, `text.trim`.
+ * 检查边界 / Checked boundaries: `assert.ok(requested === 'ssh.service' || requested === 'cron.service')`; `assert.ok(text.length > 0 && text.length <= 8192 && !text.includes('\0'))`.
+ * 设计思路：拒绝重复、未知字段、非法 PID 和不安全 FragmentPath，not-found 必须同时满足空路径、零 PID、inactive；解析成功才允许后续自有服务准入恢复。
+ * Design: Reject duplicate/unknown fields, invalid PIDs and unsafe FragmentPath. Not-found also requires an empty path, zero PID and inactive state; only successful parsing permits later owned-service admission recovery.
+ */
 function parseOwnedAdmissionServiceReply(text: string, requested: 'ssh.service' | 'cron.service') {
   assert.ok(requested === 'ssh.service' || requested === 'cron.service');
   assert.ok(text.length > 0 && text.length <= 8192 && !text.includes('\0'));
@@ -37,12 +54,32 @@ function parseOwnedAdmissionServiceReply(text: string, requested: 'ssh.service' 
   return { ...fields, restart: true };
 }
 
+/**
+ * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+ * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+ * 输入 / Inputs: error: unknown; deadline: number; now: number。
+ * 结果：返回分支计算值（`Math.min(500, deadline - now)`）。
+ * Result: Return the branch-computed value (`Math.min(500, deadline - now)`).
+ * 失败 / Failure: `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `Reflect.get`, `Number.isSafeInteger`, `Math.min`.
+ */
 function ownedAdmissionRetryRemaining(error: unknown, deadline: number, now: number) {
   if (!(error instanceof Error) || Reflect.get(error, 'code') !== 'PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED' ||
     !Number.isSafeInteger(deadline) || !Number.isSafeInteger(now) || now >= deadline) throw error;
   return Math.min(500, deadline - now);
 }
 
+/**
+ * 中文功能：只识别固定来源控制器的 install/inspect/ensure 命令，严格核对 Base64、字段集合和项目路径；其他输入返回 null。
+ * English: Recognize only install/inspect/ensure commands for the pinned controller, checking canonical Base64, exact fields and project paths; return null otherwise.
+ * 输入 / Inputs: command: string; build: string。
+ * 结果：返回分支计算值（`null / 'install'`）。
+ * Result: Return the branch-computed value (`null / 'install'`).
+ * 协作入口 / Collaborators: `assert.match`, `command.startsWith`, `/^'([A-Za-z0-9+/]+={0,2})'$/.exec`, `command.slice`.
+ * 检查边界 / Checked boundaries: `assert.match(build, /^[a-f0-9]{64}$/)`.
+ * 设计思路：先固定完整干净环境与 build 路径前缀，再解析唯一带引号参数；白名单字段防止诊断观察器误把任意命令当作授权控制动作。
+ * Design: Pin the complete clean environment/build-path prefix before parsing the single quoted argument. Exact field allowlists prevent the diagnostic observer from mistaking arbitrary commands for authorized control actions.
+ */
 function ownedAdmissionControlAction(command: string, build: string) {
   assert.match(build, /^[a-f0-9]{64}$/);
   const prefix = "env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S '/usr/local/lib/sakura-project-identity/" + build + "/controller.py' ";
@@ -64,6 +101,17 @@ function ownedAdmissionControlAction(command: string, build: string) {
   return null;
 }
 
+/**
+ * 中文功能：核对自有桌面引导的只读 cloud-init 文件尾部快照、VM/boot 绑定、字节预算及摘要。
+ * English: Check readonly cloud-init tail snapshots for the owned desktop bootstrap, including VM/boot binding, byte budgets and digests.
+ * 输入 / Inputs: text: string; vmId: string; bootId: string。
+ * 结果：返回分支计算值（`value`）。
+ * Result: Return the branch-computed value (`value`).
+ * 协作入口 / Collaborators: `assert.ok`, `Buffer.byteLength`, `JSON.parse`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.ok(Buffer.byteLength(text) <= 384 * 1024)`; `assert.equal(value.version, 1)`.
+ * 设计思路：逐项检查读取前后元数据与已关闭 FD，但明确 fullFileStable=false；只证明有限快照与摘要一致，不宣称整个持续写入日志稳定。
+ * Design: Check before/after metadata and closed descriptors while explicitly requiring fullFileStable=false. Establish bounded snapshot/digest consistency without claiming stability of an entire actively written log.
+ */
 function parseOwnedBootstrapCloudReply(text: string, vmId: string, bootId: string) {
   assert.ok(Buffer.byteLength(text) <= 384 * 1024);
   const value = JSON.parse(text);
@@ -438,6 +486,18 @@ if (process.argv.length === 2 || process.argv[2] === '--describe') {
   await run(process.argv[3]);
 }
 
+/**
+ * 中文功能：装配自有桌面 VM 与真实项目服务，分阶段验证私有身份、客户机观察、SingleApp 和 Wayland 后完成精确收尾。
+ * English: Assemble an owned desktop VM and real project services, verify private identity, guest observations, SingleApp and Wayland in phases, then finalize exact owned resources.
+ * 输入 / Inputs: transport: 'x11' | 'wayland'。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 状态影响 / State effects: `proof.sourceBefore`, `proof.historicalEntrypoint`, `proof.chains`, `proof.sourceGuardBefore`, `process.env.SAKURA_DATA_DIR`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `resolve`, `new Date().toISOString`, `phase`, `JSON.parse`.
+ * 检查边界 / Checked boundaries: `assert.equal(sourceMetadata.version, 1)`; `assert.equal(sourceMetadata.files.length, 17)`.
+ * 设计思路：运行前固定来源和自有夹具边界，所有客户机观察绑定 VM/boot 身份；服务、SSH、应用与 WebSocket 分别记录关闭证据，未采集到的原始就绪管道 inode 明确标为间接证据，避免扩大验收结论。
+ * Design: Pin sources and fixture ownership before execution and bind guest observations to VM/boot identity. Record service, SSH, application and WebSocket closure separately; explicitly label uncaptured original ready-pipe inodes as indirect evidence rather than broadening acceptance.
+ */
 async function run(transport: 'x11' | 'wayland') {
   const workspace = resolve('.'), fixture = new LinuxDesktopOwnedFixture(workspace);
   const proof: any = { version: 1, kind: 'owned-current-project-uid-desktop-' + transport, transport, invocation: fixture.invocation,
@@ -452,7 +512,14 @@ async function run(transport: 'x11' | 'wayland') {
   let desktops: import('../server/desktop.ts').Desktops | undefined;
   let oldKey: Buffer | undefined;
   const clientClosures = new Map<Client, Promise<void>>(), clients = new Set<Client>();
-  const clientStates = new Map<Client, { row: any; complete: () => void }>();
+  const clientStates = new Map<Client, { row: any; complete: /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void }>();
   const channelClosures = new Map<ClientChannel, Promise<void>>();
   const channelStates = new Map<ClientChannel, any>();
   let alpha: any, beta: any;
@@ -461,10 +528,43 @@ async function run(transport: 'x11' | 'wayland') {
   const reloadedAppOwners = new Set<import('../server/single-app-windows.ts').SingleAppWindows>();
   const webSockets = new Map<WebSocket, Promise<void>>();
   const webSocketServers = new Set<WebSocketServer>();
+  /**
+   * 中文功能：记录本轮验收阶段，供诊断材料关联当前进行的步骤。
+   * English: Record this smoke's phase so diagnostic material identifies the current step.
+   * 输入 / Inputs: name: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `proof.phases.push`, `new Date().toISOString`, `console.log`.
+   */
   const phase = (name: string) => { proof.phases.push({ name, at: new Date().toISOString() }); console.log('PHASE ' + name); };
+  /**
+   * 中文功能：保存已经核对的情景与实际证据，便于查看本次运行的验收范围。
+   * English: Retain a checked scenario and actual evidence to identify this run's acceptance scope.
+   * 输入 / Inputs: name: string; details: unknown。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `proof.cases.push`, `console.log`.
+   */
   const checked = (name: string, details?: unknown) => { proof.cases.push({ name, passed: true, details }); console.log('PASS ' + name); };
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: error: unknown。
+   * 结果：返回分支计算值（`({ message: error instanceof Error ? error.message : String(error), code: error …`）。
+   * Result: Return the branch-computed value (`({ message: error instanceof Error ? error.message : String(error), code: error …`).
+   * 协作入口 / Collaborators: `String`, `Reflect.get`.
+   */
   const errorValue = (error: unknown) => ({ message: error instanceof Error ? error.message : String(error), code: error instanceof Error ? Reflect.get(error, 'code') || null : null });
 
+  /**
+   * 中文功能：记录 SSH 通道的退出、错误和物理关闭事件，区分命令退出与流资源真正结束。
+   * English: Record SSH channel exit/error/physical-close events to distinguish command exit from actual stream finalization.
+   * 输入 / Inputs: stream: ClientChannel; channel: any。
+   * 结果：返回分支计算值（`known / channel`）。
+   * Result: Return the branch-computed value (`known / channel`).
+   * 协作入口 / Collaborators: `channelStates.get`, `assert.ok`, `stream.stderr.on`, `stream.once`.
+   * 检查边界 / Checked boundaries: `assert.ok(channel, 'Owned SSH channel has no transport ledger')`.
+   */
   function watchChannel(stream: ClientChannel, channel?: any) {
     const known = channelStates.get(stream);
     if (known) return known;
@@ -478,6 +578,16 @@ async function run(transport: 'x11' | 'wayland') {
     return channel;
   }
 
+  /**
+   * 中文功能：登记客户机 SSH 生命周期并包装 exec，记录命令摘要和通道关闭回执，保持原回调调用方式。
+   * English: Register guest SSH lifecycle and wrap exec to record command digests and channel-close receipts while preserving the original callback invocation.
+   * 输入 / Inputs: client: Client; role: string; live: object。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `clientClosures.has`, `clients.add`, `randomUUID`, `Reflect.get`.
+   * 设计思路：每个客户端只登记一次，错误、ready、close 与 exec 通道证据分开；包装器用 Reflect.apply 保留原接收者，不把错误或未创建的通道当作关闭成功。
+   * Design: Register each client once and keep error/ready/close/exec-channel evidence separate. Reflect.apply preserves the original receiver; setup errors or uncreated channels do not count as successful closure.
+   */
   function watchClient(client: Client, role: string, live?: object) {
     if (clientClosures.has(client)) return;
     clients.add(client);
@@ -490,12 +600,30 @@ async function run(transport: 'x11' | 'wayland') {
       client.once('close', () => { row.closed = true; row.closedAt = new Date().toISOString(); clients.delete(client); done(); });
     }));
     const original = client.exec;
-    Reflect.set(client, 'exec', (...args: unknown[]) => {
+    Reflect.set(client, 'exec', /**
+     * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+     * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+     * 输入 / Inputs: args: unknown[]。
+     * 结果：返回分支计算值（`Reflect.apply(original, client, args)`）。
+     * Result: Return the branch-computed value (`Reflect.apply(original, client, args)`).
+     * 状态影响 / State effects: `args[args.length - 1]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `args.at`, `randomUUID`, `sha256`, `String`.
+     */
+    (...args: unknown[]) => {
       const callback = args.at(-1);
       if (typeof callback === 'function') {
         const channel: any = { id: randomUUID(), connectionId: row.connectionId, commandSha256: sha256(String(args[0])), vmId: fixture.vmId, exit: null, closed: false, stderr: '', startedAt: new Date().toISOString() };
         proof.sshChannels.push(channel);
-        args[args.length - 1] = (error: Error | undefined, stream: ClientChannel) => {
+        args[args.length - 1] = /**
+         * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+         * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+         * 输入 / Inputs: error: Error | undefined; stream: ClientChannel。
+         * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+         * Result: No explicit result value; callers observe completion, state changes or an exception.
+         * 状态影响 / State effects: `channel.setupError`, `channel.notCreated`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+         * 协作入口 / Collaborators: `errorValue`, `watchChannel`, `callback`.
+         */
+        (error: Error | undefined, stream: ClientChannel) => {
           if (error) { channel.setupError = errorValue(error); channel.notCreated = true; }
           if (stream) watchChannel(stream, channel);
           callback(error, stream);
@@ -505,18 +633,53 @@ async function run(transport: 'x11' | 'wayland') {
     });
   }
 
+  /**
+   * 中文功能：结束本轮登记的 SSH 客户端，并按当前限时逻辑观察物理关闭。
+   * English: End an SSH client registered for this smoke and observe physical closure through the implemented deadline logic.
+   * 输入 / Inputs: client: Client。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `clientStates.get`, `closeOwnedDesktopSshClient`, `clientClosures.get`, `clients.delete`.
+   */
   async function closeClient(client: Client) {
     const state = clientStates.get(client)!;
     const result = await closeOwnedDesktopSshClient(client, state.row, clientClosures.get(client)!);
     if (result === 'not-created') { clients.delete(client); state.complete(); }
   }
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: pending: Promise<T>; role: string; milliseconds = 10000。
+   * 结果：返回分支计算值（`await Promise.race([pending, new Promise<never>((_, reject) => { timer = setTime…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`await Promise.race([pending, new Promise<never>((_, reject) => { timer = setTime…`) through a Promise.
+   * 协作入口 / Collaborators: `Promise.race`, `clearTimeout`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   async function boundedTransport<T>(pending: Promise<T>, role: string, milliseconds = 10000) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try { return await Promise.race([pending, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(role + ' timed out')), milliseconds); })]); }
     finally { if (timer) clearTimeout(timer); }
   }
 
+  /**
+   * 中文功能：将单个参数编码为 shell 安全的单引号形式，供固定客户机命令拼装。
+   * English: Encode one argument as shell-safe single-quoted text for fixed guest-command assembly.
+   * 输入 / Inputs: value: string。
+   * 结果：返回分支计算值（`"'" + value.replaceAll("'", "'\\''") + "'"`）。
+   * Result: Return the branch-computed value (`"'" + value.replaceAll("'", "'\\''") + "'"`).
+   * 协作入口 / Collaborators: `value.replaceAll`.
+   */
   const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+  /**
+   * 中文功能：通过本轮客户机传输执行固定命令，按退出状态拒绝失败并交付标准输出。
+   * English: Execute a fixed command through this run's guest transport, reject failed exit status, and return stdout.
+   * 输入 / Inputs: command: string; timeout = 30000。
+   * 结果：返回分支计算值（`result.stdout.trim()`），以 Promise 交付。
+   * Result: Return the branch-computed value (`result.stdout.trim()`) through a Promise.
+   * 协作入口 / Collaborators: `assert.ok`, `machines.exec`, `proof.commands.push`, `sha256`.
+   * 检查边界 / Checked boundaries: `assert.ok(machines)`; `assert.equal(result.code, 0, result.stderr || result.stdout)`.
+   */
   async function guest(command: string, timeout = 30000) {
     assert.ok(machines);
     const result = await machines.exec(fixture.vmId, command, timeout);
@@ -524,7 +687,28 @@ async function run(transport: 'x11' | 'wayland') {
     assert.equal(result.code, 0, result.stderr || result.stdout);
     return result.stdout.trim();
   }
+  /**
+   * 中文功能：把固定 Python 观察程序交给客户机执行，沿当前传输返回其输出或解析结果。
+   * English: Execute a fixed Python observation program in the guest and return output or its parsed result through the current transport.
+   * 输入 / Inputs: source: string。
+   * 结果：返回分支计算值（`JSON.parse(await guest('/usr/bin/python3 -I -S -c ' + quote(source)))`），以 Promise 交付。
+   * Result: Return the branch-computed value (`JSON.parse(await guest('/usr/bin/python3 -I -S -c ' + quote(source)))`) through a Promise.
+   * 协作入口 / Collaborators: `JSON.parse`, `guest`, `quote`.
+   */
   const python = async (source: string) => JSON.parse(await guest('/usr/bin/python3 -I -S -c ' + quote(source)));
+  /**
+   * 中文功能：运行固定只读迁移 nft 诊断，核对资产来源、客户机执行退出与物理通道关闭，并验证返回输出的字节摘要。
+   * English: Run a fixed readonly migration/nft diagnostic, checking pinned assets, guest execution exit and physical channel closure, then verify returned output byte digests.
+   * 输入 / Inputs: projectId: string; directory: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `proof.migrationNftDiagnosis`, `failure`, `row.physicalCloseError`, `row.physicallyClosed`, `row[name]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 失败 / Failure: `failure`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `assert.match`, `machines!.live.get`, `assert.ok`, `readFile`.
+   * 检查边界 / Checked boundaries: `assert.match(projectId, /^[a-f0-9]{16}$/)`; `assert.match(proof.bootId, /^[a-f0-9-]{36}$/)`.
+   * 设计思路：诊断输入绑定 VM、boot、项目和目录，单独记录 stdout/stderr 原始字节与异常；observationComplete 只有退出成功且观察程序 passed 才成立。
+   * Design: Bind diagnostic input to VM, boot, project and directory, recording stdout/stderr bytes and failure independently. observationComplete requires both a successful exit and passed from the observation program.
+   */
   async function observeMigrationNftRefusal(projectId: string, directory: string) {
     assert.match(projectId, /^[a-f0-9]{16}$/); assert.match(proof.bootId, /^[a-f0-9-]{36}$/);
     const live = machines!.live.get(fixture.vmId); assert.ok(live);
@@ -539,7 +723,24 @@ async function run(transport: 'x11' | 'wayland') {
     const client = await machines!.connect(fixture.vmId), output: Record<'stdout' | 'stderr', Buffer[]> = { stdout: [], stderr: [] };
     let channel: ClientChannel | undefined, failure: unknown;
     try {
-      await new Promise<void>((done, reject) => client.exec(command, (setupError, stream) => {
+      await new Promise<void>(/**
+       * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+       * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+       * 输入 / Inputs: done; reject。
+       * 结果：返回分支计算值（`client.exec(command, (setupError, stream) => { if (setupError) { row.setupError …`）。
+       * Result: Return the branch-computed value (`client.exec(command, (setupError, stream) => { if (setupError) { row.setupError …`).
+       * 协作入口 / Collaborators: `client.exec`.
+       */
+      (done, reject) => client.exec(command, /**
+       * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+       * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+       * 输入 / Inputs: setupError; stream。
+       * 结果：返回分支计算值（`reject(setupError)`）。
+       * Result: Return the branch-computed value (`reject(setupError)`).
+       * 状态影响 / State effects: `row.setupError`, `channel`, `row.channelId`, `row.connectionId`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 协作入口 / Collaborators: `errorValue`, `reject`, `watchChannel`, `setTimeout`.
+       */
+      (setupError, stream) => {
         if (setupError) { row.setupError = errorValue(setupError); return reject(setupError); }
         channel = stream; const ledger = watchChannel(stream); row.channelId = ledger.id; row.connectionId = ledger.connectionId;
         let size = 0;
@@ -576,6 +777,19 @@ async function run(transport: 'x11' | 'wayland') {
     }
   }
 
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `proof.nftAtomicFixture`, `failure`, `row.physicalCloseError`, `row.physicallyClosed`, `row[name]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 失败 / Failure: `failure`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `machines!.live.get`, `assert.ok`, `readFile`, `join`.
+   * 检查边界 / Checked boundaries: `assert.ok(live)`; `assert.equal(sha256(manifestBytes), proof.sourceBefore['.sakura-server/assets/project-identity/manifest.json'])`.
+   * 设计思路：根据受控条件分别注入拒绝或结果，保持分支证据可观察，供调用者失败恢复用例复用。
+   * Design: Inject rejection or results under controlled conditions while keeping branch evidence observable for caller recovery tests.
+   */
   async function nftAtomicChecks() {
     const live = machines!.live.get(fixture.vmId); assert.ok(live);
     const manifestBytes = await readFile(join(workspace, '.sakura-server/assets/project-identity/manifest.json'));
@@ -590,7 +804,24 @@ async function run(transport: 'x11' | 'wayland') {
     const client = await machines!.connect(fixture.vmId), output: Record<'stdout' | 'stderr', Buffer[]> = { stdout: [], stderr: [] };
     let channel: ClientChannel | undefined, failure: unknown;
     try {
-      await new Promise<void>((done, reject) => client.exec(command, (setupError, stream) => {
+      await new Promise<void>(/**
+       * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+       * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+       * 输入 / Inputs: done; reject。
+       * 结果：返回分支计算值（`client.exec(command, (setupError, stream) => { if (setupError) { row.setupError …`）。
+       * Result: Return the branch-computed value (`client.exec(command, (setupError, stream) => { if (setupError) { row.setupError …`).
+       * 协作入口 / Collaborators: `client.exec`.
+       */
+      (done, reject) => client.exec(command, /**
+       * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+       * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+       * 输入 / Inputs: setupError; stream。
+       * 结果：返回分支计算值（`reject(setupError)`）。
+       * Result: Return the branch-computed value (`reject(setupError)`).
+       * 状态影响 / State effects: `row.setupError`, `channel`, `row.channelId`, `row.connectionId`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 协作入口 / Collaborators: `errorValue`, `reject`, `watchChannel`, `setTimeout`.
+       */
+      (setupError, stream) => {
         if (setupError) { row.setupError = errorValue(setupError); return reject(setupError); }
         channel = stream; const ledger = watchChannel(stream); row.channelId = ledger.id; row.connectionId = ledger.connectionId;
         let size = 0;
@@ -639,10 +870,28 @@ async function run(transport: 'x11' | 'wayland') {
     assert.deepEqual(row.result.errors, []);
   }
 
+  /**
+   * 中文功能：读取当前自有项目、运行或状态证据，供相邻真实环境断言核对。
+   * English: Read current owned-project/run/state evidence for adjacent real-environment assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`projectDesktopBindingSchema.parse(JSON.parse(await readFile(join(fixture.root, '…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`projectDesktopBindingSchema.parse(JSON.parse(await readFile(join(fixture.root, '…`) through a Promise.
+   * 协作入口 / Collaborators: `import`, `projectDesktopBindingSchema.parse`, `JSON.parse`, `readFile`.
+   */
   async function binding() {
     const { projectDesktopBindingSchema } = await import('../server/desktop-binding.ts');
     return projectDesktopBindingSchema.parse(JSON.parse(await readFile(join(fixture.root, 'machines', fixture.vmId, 'desktop-binding.json'), 'utf8')));
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`state`），以 Promise 交付。
+   * Result: Return the branch-computed value (`state`) through a Promise.
+   * 失败 / Failure: `new Error('Current UID Desktop readiness timeout')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `Date.now`, `desktops!.view`, `assert.notEqual`, `JSON.stringify`.
+   * 检查边界 / Checked boundaries: `assert.notEqual(state.status, 'error', JSON.stringify(state))`.
+   */
   async function ready() {
     const until = Date.now() + 1000000;
     while (Date.now() < until) {
@@ -653,14 +902,49 @@ async function run(transport: 'x11' | 'wayland') {
     }
     throw new Error('Current UID Desktop readiness timeout');
   }
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`transport === 'x11' ? desktops!.clipboard : desktops!.waylandClipboard`）。
+   * Result: Return the branch-computed value (`transport === 'x11' ? desktops!.clipboard : desktops!.waylandClipboard`).
+   */
   const clipboard = () => transport === 'x11' ? desktops!.clipboard : desktops!.waylandClipboard;
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: request: unknown。
+   * 结果：返回分支计算值（`clipboard().action(fixture.vmId, request)`），以 Promise 交付。
+   * Result: Return the branch-computed value (`clipboard().action(fixture.vmId, request)`) through a Promise.
+   * 协作入口 / Collaborators: `clipboard().action`, `clipboard`.
+   */
   async function appAction(request: unknown) { return clipboard().action(fixture.vmId, request); }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: image: string; rule: ClipboardRule = defaultClipboardRule()。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `appAction`, `clipboard().view`, `clipboard`, `assert.ok`.
+   * 检查边界 / Checked boundaries: `assert.ok(!value.error, value.error)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   async function save(image: string, rule: ClipboardRule = defaultClipboardRule()) {
     const identity = await appAction({ action: 'identify', image }) as { image: string; sha256: string };
     const state = await clipboard().view(fixture.vmId);
     const value = await appAction({ action: 'save', version: state.version, application: { ...identity, rule } }) as { error?: string };
     assert.ok(!value.error, value.error);
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: image: string; args: string[]。
+   * 结果：返回分支计算值（`session`），以 Promise 交付。
+   * Result: Return the branch-computed value (`session`) through a Promise.
+   * 协作入口 / Collaborators: `clipboard().view`, `clipboard`, `appAction`, `activeApps.add`.
+   * 检查边界 / Checked boundaries: `assert.equal(session.state, 'running', session.error)`; `assert.equal(session.active, true)`.
+   */
   async function launch(image: string, args: string[]) {
     const state = await clipboard().view(fixture.vmId);
     const session = await appAction({ action: 'launch', version: state.version, image, args }) as X11ClipboardSession;
@@ -674,7 +958,23 @@ async function run(transport: 'x11' | 'wayland') {
     }
     return session;
   }
+  /**
+   * 中文功能：结束本轮拥有的运行或资源，按当前分支观察清理完成并保留失败证据。
+   * English: Finalize runs/resources owned by this smoke, observe completion under the implemented branches and retain failed evidence.
+   * 输入 / Inputs: id: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `appAction`, `activeApps.delete`.
+   */
   async function stopApp(id: string) { await appAction({ action: 'stop', id }); activeApps.delete(id); }
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: socket: WebSocket; role: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `randomUUID`, `new Date().toISOString`, `proof.webSockets.push`, `socket.on`.
+   */
   function watchWebSocket(socket: WebSocket, role: string) {
     const row: any = { id: randomUUID(), role, closed: false, errors: [], startedAt: new Date().toISOString() };
     proof.webSockets.push(row);
@@ -683,6 +983,15 @@ async function run(transport: 'x11' | 'wayland') {
       row.closed = true; row.code = code; row.closedAt = new Date().toISOString(); done();
     })));
   }
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: path: string。
+   * 结果：返回分支计算值（`found.stdout.trim()`），以 Promise 交付。
+   * Result: Return the branch-computed value (`found.stdout.trim()`) through a Promise.
+   * 失败 / Failure: `new Error('Current UID controlled application marker missing: ' + path)`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `machines!.exec`, `quote`, `found.stdout.trim`, `delay`.
+   */
   async function marker(path: string) {
     for (let attempt = 0; attempt < 100; attempt++) {
       const found = await machines!.exec(fixture.vmId, `test -f ${quote(path)} && cat ${quote(path)}`, 10000);
@@ -691,6 +1000,16 @@ async function run(transport: 'x11' | 'wayland') {
     }
     throw new Error('Current UID controlled application marker missing: ' + path);
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`value`），以 Promise 交付。
+   * Result: Return the branch-computed value (`value`) through a Promise.
+   * 状态影响 / State effects: `proof.desktopObservations`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `binding`, `python`, `JSON.stringify`, `assert.equal`.
+   * 检查边界 / Checked boundaries: `assert.equal(value.version, 2)`; `assert.equal(value.state, 'running')`.
+   */
   async function observeDesktop() {
     const value = await binding();
     const result = await python(`import os,json,stat,pwd
@@ -718,6 +1037,18 @@ print(json.dumps({'identity':identity,'account':pwd.getpwuid(identity['uid']).pw
     proof.desktopObservations ||= []; proof.desktopObservations.push({ binding: value, result }); return value;
   }
 
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: receipt: AppReceipt。
+   * 结果：返回分支计算值（`result`），以 Promise 交付。
+   * Result: Return the branch-computed value (`result`) through a Promise.
+   * 状态影响 / State effects: `channel`, `banner`, `proof.desktopBridgeBaselines`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `binding`, `assert.equal`, `assert.deepEqual`, `import`.
+   * 检查边界 / Checked boundaries: `assert.equal(desktop.state, 'running')`; `assert.deepEqual(desktop.execution.identity, receipt.identity)`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   async function desktopListenerBaseline(receipt: AppReceipt) {
     const desktop = await binding(); assert.equal(desktop.state, 'running');
     assert.deepEqual(desktop.execution.identity, receipt.identity);
@@ -760,6 +1091,18 @@ print(json.dumps({'identity':identity,'account':pwd.getpwuid(identity['uid']).pw
     proof.desktopBridgeBaselines ||= []; proof.desktopBridgeBaselines.push(result); return result;
   }
 
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: path: string; value: unknown。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `proof.projectSignalTasks`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `assert.ok`, `path.startsWith`, `path.slice`, `assert.match`.
+   * 检查边界 / Checked boundaries: `assert.ok(path.startsWith(alpha.directory + '/'))`; `assert.match(leaf, /^[a-z0-9.-]+$/)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   async function projectSignal(path: string, value: unknown) {
     assert.ok(path.startsWith(alpha.directory + '/'));
     const leaf = path.slice(alpha.directory.length + 1); assert.match(leaf, /^[a-z0-9.-]+$/); assert.ok(leaf !== '.' && leaf !== '..');
@@ -772,6 +1115,17 @@ print(json.dumps({'identity':identity,'account':pwd.getpwuid(identity['uid']).pw
     proof.projectSignalTasks ||= []; proof.projectSignalTasks.push({ path, inputSha256: sha256(raw), result });
   }
 
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: receipt: AppReceipt; path: string。
+   * 结果：返回受控对象，公开字段包括 `before, application, after`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `before, application, after`; the actual branch determines its shape.
+   * 协作入口 / Collaborators: `desktopListenerBaseline`, `projectSignal`, `JSON.parse`, `marker`.
+   * 检查边界 / Checked boundaries: `assert.equal(observed.passed, true, JSON.stringify(observed))`; `assert.equal(observed.ownPort, receipt.port)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   async function windowPortChecks(receipt: AppReceipt, path: string) {
     const before = await desktopListenerBaseline(receipt);
     await projectSignal(path + '.ports.start', { version: 1, kind: 'owned-single-app-port-check', marker: path,
@@ -787,6 +1141,15 @@ print(json.dumps({'identity':identity,'account':pwd.getpwuid(identity['uid']).pw
     return { before, application: observed, after };
   }
 
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: receipt: AppReceipt。
+   * 结果：返回分支计算值（`allProcesses`），以 Promise 交付。
+   * Result: Return the branch-computed value (`allProcesses`) through a Promise.
+   * 协作入口 / Collaborators: `python`, `JSON.stringify`, `assert.ok`, `assert.deepEqual`.
+   * 检查边界 / Checked boundaries: `assert.ok(allProcesses.length >= 5)`; `assert.deepEqual(item.uids, Array(4).fill(receipt.uid))`.
+   */
   async function singleAppProcesses(receipt: AppReceipt) {
     const allProcesses = await python(`import os,json
 group='/sys/fs/cgroup/'+${JSON.stringify(receipt.run.cgroupName)}
@@ -812,6 +1175,18 @@ print(json.dumps([inspect(int(pid)) for pid in open(group+'/cgroup.procs').read(
     return allProcesses;
   }
 
+  /**
+   * 中文功能：通过有预算的客户机只读程序固定原进程和相关 FD，验证手工停止或自然退出后的资源边界。
+   * English: Use a budgeted readonly guest program to pin original processes/relevant descriptors and verify resource boundaries after manual stop or natural exit.
+   * 输入 / Inputs: receipt: AppReceipt; processes: any[]; role: 'manual-stop' | 'natural-exit'。
+   * 结果：返回分支计算值（`record`），以 Promise 交付。
+   * Result: Return the branch-computed value (`record`) through a Promise.
+   * 状态影响 / State effects: `proof.singleAppFdObservations`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `machines!.live.get`, `assert.ok`, `Object.fromEntries`, `['controller.py', 'directory-view.py', 'sources.json'].map`.
+   * 检查边界 / Checked boundaries: `assert.ok(live)`; `assert.equal(record.liveUnchanged, true)`.
+   * 设计思路：固定源摘要、boot 与进程出生身份，分别观察原对象和当前存活状态；原 ready 管道 inode 没有回执时明确只用生产启动 EOF 的间接证据。
+   * Design: Pin source digests, boot and process-birth identities, observing original objects separately from current liveness. Without an original ready-pipe inode receipt, explicitly rely only on indirect evidence from production startup EOF.
+   */
   async function singleAppFdObservation(receipt: AppReceipt, processes: any[], role: 'manual-stop' | 'natural-exit') {
     const live = machines!.live.get(fixture.vmId); assert.ok(live);
     const controller = '/usr/local/lib/sakura-single-app/' + receipt.build;
@@ -961,12 +1336,32 @@ print(json.dumps(result))`;
     return record;
   }
 
+  /**
+   * 中文功能：通过公开 SingleApp API 启动私有目录应用，核对参数、目录权限与 detached 孩子，停止后验证全域回收及 home 保留。
+   * English: Start a private-directory application through public SingleApp APIs, check arguments/permissions/detached children, then verify whole-domain retirement and retained home.
+   * 输入 / Inputs: helper: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `proof.singleApp`, `proof.singleApp.ports`, `proof.singleApp.readonlyRecovery`, `serverRow.address`, `proof.singleApp.rfbRejected`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `phase`, `readFile`, `join`, `assert.equal`.
+   * 检查边界 / Checked boundaries: `assert.equal(sha256(source), proof.sourceBefore['scripts/linux-desktop-single-app-probe.py'])`; `assert.equal(before[0].mode, 0o700)`.
+   * 设计思路：先读取目录与私有文件快照，再在真实应用上下文观察并停止；同时核对进程、原 cgroup 与运行目录消失，避免把单个主进程退出当作全域清理。
+   * Design: Snapshot directory/private-file metadata before observing/stopping a real application. Check processes, original cgroup and runtime directory disappearance together instead of treating main-process exit as whole-domain cleanup.
+   */
   async function singleAppPublicChecks(helper: string) {
     phase('public-single-app-current-project-private-directory');
     const source = await readFile(join(workspace, 'scripts/linux-desktop-single-app-probe.py'));
     assert.equal(sha256(source), proof.sourceBefore['scripts/linux-desktop-single-app-probe.py']);
     await guest(`set -eu; printf %s ${quote(source.toString('base64'))} | base64 -d > ${quote(helper + '/single-app-probe.py')}; chmod 644 ${quote(helper + '/single-app-probe.py')}`);
     const paths = [alpha.directory, alpha.directory + '/private.txt'];
+    /**
+     * 中文功能：读取当前用例涉及对象的只读快照，供操作前后比较权限、内容或存活状态。
+     * English: Read a readonly snapshot of the case objects for before/after comparisons of permissions, content or liveness.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`python(`import os,json,stat,errno def item(path): s=os.lstat(path) try:acl=os.ge…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`python(`import os,json,stat,errno def item(path): s=os.lstat(path) try:acl=os.ge…`) through a Promise.
+     * 协作入口 / Collaborators: `python`, `JSON.stringify`.
+     */
     async function snapshot() {
       return python(`import os,json,stat,errno
 def item(path):
@@ -1094,9 +1489,29 @@ print(json.dumps({'originalProcessesAbsent':all(gone(row) for row in births),'ex
     await naturalSingleAppChecks(helper);
   }
 
+  /**
+   * 中文功能：让真实 xterm 应用自然退出，核对生产 watcher 自动退役原运行及 detached 孩子，同时保留账户与目录。
+   * English: Allow a real xterm application to exit naturally and verify the production watcher retires its original run/detached children while preserving account/directories.
+   * 输入 / Inputs: helper: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `proof.naturalSingleApp`, `proof.naturalSingleApp.mainActualWait`, `journalBytes`, `closed`, `proof.naturalSingleApp.automaticRetirement`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `phase`, `randomUUID`, `snapshot`, `assert.equal`.
+   * 检查边界 / Checked boundaries: `assert.equal(before[0].mode, 0o700)`; `assert.equal(before[1].mode, 0o600)`.
+   * 设计思路：使用独立 session 与运行记录，对比退出前后私有目录快照，并交叉核对宿主 journal、原运行 closed 和公共列表 cleanupPending=false。
+   * Design: Use a separate session/run record, compare private-directory snapshots before/after, and cross-check the host journal, original closed run and public cleanupPending=false.
+   */
   async function naturalSingleAppChecks(helper: string) {
     phase('public-single-app-natural-exit-auto-retirement');
     const path = alpha.directory + '/single-app-natural-' + randomUUID() + '.json';
+    /**
+     * 中文功能：读取当前用例涉及对象的只读快照，供操作前后比较权限、内容或存活状态。
+     * English: Read a readonly snapshot of the case objects for before/after comparisons of permissions, content or liveness.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`python(`import os,json,stat,errno def item(path): s=os.lstat(path) try:acl=os.ge…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`python(`import os,json,stat,errno def item(path): s=os.lstat(path) try:acl=os.ge…`) through a Promise.
+     * 协作入口 / Collaborators: `python`, `JSON.stringify`.
+     */
     const snapshot = async () => python(`import os,json,stat,errno
 def item(path):
  s=os.lstat(path)
@@ -1180,8 +1595,29 @@ print(json.dumps([{'path':path,'uid':os.lstat(path).st_uid,'gid':os.lstat(path).
     checked('natural-xterm-normal-exit-start-own-watcher-retires-original-full-domain-and-detached-child-with-home-account-preserved', proof.naturalSingleApp);
   }
 
+  /**
+   * 中文功能：执行真实 Wayland 目录守卫预检和公开剪贴板会话，核对私有目录映射、复制粘贴拒绝及原目录元数据。
+   * English: Exercise real Wayland directory-guard preflight and public clipboard sessions, checking private-directory mappings, copy/paste refusal and original directory metadata.
+   * 输入 / Inputs: helper: string; desktop: Awaited<ReturnType<typeof binding>>; parent: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `proof.directoryViewPreflight`, `proof.privateElfPreparation`, `proof.privateDirectoryBefore`, `proof.compositorDiscovery`, `proof.directoryApplication`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `phase`, `upload`, `JSON.parse`, `guest`.
+   * 检查边界 / Checked boundaries: `assert.equal(proof.directoryViewPreflight.passed, true)`; `assert.equal(proof.directoryViewPreflight.cases.length, 8)`.
+   * 设计思路：上传前核对每个固定来源摘要，预检与应用层会话分别记录；对每种入口观察实际 sink 内容与拒绝计数，最后复核目录未被映射流程改变。
+   * Design: Verify pinned source digests before upload and record preflight separately from application sessions. Observe actual sink content/refusal counts for each entry, then recheck unchanged directory metadata.
+   */
   async function waylandPublicChecks(helper: string, desktop: Awaited<ReturnType<typeof binding>>, parent: string) {
     phase('actual-wayland-kernel-filesystem-preflight');
+    /**
+     * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+     * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+     * 输入 / Inputs: local: string; name: string。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `readFile`, `join`, `assert.equal`, `sha256`.
+     * 检查边界 / Checked boundaries: `assert.equal(sha256(bytes), proof.sourceBefore[local])`.
+     */
     const upload = async (local: string, name: string) => {
       const bytes = await readFile(join(workspace, local));
       assert.equal(sha256(bytes), proof.sourceBefore[local]);
@@ -1221,6 +1657,14 @@ print(json.dumps([{'path':path,'uid':os.lstat(path).st_uid,'gid':os.lstat(path).
     proof.privateElfPreparation = task;
     const programs = { qt: alpha.directory + '/wayland-qt', gtk: alpha.directory + '/wayland-gtk', python: alpha.directory + '/directory-python' };
     const protectedPaths = [alpha.directory, alpha.directory + '/private.txt', parent + '/sibling.txt', ...Object.values(programs), parent];
+    /**
+     * 中文功能：读取当前用例涉及对象的只读快照，供操作前后比较权限、内容或存活状态。
+     * English: Read a readonly snapshot of the case objects for before/after comparisons of permissions, content or liveness.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`python(`import os,json,stat,errno def inspect(path): s=os.lstat(path) try:acl=os…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`python(`import os,json,stat,errno def inspect(path): s=os.lstat(path) try:acl=os…`) through a Promise.
+     * 协作入口 / Collaborators: `python`, `JSON.stringify`.
+     */
     async function snapshot() {
       return python(`import os,json,stat,errno
 def inspect(path):
@@ -1276,16 +1720,47 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     const mime = 'text/plain;charset=utf-8', input = helper + '/text.txt';
     const text = Buffer.from('current independent Wayland project clipboard 界é');
     await guest(`set -eu; printf %s ${quote(text.toString('base64'))} | base64 -d > ${quote(input)}; chmod 644 ${quote(input)}`);
+    /**
+     * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+     * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `assert.equal`, `desktops!.view`, `guest`, `quote`.
+     * 检查边界 / Checked boundaries: `assert.equal((await desktops!.view(fixture.vmId, true)).status, 'ready')`.
+     */
     const focus = async () => {
       assert.equal((await desktops!.view(fixture.vmId, true)).status, 'ready');
       await guest(`set -eu; sleep .4; env DISPLAY=:1 XAUTHORITY=${quote(desktop.execution.runtime + '/Xauthority')} xdotool mousemove 640 400 click 1 key F8`);
     };
     let serial = 0;
+    /**
+     * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+     * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+     * 输入 / Inputs: toolkit: 'qt' | 'gtk'。
+     * 结果：返回分支计算值（`session`），以 Promise 交付。
+     * Result: Return the branch-computed value (`session`) through a Promise.
+     * 协作入口 / Collaborators: `launch`, `focus`, `assert.match`, `marker`.
+     * 检查边界 / Checked boundaries: `assert.match(await marker(path), /^READY (wayland|gtk-wayland)/)`.
+     * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+     * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+     */
     async function owner(toolkit: 'qt' | 'gtk') {
       const path = alpha.directory + '/wayland-owner-' + (++serial);
       const session = await launch(programs[toolkit], ['owner', input, path, mime]);
       await focus(); assert.match(await marker(path), /^READY (wayland|gtk-wayland)/); return session;
     }
+    /**
+     * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+     * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+     * 输入 / Inputs: toolkit: 'qt' | 'gtk'; expected: string。
+     * 结果：返回分支计算值（`session`），以 Promise 交付。
+     * Result: Return the branch-computed value (`session`) through a Promise.
+     * 协作入口 / Collaborators: `launch`, `focus`, `assert.equal`, `marker`.
+     * 检查边界 / Checked boundaries: `assert.equal(await marker(path), expected)`.
+     * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+     * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+     */
     async function sink(toolkit: 'qt' | 'gtk', expected: string) {
       const path = alpha.directory + '/wayland-sink-' + (++serial);
       const session = await launch(programs[toolkit], ['probe', '/dev/null', path, mime]);
@@ -1369,7 +1844,20 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     assert.equal(sha256(identityManifestBytes), proof.sourceBefore['.sakura-server/assets/project-identity/manifest.json']);
     const observedIdentityBuild = JSON.parse(identityManifestBytes.toString()).build;
     const originalExec = machines.exec;
-    Reflect.set(machines, 'exec', async (...args: unknown[]) => {
+    Reflect.set(machines, 'exec', /**
+     * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+     * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+     * 输入 / Inputs: args: unknown[]。
+     * 结果：返回分支计算值（`Reflect.apply(originalExec, machines, args) / result`），以 Promise 交付。
+     * Result: Return the branch-computed value (`Reflect.apply(originalExec, machines, args) / result`) through a Promise.
+     * 状态影响 / State effects: `proof.nativeControlObservations`, `row.returnedAt`, `row.code`, `row[stream]`, `row.channelIds`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 失败 / Failure: `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `ownedAdmissionControlAction`, `Reflect.apply`, `randomUUID`, `sha256`.
+     * 检查边界 / Checked boundaries: `assert.equal(sha256(await readFile(path)), row[stream].sha256)`; `assert.equal(row.channelIds.length, 1, 'Fixed native observation requires one original SSH channel')`.
+     * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+     * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+     */
+    async (...args: unknown[]) => {
       const action = args[0] === fixture.vmId && typeof args[1] === 'string' ? ownedAdmissionControlAction(args[1], observedIdentityBuild) : null;
       if (!action) return Reflect.apply(originalExec, machines, args);
       const signal = args[3] as AbortSignal | undefined;
@@ -1378,6 +1866,14 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
         signalPassed: signal !== undefined, signalAbortedAtStart: signal?.aborted ?? false, cancellationEvents: [],
         captureBoundary: 'unaltered Machines.exec return values; UTF-8 bytes of original decoded stdout and stderr', nativeWireBytesCaptured: false };
       (proof.nativeControlObservations ||= []).push(row);
+      /**
+       * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+       * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回分支计算值（`row.cancellationEvents.push({ at: new Date().toISOString(), aborted: signal!.abo…`）。
+       * Result: Return the branch-computed value (`row.cancellationEvents.push({ at: new Date().toISOString(), aborted: signal!.abo…`).
+       * 协作入口 / Collaborators: `row.cancellationEvents.push`, `new Date().toISOString`.
+       */
       const cancelled = () => row.cancellationEvents.push({ at: new Date().toISOString(), aborted: signal!.aborted });
       signal?.addEventListener('abort', cancelled, { once: true });
       try {
@@ -1420,6 +1916,19 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     assert.ok(bootstrap, 'Owned source test-key bootstrap failed');
     const bootstrapLive = machines.live.get(fixture.vmId);
     proof.bootstrapReadiness = { budgetMilliseconds: 240000, deadline: new Date(until).toISOString(), probes: [], ready: false };
+    /**
+     * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+     * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+     * 输入 / Inputs: source: string; input = ''; role: 'readiness' | 'cloud-diagnostic' | 'rekey' = 'readiness'。
+     * 结果：返回分支计算值（`Buffer.concat(output.stdout).toString()`），以 Promise 交付。
+     * Result: Return the branch-computed value (`Buffer.concat(output.stdout).toString()`) through a Promise.
+     * 状态影响 / State effects: `proof.bootstrapCommands`, `error`, `row.physicalCloseError`, `row.physicallyClosed`, `row[stream]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 失败 / Failure: `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `assert.equal`, `machines!.live.get`, `sha256`, `new Date().toISOString`.
+     * 检查边界 / Checked boundaries: `assert.equal(machines!.live.get(fixture.vmId), bootstrapLive, 'Owned bootstrap VM live changed')`; `assert.equal(sha256(await readFile(path)), row[stream].sha256)`.
+     * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+     * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+     */
     async function bootstrapCommand(source: string, input = '', role: 'readiness' | 'cloud-diagnostic' | 'rekey' = 'readiness') {
       assert.equal(machines!.live.get(fixture.vmId), bootstrapLive, 'Owned bootstrap VM live changed');
       const row: any = { role, commandSha256: sha256(source), startedAt: new Date().toISOString(),
@@ -1429,7 +1938,24 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
       const output: Record<'stdout' | 'stderr', Buffer[]> = { stdout: [], stderr: [] };
       let error: unknown, commandChannel: ClientChannel | undefined;
       try {
-        await new Promise<void>((done, reject) => bootstrap!.exec('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /bin/sh -c ' + quote(source), (setupError, channel) => {
+        await new Promise<void>(/**
+         * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+         * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+         * 输入 / Inputs: done; reject。
+         * 结果：返回分支计算值（`bootstrap!.exec('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /bin/sh…`）。
+         * Result: Return the branch-computed value (`bootstrap!.exec('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /bin/sh…`).
+         * 协作入口 / Collaborators: `bootstrap!.exec`, `quote`.
+         */
+        (done, reject) => bootstrap!.exec('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /bin/sh -c ' + quote(source), /**
+         * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+         * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+         * 输入 / Inputs: setupError; channel。
+         * 结果：返回分支计算值（`reject(setupError)`）。
+         * Result: Return the branch-computed value (`reject(setupError)`).
+         * 状态影响 / State effects: `row.setupError`, `commandChannel`, `row.channelId`, `row.connectionId`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+         * 协作入口 / Collaborators: `errorValue`, `reject`, `watchChannel`, `setTimeout`.
+         */
+        (setupError, channel) => {
           if (setupError) { row.setupError = errorValue(setupError); return reject(setupError); }
           commandChannel = channel;
           const ledger = watchChannel(channel); row.channelId = ledger.id; row.connectionId = ledger.connectionId;
@@ -1511,12 +2037,33 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     spaces = new Workspaces(machines); const migrations = new ProjectDirectoryMigrations(machines, spaces);
     const directoryParent = '/srv/projects/sakura-desktop-identity-' + fixture.invocation;
     await guest(`set -eu; test ! -L /srv/projects; if [ ! -e /srv/projects ]; then mkdir /srv/projects; chmod 755 /srv/projects; fi; mkdir ${quote(directoryParent)}; chmod 711 ${quote(directoryParent)}`);
+    /**
+     * 中文功能：准备或启动本轮自有客户机/项目资源，交付下述实际回执给后续验证。
+     * English: Prepare/start guest or project resources owned by this smoke and supply the actual receipt below to later checks.
+     * 输入 / Inputs: name: string。
+     * 结果：返回分支计算值（`spaces!.projects.with(fixture.vmId, index.active, async () => { let preview; try…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`spaces!.projects.with(fixture.vmId, index.active, async () => { let preview; try…`) through a Promise.
+     * 协作入口 / Collaborators: `guest`, `quote`, `projectSchema.parse`, `spaces!.projects.create`.
+     */
     async function project(name: string) {
       const directory = directoryParent + '/' + name;
       await guest(`set -eu; mkdir ${quote(directory)}; chmod 700 ${quote(directory)}; printf %s ${quote('owned-' + name)} > ${quote(directory + '/private.txt')}; chmod 600 ${quote(directory + '/private.txt')}`);
       const config = projectSchema.parse({ directory, networkIsolation: 'private', template: 'none', environment: { SAKURA_CURRENT_UID_PROBE: fixture.invocation, HOME: '/root', DISPLAY: ':99' } });
       const index = await spaces!.projects.create(fixture.vmId, name + '-' + fixture.invocation, () => writeStore(projectMetadataFile(fixture.vmId, spaces!.projects.current(fixture.vmId)), config));
-      return spaces!.projects.with(fixture.vmId, index.active, async () => {
+      return spaces!.projects.with(fixture.vmId, index.active, /**
+       * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+       * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回受控对象，公开字段包括 `id, directory, identity`；各分支以实际返回对象为准。
+       * Result: Return a controlled object exposing fields such as `id, directory, identity`; the actual branch determines its shape.
+       * 状态影响 / State effects: `preview`, `proof.admissionRefusal`, `proof.migrationNftDiagnosis`, `proof.migrationNftDiagnosis.error`, `proof.admissionRecoveries`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 失败 / Failure: `error`; `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+       * 协作入口 / Collaborators: `migrations.preview`, `errorValue`, `Reflect.get`, `observeMigrationNftRefusal`.
+       * 检查边界 / Checked boundaries: `assert.ok(live)`; `assert.equal(machines!.live.get(fixture.vmId), live)`.
+       * 设计思路：根据受控条件分别注入拒绝或结果，保持分支证据可观察，供调用者失败恢复用例复用。
+       * Design: Inject rejection or results under controlled conditions while keeping branch evidence observable for caller recovery tests.
+       */
+      async () => {
         let preview;
         try { preview = await migrations.preview(fixture.vmId); }
         catch (error) {
@@ -1592,7 +2139,19 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
       // does not make an inaccessible Root-owned parent traversable later.
       // Public migration first owns the outer 0700 tree, then an actual project
       // task creates the nested tree and public rebind fixes its exact inode.
-      await spaces.projects.with(fixture.vmId, alpha.id, async () => {
+      await spaces.projects.with(fixture.vmId, alpha.id, /**
+       * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+       * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+       * 输入 / Inputs: 无 / none。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 状态影响 / State effects: `alpha`, `proof.privateAncestorPreparation`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 协作入口 / Collaborators: `import`, `projectIdentityTask`, `spaces!.resolvedConfig`, `assert.equal`.
+       * 检查边界 / Checked boundaries: `assert.equal(prepared.code, 0, prepared.stderr || prepared.stdout)`; `assert.ok(preview.plan)`.
+       * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+       * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+       */
+      async () => {
         const { projectIdentityTask } = await import('../server/project-run-scope.ts');
         const prepared = await projectIdentityTask(machines!, fixture.vmId, await spaces!.resolvedConfig(fixture.vmId), {
           command: "set -eu\numask 077\nmkdir current\nprintf %s owned-alpha > current/private.txt\nprintf %s private-sibling > sibling.txt\n",
@@ -1614,7 +2173,19 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     phase('real-unused-uid-nft-atomic-contract');
     await nftAtomicChecks();
     desktops = new Desktops(machines, spaces);
-    await spaces.projects.with(fixture.vmId, alpha.id, async () => {
+    await spaces.projects.with(fixture.vmId, alpha.id, /**
+     * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+     * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `proof.clipboardBuild`, `proof.sourceApplication`, `proof.applicationProcesses`, `proof.retired`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `phase`, `desktops!.start`, `ready`, `observeDesktop`.
+     * 检查边界 / Checked boundaries: `assert.equal(installed.status, 'done', installed.error + '\n' + installed.log)`; `assert.equal(installedView.ready, true)`.
+     * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+     * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+     */
+    async () => {
       phase('public-current-uid-desktop-start');
       desktops!.start(fixture.vmId, 'start', { sessionType: transport }); await ready();
       const initial = await observeDesktop(); checked('full-v2-desktop-native-ticket-real-project-uid', initial.execution);
@@ -1662,6 +2233,17 @@ print(json.dumps([inspect(row) for row in rows]))`);
       }
       checked('public-controlled-x11-app-uses-current-desktop-uid-and-home', owner);
       const text = Buffer.from('current owned project clipboard 界é').toString('hex');
+      /**
+       * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+       * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+       * 输入 / Inputs: label: string; expected: string。
+       * 结果：返回分支计算值（`sink`），以 Promise 交付。
+       * Result: Return the branch-computed value (`sink`) through a Promise.
+       * 协作入口 / Collaborators: `launch`, `assert.equal`, `marker`, `stopApp`.
+       * 检查边界 / Checked boundaries: `assert.equal(await marker(path), expected)`.
+       * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+       * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+       */
       async function probe(label: string, expected: string) {
         const path = alpha.identity.home + '/' + label + '-' + fixture.invocation;
         const sink = await launch(qtProgram, ['probe', path, 'fixture']);
@@ -1704,7 +2286,24 @@ print(json.dumps({'runtimeAbsent':not os.path.lexists(${JSON.stringify(initial.e
   } catch (error) { proof.error = errorValue(error); proof.errorStack = error instanceof Error ? error.stack : String(error); console.error(proof.errorStack); }
   finally {
     phase('exact-owned-cleanup');
-    async function finish(name: string, action: () => Promise<unknown>) {
+    /**
+     * 中文功能：结束本轮拥有的运行或资源，按当前分支观察清理完成并保留失败证据。
+     * English: Finalize runs/resources owned by this smoke, observe completion under the implemented branches and retain failed evidence.
+     * 输入 / Inputs: name: string; action: () => Promise<unknown>。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `Promise.race`, `action`, `proof.cleanupErrors.push`, `errorValue`.
+     * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+     * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+     */
+    async function finish(name: string, action: /**
+     * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+     * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+     * 输入 / Inputs: 无 / none。
+     * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+     * Result: The declared return type defines the result; its test provider supplies the implementation.
+     */
+    () => Promise<unknown>) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try { await Promise.race([action(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(name + ' remains pending')), 30000); })]); }
       catch (error) { proof.cleanupErrors.push({ phase: name, ...errorValue(error) }); }

@@ -1,4 +1,5 @@
 # 模块职责：执行有界客户机工程操作，统一项目路径、归档成员、输出限制与原子发布约束。
+# Module purpose: Executes bounded guest engineering actions with common path, archive-member, output and atomic publication constraints.
 """Bounded engineering operations. Invoked in the guest with a JSON request on stdin.
 
 No third-party Python modules are needed. Results use one JSON object on stdout;
@@ -36,6 +37,12 @@ MAX_OUTPUT = 2 * 1024 * 1024
 
 
 class Failure(Exception):
+    # 入口 / Entry: Failure.__init__.
+    # 功能：保存工程失败的退出码和结构化细节供最外层 JSON 响应使用。
+    # Purpose: Retains an engineering failure's exit code and structured details for the outer JSON response.
+    # 输入 / Inputs: message; code=1; **details
+    # 输出 / Returns: 无显式结果，正常完成返回 None / no explicit result; successful completion returns None.
+    # 副作用 / Effects: 更新 / updates `self.code`, `self.details`.
     def __init__(self, message, code=1, **details):
         super().__init__(message)
         self.code = code
@@ -43,6 +50,16 @@ class Failure(Exception):
 
 
 # argv 直接交给子进程；Git 的隐式 hooks 等入口被关闭，输出与超时都受统一预算限制。
+# 入口 / Entry: run.
+# 功能：以 argv 运行有界命令，禁用 Git 隐式 hook 等入口并清理原进程组。
+# Purpose: Runs a bounded argv command, disables implicit Git hook-like entry points and disposes the original process group.
+# 输入 / Inputs: args; cwd=None; timeout=60; input=None; check=True; env=None
+# 输出 / Returns: `result`
+# 副作用 / Effects: 调用 / calls `subprocess.Popen`, `os.killpg`, `child.kill`, `out.read`, `err.read`.
+# 拒绝 / Refusals: `Failure('缺少客户机工具：' + str(args[0]), 127)`; `Failure('命令输出超过 2 MiB，拒绝返回不完整结果', code=1)`; `Failure('命令执行超时' if timed_out else '命令执行失败', **result)`.
+# 设计：超时或输出超限也必须等待原进程组收尾；正常主进程退出仍清理残留后代，避免把结果返回当作子资源退出。
+# Design: Timeout/output overflow still waits for original-process-group disposal; even normal main-process exit cleans remaining descendants instead of treating result delivery as resource exit.
+# 收尾 / Finalization: `if os.name != 'nt': try: os.killpg(child.pid, signal.SIGKILL) except ProcessLookupError: pass elif child.poll() is None:…`; `child.wait()`.
 def run(args, cwd=None, timeout=60, input=None, check=True, env=None):
     """Use argv, retain bounded output, and terminate the entire child group on timeout."""
     if args[0] == "git":
@@ -94,6 +111,12 @@ def run(args, cwd=None, timeout=60, input=None, check=True, env=None):
 
 
 # 即使符号链接仍指向项目内也拒绝，防止成员检查和后续操作解析到不同路径。
+# 入口 / Entry: safe_path.
+# 功能：解析项目内相对路径，逐级拒绝符号链接、越界和不存在的必需目标。
+# Purpose: Resolves a project-relative path, rejecting symlink components, traversal and missing required targets.
+# 输入 / Inputs: root; value; exists=False
+# 输出 / Returns: `target`
+# 拒绝 / Refusals: `Failure('需要项目内的相对路径：' + value)`; `Failure('路径不能包含符号链接：' + value)`; `Failure('路径不存在：' + value)`.
 def safe_path(root, value, exists=False):
     """Reject traversal and every symlink component, even links remaining inside root."""
     value = str(value)
@@ -110,6 +133,13 @@ def safe_path(root, value, exists=False):
     return target
 
 
+# 入口 / Entry: read_text.
+# 功能：读取经项目路径核验的有界普通 UTF-8 文本文件。
+# Purpose: Reads a bounded regular UTF-8 text file after project-path validation.
+# 输入 / Inputs: root; value; limit=MAX_OUTPUT
+# 输出 / Returns: `target.read_text(encoding='utf-8')`
+# 副作用 / Effects: 调用 / calls `target.read_text`.
+# 拒绝 / Refusals: `Failure('文件类型或大小不受支持：' + value)`.
 def read_text(root, value, limit=MAX_OUTPUT):
     target = safe_path(root, value, True)
     if not target.is_file() or target.stat().st_size > limit:
@@ -118,6 +148,13 @@ def read_text(root, value, limit=MAX_OUTPUT):
 
 
 # 扫描同时限制节点数和累计字节，不把大目录或特殊文件带入归档与分析操作。
+# 入口 / Entry: files_under.
+# 功能：扫描项目普通文件并应用排除规则，同时限制文件数和累计字节。
+# Purpose: Scans regular project files with exclusion rules and bounds both file count and cumulative bytes.
+# 输入 / Inputs: root; value='.'; excludes=()
+# 输出 / Returns: `sorted(found)`
+# 副作用 / Effects: 调用 / calls `found.append`.
+# 拒绝 / Refusals: `Failure('只支持普通文件：' + relative)`; `Failure('扫描超过 20,000 个文件或 512 MiB')`.
 def files_under(root, value=".", excludes=()):
     source = safe_path(root, value, True)
     found, total = [], 0
@@ -139,6 +176,13 @@ def files_under(root, value=".", excludes=()):
     return sorted(found)
 
 
+# 入口 / Entry: manifest.
+# 功能：对有界文件清单计算 SHA-256，并拒绝读取前后大小、mtime 或 inode 改变的文件。
+# Purpose: Computes SHA-256 for a bounded file inventory and refuses files whose size, mtime or inode changes while reading.
+# 输入 / Inputs: root; value='.'; excludes=()
+# 输出 / Returns: `result`
+# 副作用 / Effects: 调用 / calls `file.open`, `stream.read`, `result.append`.
+# 拒绝 / Refusals: `Failure('文件读取超过 512 MiB')`; `Failure('扫描期间文件发生变更：' + name)`.
 def manifest(root, value=".", excludes=()):
     result, total = [], 0
     for name, file in files_under(root, value, excludes):
@@ -160,6 +204,13 @@ def manifest(root, value=".", excludes=()):
     return result
 
 
+# 入口 / Entry: atomic_json.
+# 功能：在目标同目录写临时 JSON 后原子替换，finally 移除尚存的临时文件。
+# Purpose: Writes temporary JSON in the target directory and atomically replaces the target, removing any leftover temporary file in finally.
+# 输入 / Inputs: root; relative; data
+# 输出 / Returns: 无显式结果，正常完成返回 None / no explicit result; successful completion returns None.
+# 副作用 / Effects: 调用 / calls `file.parent.mkdir`, `os.fdopen`, `os.replace`, `os.unlink`.
+# 收尾 / Finalization: `if os.path.exists(temporary): os.unlink(temporary)`.
 def atomic_json(root, relative, data):
     file = safe_path(root, relative)
     file.parent.mkdir(parents=True, exist_ok=True)
@@ -173,6 +224,13 @@ def atomic_json(root, relative, data):
             os.unlink(temporary)
 
 
+# 入口 / Entry: history.
+# 功能：追加最多 120 条工程历史样本，并返回上一个样本用于差值计算。
+# Purpose: Appends an engineering-history sample retaining at most 120 entries and returns the preceding sample for delta calculations.
+# 输入 / Inputs: root; operation; value
+# 输出 / Returns: `previous[-1] if previous else None`
+# 副作用 / Effects: 调用 / calls `read_text`.
+# 拒绝 / Refusals: `Failure('历史文件格式无效')`.
 def history(root, operation, value):
     relative = ".sakura/engineering/" + operation + ".json"
     file = safe_path(root, relative)
@@ -184,6 +242,13 @@ def history(root, operation, value):
     return previous[-1] if previous else None
 
 
+# 入口 / Entry: archive_members.
+# 功能：在解包前验证全部归档成员、重复名、文件目录冲突和累计预算。
+# Purpose: Validates all archive members, duplicate names, file/directory conflicts and cumulative budgets before extraction.
+# 输入 / Inputs: archive
+# 输出 / Returns: `entries`
+# 副作用 / Effects: 调用 / calls `set`, `names.add`, `entries.append`.
+# 拒绝 / Refusals: `Failure('归档包含非法成员或链接：' + name)`; `Failure('归档包含重复成员：' + name)`; `Failure('归档超过 20,000 个成员或 512 MiB')`.
 def archive_members(archive):
     entries, names, size = [], set(), 0
     for member in archive:
@@ -210,6 +275,13 @@ def archive_members(archive):
     return entries
 
 
+# 入口 / Entry: publish_new_directory.
+# 功能：以 rename 发布完整暂存目录，每次尝试都拒绝覆盖已出现的目标。
+# Purpose: Publishes a completed staging directory with rename, refusing to overwrite a target appearing before any attempt.
+# 输入 / Inputs: stage; target
+# 输出 / Returns: `None`
+# 副作用 / Effects: 调用 / calls `os.rename`.
+# 拒绝 / Refusals: `Failure('目标目录已存在，拒绝覆盖：' + target.name)`; `re-raise`.
 def publish_new_directory(stage, target):
     deadline = time.monotonic() + 1
     while True:
@@ -227,6 +299,14 @@ def publish_new_directory(stage, target):
             time.sleep(.025)
 
 
+# 入口 / Entry: archive_operation.
+# 功能：执行归档创建、预览或受限解包，通过暂存与整体发布避免留下部分目标。
+# Purpose: Creates/previews an archive or performs bounded extraction, using staging and whole-directory publication to avoid partial targets.
+# 输入 / Inputs: root; p; template=False
+# 输出 / Returns: `dict(target=target.relative_to(root).as_posix(), files=len(items))`; `dict(members=listing)`; `dict(target=target.relative_to(root).as_posix(), members=listing)`
+# 副作用 / Effects: 调用 / calls `file.open`, `stream.read`, `target.parent.mkdir`, `os.close`, `tarfile.open`, `archive.add`.
+# 拒绝 / Refusals: `Failure('目标已存在，拒绝覆盖：' + target.name)`; `Failure('模板含私钥文件：' + name)`; `Failure('归档文件超过 512 MiB')`.
+# 收尾 / Finalization: `os.unlink(temporary)`.
 def archive_operation(root, p, template=False):
     target = safe_path(root, p.get("target", "sakura-archive.tar.gz"))
     mode = "create" if template else p["mode"]
@@ -285,8 +365,20 @@ def archive_operation(root, p, template=False):
     return dict(target=target.relative_to(root).as_posix(), members=listing)
 
 
+# 入口 / Entry: task_import.
+# 功能：从 npm、make、just 和 task 配置发现可执行任务，校验名称并去重命令。
+# Purpose: Discovers runnable tasks from npm/make/just/task configuration, validating names and deduplicating commands.
+# 输入 / Inputs: root
+# 输出 / Returns: `list({(task['name'], task['command']): task for task in tasks}.values())`
+# 副作用 / Effects: 调用 / calls `add`, `json.loads(read_text(root, 'package.json')).get('scripts', {}).keys`, `json.loads(read_text(root, 'package.json')).get`, `read_text`.
 def task_import(root):
     tasks = []
+    # 入口 / Entry: task_import.add.
+    # 功能：把当前工具的有效任务名转换为 shell 转义后的 argv 命令并加入任务表。
+    # Purpose: Converts valid task names for the current tool into shell-quoted argv commands and adds them to the task inventory.
+    # 输入 / Inputs: tool; names
+    # 输出 / Returns: 无显式结果，正常完成返回 None / no explicit result; successful completion returns None.
+    # 副作用 / Effects: 调用 / calls `set`, `tasks.append`.
     def add(tool, names):
         for name in sorted(set(names)):
             if re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.:/-]{0,79}", name):
@@ -304,6 +396,12 @@ def task_import(root):
     return list({(task["name"], task["command"]): task for task in tasks}.values())
 
 
+# 入口 / Entry: env_check.
+# 功能：按必需性、类型和枚举核验环境变量，只返回名称及问题而不返回变量值。
+# Purpose: Checks environment variables for presence, type and choices, returning only names/issues rather than values.
+# 输入 / Inputs: rules
+# 输出 / Returns: `dict(code=1 if issues else 0, present=present, issues=issues)`
+# 副作用 / Effects: 调用 / calls `issues.append`, `present.append`.
 def env_check(rules):
     issues, present = [], []
     for name, rule in rules.items():
@@ -324,6 +422,13 @@ def env_check(rules):
     return dict(code=1 if issues else 0, present=present, issues=issues)
 
 
+# 入口 / Entry: coverage.
+# 功能：解析 Istanbul、coverage.py 或 LCOV 覆盖统计，保存历史并计算可比较项的百分点变化。
+# Purpose: Parses Istanbul/coverage.py/LCOV metrics, saves history and computes percentage-point deltas for comparable metrics.
+# 输入 / Inputs: root; path
+# 输出 / Returns: `dict(metrics=metrics, delta=delta, previousSampledAt=previous and previous['sampledAt'])`
+# 副作用 / Effects: 调用 / calls `read_text`; 更新 / updates `totals[key]`.
+# 拒绝 / Refusals: `Failure('不支持的覆盖率 JSON 格式')`; `Failure('未识别到 LCOV 统计数据')`; `Failure('覆盖率报告没有统计项')`.
 def coverage(root, path):
     text = read_text(root, path)
     if text.lstrip().startswith("{"):
@@ -355,6 +460,13 @@ def coverage(root, path):
     return dict(metrics=metrics, delta=delta, previousSampledAt=previous and previous["sampledAt"])
 
 
+# 入口 / Entry: npm_packages.
+# 功能：从 npm v2/v3 锁文件提取非链接包的版本、完整性及许可元数据。
+# Purpose: Extracts version, integrity and license metadata for non-linked packages from an npm v2/v3 lockfile.
+# 输入 / Inputs: root
+# 输出 / Returns: `(lock, packages)`
+# 副作用 / Effects: 调用 / calls `read_text`, `lock.get`, `lock['packages'].items`, `packages.append`.
+# 拒绝 / Refusals: `Failure('需要 npm package-lock v2/v3')`.
 def npm_packages(root):
     lock = json.loads(read_text(root, "package-lock.json"))
     if lock.get("lockfileVersion") not in (2, 3) or not isinstance(lock.get("packages"), dict):
@@ -370,6 +482,13 @@ def npm_packages(root):
     return lock, packages
 
 
+# 入口 / Entry: sbom.
+# 功能：把 npm 锁文件包和完整性摘要转换为 CycloneDX 1.5 组件清单。
+# Purpose: Converts npm lockfile packages and integrity digests into a CycloneDX 1.5 component inventory.
+# 输入 / Inputs: root
+# 输出 / Returns: `dict(bomFormat='CycloneDX', specVersion='1.5', version=1, metadata={'component': {'type': 'application', 'name': lock.get('name', root.name), 'version': lo…`
+# 副作用 / Effects: 调用 / calls `hashes.append`, `components.append`, `lock.get`; 更新 / updates `component['hashes']`, `component['properties']`.
+# 拒绝 / Refusals: `ValueError('invalid integrity length')`; `Failure('锁文件完整性信息无效：' + item['path'])`.
 def sbom(root):
     lock, packages = npm_packages(root)
     components = []
@@ -395,6 +514,12 @@ def sbom(root):
                                           "version": lock.get("version", "unknown")}}, components=components)
 
 
+# 入口 / Entry: license_report.
+# 功能：补读包许可并按允许列表标记待审核依赖，任一待审核项令检查退出码为 1。
+# Purpose: Recovers package licenses and marks dependencies against an allowlist, producing check code 1 when any item requires review.
+# 输入 / Inputs: root; allowed
+# 输出 / Returns: `dict(code=1 if any((p['status'] == 'review' for p in report)) else 0, packages=report)`
+# 副作用 / Effects: 调用 / calls `json.loads(read_text(root, package['path'] + '/package.json')).get`, `read_text`, `report.append`.
 def license_report(root, allowed):
     _, packages = npm_packages(root)
     report = []
@@ -408,6 +533,12 @@ def license_report(root, allowed):
     return dict(code=1 if any(p["status"] == "review" for p in report) else 0, packages=report)
 
 
+# 入口 / Entry: secret_scan.
+# 功能：扫描 Git 暂存区中新增或修改文件的已知凭证模式，仅输出命中位置及规则。
+# Purpose: Scans added/modified staged Git files for known credential patterns, returning only hit locations and rule names.
+# 输入 / Inputs: root
+# 输出 / Returns: `dict(code=1 if findings else 0, findings=findings)`
+# 副作用 / Effects: 调用 / calls `run(['git', 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'], root)['stdout'].split`, `run`, `findings.append`.
 def secret_scan(root):
     names = run(["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"], root)["stdout"].split("\0")
     findings = []
@@ -424,6 +555,13 @@ def secret_scan(root):
     return dict(code=1 if findings else 0, findings=findings)
 
 
+# 入口 / Entry: owners.
+# 功能：解析支持的 CODEOWNERS 规则，以最后匹配项映射文件责任人。
+# Purpose: Parses supported CODEOWNERS rules and maps file owners using the last matching rule.
+# 输入 / Inputs: root; paths
+# 输出 / Returns: `dict(source=filename, paths=mapped)`
+# 副作用 / Effects: 调用 / calls `read_text(root, filename).splitlines`, `read_text`, `rules.append`, `mapped.append`.
+# 拒绝 / Refusals: `Failure('CODEOWNERS 不存在')`; `Failure('不支持的 CODEOWNERS 规则', line=number)`.
 def owners(root, paths):
     filename = next((v for v in (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS") if safe_path(root, v).exists()), None)
     if not filename:
@@ -465,9 +603,28 @@ def owners(root, paths):
     return dict(source=filename, paths=mapped)
 
 
+# 入口 / Entry: git_operation.
+# 功能：执行选定 Git 工作区操作，对危险合并、变基或历史变更先核对干净状态。
+# Purpose: Runs selected Git worktree operations, checking cleanliness before risky merge, rebase or history changes.
+# 输入 / Inputs: root; operation; p
+# 输出 / Returns: `git(*args)`; `git('reflog', '-100')`; `git('switch', '-c', p['branch'], p['commit'])`；另有分支返回 / additional branch returns.
+# 副作用 / Effects: 调用 / calls `todo.append`, `directory.mkdir`, `(directory / 'marker').write_text`, `(directory / 'todo').write_text`, `(directory / 'messages.json').write_text`, `(directory / 'sequence.py').write_text`.
+# 拒绝 / Refusals: `Failure('Rebase 状态不能是符号链接')`; `Failure('此交互式计划只支持线性历史；请先处理合并提交')`; `Failure('计划生成后 HEAD 已变更，请重新生成计划')`.
 def git_operation(root, operation, p):
     mode = p.get("mode", "list")
+    # 入口 / Entry: git_operation.git.
+    # 功能：将当前项目目录和统一 Git 运行约束固定到后续 Git argv 调用。
+    # Purpose: Binds the current project directory and common Git execution restrictions to later Git argv calls.
+    # 输入 / Inputs: *args; **kwargs
+    # 输出 / Returns: `run(['git', *args], root, **kwargs)`
+    # 副作用 / Effects: 调用 / calls `run`.
     git = lambda *args, **kwargs: run(["git", *args], root, **kwargs)
+    # 入口 / Entry: git_operation.clean.
+    # 功能：拒绝存在未提交变更的工作区，防止 Git 操作覆盖当前用户工作。
+    # Purpose: Refuses worktrees containing uncommitted changes so Git operations cannot overwrite current user work.
+    # 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+    # 输出 / Returns: 无显式结果，正常完成返回 None / no explicit result; successful completion returns None.
+    # 拒绝 / Refusals: `Failure('需要干净的 Git 工作区')`.
     def clean():
         if git("status", "--porcelain")["stdout"].strip():
             raise Failure("需要干净的 Git 工作区")
@@ -506,6 +663,13 @@ def git_operation(root, operation, p):
             directory = root / directory
         if directory.is_symlink():
             raise Failure("Rebase 状态不能是符号链接")
+        # 入口 / Entry: git_operation.cleanup.
+        # 功能：只清理带本模块 rebase 标记的固定状态文件，拒绝删除不明目录内容。
+        # Purpose: Removes only fixed rebase-state files bearing this module's marker, refusing to delete unknown directory content.
+        # 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+        # 输出 / Returns: `None`
+        # 副作用 / Effects: 调用 / calls `(directory / 'marker').read_text`, `(directory / name).unlink`.
+        # 拒绝 / Refusals: `Failure('无法识别 Rebase 状态目录')`.
         def cleanup():
             if not directory.exists():
                 return
@@ -570,11 +734,22 @@ def git_operation(root, operation, p):
     raise Failure("Git 操作不存在")
 
 
+# 入口 / Entry: version_tuple.
+# 功能：提取版本字符串的数值段，用于本模块受支持范围内的版本比较。
+# Purpose: Extracts numeric segments from a version string for comparisons supported by this module.
+# 输入 / Inputs: value
+# 输出 / Returns: `tuple((int(v or 0) for v in match.groups())) if match else None`
 def version_tuple(value):
     match = re.search(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?", value)
     return tuple(int(v or 0) for v in match.groups()) if match else None
 
 
+# 入口 / Entry: satisfies.
+# 功能：按支持的比较、区间、caret 和 tilde 规则判断工具版本是否满足约束。
+# Purpose: Tests a tool version against supported comparison/range/caret/tilde constraints.
+# 输入 / Inputs: version; constraint
+# 输出 / Returns: `None`; `any(results)`
+# 副作用 / Effects: 调用 / calls `results.append`.
 def satisfies(version, constraint):
     """Small explicit range subset. Unknown syntax is never called compatible."""
     value = version_tuple(version)
@@ -610,6 +785,12 @@ def satisfies(version, constraint):
     return any(results)
 
 
+# 入口 / Entry: toolchain.
+# 功能：发现项目指定工具及版本约束，比较客户机实际运行时并返回缺失或不匹配问题。
+# Purpose: Discovers project tool/version constraints, compares actual guest runtimes and returns missing or mismatched requirements.
+# 输入 / Inputs: root
+# 输出 / Returns: `dict(code=1 if any((v['status'] in ('missing', 'incompatible', 'manual-review') for v in report)) else 0, tools=report)`
+# 副作用 / Effects: 调用 / calls `json.loads(read_text(root, 'package.json')).get`, `read_text`, `read_text(root, file).strip`, `set`, `run`, `report.append`; 更新 / updates `constraints[tool]`, `constraints['go']`, `constraints['python']`, `constraints['rust']`.
 def toolchain(root):
     constraints = {}
     if safe_path(root, "package.json").exists():
@@ -650,6 +831,12 @@ def toolchain(root):
     return dict(code=1 if any(v["status"] in ("missing", "incompatible", "manual-review") for v in report) else 0, tools=report)
 
 
+# 入口 / Entry: bootstrap.
+# 功能：仅对引导 Shell 命令做语法、工具和项目路径预检，动态语法标为人工检查而不执行命令。
+# Purpose: Only preflights bootstrap Shell syntax, tools and project paths, marking dynamic syntax for manual review without executing the command.
+# 输入 / Inputs: root; command
+# 输出 / Returns: `dict(code=syntax['code'], syntax=False, stderr=syntax['stderr'])`; `dict(code=2, syntax=True, manualReview=['动态 Shell 语法需要人工检查'])`; `dict(code=1 if failed else 0, syntax=True, tools=tools, paths=paths, manualReview=unknown)`
+# 副作用 / Effects: 调用 / calls `run`, `paths.append`, `unknown.append`, `tools.append`, `safe_path(root, 'package-lock.json').is_file`; 更新 / updates `lexer.whitespace_split`.
 def bootstrap(root, command):
     syntax = run(["sh", "-n"], root, input=command, check=False)
     if syntax["code"]:
@@ -690,6 +877,12 @@ def bootstrap(root, command):
     return dict(code=1 if failed else 0, syntax=True, tools=tools, paths=paths, manualReview=unknown)
 
 
+# 入口 / Entry: onboarding.
+# 功能：汇总项目文件、任务、工具链及依赖准备线索，生成工程接入报告。
+# Purpose: Summarizes project files, tasks, toolchains and dependency preparation hints into an onboarding report.
+# 输入 / Inputs: root
+# 输出 / Returns: `dict(steps=steps, tasks=tasks, executed=False)`
+# 副作用 / Effects: 调用 / calls `steps.append`, `read_text(root, readme).splitlines`, `read_text`.
 def onboarding(root):
     tasks = task_import(root)
     steps = []
@@ -711,6 +904,13 @@ def onboarding(root):
     return dict(steps=steps, tasks=tasks, executed=False)
 
 
+# 入口 / Entry: resource_sample.
+# 功能：采集客户机资源或性能样本，并根据所选操作输出统计及历史差值。
+# Purpose: Collects guest resource/performance samples and returns statistics/history deltas for the selected operation.
+# 输入 / Inputs: operation
+# 输出 / Returns: `dict(processes=rows)`; `dict(intervalSeconds=seconds, samples=rows)`
+# 副作用 / Effects: 调用 / calls `Path('/proc/sys/kernel/random/boot_id').read_text().strip`, `Path('/proc/sys/kernel/random/boot_id').read_text`, `(directory / 'stat').read_text`, `rows.append`.
+# 拒绝 / Refusals: `Failure('此操作需要 Linux /proc')`.
 def resource_sample(operation):
     if not Path("/proc").is_dir():
         raise Failure("此操作需要 Linux /proc")
@@ -732,6 +932,12 @@ def resource_sample(operation):
             except (FileNotFoundError, PermissionError, ProcessLookupError):
                 continue
         return dict(processes=rows)
+    # 入口 / Entry: resource_sample.counters.
+    # 功能：读取当前磁盘或网卡累计计数，供间隔前后计算 I/O 速率和流量。
+    # Purpose: Reads cumulative disk or network-interface counters for I/O-rate and traffic deltas across the sampling interval.
+    # 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+    # 输出 / Returns: `rows`
+    # 副作用 / Effects: 调用 / calls `Path(path).read_text().splitlines`, `Path(path).read_text`; 更新 / updates `rows[v[2]]`, `rows[name.strip()]`.
     def counters():
         rows = {}
         path = "/proc/diskstats" if operation == "disk-io-metrics" else "/proc/net/dev"
@@ -763,6 +969,13 @@ def resource_sample(operation):
     return dict(intervalSeconds=seconds, samples=rows)
 
 
+# 入口 / Entry: execute.
+# 功能：按工程 operation 分派有界检查、归档、Git 或项目工具任务，并形成统一结果。
+# Purpose: Dispatches bounded checks, archives, Git or project-tool tasks by engineering operation and forms a common result.
+# 输入 / Inputs: root; operation; p
+# 输出 / Returns: `archive_operation(root, p, operation == 'project-template-pack')`; `result`; `dict(code=1 if issues else 0, issues=issues)`；另有分支返回 / additional branch returns.
+# 副作用 / Effects: 调用 / calls `issues.append`, `run`, `file.parent.mkdir`, `file.open`, `stream.write`, `file.chmod`; 更新 / updates `names[folded]`.
+# 拒绝 / Refusals: `Failure('超过 20,000 条路径')`; `Failure('构建产物为空')`; `Failure('禁止修改默认路由')`.
 def execute(root, operation, p):
     if operation in ("archive", "project-template-pack"):
         return archive_operation(root, p, operation == "project-template-pack")
@@ -988,6 +1201,13 @@ print(json.dumps(result))
 '''
 
 
+# 入口 / Entry: network_diagnostics.
+# 功能：核验目标后执行选定的 DNS、连接及网络路径诊断，保持超时和输出预算。
+# Purpose: Validates targets before selected DNS/connectivity/network-path diagnostics, retaining timeout/output budgets.
+# 输入 / Inputs: root; p
+# 输出 / Returns: `dict(code=0 if all((item['code'] == 0 for item in results)) else 1, target=target, port=port, results=results)`
+# 副作用 / Effects: 调用 / calls `set`, `ipaddress.ip_address`, `run`, `routes.append`, `results.append`; 更新 / updates `result['error']`.
+# 拒绝 / Refusals: `Failure('网络诊断参数无效')`; `Failure('路由检查无法解析目标：' + dns.get('error', 'DNS 失败'))`; `Failure('路由检查超时')`.
 def network_diagnostics(root, p):
     target, port = p.get('target', 'example.com'), p.get('port', 443)
     probes, timeout = p.get('probes', ['dns', 'tcp', 'https', 'route']), p.get('timeout', 10)
@@ -999,6 +1219,13 @@ def network_diagnostics(root, p):
         raise Failure('网络诊断参数无效')
     results = []
 
+    # 入口 / Entry: network_diagnostics.probe.
+    # 功能：执行一个选定网络探测并把其有界命令结果转换为当前诊断项。
+    # Purpose: Runs a selected network probe and converts its bounded command result into the current diagnostic item.
+    # 输入 / Inputs: kind
+    # 输出 / Returns: `json.loads(command['stdout'])`
+    # 副作用 / Effects: 调用 / calls `run`.
+    # 拒绝 / Refusals: `Failure(command['stderr'].strip() or '检查进程未成功完成')`.
     def probe(kind):
         command = run([sys.executable, '-c', NETWORK_PROBE, json.dumps(dict(
             probe=kind, target=target, port=port, timeout=timeout))], root, timeout=timeout, check=False)
@@ -1051,6 +1278,12 @@ LOCK_COMMANDS = [('package-lock.json', ['npm', 'ci', '--ignore-scripts']),
                  ('Cargo.lock', ['cargo', 'fetch', '--locked']), ('go.sum', ['go', 'mod', 'download'])]
 
 
+# 入口 / Entry: runtime_versions.
+# 功能：查询可用运行时工具的版本和路径，缺少工具时明确返回 None。
+# Purpose: Queries available runtime tools for version/path, explicitly returning None for missing tools.
+# 输入 / Inputs: root
+# 输出 / Returns: `result`
+# 副作用 / Effects: 调用 / calls `run`; 更新 / updates `result[name]`.
 def runtime_versions(root):
     result = {}
     for name, args in RUNTIME_TOOLS.items():
@@ -1062,6 +1295,13 @@ def runtime_versions(root):
     return result
 
 
+# 入口 / Entry: system_packages.
+# 功能：读取 apk 或 dpkg 的已安装包版本表，未支持的系统拒绝环境锁定。
+# Purpose: Reads installed package versions from apk or dpkg, refusing environment locking on unsupported systems.
+# 输入 / Inputs: root
+# 输出 / Returns: `('apk', packages)`; `('apt', {parts[0]: parts[1] for line in records if len((parts := line.split('\t'))) == 3 and parts[2] == 'installed'})`
+# 副作用 / Effects: 调用 / calls `run(['apk', 'info', '-v'], root)['stdout'].splitlines`, `run`, `run(['dpkg-query', '-W', '-f=${binary:Package}\t${Version}\t${db:Status-Status}\n'], root)['stdout'].splitlines`; 更新 / updates `packages[match[1]]`.
+# 拒绝 / Refusals: `Failure('环境锁定需要 apk 或 apt/dpkg')`.
 def system_packages(root):
     if shutil.which('apk'):
         records = run(['apk', 'info', '-v'], root)['stdout'].splitlines()
@@ -1077,6 +1317,13 @@ def system_packages(root):
     raise Failure('环境锁定需要 apk 或 apt/dpkg')
 
 
+# 入口 / Entry: environment_snapshot.
+# 功能：捕获系统、工具、包版本以及项目锁文件摘要，形成可比较环境快照。
+# Purpose: Captures OS/tool/package versions and project-lockfile digests into a comparable environment snapshot.
+# 输入 / Inputs: root
+# 输出 / Returns: `dict(version=1, system=dict(os_info, architecture=platform.machine(), manager=manager), packages=packages, tools=tools, locks=locks)`
+# 副作用 / Effects: 调用 / calls `Path('/etc/os-release').read_text().splitlines`, `Path('/etc/os-release').read_text`, `hashlib.sha256(file.read_bytes()).hexdigest`, `file.read_bytes`, `runtime_versions(root).items`, `runtime_versions`; 更新 / updates `os_info[key]`, `locks[name]`.
+# 拒绝 / Refusals: `Failure('依赖文件类型或大小不受支持：' + name)`.
 def environment_snapshot(root):
     manager, packages = system_packages(root)
     os_info = {}
@@ -1096,6 +1343,13 @@ def environment_snapshot(root):
     return dict(version=1, system=dict(os_info, architecture=platform.machine(), manager=manager), packages=packages, tools=tools, locks=locks)
 
 
+# 入口 / Entry: dependency_report.
+# 功能：按选定包管理器读取依赖或锁定信息，输出有界依赖状态报告。
+# Purpose: Reads dependency/lock information for the selected package manager and produces a bounded dependency-status report.
+# 输入 / Inputs: root; p
+# 输出 / Returns: `dict(manager=manager, nodes=nodes, edges=edges, updates=updates, updatesChecked=bool(p.get('updates')), generatedAt=time.time())`
+# 副作用 / Effects: 调用 / calls `read_text`, `nodes.append`, `edges.append`, `run`.
+# 拒绝 / Refusals: `Failure('需要 npm lockfileVersion 2 或 3 的锁文件')`; `Failure('依赖图超过 20,000 个节点')`; `Failure('依赖锁文件格式错误')`.
 def dependency_report(root, p):
     manager = p.get('manager', 'auto')
     if manager == 'auto':
@@ -1160,6 +1414,13 @@ BOT_NAME = re.compile(r'^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$')
 BOT_KINDS = ('dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies')
 
 
+# 入口 / Entry: bot_file.
+# 功能：安全读取依赖机器人允许的项目输入文件，拒绝不支持的文件状态。
+# Purpose: Safely reads project inputs allowed to the dependency bot, refusing unsupported file states.
+# 输入 / Inputs: root; name
+# 输出 / Returns: `file.read_bytes()`
+# 副作用 / Effects: 调用 / calls `file.read_bytes`.
+# 拒绝 / Refusals: `Failure('依赖文件类型或大小不受支持：' + name)`.
 def bot_file(root, name):
     file = safe_path(root, name, True)
     if not file.is_file() or file.stat().st_size > 16 * 1024 * 1024:
@@ -1167,6 +1428,13 @@ def bot_file(root, name):
     return file.read_bytes()
 
 
+# 入口 / Entry: bot_inputs.
+# 功能：捕获依赖机器人所需清单和锁文件，并生成来源摘要供后续条件发布。
+# Purpose: Captures manifest/lockfile inputs for the dependency bot and produces source digests for conditional publication.
+# 输入 / Inputs: root
+# 输出 / Returns: `(manifest_bytes, lock_bytes, manifest, lock, direct)`
+# 副作用 / Effects: 调用 / calls `lock.get`; 更新 / updates `direct[name]`.
+# 拒绝 / Refusals: `Failure('依赖升级机器人当前只支持 package-lock.json，不支持 npm-shrinkwrap.json')`; `Failure('package.json 或 package-lock.json 不是有效 JSON')`; `Failure('需要单项目 npm 清单；暂不支持 workspaces')`.
 def bot_inputs(root):
     if safe_path(root, 'npm-shrinkwrap.json').exists():
         raise Failure('依赖升级机器人当前只支持 package-lock.json，不支持 npm-shrinkwrap.json')
@@ -1198,10 +1466,22 @@ def bot_inputs(root):
     return manifest_bytes, lock_bytes, manifest, lock, direct
 
 
+# 入口 / Entry: bot_digest.
+# 功能：计算依赖机器人输入字节的 SHA-256 摘要，绑定计划与原文件内容。
+# Purpose: Hashes dependency-bot input bytes with SHA-256 to bind plans to original file contents.
+# 输入 / Inputs: data
+# 输出 / Returns: `hashlib.sha256(data).hexdigest()`
 def bot_digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+# 入口 / Entry: bot_scan.
+# 功能：查询 npm 直接依赖更新，按稳定版本、major 策略和查询预算生成绑定原输入摘要的计划。
+# Purpose: Queries npm direct-dependency updates and builds plans bound to original input digests under stable-version, major-change and lookup-budget policies.
+# 输入 / Inputs: root; allow_major; timeout
+# 输出 / Returns: `dict(manager='npm', manifestSha256=manifest_sha, lockSha256=lock_sha, allowMajor=allow_major, candidates=candidates, skipped=skipped, checkedAt=time.time()…`
+# 副作用 / Effects: 调用 / calls `run`, `skipped.append`, `lock['packages'].get`, `options.append`, `candidates.append`.
+# 拒绝 / Refusals: `Failure('npm 更新查询失败', exitCode=result['code'])`; `Failure('npm 更新查询没有返回有效 JSON')`; `Failure('npm 更新查询失败')`.
 def bot_scan(root, allow_major, timeout):
     manifest_bytes, lock_bytes, _, lock, direct = bot_inputs(root)
     deadline = time.monotonic() + timeout
@@ -1271,6 +1551,14 @@ def bot_scan(root, allow_major, timeout):
                 candidates=candidates, skipped=skipped, checkedAt=time.time())
 
 
+# 入口 / Entry: bot_replace.
+# 功能：将依赖文件写入同目录临时文件后原子替换，并清理临时残留。
+# Purpose: Writes dependency content into a same-directory temporary file, atomically replaces it and cleans temporary leftovers.
+# 输入 / Inputs: root; name; contents
+# 输出 / Returns: 无显式结果，正常完成返回 None / no explicit result; successful completion returns None.
+# 副作用 / Effects: 调用 / calls `os.fdopen`, `stream.write`, `os.fsync`, `os.chmod`, `os.chown`, `os.replace`.
+# 拒绝 / Refusals: `Failure('无法保留依赖文件的所有者或用户组：' + name)`.
+# 收尾 / Finalization: `if os.path.exists(temporary): os.unlink(temporary)`.
 def bot_replace(root, name, contents):
     file = safe_path(root, name, True)
     before = file.stat()
@@ -1294,6 +1582,15 @@ def bot_replace(root, name, contents):
             os.unlink(temporary)
 
 
+# 入口 / Entry: bot_recover.
+# 功能：核对依赖发布事务记录，在提交未完成时恢复原清单及锁文件。
+# Purpose: Checks dependency-publication transaction evidence and restores original manifest/lockfiles when commit is incomplete.
+# 输入 / Inputs: root
+# 输出 / Returns: `dict(recovered=False)`; `dict(recovered=True, revisionId=revision_id)`
+# 副作用 / Effects: 调用 / calls `read_text`, `bot_replace`, `pending.unlink`.
+# 拒绝 / Refusals: `Failure('依赖升级恢复记录损坏')`; `Failure('升级中断后文件被外部修改，拒绝自动恢复：' + name)`.
+# 设计：清单和锁文件没有单次原子替换；先保存原字节、before/after 摘要及 pending 记录。遇到第三方修改则拒绝自动恢复并保留证据。
+# Design: Manifest and lockfile cannot be replaced in one atomic operation; original bytes, before/after digests and pending evidence are saved first. External modifications refuse automatic recovery and preserve evidence.
 def bot_recover(root):
     pending = safe_path(root, '.sakura/dependency-bot/pending.json')
     if not pending.exists():
@@ -1315,6 +1612,15 @@ def bot_recover(root):
     return dict(recovered=True, revisionId=revision_id)
 
 
+# 入口 / Entry: bot_publish.
+# 功能：核对原输入摘要后用持久恢复记录发布清单与锁文件，失败恢复原始字节。
+# Purpose: Checks original input digests and publishes manifest/lockfiles with durable recovery evidence, restoring original bytes on failure.
+# 输入 / Inputs: root; manifest_bytes; lock_bytes; source_plan; expected_before
+# 输出 / Returns: `dict(revisionId=revision_id, before=before, after=after, retentionWarning=retention_warning)`
+# 副作用 / Effects: 调用 / calls `base.mkdir`, `os.chmod`, `target.mkdir`, `(target / name).write_bytes`, `bot_replace`, `safe_path(root, '.sakura/dependency-bot/pending.json').unlink`.
+# 拒绝 / Refusals: `Failure('发布前依赖文件已改变，请重新扫描')`; `Failure('发布前依赖文件已改变，拒绝覆盖：' + name)`; `re-raise`.
+# 设计：清单和锁文件没有单次原子替换；先保存原字节、before/after 摘要及 pending 记录。遇到第三方修改则拒绝自动恢复并保留证据。
+# Design: Manifest and lockfile cannot be replaced in one atomic operation; original bytes, before/after digests and pending evidence are saved first. External modifications refuse automatic recovery and preserve evidence.
 def bot_publish(root, manifest_bytes, lock_bytes, source_plan, expected_before):
     originals = {name: bot_file(root, name) for name in ('package.json', 'package-lock.json')}
     desired = {'package.json': manifest_bytes, 'package-lock.json': lock_bytes}
@@ -1360,6 +1666,13 @@ def bot_publish(root, manifest_bytes, lock_bytes, source_plan, expected_before):
     return dict(revisionId=revision_id, before=before, after=after, retentionWarning=retention_warning)
 
 
+# 入口 / Entry: dependency_bot.
+# 功能：执行依赖更新计划、检查或应用，重查计划来源并保留可恢复的发布边界。
+# Purpose: Plans/checks/applies dependency updates, rechecking plan provenance and retaining a recoverable publication boundary.
+# 输入 / Inputs: root; p
+# 输出 / Returns: `bot_recover(root)`; `dict(manager='npm', directDependencies=len(direct), manifestSha256=bot_digest(manifest_bytes), lockSha256=bot_digest(lock_bytes), pending=False)`; `bot_scan(root, p.get('allowMajor', False), p.get('timeout', 60))`；另有分支返回 / additional branch returns.
+# 副作用 / Effects: 调用 / calls `read_text`, `bot_publish`, `(stage / name).write_bytes`, `run`, `lock.get`; 更新 / updates `expected[kind][candidate['name']]`.
+# 拒绝 / Refusals: `Failure('存在中断的依赖升级，请先执行 recover')`; `Failure('恢复需要有效的 revisionId')`; `Failure('依赖文件已在升级后改变，拒绝按旧版本恢复')`.
 def dependency_bot(root, p):
     mode = p.get('mode', 'status')
     pending = safe_path(root, '.sakura/dependency-bot/pending.json')
@@ -1431,6 +1744,13 @@ def dependency_bot(root, p):
     return dict(manager='npm', updated=candidate, **published)
 
 
+# 入口 / Entry: runtime_matrix.
+# 功能：列出运行时、查询允许的系统包版本，或先模拟后安装明确固定的运行时包版本。
+# Purpose: Lists runtimes, queries allowed system-package versions or simulates then installs an explicitly pinned runtime package version.
+# 输入 / Inputs: root; p
+# 输出 / Returns: `dict(runtimes={name: value for name, value in runtime_versions(root).items() if name in ('go', 'java', 'dotnet', 'php')})`; `dict(manager=manager, package=package, **run(args, root))`; `dict(manager=manager, package=package, version=version, simulation=compact_command(simulation), runtime=runtime_versions(root)[runtime], **compact_command(…`
+# 副作用 / Effects: 调用 / calls `runtime_versions(root).items`, `runtime_versions`, `run`.
+# 拒绝 / Refusals: `Failure('运行时安装需要 apk 或 apt')`; `Failure('包名称不属于所选运行时')`; `Failure('安装需要明确的 package 和 version，请先查询可用版本')`.
 def runtime_matrix(root, p):
     if p['mode'] == 'list':
         return dict(runtimes={name: value for name, value in runtime_versions(root).items() if name in ('go', 'java', 'dotnet', 'php')})
@@ -1458,6 +1778,13 @@ def runtime_matrix(root, p):
                 runtime=runtime_versions(root)[runtime], **compact_command(result))
 
 
+# 入口 / Entry: reproducible_environment.
+# 功能：记录或验证当前系统依赖、工具及锁文件摘要，按要求执行可重复环境准备。
+# Purpose: Records/verifies system dependencies, tools and lockfile digests, optionally preparing the reproducible environment.
+# 输入 / Inputs: root; p
+# 输出 / Returns: `dict(lockfile=relative, fingerprint=hashlib.sha256(json.dumps(actual, sort_keys=True).encode()).hexdigest(), packages=len(actual['packages']), tools=actual…`; `dict(code=1 if lock_drift or package_drift or tool_drift else 0, lockfile=relative, differences=dict(locks=lock_drift, packages=package_drift, tools=tool_d…`; `dict(code=1 if any(remaining.values()) else 0, installs=installs, differences=remaining, verifiedAt=time.time())`
+# 副作用 / Effects: 调用 / calls `read_text`, `installs.append`, `run`, `set`, `installed_families.add`.
+# 拒绝 / Refusals: `Failure('环境锁文件格式错误')`; `Failure('发行版、版本、架构或包管理器与锁文件不匹配', expected=expected['system'], actual=actual['system'])`; `Failure('环境锁文件包含非法系统包版本')`.
 def reproducible_environment(root, p):
     relative = '.sakura/environment.lock.json'
     actual = environment_snapshot(root)
@@ -1475,6 +1802,11 @@ def reproducible_environment(root, p):
                                   not isinstance(version, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+:~_-]{0,120}', version)
                                   for name, version in packages.items()):
         raise Failure('环境锁文件包含非法系统包版本')
+    # 入口 / Entry: reproducible_environment.drift.
+    # 功能：比较 expected 字典各项与 actual 值，输出缺失或改变的期望/实际记录。
+    # Purpose: Compares expected dictionary entries with actual values and returns expected/actual records for missing or changed items.
+    # 输入 / Inputs: before; after
+    # 输出 / Returns: `[dict(name=name, expected=value, actual=after.get(name)) for name, value in before.items() if after.get(name) != value]`
     drift = lambda before, after: [dict(name=name, expected=value, actual=after.get(name)) for name, value in before.items() if after.get(name) != value]
     lock_drift = drift(expected['locks'], actual['locks'])
     package_drift, tool_drift = drift(packages, actual['packages']), drift(expected['tools'], actual['tools'])
@@ -1501,12 +1833,24 @@ def reproducible_environment(root, p):
     return dict(code=1 if any(remaining.values()) else 0, installs=installs, differences=remaining, verifiedAt=time.time())
 
 
+# 入口 / Entry: compact_command.
+# 功能：截取命令结果中的状态和有限输出片段，供嵌套报告使用。
+# Purpose: Extracts command status and limited output excerpts for nested reports.
+# 输入 / Inputs: result
+# 输出 / Returns: `dict(result, stdout=result.get('stdout', '')[-16000:], stderr=result.get('stderr', '')[-16000:], outputTruncated=any((len(result.get(key, '')) > 16000 for …`
 def compact_command(result):
     """Bound each command's displayed output; preserve its exit status and truncation flag."""
     return dict(result, stdout=result.get("stdout", "")[-16000:], stderr=result.get("stderr", "")[-16000:],
                 outputTruncated=any(len(result.get(key, "")) > 16000 for key in ("stdout", "stderr")))
 
 
+# 入口 / Entry: text_inventory.
+# 功能：对受支持的项目文本文件做有界清单及摘要扫描。
+# Purpose: Builds a bounded inventory/digest scan of supported project text files.
+# 输入 / Inputs: root
+# 输出 / Returns: `entries`
+# 副作用 / Effects: 调用 / calls `file.read_bytes`, `entries.append`; 更新 / updates `folders[:]`.
+# 拒绝 / Refusals: `Failure('索引超过 20,000 个文件')`; `Failure('扫描期间文件发生变化：' + str(file))`; `Failure('文本索引超过 32 MiB')`.
 def text_inventory(root):
     ignored = {".git", ".sakura", "node_modules", ".venv", "venv", "target", "__pycache__", "dist", "build"}
     entries, size, visited = [], 0, 0
@@ -1540,6 +1884,13 @@ def text_inventory(root):
     return entries
 
 
+# 入口 / Entry: directory_revision.
+# 功能：按选定操作捕获、比较或恢复目录版本，通过清单摘要核对来源状态。
+# Purpose: Captures/compares/restores directory revisions according to the operation, checking provenance through inventory digests.
+# 输入 / Inputs: root; p
+# 输出 / Returns: `dict(revisions=records)`; `{key: value for key, value in result.items() if key not in ('entries', 'directories')}`; `dict(revision=revision, added=added, removed=removed, changed=changed, equal=not (added or removed or changed))`；另有分支返回 / additional branch returns.
+# 副作用 / Effects: 调用 / calls `file.read_text`, `records.append`, `directories.append`, `folder.mkdir`, `destination.parent.mkdir`, `hashlib.sha256(destination.read_bytes()).hexdigest`; 更新 / updates `folders[:]`.
+# 拒绝 / Refusals: `Failure('请选择项目内的普通目录，不能备份内部状态目录')`; `Failure('最多保存 100 个目录版本')`; `Failure('目录数量超过上限')`.
 def directory_revision(root, p):
     base = safe_path(root, ".sakura/directory-history")
     mode = p["mode"]
@@ -1627,6 +1978,13 @@ def directory_revision(root, p):
     return dict(revision=revision, target=p["target"], files=len(data["entries"]))
 
 
+# 入口 / Entry: packet_capture.
+# 功能：在核验接口、时间及数据预算后执行客户机抓包，保存有限捕获及诊断信息。
+# Purpose: Runs guest packet capture after interface/time/data-budget checks, saving a bounded capture and diagnostics.
+# 输入 / Inputs: root; p
+# 输出 / Returns: `dict(code=0, interface=interface, filter=dict(protocol=protocol, port=port), elapsedMs=elapsed_ms, stopReason='packet-limit' if capture['code'] == 0 else '…`
+# 副作用 / Effects: 调用 / calls `command.append`, `run`; 更新 / updates `buckets[offset]`, `protocols[kind]`, `peers[endpoint]`, `flows[key]`.
+# 拒绝 / Refusals: `Failure('网卡名称无效')`; `Failure('抓包参数超出限制')`; `Failure('端口过滤参数无效')`.
 def packet_capture(root, p):
     interface = p.get('interface', 'eth0')
     protocol = p.get('protocol', 'any')
@@ -1699,6 +2057,13 @@ def packet_capture(root, p):
                 redacted=True, payloadIncluded=False, addressesIncluded=False)
 
 
+# 入口 / Entry: capability_execute.
+# 功能：按能力 operation 分派客户机工具、审计、构建或诊断动作，统一有界执行及结果格式。
+# Purpose: Dispatches guest tooling/audit/build/diagnostic actions by capability operation with common bounded execution and result formatting.
+# 输入 / Inputs: root; operation; p
+# 输出 / Returns: `packet_capture(root, p)`; `network_diagnostics(root, p)`; `dependency_report(root, p)`；另有分支返回 / additional branch returns.
+# 副作用 / Effects: 调用 / calls `runtime_matrix`, `run(['git', 'rev-parse', '--verify', p.get('ref', 'HEAD') + '^{commit}'], root)['stdout'].strip`, `run`, `destination.parent.mkdir`, `Path(run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], root)['stdout'].strip()).resolve`, `run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], root)['stdout'].strip`; 更新 / updates `step['completed'][member]`, `envelope['signature']`, `item['bytes']`, `item['files']`.
+# 拒绝 / Refusals: `Failure('需要普通项目子目录 path')`; `Failure('目标必须不存在，每个仓库最多管理 20 个工作树')`; `Failure('请选择 Git 已登记的工作树目录')`.
 def capability_execute(root, operation, p):
     if operation == 'packet-capture':
         return packet_capture(root, p)
@@ -1713,6 +2078,12 @@ def capability_execute(root, operation, p):
     if operation == 'reproducible-env':
         return reproducible_environment(root, p)
     if operation == 'git-worktrees':
+        # 入口 / Entry: capability_execute.worktrees.
+        # 功能：读取当前 Git worktree 表并转换为路径、分支及状态记录。
+        # Purpose: Reads the Git worktree inventory into path, branch and status records.
+        # 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+        # 输出 / Returns: `records`
+        # 副作用 / Effects: 调用 / calls `run`, `block.split`, `records.append`; 更新 / updates `entry[key]`, `entry['directory']`, `entry['current']`.
         def worktrees():
             output = run(['git', 'worktree', 'list', '--porcelain', '-z'], root)['stdout']
             records = []
@@ -2101,6 +2472,12 @@ def capability_execute(root, operation, p):
             if kind == "choice" and value not in field.get("choices", []):
                 raise Failure("参数不在可选值中：" + name)
             values[name] = str(value).lower() if isinstance(value, bool) else str(value)
+        # 入口 / Entry: capability_execute.substitute.
+        # 功能：将已声明且验证的命令参数替换到 argv 模板，拒绝引用未声明字段。
+        # Purpose: Substitutes declared/validated command parameters into argv templates and refuses undeclared references.
+        # 输入 / Inputs: match
+        # 输出 / Returns: `values[match[1]]`
+        # 拒绝 / Refusals: `Failure('命令引用未声明参数：' + match[1])`.
         def substitute(match):
             if match[1] not in values:
                 raise Failure("命令引用未声明参数：" + match[1])
@@ -2187,6 +2564,13 @@ def capability_execute(root, operation, p):
     raise Failure("没有此能力的执行器：" + operation)
 
 
+# 入口 / Entry: main.
+# 功能：读取 stdin JSON 请求，验证项目根目录并输出一个统一 JSON 成功或失败结果。
+# Purpose: Reads a stdin JSON request, validates the project root and emits one common JSON success/failure result.
+# 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+# 输出 / Returns: `result`
+# 副作用 / Effects: 调用 / calls `executor`, `result.setdefault`; 更新 / updates `result['operation']`.
+# 拒绝 / Refusals: `Failure('项目目录不存在')`.
 def main():
     request = json.load(sys.stdin)
     root = Path(request["directory"]).resolve(strict=True)

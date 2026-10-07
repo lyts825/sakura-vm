@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实 seccomp 策略下项目 UID、任务作用域、继承策略和字面参数。 */
+/** 烟雾验收：验证真实 seccomp 策略下项目 UID、任务作用域、继承策略和字面参数。
+ * Smoke acceptance for real seccomp project UID/task scope/inherited policy and literal arguments. */
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -44,6 +45,8 @@ try {
   await workspaces.save(vm.id, { directory: '/workspace/seccomp-host' });
   const created = await machines.exec(vm.id, 'mkdir -p /workspace/seccomp-host /workspace/limited');
   assert.equal(created.code, 0, created.stderr);
+  /** 在指定项目预览目录迁移并确认精确 planId/sha256，要求 applied 身份后返回，供系统调用观测真实降权。
+   * Preview directory migration in its project/confirm exact planId and sha256, require applied identity and return it for real lowered-privilege syscall observation. */
   const authorize = (projectId: string) => workspaces.projects.inScope(vm.id, projectId, async () => {
     const preview = await migrations.preview(vm.id); assert.ok(preview.plan);
     const applied = await migrations.apply(vm.id, { action: 'apply', version: 1, reviewed: true,
@@ -100,6 +103,8 @@ try {
   await machines.writeGuestFile(vm.id, '/workspace/seccomp-tools/seccomp.py',
     'open("/workspace/seccomp-module-replaced", "w").close()\nraise RuntimeError("unexpected project module")\n');
   assert.equal((await machines.exec(vm.id, 'chmod 755 /workspace/seccomp-tools/python3')).code, 0);
+  /** 在当前指定项目上下文调用生产 runSyscallProfile，传递输入与取消信号，保留权限/运行错误。
+   * Invoke production runSyscallProfile in the specified active-project context, forwarding input/cancellation and preserving authority/runtime errors. */
   const execute = (input: unknown, signal?: AbortSignal) => workspaces.projects.with(vm.id, index.active,
     () => runSyscallProfile(machines, vm.id, input, signal, workspaces));
   const account = await execute({ mode: 'run', command: '/usr/bin/python3', confirmed: true,
@@ -133,8 +138,12 @@ try {
   assert.equal((await machines.exec(vm.id, `ip -n sk-${index.active} route add blackhole 203.0.113.0/24`)).code, 0);
   await assert.rejects(execute({ mode: 'run', command: '/usr/bin/touch', args: ['/workspace/seccomp-route-leak'], confirmed: true }), /网络路由/);
   assert.equal((await machines.exec(vm.id, `test ! -e /workspace/seccomp-route-leak; ip -n sk-${index.active} route del blackhole 203.0.113.0/24`)).code, 0);
+  /** 生成记录当前/父/子 PID 的自有阻塞命令，供取消后完整进程树清理核查。
+   * Generate an owned blocking command recording current/parent/child PIDs for full-tree cleanup verification after cancellation. */
   const processCommand = (file: string) =>
     `printf '%s\\n' "$$" "$PPID" > ${file}; sleep 600 & echo $! >> ${file}; wait`;
+  /** 只接受数字 PID 列表并在最多百次轮询确认它们全已消失，存活时保存 /proc 诊断，不主动杀进程。
+   * Accept only numeric PID lists and poll at most a hundred times for disappearance, retaining /proc diagnostics for survivors without killing processes. */
   const waitForCleanup = async (pids: string, label: string) => {
     assert.match(pids, /^\d+\n(?:\d+\n)*$/);
     let result;

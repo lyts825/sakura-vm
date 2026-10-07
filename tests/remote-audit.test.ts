@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - remote audit requires object lock, anchors verified heads, renews retention and detects tampering
- * - S3 adapter sends checksum and compliance retention and reads the exact locked version
- * - S3 audit rejects incomplete environment credentials before metadata or object requests
+ * 模块职责：回归验证模块，围绕 `remote-audit` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `remote-audit`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: remote audit requires object lock, anchors verified heads, renews retention and detects tampering; S3 adapter sends checksum and compliance retention and reads the exact locked version.
  */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,15 +41,40 @@ const target: RemoteAuditTarget = {
 class MemoryStore implements RemoteAuditStore {
   enabled = false;
   objects = new Map<string, RemoteAuditObject>();
+  /**
+   * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+   * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`this.enabled`），以 Promise 交付。
+   * Result: Return the branch-computed value (`this.enabled`) through a Promise.
+   */
   async locked() {
     return this.enabled;
   }
+  /**
+   * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+   * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+   * 输入 / Inputs: _target: RemoteAuditTarget; key: string; body: string; retainUntil: Date。
+   * 结果：返回分支计算值（`versionId`），以 Promise 交付。
+   * Result: Return the branch-computed value (`versionId`) through a Promise.
+   * 失败 / Failure: `new Error('duplicate')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `this.objects.has`, `String`, `this.objects.set`.
+   */
   async put(_target: RemoteAuditTarget, key: string, body: string, retainUntil: Date) {
     if (this.objects.has(key)) throw new Error('duplicate');
     const versionId = String(this.objects.size + 1);
     this.objects.set(key, { body, versionId, mode: 'COMPLIANCE', retainUntil });
     return versionId;
   }
+  /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: _target: RemoteAuditTarget; key: string; versionId: string。
+   * 结果：返回分支计算值（`value`），以 Promise 交付。
+   * Result: Return the branch-computed value (`value`) through a Promise.
+   * 失败 / Failure: `new Error('missing')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `this.objects.get`.
+   */
   async read(_target: RemoteAuditTarget, key: string, versionId?: string) {
     const value = this.objects.get(key);
     if (!value || (versionId && versionId !== value.versionId)) throw new Error('missing');
@@ -56,6 +82,19 @@ class MemoryStore implements RemoteAuditStore {
   }
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: remote audit requires object lock, anchors verified heads, renews retention and detects tampering
+ * 状态影响 / State effects: `store.enabled`, `time`, `corrupted.last.body`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `Date.parse`, `remote.init`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.rejects(remote.configure(target), /Object Lock/)`; `assert.equal(first.caughtUp, true)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('remote audit requires object lock, anchors verified heads, renews retention and detects tampering', async () => {
   const audit = new AuditLog(join(root, 'audit'));
   const store = new MemoryStore();
@@ -114,6 +153,19 @@ test('remote audit requires object lock, anchors verified heads, renews retentio
   await assert.rejects(new RemoteAuditLock(audit, file, store, () => time, 0).init(), /本地记录损坏/);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: S3 adapter sends checksum and compliance retention and reads the exact locked version
+ * 状态影响 / State effects: `process.env.AWS_ACCESS_KEY_ID`, `process.env.AWS_SECRET_ACCESS_KEY`, `process.env.AWS_SESSION_TOKEN`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `createServer`, `server.address`, `assert.equal`, `store.locked`.
+ * 检查边界 / Checked boundaries: `assert.equal(await store.locked(destination), true)`; `assert.equal(versionId, 'locked-version-1')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('S3 adapter sends checksum and compliance retention and reads the exact locked version', async () => {
   const oldKey = process.env.AWS_ACCESS_KEY_ID;
   const oldSecret = process.env.AWS_SECRET_ACCESS_KEY;
@@ -125,7 +177,18 @@ test('S3 adapter sends checksum and compliance retention and reads the exact loc
   const retainUntil = new Date('2030-01-01T00:00:00.000Z');
   let uploaded = '';
   let lockedHeaders: Record<string, string | undefined> = {};
-  const server = createServer(async (req, res) => {
+  const server = createServer(/**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: req; res。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: S3 adapter sends checksum and compliance retention and reads the exact locked version
+   * 状态影响 / State effects: `uploaded`, `lockedHeaders`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `assert.equal`, `url.searchParams.has`, `res.setHeader`, `res.end`.
+   * 检查边界 / Checked boundaries: `assert.equal(req.headers['x-amz-security-token'], 'test-session-token')`.
+   */
+  async (req, res) => {
     assert.equal(req.headers['x-amz-security-token'], 'test-session-token');
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     if (req.method === 'GET' && url.searchParams.has('object-lock')) {
@@ -193,6 +256,17 @@ test('S3 adapter sends checksum and compliance retention and reads the exact loc
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: S3 audit rejects incomplete environment credentials before metadata or object requests
+ * 状态影响 / State effects: `process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI`, `process.env.AWS_ACCESS_KEY_ID`, `process.env.AWS_SECRET_ACCESS_KEY`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `Object.fromEntries`, `keys.map`, `t.after`, `createServer`.
+ * 检查边界 / Checked boundaries: `assert.rejects(store.locked({ ...target, endpoint }), { code: 'REMOTE_AUDIT_CREDENTIALS_REQUIRED', })`; `assert.equal(requests, 0, 'Neither metadata nor the configured S3 endpoint may be contacted')`.
+ */
 test('S3 audit rejects incomplete environment credentials before metadata or object requests', async (t) => {
   const keys = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_CONTAINER_CREDENTIALS_FULL_URI'] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));

@@ -1,5 +1,6 @@
 /**
  * 模块职责：维护客户机目录事件监听，inotify 不可用时保留轮询路径并管理监听资源。
+ * Module purpose: Owns guest directory event listeners, retaining polling when inotify is unavailable and managing listener cleanup.
  */
 import { watch, type FSWatcher } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -26,13 +27,43 @@ type Entry = {
 export class SyncWatchers {
   private entries = new Map<string, Entry>();
   private tasks = new Set<Promise<void>>();
+  /**
+   * 入口 / Entry: SyncWatchers.constructor.
+   * 功能：建立 SyncWatchers 的维护客户机目录事件监听上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the SyncWatchers context for this module's responsibility: Owns guest directory event listeners, retaining polling when inotify is unavailable and managing listener cleanup. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; notify: () => void
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private machines: Machines,
     private notify: () => void,
   ) {}
+  /**
+   * 入口 / Entry: SyncWatchers.view.
+   * 功能：从当前输入或状态计算 `this.entries.get(key)?.state || null`，供调用方后续验证或使用。
+   * Purpose: Computes `this.entries.get(key)?.state || null` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: key: string
+   * 输出 / Returns: `this.entries.get(key)?.state || null`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   view(key: string) {
     return this.entries.get(key)?.state || null;
   }
+  /**
+   * 入口 / Entry: SyncWatchers.ensure.
+   * 功能：为当前宿主与客户机目录建立监听，配置改变时退休原监听并保留轮询备选。
+   * Purpose: Ensures host/guest directory watches, retiring changed watches and retaining polling fallback.
+   * 设计：通知合并而不直接进行同步；监听失败只改变观测方式，原连接与取消仍由本监听条目清理。
+   * Design: Notifications coalesce without directly syncing; failure changes observation mode while each entry owns connection/cancellation cleanup.
+   * 输入 / Inputs: key: string; id: string; config: { host: string; guest: string; auto: boolean; watch?: boolean }
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `entry.abort.abort`; `entry.watcher.close`; `this.entries.delete`; `this.entries.set`; `this.tasks.add`; 更新 / updates `entry`, `active.watcher`, `active.state.host`, `active.state.reason`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `active.state.reason = (error as Error).message;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `active.state.reason = (error as Error).message;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   ensure(key: string, id: string, config: { host: string; guest: string; auto: boolean; watch?: boolean }) {
     let entry = this.entries.get(key);
     if (
@@ -57,6 +88,18 @@ export class SyncWatchers {
       state: { host: 'polling', guest: 'polling' },
     };
     const active = entry;
+    /**
+     * 入口 / Entry: SyncWatchers.ensure.changed.
+     * 功能：在维护客户机目录事件监听中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`SyncWatchers`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `SyncWatchers`; this entry produces `void` for its caller. Module context: Owns guest directory event listeners, retaining polling when inotify is unavailable and managing listener cleanup.
+     * 处理：通过 `this.notify` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.notify`; the branches below determine continuation, return or refusal.
+     * 分支 / Branches: `controller.signal.aborted`.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: 更新 / updates `active.dirty`, `active.state.lastEvent`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const changed = () => {
       if (controller.signal.aborted) return;
       active.dirty = true;
@@ -82,6 +125,17 @@ export class SyncWatchers {
       active.state.reason = (error as Error).message;
     }
     this.entries.set(key, active);
+    /**
+     * 入口 / Entry: SyncWatchers.ensure.callback@85.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.machines.exec`; 更新 / updates `active.state.guest`, `active.state.reason`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     * 失败处理：catch 分支执行 `if (controller.signal.aborted) break;`; `active.state.guest = 'polling';`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `if (controller.signal.aborted) break;`; `active.state.guest = 'polling';`; these statements determine whether a failure is absorbed or rejected again.
+     */
     active.task = (async () => {
       while (!controller.signal.aborted) {
         try {
@@ -122,6 +176,15 @@ export class SyncWatchers {
     this.tasks.add(active.task);
     void active.task.finally(() => this.tasks.delete(active.task));
   }
+  /**
+   * 入口 / Entry: SyncWatchers.due.
+   * 功能：从当前输入或状态计算 `( !entry || entry.dirty || entry.state.host !== 'watching' || entry.state.guest !== 'watching' || now - entry.scannedAt >= 60…`，供调用方后续验证或使用。
+   * Purpose: Computes `( !entry || entry.dirty || entry.state.host !== 'watching' || entry.state.guest !== 'watching' || now - entry.scannedAt >= 60…` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: key: string; now: number
+   * 输出 / Returns: `( !entry || entry.dirty || entry.state.host !== 'watching' || entry.state.guest !== 'watching' || now - entry.scannedAt >= 60…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   due(key: string, now: number) {
     const entry = this.entries.get(key);
     return (
@@ -132,6 +195,18 @@ export class SyncWatchers {
       now - entry.scannedAt >= 60000
     );
   }
+  /**
+   * 入口 / Entry: SyncWatchers.started.
+   * 功能：在维护客户机目录事件监听中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `entry.dirty`, `entry.scannedAt`（`SyncWatchers`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `SyncWatchers`; the outcome is recorded in `entry.dirty`, `entry.scannedAt`. Module context: Owns guest directory event listeners, retaining polling when inotify is unavailable and managing listener cleanup.
+   * 处理：通过 `this.entries.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.entries.get`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `entry`.
+   * 输入 / Inputs: key: string; now: number
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `entry.dirty`, `entry.scannedAt`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   started(key: string, now: number) {
     const entry = this.entries.get(key);
     if (entry) {
@@ -139,6 +214,18 @@ export class SyncWatchers {
       entry.scannedAt = now;
     }
   }
+  /**
+   * 入口 / Entry: SyncWatchers.retain.
+   * 功能：在维护客户机目录事件监听中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`SyncWatchers`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `SyncWatchers`; the calls and state transitions below complete the operation. Module context: Owns guest directory event listeners, retaining polling when inotify is unavailable and managing listener cleanup.
+   * 处理：通过 `keep`, `entry.abort.abort`, `entry.watcher.close`, `this.entries.delete` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `keep`, `entry.abort.abort`, `entry.watcher.close`, `this.entries.delete`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `keep(key, entry.id)`.
+   * 输入 / Inputs: keep: (key: string, id: string) => boolean
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `entry.abort.abort`; `entry.watcher.close`; `this.entries.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   retain(keep: (key: string, id: string) => boolean) {
     for (const [key, entry] of this.entries) {
       if (keep(key, entry.id)) continue;
@@ -147,6 +234,17 @@ export class SyncWatchers {
       this.entries.delete(key);
     }
   }
+  /**
+   * 入口 / Entry: SyncWatchers.close.
+   * 功能：在维护客户机目录事件监听中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`SyncWatchers`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `SyncWatchers`; the calls and state transitions below complete the operation. Module context: Owns guest directory event listeners, retaining polling when inotify is unavailable and managing listener cleanup.
+   * 处理：通过 `this.entries.values`, `this.entries.clear`, `entry.abort.abort`, `entry.watcher.close` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.entries.values`, `this.entries.clear`, `entry.abort.abort`, `entry.watcher.close`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.entries.clear`; `entry.abort.abort`; `entry.watcher.close`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     const entries = [...this.entries.values()];
     this.entries.clear();

@@ -1,4 +1,5 @@
-/** HA 见证命令入口，加载配置并路由初始化、预检、观察、演练计划、迁移及恢复操作。 */
+/** HA 见证命令入口，加载配置并路由初始化、预检、观察、演练计划、迁移及恢复操作。
+ * Load HA witness configuration and dispatch initialization, preflight, observation, reviewed drills, migration and recovery. */
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { HaWitness } from '../server/ha-witness-core.ts';
@@ -74,6 +75,8 @@ if (command === '--preflight') {
     throw new Error('观察时限须为 60–86400 秒');
   const plan = JSON.parse(await readFile(resolve(flags.get('--plan')!), 'utf8'));
   const stop = new AbortController();
+  /** 向见证轮询的取消信号发出中断，当前循环随后退出并执行其既有清理。
+   * Abort the witness polling signal so the active loop exits through its existing cleanup. */
   const abort = () => stop.abort();
   process.on('SIGINT', abort); process.on('SIGTERM', abort);
   let previous = '';
@@ -81,6 +84,8 @@ if (command === '--preflight') {
     const result = await observeHaFailoverDrill(config, plan, {
       output: flags.get('--output')!, witnessUrl: flags.get('--witness-url'),
       timeoutMs: Number(seconds) * 1000, signal: stop.signal,
+      /** 只在阶段或错误标签变化时输出结构化观测，保留稳定性与源端启动许可，避免稳定轮询产生重复日志。
+       * Log structured observations only when phase/error changes, retaining stability and source-start permission without repeating steady polling logs. */
       onSample: (sample) => {
         const label = `${sample.phase || 'unavailable'}:${sample.error || ''}`;
         if (label !== previous) {
@@ -98,6 +103,8 @@ if (command === '--preflight') {
   const service = await startHaWitnessServer(config);
   console.log(`HA 见证服务已监听 ${config.listen.host}:${config.listen.port}`);
   let closing = false;
+  /** 以 closing 防止重复关闭见证服务；成功退出进程，关闭失败保留错误日志并设置失败退出码。
+   * Guard witness shutdown with closing; exit after success, or log close failure and set a failing exit code. */
   const stop = () => {
     if (closing) return;
     closing = true;

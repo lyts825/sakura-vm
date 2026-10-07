@@ -1,4 +1,5 @@
-/** 烟雾验收：验证QEMU NBD 磁盘镜像、RAM 迁移、切换和持久 fencing 失败边界。 */
+/** 烟雾验收：验证QEMU NBD 磁盘镜像、RAM 迁移、切换和持久 fencing 失败边界。
+ * Smoke acceptance for real QEMU NBD disk/RAM transfer, switchover and durable-fencing failure boundaries. */
 import assert from 'node:assert/strict';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
@@ -24,6 +25,8 @@ const qemuImg = join(qemuDir, `qemu-img${suffix}`);
 const qemuIo = join(qemuDir, `qemu-io${suffix}`);
 const run = promisify(execFile);
 const processes: ChildProcess[] = [];
+/** 将已由 QMP 返回的观测值限定为 status/running 读取形状，仅作类型收窄，不伪造状态校验。
+ * Narrow an already returned QMP observation to status/running fields without pretending to perform runtime validation. */
 const status = (value: unknown) => value as { status?: string; running?: boolean };
 const interruptPrecopy = process.argv.includes('--interrupt-precopy');
 const failFence = process.argv.includes('--fail-fence');
@@ -38,10 +41,14 @@ const targetDisk = join(root, 'target.qcow2');
 let sourcePeers: HostPeers | undefined, targetPeers: HostPeers | undefined;
 let peerId: string | undefined, peerSession: string | undefined;
 const forwards: Array<Awaited<ReturnType<HostPeers['openMigrationForward']>>> = [];
+/** 提供此隔离迁移夹具的固定资源与一个运行实例，供对等控制服务状态接口。
+ * Provide fixed isolated-fixture resources/one running VM to the peer-control status interface. */
 const peerStatus = async () => ({ platform: process.platform, arch: process.arch,
   cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFree: 4 * 1024 ** 3,
   load: [0, 0, 0], vmCount: 1, runningVms: 1 });
 
+/** 以 TCG 和明确磁盘拓扑启动自有源/目标 QEMU，目标 defer incoming、源暂停；登记句柄并十五秒内要求 QMP 可达，失败附诊断尾部。
+ * Launch owned source/target QEMU with TCG/exact disk topology, deferred target incoming/paused source; register handles and require QMP within fifteen seconds with diagnostic tails on failure. */
 async function launch(port: number, disk: string, incoming: boolean) {
   const child = spawn(qemu, [
     '-name', 'sakura-migration-smoke', '-machine', 'q35', '-accel', 'tcg',
@@ -83,6 +90,8 @@ try {
   await launch(targetPort, targetDisk, true);
   await qmp(sourcePort, 'cont');
   assert.equal(status(await qmp(sourcePort, 'query-status')).running, true);
+  /** 从真实 query-block 要求唯一可写磁盘和 node-name，拒绝模糊多个磁盘目标。
+   * Require exactly one writable disk/node-name from real query-block, rejecting ambiguous multi-disk targets. */
   const node = async (port: number) => {
     const blocks = await qmp(port, 'query-block') as Array<{
       device: string; inserted?: { 'node-name'?: string; ro?: boolean } }>;
@@ -132,6 +141,8 @@ try {
   }
   let fenced = false, interrupted = false;
   const migration = migrateQemuWithMirroredDisk({
+    /** 转发源 QMP 命令，可在首次 query-migrate 注入预拷贝控制失败，用于恢复边界验证。
+     * Forward source QMP commands with optional first query-migrate failure injection for pre-copy recovery boundaries. */
     source: (command, args, timeoutMs) => {
       if (interruptPrecopy && command === 'query-migrate' && !interrupted) {
         interrupted = true;
@@ -139,6 +150,8 @@ try {
       }
       return qmp(sourcePort, command, args, timeoutMs);
     },
+    /** 按场景选择认证对等隧道或本机目标 QMP，原样转发命令、参数和期限。
+     * Select authenticated peer tunnel or local target QMP for the scenario, forwarding command/arguments/deadline unchanged. */
     target: (command, args, timeoutMs) => peerTunnel
       ? sourcePeers!.targetMigrationQmp(peerId!, peerSession!, command, args, timeoutMs)
       : qmp(targetPort, command, args, timeoutMs),
@@ -148,6 +161,8 @@ try {
     nbdConnect: { type: 'inet', host: '127.0.0.1', port: String(sourceNbdPort) },
     incomingUri: `tcp:127.0.0.1:${transferPort}`,
     outgoingUri: `tcp:127.0.0.1:${sourceTransferPort}`,
+    /** 记录源端持久围栏已被要求，可明确注入围栏失败以验证未获持久许可时不能完成交接。
+     * Record requested durable source fencing and optionally inject failure to verify handover cannot complete without durable authorization. */
     fenceSource: async () => {
       fenced = true;
       if (failFence) throw new Error('injected durable fence failure');

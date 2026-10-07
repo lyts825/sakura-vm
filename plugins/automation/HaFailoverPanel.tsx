@@ -1,5 +1,8 @@
 /**
- * 模块职责：配置实例高可用与见证节点，查看故障转移监控和提升记录。
+ * 模块职责（中文）：配置实例高可用与见证节点，查看故障转移监控和提升记录。
+ * Module responsibility (English): UI interaction and state presentation for resource policy, packages and engineering tasks.
+ * 详细范围（中文）：公开入口包括 HaFailoverPanel；职责覆盖资源策略、软件包与工程任务的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include HaFailoverPanel. The scope covers UI interaction and state presentation for resource policy, packages and engineering tasks. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useEffect, useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
@@ -13,6 +16,18 @@ type Monitor = { armed: boolean; suspected: boolean; consecutiveFailures: number
 type Promotion = { remoteVmId: string; snapshotId: string; status: 'fenced' | 'accepted';
   fencedAt: string; error?: string };
 
+/**
+ * 中文：呈现资源策略、软件包与工程任务的界面交互与状态呈现中的 HaFailoverPanel 界面，订阅 /host-peers，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the HaFailoverPanel surface for UI interaction and state presentation for resource policy, packages and engineering tasks, subscribing to /host-peers. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request, vmId, setting, monitor, promotion, localFailover,
+  hostFailover,
+  reload } 提供 request（带身份和权限作用域的传输能力）、vmId（当前实例标识）、setting（ting 状态）、monitor（monitor 状态）、promotion（promotion 状态）、localFailover（localFailover 状态）、hostFailover（hostFailover 状态）、reload（reload 状态） 上下文字段
+ * English: Inputs: { request, vmId, setting, monitor, promotion, localFailover,
+  hostFailover,
+  reload } provides context fields request (transport capability bound to identity/authority scope), vmId (current VM identifier), setting (ting state), monitor (monitor state), promotion (promotion state), localFailover (localFailover state), hostFailover (hostFailover state), reload (reload state)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, localFailover,
   hostFailover,
   reload }: {
@@ -22,7 +37,7 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
     targetVmId: string | null; error: string | null;
     failback?: 'pending' | 'completed' | null; recoveryHeld?: boolean;
     statusPending?: boolean } | null;
-  reload: () => void;
+  reload: /** 中文：使当前资源重新核对，供成功写入后恢复列表或详情；这是 HaFailoverPanel 的调用契约 | English: Reconcile the current resource after successful mutations to restore list/detail state; this is the callable contract of HaFailoverPanel | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ () => void;
 }) {
   const peers = useRemote<PeerView>(request, '/host-peers', true, 10000);
   const action = useAction();
@@ -40,9 +55,9 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
   const [result, setResult] = useState('');
   const rejoinAvailable = !!promotion || !!hostFailover?.recoveryHeld ||
     ['fencing', 'fenced', 'promoted'].includes(hostFailover?.phase || '');
-  useEffect(() => { setDataReconciled(false); },
+  useEffect(/** 中文：当依赖 [vmId, promotion?.remoteVmId, hostFailover?.targetVmId, rejoinAvailable] 变化时dataReconciled 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [vmId, promotion?.remoteVmId, hostFailover?.targetVmId, rejoinAvailable] change, dataReconciled state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => { setDataReconciled(false); },
     [vmId, promotion?.remoteVmId, hostFailover?.targetVmId, rejoinAvailable]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [setting?.updatedAt] 变化时启用标记，targetHostId 状态，failureThreshold 状态，maxReplicaAgeMinutes 状态，autoProcessFailover 状态，autoHostFailover 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [setting?.updatedAt] change, enabled marker, targetHostId state, failureThreshold state, maxReplicaAgeMinutes state, autoProcessFailover state, autoHostFailover state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (!setting) return;
     setEnabled(setting.enabled);
     setTargetHostId(String(setting.options?.targetHostId || ''));
@@ -115,13 +130,13 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
       已回迁目标运行期间的写入数据，或接受丢失这些新数据</label>}
     <div className="feature-actions">
       <button className="secondary" disabled={action.busy || (enabled && !targetHostId)}
-        onClick={() => void action.run(async () => {
+        onClick={() => void action.run(/** 中文：提交 POST /vms/{vmId}/next-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vmId}/next-features for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
           await request(`/vms/${vmId}/next-features`, 'POST',
             { action: 'configure', featureId: 'ha-failover', enabled, options });
           reload();
         }, '接管策略已保存')}>保存策略</button>
       <button className="secondary" disabled={action.busy}
-        onClick={() => void action.run(async () => {
+        onClick={() => void action.run(/** 中文：提交 POST /vms/{vmId}/next-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新操作结果；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vmId}/next-features for UI interaction and state presentation for resource policy, packages and engineering tasks and update operation result. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
           const checked = await request(`/vms/${vmId}/next-features`, 'POST',
             { action: 'check', featureId: 'ha-failover' });
           setResult(JSON.stringify(checked, null, 2));
@@ -129,7 +144,7 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
         })}>检查健康</button>
       {rejoinAvailable &&
         <button className="secondary" disabled={action.busy || !dataReconciled}
-        onClick={() => void action.run(async () => {
+        onClick={() => void action.run(/** 中文：提交 POST /vms/{vmId}/next-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新操作结果、dataReconciled 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vmId}/next-features for UI interaction and state presentation for resource policy, packages and engineering tasks and update operation result, dataReconciled state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
           const rejoined = await request(`/vms/${vmId}/next-features`, 'POST',
             { action: 'run', featureId: 'ha-failover',
               options: { mode: 'rejoin', dataReconciled: true } });

@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理 Windows 原生应用剪贴板规则与启动归属，校验可执行文件和受管进程身份。
+ * Module purpose: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
  */
 import { hostExecFile } from './host-process.ts';
 import { processSupervisor, spawnObserved as spawn } from './process-supervisor.ts';
@@ -50,6 +51,17 @@ const rule = z
   })
   .strict();
 const application = z.object({ image: executable, sha256: digest, rule }).strict();
+/**
+ * 入口 / Entry: samePath.
+ * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `win32.normalize(value).toLowerCase()` 供上层消费（`native-clipboard.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `native-clipboard.ts`; this entry produces `win32.normalize(value).toLowerCase()` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+ * 处理：通过 `win32.normalize().toLowerCase`, `win32.normalize` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `win32.normalize().toLowerCase`, `win32.normalize`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: string
+ * 输出 / Returns: `win32.normalize(value).toLowerCase()`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const samePath = (value: string) => win32.normalize(value).toLowerCase();
 export const nativeClipboardSettings = z
   .object({
@@ -186,13 +198,56 @@ const assetsSchema = z
       expected.every((name) => value.files.some((item) => item.name === name))
     );
   });
+/**
+ * 入口 / Entry: flags.
+ * 功能：从当前输入或状态计算 `(value.copy ? 1 : 0) | (value.paste ? 2 : 0) | (value.files ? 4 : 0) | (value.sensitive ? 8 : 0)`，供调用方后续验证或使用。
+ * Purpose: Computes `(value.copy ? 1 : 0) | (value.paste ? 2 : 0) | (value.files ? 4 : 0) | (value.sensitive ? 8 : 0)` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: value: ClipboardRule
+ * 输出 / Returns: `(value.copy ? 1 : 0) | (value.paste ? 2 : 0) | (value.files ? 4 : 0) | (value.sensitive ? 8 : 0)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const flags = (value: ClipboardRule) =>
   (value.copy ? 1 : 0) | (value.paste ? 2 : 0) | (value.files ? 4 : 0) | (value.sensitive ? 8 : 0);
+/**
+ * 入口 / Entry: key.
+ * 功能：从当前输入或状态计算 ``${value.pid}:${value.created}``，供调用方后续验证或使用。
+ * Purpose: Computes ``${value.pid}:${value.created}`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: value: { pid: number; created: string }
+ * 输出 / Returns: ``${value.pid}:${value.created}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const key = (value: { pid: number; created: string }) => `${value.pid}:${value.created}`;
 export type NativeClipboardLaunchHooks = {
+  /**
+   * 签名 / Signature: NativeClipboardLaunchHooks.prepared.
+   * 功能：为管理 Windows 原生应用剪贴板规则与启动归属声明 prepared 的输入与结果契约，所属容器为 NativeClipboardLaunchHooks。
+   * Purpose: Declares the input/result contract for prepared in NativeClipboardLaunchHooks. Module responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 输入 / Inputs: process: NativeClipboardProcess
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   prepared: (process: NativeClipboardProcess) => Promise<void>;
+  /**
+   * 签名 / Signature: NativeClipboardLaunchHooks.attached.
+   * 功能：为管理 Windows 原生应用剪贴板规则与启动归属声明 attached 的输入与结果契约，所属容器为 NativeClipboardLaunchHooks。
+   * Purpose: Declares the input/result contract for attached in NativeClipboardLaunchHooks. Module responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 输入 / Inputs: process: NativeClipboardProcess; state: z.infer<typeof nativeState>
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   attached: (process: NativeClipboardProcess, state: z.infer<typeof nativeState>) => Promise<void>;
 };
+/**
+ * 签名 / Signature: NativeClipboardLaunch.NativeClipboardLaunch.
+ * 功能：为管理 Windows 原生应用剪贴板规则与启动归属声明 NativeClipboardLaunch 的输入与结果契约，所属容器为 NativeClipboardLaunch。
+ * Purpose: Declares the input/result contract for NativeClipboardLaunch in NativeClipboardLaunch. Module responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+ * 输入 / Inputs: file: string; args: string[]; hooks: NativeClipboardLaunchHooks; signal: AbortSignal
+ * 输出 / Returns: Promise<NativeClipboardProcess>.
+ * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+ * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+ */
 export type NativeClipboardLaunch = (
   file: string,
   args: string[],
@@ -210,6 +265,19 @@ const launchIdentity = z
 // The helper owns a fresh kill-on-close Job atomically assigned at creation.
 // Before commit, EOF, service close or a rejected handshake kills only that Job.
 // A lost commit reply may leave an enforced child alive; retain its journal.
+/**
+ * 入口 / Entry: nativeLaunch.
+ * 功能：启动原生应用控制参与者并等待协议承诺，把原窗口及进程交付给调用方。
+ * Purpose: Starts native launch participants and waits for protocol commitment before handing off window/process ownership.
+ * 设计：协议拒绝、取消和异常分别观察；创建后才失败仍需核销原进程，不能把退出事件当成所有句柄关闭。
+ * Design: Refusal/cancellation/failure are observed separately; post-spawn failure still retires original processes and exit is not handle closure.
+ * 输入 / Inputs: file; args; hooks; signal
+ * 输出 / Returns: `processIdentity`.
+ * 副作用 / Effects: `processSupervisor.observe`; `signal.addEventListener`; `setTimeout`; `child.stdout.setEncoding`; `clearTimeout`.
+ * 拒绝 / Refusals: 条件 / conditions `signal.aborted`; `failure`; `code !== 0 || sequence !== 3 || output.trim() || !processIdentity`; 异常 / errors `new AppError('受控启动已取消', 503)`; `failure`.
+ * 收尾：退出 try 区域时始终执行 `clearTimeout(timeout);`; `signal.removeEventListener('abort', aborted);`；这些步骤也适用于异常退出。
+ * Finalization: Leaving the try region always executes `clearTimeout(timeout);`; `signal.removeEventListener('abort', aborted);`; these steps also apply to exceptional exits.
+ */
 export const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, signal) => {
   if (signal.aborted) throw new AppError('受控启动已取消', 503);
   const owned = await processSupervisor.observe('clipboard-launch', () => spawn(file, args, {
@@ -224,12 +292,39 @@ export const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, sig
     processIdentity: NativeClipboardProcess | undefined;
   let failure: unknown,
     flow: Promise<void> = Promise.resolve();
-  let committed!: () => void, rejected!: (reason: unknown) => void;
+  let committed!:
+  /**
+   * 中文功能：原生启动提交/拒绝通知，或 reconcile 串行执行的持久修改工作。
+   * English: Native-launch commit/refusal notification or serialized persistent mutation work in reconciliation.
+   * 所属 / Owner: nativeLaunch.committed.
+   * 输入 / Inputs: 无显式参数 / no explicit parameters.
+   * 结果 / Result: `void`.
+   */
+  () => void, rejected!:
+  /**
+   * 中文功能：原生启动提交/拒绝通知，或 reconcile 串行执行的持久修改工作。
+   * English: Native-launch commit/refusal notification or serialized persistent mutation work in reconciliation.
+   * 所属 / Owner: nativeLaunch.rejected.
+   * 输入 / Inputs: reason: unknown.
+   * 结果 / Result: `void`.
+   */
+  (reason: unknown) => void;
   const commitment = new Promise<void>((resolve, reject) => {
     committed = resolve;
     rejected = reject;
   });
   void commitment.catch(() => {});
+  /**
+   * 入口 / Entry: stop.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`native-clipboard.ts`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `native-clipboard.ts`; the calls and state transitions below complete the operation. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `rejected`, `child.stdin.destroy`, `child.kill`, `child.stdout.destroy` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `rejected`, `child.stdin.destroy`, `child.kill`, `child.stdout.destroy`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: error: unknown
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `child.stdin.destroy`; `child.kill`; `child.stdout.destroy`; `child.stderr.destroy`; 更新 / updates `failure`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const stop = (error: unknown) => {
     failure ||= error;
     rejected(failure);
@@ -238,12 +333,33 @@ export const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, sig
     child.stdout.destroy();
     child.stderr.destroy();
   };
+  /**
+   * 入口 / Entry: aborted.
+   * 功能：把本层请求转交 `stop`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `stop` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `stop(new AppError('受控启动确认已中止；已保存的归属保留，请刷新进程状态', 503))`.
+   * 副作用 / Effects: `stop`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const aborted = () => stop(new AppError('受控启动确认已中止；已保存的归属保留，请刷新进程状态', 503));
   signal.addEventListener('abort', aborted, { once: true });
   const timeout = setTimeout(
     () => stop(new AppError('受控启动确认超时；已保存的归属保留，请刷新进程状态', 503)),
     120000,
   );
+  /**
+   * 入口 / Entry: consume.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`native-clipboard.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `native-clipboard.ts`; this entry produces `void` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `z.object().strict().safeParse`, `z.object().strict`, `z.object`, `z.string().max` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `z.object().strict().safeParse`, `z.object().strict`, `z.object`, `z.string().max`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `failure || signal.aborted`; `message.stage === 'prepared'`; `message.stage === 'attached'`.
+   * 输入 / Inputs: line: string
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `child.stdin.write`; 更新 / updates `processIdentity`.
+   * 拒绝 / Refusals: 条件 / conditions `error.success`; `message.stage !== ['prepared', 'attached', 'committed'][sequence] || message.launchId !== args[7] || (message.stage === 'atta…`; 异常 / errors `new AppError(error.data.error, 503)`; `new AppError('受控启动握手身份或顺序无效', 503)`.
+   */
   const consume = async (line: string) => {
     if (failure || signal.aborted) return;
     const value: unknown = JSON.parse(line);
@@ -276,6 +392,15 @@ export const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, sig
     }
   };
   child.stdout.setEncoding('utf8');
+  /**
+   * 入口 / Entry: callback@279.
+   * 功能：响应登记事件，按下述条件处理当前连接或资源的数据（child.stdout.on / data）。
+   * Purpose: Handles the registered event and processes current connection/resource data under the conditions below (child.stdout.on / data).
+   * 输入 / Inputs: chunk: string
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `stop`; `output.slice().replace`; 更新 / updates `bytes`, `output`, `index`, `flow`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   child.stdout.on('data', (chunk: string) => {
     bytes += Buffer.byteLength(chunk);
     if (bytes > 32768) {
@@ -321,6 +446,20 @@ export const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, sig
     await owned.waitForClose();
   }
 };
+/**
+ * 入口 / Entry: nativeCommand.
+ * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `JSON.parse(stdout)` 供上层消费（`native-clipboard.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `native-clipboard.ts`; this entry produces `JSON.parse(stdout)` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+ * 处理：通过 `hostExecFile`, `z.object().parse`, `z.object`, `z.string().max` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `hostExecFile`, `z.object().parse`, `z.object`, `z.string().max`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `output`.
+ * 输入 / Inputs: file: string; args: string[]
+ * 输出 / Returns: Promise<unknown>；结果来自 / values from `JSON.parse(stdout)`.
+ * 副作用 / Effects: 更新 / updates `reason`.
+ * 拒绝 / Refusals: 条件 / conditions `error instanceof AppError && error.code === 'HOST_PROCESS_CLEANUP_PENDING'`; 异常 / errors `error`; `new AppError(reason, 503)`.
+ * 失败处理：catch 分支执行 `if (error instanceof AppError && error.code === 'HOST_PROCESS_CLEANUP_PENDING') throw error;`; `const output = (error as { stdout?: string }).stdout;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `if (error instanceof AppError && error.code === 'HOST_PROCESS_CLEANUP_PENDING') throw error;`; `const output = (error as { stdout?: string }).stdout;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function nativeCommand(file: string, args: string[]): Promise<unknown> {
   try {
     const { stdout } = await hostExecFile('clipboard-command', file, args, {
@@ -345,6 +484,17 @@ export async function nativeCommand(file: string, args: string[]): Promise<unkno
     throw new AppError(reason, 503);
   }
 }
+/**
+ * 入口 / Entry: clipboardExecutableHash.
+ * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value` 供上层消费（`native-clipboard.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `native-clipboard.ts`; this entry produces `value` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+ * 处理：通过 `executable.parse`, `regularDirectory`, `dirname`, `lstat` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `executable.parse`, `regularDirectory`, `dirname`, `lstat`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: path: string
+ * 输出 / Returns: `value`.
+ * 副作用 / Effects: `executable.parse`.
+ * 拒绝 / Refusals: 条件 / conditions `!before.isFile() || before.isSymbolicLink() || before.size > 512 * 1024 * 1024`; `before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs`; 异常 / errors `new AppError('应用程序文件不是普通 EXE 文件')`; `new AppError('应用程序文件正在变化，请重试', 409)`.
+ */
 export async function clipboardExecutableHash(path: string) {
   executable.parse(path);
   await regularDirectory(dirname(path));
@@ -357,6 +507,19 @@ export async function clipboardExecutableHash(path: string) {
     throw new AppError('应用程序文件正在变化，请重试', 409);
   return value;
 }
+/**
+ * 入口 / Entry: clipboardExecutableBits.
+ * 功能：读取 EXE 的 PE 头并识别受支持位数，核对读取期间文件身份和长度。
+ * Purpose: Reads EXE PE headers to identify supported bitness while checking file identity/length during reading.
+ * 设计：头部偏移和格式严格有界，文件变更或不支持机器类型拒绝，句柄在所有路径关闭。
+ * Design: Offsets/formats are bounded, changed files/unsupported machine types reject, and every path closes the descriptor.
+ * 输入 / Inputs: path: string
+ * 输出 / Returns: Promise<32 | 64>；结果来自 / values from `width`; `64`.
+ * 副作用 / Effects: `executable.parse`; `locations.push`; `file.close`; 更新 / updates `width`.
+ * 拒绝 / Refusals: 条件 / conditions `(await file.read(header, 0, header.length, 0)).bytesRead !== header.length || header.readUInt16LE(0) !== 0x5a4d`; `offset < 64 || offset > 1048576 || (await file.read(pe, 0, pe.length, offset)).bytesRead !== pe.length || pe.readUInt32LE(0) …`; `pe.readUInt16LE(20) !== optionalSize || sections > 96`; 异常 / errors `new AppError('所选文件不是 Windows EXE')`; `new AppError('受控启动仅支持 x64 或 x86 EXE')`.
+ * 收尾：退出 try 区域时始终执行 `await file.close();`；这些步骤也适用于异常退出。
+ * Finalization: Leaving the try region always executes `await file.close();`; these steps also apply to exceptional exits.
+ */
 export async function clipboardExecutableBits(path: string): Promise<32 | 64> {
   executable.parse(path);
   const file = await open(path, 'r');
@@ -383,6 +546,17 @@ export async function clipboardExecutableBits(path: string): Promise<32 | 64> {
     else if (pe.readUInt16LE(4) === 0x8664 && pe.readUInt16LE(24) === 0x20b) width = 64;
     else throw new AppError('受控启动仅支持 x64 或 x86 EXE');
     const size = (await file.stat()).size;
+    /**
+     * 入口 / Entry: clipboardExecutableBits.read.
+     * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `bytes` 供上层消费（`native-clipboard.ts`）。
+     * Purpose: Reads/verifies domain state and constructs a caller-facing result in `native-clipboard.ts`; this entry produces `bytes` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+     * 处理：通过 `file.read` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `file.read`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: position: number; length: number
+     * 输出 / Returns: `bytes`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `position < 0 || position > size || length > size - position`; `(await file.read(bytes, 0, length, position)).bytesRead !== length`; 异常 / errors `new AppError('所选 EXE 启动头无法核对')`.
+     */
     const read = async (position: number, length: number) => {
       if (position < 0 || position > size || length > size - position)
         throw new AppError('所选 EXE 启动头无法核对');
@@ -446,13 +620,67 @@ type Options = {
   supported?: boolean;
   pid?: number;
   interval?: number;
+  /**
+   * 签名 / Signature: Options.run.
+   * 功能：为管理 Windows 原生应用剪贴板规则与启动归属声明 run 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for run in Options. Module responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 输入 / Inputs: file: string; args: string[]
+   * 输出 / Returns: Promise<unknown>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   run?: (file: string, args: string[]) => Promise<unknown>;
+  /**
+   * 签名 / Signature: Options.hashImage.
+   * 功能：为管理 Windows 原生应用剪贴板规则与启动归属声明 hashImage 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for hashImage in Options. Module responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 输入 / Inputs: path: string
+   * 输出 / Returns: Promise<string>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   hashImage?: (path: string) => Promise<string>;
+  /**
+   * 签名 / Signature: Options.imageBits.
+   * 功能：为管理 Windows 原生应用剪贴板规则与启动归属声明 imageBits 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for imageBits in Options. Module responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 输入 / Inputs: path: string
+   * 输出 / Returns: Promise<32 | 64>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   imageBits?: (path: string) => Promise<32 | 64>;
   launch?: NativeClipboardLaunch;
   descendants?: NativeClipboardDescendantFactory;
+  /**
+   * 签名 / Signature: Options.guard.
+   * 功能：为管理 Windows 原生应用剪贴板规则与启动归属声明 guard 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for guard in Options. Module responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   guard?: () => void;
+  /**
+   * 签名 / Signature: Options.maintenance.
+   * 功能：为管理 Windows 原生应用剪贴板规则与启动归属声明 maintenance 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for maintenance in Options. Module responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: boolean.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   maintenance?: () => boolean;
+  /**
+   * 签名 / Signature: Options.mutation.
+   * 功能：为管理 Windows 原生应用剪贴板规则与启动归属声明 mutation 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for mutation in Options. Module responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 输入 / Inputs: delta: number
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   mutation?: (delta: number) => void;
 };
 type ProcessClaim = { kind: 'scan' | 'adopt'; mutation?: Promise<unknown> };
@@ -495,6 +723,15 @@ export class NativeClipboard {
   private readonly hashImage: NonNullable<Options['hashImage']>;
   private readonly imageBits: NonNullable<Options['imageBits']>;
   private readonly start: NativeClipboardLaunch;
+  /**
+   * 入口 / Entry: NativeClipboard.constructor.
+   * 功能：建立 NativeClipboard 的管理 Windows 原生应用剪贴板规则与启动归属上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the NativeClipboard context for this module's responsibility: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: options: Options default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.file`, `this.assets`, `this.supported`, `this.pid`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   constructor(private options: Options = {}) {
     this.file = options.file || join(DATA, 'native-clipboard.json');
     this.assets = options.assets || join(ROOT, '.sakura-server', 'assets', 'native-clipboard');
@@ -505,13 +742,38 @@ export class NativeClipboard {
     this.imageBits = options.imageBits || clipboardExecutableBits;
     this.start = options.launch || nativeLaunch;
   }
+  /**
+   * 入口 / Entry: NativeClipboard.init.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，初始化并核对当前领域状态；处理结果记录到 `this.state`, `this.timer`（`NativeClipboard`）。
+   * Purpose: Initializes and verifies current domain state in `NativeClipboard`; the outcome is recorded in `this.state`, `this.timer`. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `stateSchema.parse`, `readStore`, `this.serial`, `scheduler.register` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `stateSchema.parse`, `readStore`, `this.serial`, `scheduler.register`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `interval > 0`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `scheduler.register`; 更新 / updates `this.state`, `this.timer`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async init() {
     this.state = stateSchema.parse(await readStore(this.file, () => this.state));
     await this.serial(() => this.scan());
     const interval = this.options.interval ?? 4000;
     if (interval > 0) {
       this.timer = scheduler.register({ owner: 'core:native-clipboard', label: '原生剪贴板应用状态校准', intervalMs: interval,
-        overlap: 'skip', run: async () => {
+        overlap: 'skip',
+        /**
+         * 入口 / Entry: NativeClipboard.init.run.
+         * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`NativeClipboard`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `void` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+         * 处理：通过 `this.serial().catch().finally`, `this.serial().catch`, `this.serial` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `this.serial().catch().finally`, `this.serial().catch`, `this.serial`; the branches below determine continuation, return or refusal.
+         * 分支 / Branches: `this.closed || this.scanning || (!this.state.settings.enabled && !this.state.managed.length)`.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `void`.
+         * 副作用 / Effects: 更新 / updates `this.scanning`.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
+        run: async () => {
         if (this.closed || this.scanning || (!this.state.settings.enabled && !this.state.managed.length))
           return;
         this.scanning = true;
@@ -526,6 +788,15 @@ export class NativeClipboard {
       } });
     }
   }
+  /**
+   * 入口 / Entry: NativeClipboard.view.
+   * 功能：把本层请求转交 `structuredClone`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `structuredClone` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: NativeClipboardView；结果来自 / values from `structuredClone({ version: this.state.version, supported: this.supported, ready: this.ready, settings: this.state.settings, a…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   view(): NativeClipboardView {
     return structuredClone({
       version: this.state.version,
@@ -538,6 +809,17 @@ export class NativeClipboard {
       error: this.error,
     });
   }
+  /**
+   * 入口 / Entry: NativeClipboard.serial.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `task` 供上层消费（`NativeClipboard`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `task` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `this.queue.catch().then`, `this.queue.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.queue.catch().then`, `this.queue.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: work: () => Promise<T>
+   * 输出 / Returns: Promise<T>；结果来自 / values from `task`.
+   * 副作用 / Effects: 更新 / updates `this.queue`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const task = this.queue
       .catch(() => {})
@@ -548,12 +830,41 @@ export class NativeClipboard {
     this.queue = task;
     return task;
   }
+  /**
+   * 入口 / Entry: NativeClipboard.controller.
+   * 功能：把本层请求转交 `join`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `join` and propagates the provider result or rejection.
+   * 输入 / Inputs: bits: default=64
+   * 输出 / Returns: `join(this.assets, `sakura-clipboard-controller${bits === 32 ? '-x86' : ''}.exe`)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private controller(bits = 64) {
     return join(this.assets, `sakura-clipboard-controller${bits === 32 ? '-x86' : ''}.exe`);
   }
+  /**
+   * 入口 / Entry: NativeClipboard.library.
+   * 功能：把本层请求转交 `join`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `join` and propagates the provider result or rejection.
+   * 输入 / Inputs: bits: default=64
+   * 输出 / Returns: `join(this.assets, `SakuraClipboardPolicy${bits === 32 ? '-x86' : ''}.dll`)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private library(bits = 64) {
     return join(this.assets, `SakuraClipboardPolicy${bits === 32 ? '-x86' : ''}.dll`);
   }
+  /**
+   * 入口 / Entry: NativeClipboard.checkedAssets.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，核对调用资格、输入或资源归属；处理结果记录到 `this.hasX86`, `this.hasEarly`, `this.hasDescendants`（`NativeClipboard`）。
+   * Purpose: Checks admission, input or resource ownership in `NativeClipboard`; the outcome is recorded in `this.hasX86`, `this.hasEarly`, `this.hasDescendants`. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `regularDirectory`, `join`, `lstat`, `info.isFile` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `regularDirectory`, `join`, `lstat`, `info.isFile`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: library: boolean
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.hasX86`, `this.hasEarly`, `this.hasDescendants`.
+   * 拒绝 / Refusals: 条件 / conditions `!this.supported`; `!info.isFile() || info.isSymbolicLink() || info.size > 16384`; `!info.isFile() || info.isSymbolicLink() || info.size !== item.size || (await fileHash(file)) !== item.sha256`; 异常 / errors `new AppError('当前宿主机需要 Windows x64 才能使用此代理', 503)`; `new AppError('原生剪贴板清单无效', 503)`.
+   */
   private async checkedAssets(library: boolean) {
     if (!this.supported) throw new AppError('当前宿主机需要 Windows x64 才能使用此代理', 503);
     await regularDirectory(this.assets);
@@ -584,16 +895,49 @@ export class NativeClipboard {
     this.hasEarly = manifest.version >= 3;
     this.hasDescendants = manifest.version >= 5;
   }
+  /**
+   * 入口 / Entry: NativeClipboard.list.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `listSchema .parse(await this.run(this.controller(), ['list'])) .processes.filter((item) => item.pid !== this.pid && executabl…` 供上层消费（`NativeClipboard`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `NativeClipboard`; this entry produces `listSchema .parse(await this.run(this.controller(), ['list'])) .processes.filter((item) => item.pid !== this.pid && executabl…` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `listSchema.parse().processes.filter`, `listSchema.parse`, `this.run`, `this.controller` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `listSchema.parse().processes.filter`, `listSchema.parse`, `this.run`, `this.controller`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `listSchema .parse(await this.run(this.controller(), ['list'])) .processes.filter((item) => item.pid !== this.pid && executabl…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async list() {
     return listSchema
       .parse(await this.run(this.controller(), ['list']))
       .processes.filter((item) => item.pid !== this.pid && executable.safeParse(item.image).success);
   }
+  /**
+   * 入口 / Entry: NativeClipboard.status.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `this.run(this.controller(), ['status', this.state.owner, String(item.pid), item.created]).then( (value) => statusSchema.parse…` 供上层消费（`NativeClipboard`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `NativeClipboard`; this entry produces `this.run(this.controller(), ['status', this.state.owner, String(item.pid), item.created]).then( (value) => statusSchema.parse…` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `this.run().then`, `this.run`, `this.controller` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.run().then`, `this.run`, `this.controller`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: item: NativeClipboardProcess
+   * 输出 / Returns: `this.run(this.controller(), ['status', this.state.owner, String(item.pid), item.created]).then( (value) => statusSchema.parse…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private status(item: NativeClipboardProcess) {
     return this.run(this.controller(), ['status', this.state.owner, String(item.pid), item.created]).then(
       (value) => statusSchema.parse(value),
     );
   }
+  /**
+   * 入口 / Entry: NativeClipboard.apply.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.run(this.controller(bits), [ 'apply', this.state.owner, String(item.pid), item.created, item.image, this.library(bits), …` 供上层消费（`NativeClipboard`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `this.run(this.controller(bits), [ 'apply', this.state.owner, String(item.pid), item.created, item.image, this.library(bits), …` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `this.run().then`, `this.run`, `this.controller`, `this.library` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.run().then`, `this.run`, `this.controller`, `this.library`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: item: NativeClipboardProcess; rule: ClipboardRule; active: boolean
+   * 输出 / Returns: `this.run(this.controller(bits), [ 'apply', this.state.owner, String(item.pid), item.created, item.image, this.library(bits), …`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `active && bits === 32 && !this.hasX86`; 异常 / errors `new AppError('此运行包未包含 32 位应用代理，请更新运行包')`.
+   */
   private apply(item: NativeClipboardProcess, rule: ClipboardRule, active: boolean) {
     const bits = active ? item.bits : 64;
     if (active && bits === 32 && !this.hasX86)
@@ -610,7 +954,27 @@ export class NativeClipboard {
       active ? '1' : '0',
     ]).then((value) => nativeState.parse(value));
   }
+  /**
+   * 入口 / Entry: NativeClipboard.persist.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，校验并提交领域状态变更；本入口产生 `operation` 供上层消费（`NativeClipboard`）。
+   * Purpose: Validates and commits a domain state change in `NativeClipboard`; this entry produces `operation` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `this.stateQueue.catch().then`, `this.stateQueue.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.stateQueue.catch().then`, `this.stateQueue.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: change: (state: z.infer<typeof stateSchema>) => z.infer<typeof stateSchema>
+   * 输出 / Returns: `operation`.
+   * 副作用 / Effects: 更新 / updates `this.stateQueue`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private persist(change: (state: z.infer<typeof stateSchema>) => z.infer<typeof stateSchema>) {
+    /**
+     * 入口 / Entry: NativeClipboard.persist.callback@616.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.stateQueue.catch().then）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.stateQueue.catch().then).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `writeStore`; 更新 / updates `this.state`.
+     * 拒绝 / Refusals: 条件 / conditions `this.closed`; 异常 / errors `new AppError('剪贴板代理正在关闭', 503)`.
+     */
     const operation = this.stateQueue
       .catch(() => {})
       .then(async () => {
@@ -622,12 +986,42 @@ export class NativeClipboard {
     this.stateQueue = operation;
     return operation;
   }
+  /**
+   * 入口 / Entry: NativeClipboard.saveManaged.
+   * 功能：把本层请求转交 `this.persist`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.persist` and propagates the provider result or rejection.
+   * 输入 / Inputs: change: (items: z.infer<typeof managed>[]) => z.infer<typeof managed>[]
+   * 输出 / Returns: `this.persist((state) => ({ ...state, managed: change(state.managed) }))`.
+   * 副作用 / Effects: `this.persist`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private saveManaged(change: (items: z.infer<typeof managed>[]) => z.infer<typeof managed>[]) {
     return this.persist((state) => ({ ...state, managed: change(state.managed) }));
   }
+  /**
+   * 入口 / Entry: NativeClipboard.ensureDescendants.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`NativeClipboard`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `void` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `inline().finally`, `inline` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `inline().finally`, `inline`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!this.hasDescendants || this.descendantChannel?.alive`; `!this.descendantStarting`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 更新 / updates `this.descendantStarting`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async ensureDescendants() {
     if (!this.hasDescendants || this.descendantChannel?.alive) return;
     if (!this.descendantStarting) {
+      /**
+       * 入口 / Entry: NativeClipboard.ensureDescendants.callback@631.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: `this.descendantChannel.close`; `create`; 更新 / updates `this.descendantChannel`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       this.descendantStarting = (async () => {
         await this.descendantChannel?.close();
         const create = this.options.descendants || nativeClipboardDescendants;
@@ -651,6 +1045,18 @@ export class NativeClipboard {
     }
     await this.descendantStarting;
   }
+  /**
+   * 入口 / Entry: NativeClipboard.stopDescendants.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.descendantChannel`, `this.descendantLifetime`（`NativeClipboard`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `NativeClipboard`; the outcome is recorded in `this.descendantChannel`, `this.descendantLifetime`. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `this.descendantLifetime.abort`, `this.descendantStarting.catch`, `this.descendantChannel.close`, `Promise.allSettled` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.descendantLifetime.abort`, `this.descendantStarting.catch`, `this.descendantChannel.close`, `Promise.allSettled`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!this.closed`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.descendantLifetime.abort`; `this.descendantChannel.close`; 更新 / updates `this.descendantChannel`, `this.descendantLifetime`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async stopDescendants() {
     this.descendantLifetime.abort();
     await this.descendantStarting?.catch(() => {});
@@ -659,6 +1065,20 @@ export class NativeClipboard {
     this.descendantChannel = undefined;
     if (!this.closed) this.descendantLifetime = new AbortController();
   }
+  /**
+   * 入口 / Entry: NativeClipboard.scan.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`NativeClipboard`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `void` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `this.options.maintenance`, `this.options.mutation`, `this.reconcile` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.options.maintenance`, `this.options.mutation`, `this.reconcile`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.options.maintenance?.()`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 更新 / updates `this.error`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `this.options.mutation?.(-1);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.options.mutation?.(-1);`; these steps also apply to exceptional exits.
+   */
   private async scan() {
     if (this.options.maintenance?.()) {
       this.error = '数据目录迁移维护中；已加载的进程策略继续生效';
@@ -671,6 +1091,21 @@ export class NativeClipboard {
       this.options.mutation?.(-1);
     }
   }
+  /**
+   * 入口 / Entry: NativeClipboard.reconcile.
+   * 功能：核对受管原生应用、可执行文件摘要与规则，修复仍可证明归属的策略状态。
+   * Purpose: Reconciles managed native applications, executable digests and policies, repairing only provably owned state.
+   * 设计：进程、策略与当前配置核对后才操作，原归属失配保留诊断证据，不接管同名或复用 PID。
+   * Design: Process/policy/configuration proof precedes effects; mismatches preserve evidence instead of adopting same-name or reused-PID processes.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.state.settings.applications.map`; `known.set`; `this.processClaims.set`; `handled.add`; `handled.delete`; 更新 / updates `this.error`, `this.ready`, `this.inventory`, `libraryError`.
+   * 拒绝 / Refusals: 条件 / conditions `!desired`; `observed.present && observed.active`; `observed.active`; 异常 / errors `new AppError('进程策略尚未停用')`; `new AppError('进程仍保留策略，但当前无法核对身份')`.
+   * 收尾：退出 try 区域时始终执行 `if (current()) this.processClaims.delete(id); else handled.delete(id);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `if (current()) this.processClaims.delete(id); else handled.delete(id);`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `this.error = this.supported ? `原生剪贴板代理不可用：${(error as Error).message}` : '当前宿主机需要 Windows x64 才能使用此代理';`; `this.inventory = [];`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.error = this.supported ? `原生剪贴板代理不可用：${(error as Error).message}` : '当前宿主机需要 Windows x64 才能使用此代理';`; `this.inventory = [];`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async reconcile() {
     this.error = undefined;
     this.ready = false;
@@ -704,6 +1139,18 @@ export class NativeClipboard {
     const states: NativeClipboardProcessState[] = [];
     const handled = new Set<string>();
     const hashes = new Map<string, Promise<string>>();
+    /**
+     * 入口 / Entry: NativeClipboard.reconcile.check.
+     * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，核对调用资格、输入或资源归属；本入口产生 `hashes.get(path)!` 供上层消费（`NativeClipboard`）。
+     * Purpose: Checks admission, input or resource ownership in `NativeClipboard`; this entry produces `hashes.get(path)!` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+     * 处理：通过 `samePath`, `hashes.has`, `hashes.set`, `this.hashImage` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `samePath`, `hashes.has`, `hashes.set`, `this.hashImage`; the branches below determine continuation, return or refusal.
+     * 分支 / Branches: `!hashes.has(path)`.
+     * 输入 / Inputs: image: string
+     * 输出 / Returns: `hashes.get(path)!`.
+     * 副作用 / Effects: `hashes.set`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const check = (image: string) => {
       const path = samePath(image);
       if (!hashes.has(path)) hashes.set(path, this.hashImage(image));
@@ -722,8 +1169,36 @@ export class NativeClipboard {
       if (this.processClaims.has(id)) continue;
       const claim: ProcessClaim = { kind: 'scan' };
       this.processClaims.set(id, claim);
+      /**
+       * 入口 / Entry: NativeClipboard.reconcile.current.
+       * 功能：从当前输入或状态计算 `this.processClaims.get(id) === claim`，供调用方后续验证或使用。
+       * Purpose: Computes `this.processClaims.get(id) === claim` from current inputs/state for the caller to validate or consume.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `this.processClaims.get(id) === claim`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       const current = () => this.processClaims.get(id) === claim;
-      const mutate = <T>(work: () => Promise<T>) => {
+      /**
+       * 入口 / Entry: NativeClipboard.reconcile.mutate.
+       * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `operation` 供上层消费（`NativeClipboard`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `operation` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+       * 处理：通过 `current`, `work().finally`, `work` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `current`, `work().finally`, `work`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: work: () => Promise<T>
+       * 输出 / Returns: `operation`.
+       * 副作用 / Effects: 更新 / updates `claim.mutation`.
+       * 拒绝 / Refusals: 条件 / conditions `!current()`; 异常 / errors `new AppError('此进程的扫描已让出给受控子进程接入', 409)`.
+       */
+      const mutate = <T>(work:
+      /**
+       * 中文功能：原生启动提交/拒绝通知，或 reconcile 串行执行的持久修改工作。
+       * English: Native-launch commit/refusal notification or serialized persistent mutation work in reconciliation.
+       * 所属 / Owner: NativeClipboard.reconcile.mutate.work.
+       * 输入 / Inputs: 无显式参数 / no explicit parameters.
+       * 结果 / Result: `Promise<T>`.
+       */
+      () => Promise<T>) => {
         if (!current()) throw new AppError('此进程的扫描已让出给受控子进程接入', 409);
         const operation = work().finally(() => {
           if (claim.mutation === operation) claim.mutation = undefined;
@@ -854,6 +1329,20 @@ export class NativeClipboard {
     this.lastScan = new Date().toISOString();
     for (const id of this.failed.keys()) if (!known.has(id)) this.failed.delete(id);
   }
+  /**
+   * 入口 / Entry: NativeClipboard.descendantLaunch.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`NativeClipboard`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; the calls and state transitions below complete the operation. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `nativeClipboardDescendantRequest.parse`, `key`, `this.processClaims.get`, `this.processClaims.set` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `nativeClipboardDescendantRequest.parse`, `key`, `this.processClaims.get`, `this.processClaims.set`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.processClaims.get(id) === claim`.
+   * 输入 / Inputs: value: NativeClipboardDescendantRequest; broker: NativeClipboardDescendantBroker
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.processClaims.set`; `this.processClaims.delete`.
+   * 拒绝 / Refusals: 条件 / conditions `previous?.kind === 'adopt'`; `this.closed || generation.aborted || this.lifetime.signal.aborted || this.state.version !== version`; 异常 / errors `new AppError('此准确子进程已有受控接入', 503)`; `new AppError('等待同一进程的扫描期间子进程策略代际已改变', 503)`.
+   * 收尾：退出 try 区域时始终执行 `if (this.processClaims.get(id) === claim) this.processClaims.delete(id);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `if (this.processClaims.get(id) === claim) this.processClaims.delete(id);`; these steps also apply to exceptional exits.
+   */
   private async descendantLaunch(
     value: NativeClipboardDescendantRequest,
     broker: NativeClipboardDescendantBroker,
@@ -879,6 +1368,21 @@ export class NativeClipboard {
       if (this.processClaims.get(id) === claim) this.processClaims.delete(id);
     }
   }
+  /**
+   * 入口 / Entry: NativeClipboard.descendantAdopt.
+   * 功能：验证父子进程、映像及位数，把允许的后代登记进原剪贴板策略域。
+   * Purpose: Verifies parent/child processes, images and bitness before admitting an eligible descendant into the original policy domain.
+   * 设计：父归属、规则和后代快照需同时成立；重查后才提交，失败不能把未知后代加入已有受管身份。
+   * Design: Parent authority, policy and descendant snapshots must agree through rechecks; failure cannot attach unknown descendants to existing ownership.
+   * 输入 / Inputs: value: NativeClipboardDescendantRequest; broker: NativeClipboardDescendantBroker
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.start`; 更新 / updates `this.inventory`, `this.processes`.
+   * 拒绝 / Refusals: 条件 / conditions `child.pid === parent.pid || child.pid === this.pid`; `!ancestor || samePath(ancestor.image) !== samePath(parent.image) || ancestor.bits !== parent.bits`; `this.state.managed.some((entry) => key(entry) === key(child))`; 异常 / errors `new AppError('子进程归属身份无效', 503)`; `new AppError('子进程没有已保存的父进程归属', 503)`.
+   * 收尾：退出 try 区域时始终执行 `this.options.mutation?.(-1);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.options.mutation?.(-1);`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `if (owned) this.processes = [ ...this.processes.filter((entry) => key(entry) !== key(child)), { ...inherited, state: 'error',…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if (owned) this.processes = [ ...this.processes.filter((entry) => key(entry) !== key(child)), { ...inherited, state: 'error',…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async descendantAdopt(
     value: NativeClipboardDescendantRequest,
     broker: NativeClipboardDescendantBroker,
@@ -893,6 +1397,17 @@ export class NativeClipboard {
     if (!ancestor || samePath(ancestor.image) !== samePath(parent.image) || ancestor.bits !== parent.bits)
       throw new AppError('子进程没有已保存的父进程归属', 503);
     const source = ancestor.inheritance?.application || { image: ancestor.image, sha256: ancestor.sha256 };
+    /**
+     * 入口 / Entry: NativeClipboard.descendantAdopt.allowed.
+     * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `selected` 供上层消费（`NativeClipboard`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `selected` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+     * 处理：通过 `this.options.maintenance`, `this.state.settings.applications.find`, `this.state.managed.some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.options.maintenance`, `this.state.settings.applications.find`, `this.state.managed.some`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `selected`.
+     * 副作用 / Effects: `this.state.settings.applications.find`.
+     * 拒绝 / Refusals: 条件 / conditions `this.closed || this.lifetime.signal.aborted || generation.aborted`; `this.options.maintenance?.()`; `this.state.version !== version`; 异常 / errors `new AppError('子进程策略代际已关闭', 503)`; `new AppError('数据目录迁移维护中；子进程启动未授权', 409)`.
+     */
     const allowed = () => {
       if (this.closed || this.lifetime.signal.aborted || generation.aborted)
         throw new AppError('子进程策略代际已关闭', 503);
@@ -921,6 +1436,17 @@ export class NativeClipboard {
       sha256: request.sha256,
       inheritance: { application: source, parent: { pid: parent.pid, created: parent.created } },
     };
+    /**
+     * 入口 / Entry: NativeClipboard.descendantAdopt.sameIdentity.
+     * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`NativeClipboard`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; the calls and state transitions below complete the operation. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+     * 处理：通过 `identity.parse`, `key`, `samePath` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `identity.parse`, `key`, `samePath`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: value: NativeClipboardProcess
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `key(actual) !== key(child) || samePath(actual.image) !== samePath(child.image) || actual.bits !== child.bits`; 异常 / errors `new AppError('子进程控制工具返回了其他身份', 503)`.
+     */
     const sameIdentity = (value: NativeClipboardProcess) => {
       const actual = identity.parse(value);
       if (
@@ -930,6 +1456,15 @@ export class NativeClipboard {
       )
         throw new AppError('子进程控制工具返回了其他身份', 503);
     };
+    /**
+     * 入口 / Entry: NativeClipboard.descendantAdopt.coherent.
+     * 功能：从当前输入或状态计算 `value.present && value.ready && value.active && value.compatible && value.flags === flags(selected.rule) && value.maximum ===…`，供调用方后续验证或使用。
+     * Purpose: Computes `value.present && value.ready && value.active && value.compatible && value.flags === flags(selected.rule) && value.maximum ===…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: value: z.infer<typeof statusSchema>
+     * 输出 / Returns: `value.present && value.ready && value.active && value.compatible && value.flags === flags(selected.rule) && value.maximum ===…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const coherent = (value: z.infer<typeof statusSchema>) =>
       value.present &&
       value.ready &&
@@ -970,6 +1505,17 @@ export class NativeClipboard {
           parent.created,
         ],
         {
+          /**
+           * 入口 / Entry: NativeClipboard.descendantAdopt.prepared.
+           * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`NativeClipboard`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; the calls and state transitions below complete the operation. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+           * 处理：通过 `sameIdentity`, `allowed`, `this.saveManaged` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `sameIdentity`, `allowed`, `this.saveManaged`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: value
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: `this.saveManaged`; 更新 / updates `owned`.
+           * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+           */
           prepared: async (value) => {
             sameIdentity(value);
             allowed();
@@ -984,6 +1530,17 @@ export class NativeClipboard {
             owned = true;
             allowed();
           },
+          /**
+           * 入口 / Entry: NativeClipboard.descendantAdopt.attached.
+           * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`NativeClipboard`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; the calls and state transitions below complete the operation. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+           * 处理：通过 `sameIdentity`, `allowed`, `this.state.managed.find`, `coherent` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `sameIdentity`, `allowed`, `this.state.managed.find`, `coherent`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: value; state
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: 更新 / updates `loaded`.
+           * 拒绝 / Refusals: 条件 / conditions `!owned || journal?.sha256 !== request.sha256 || journal.inheritance?.application.sha256 !== source.sha256 || journal.inherita…`; `!coherent(observed)`; `(await this.hashImage(child.image)) !== request.sha256`; 异常 / errors `new AppError('子进程缺少已保存归属或已加载规则', 503)`; `new AppError('子进程真实共享策略复核失败', 503)`.
+           */
           attached: async (value, state) => {
             sameIdentity(value);
             allowed();
@@ -1038,9 +1595,33 @@ export class NativeClipboard {
       this.options.mutation?.(-1);
     }
   }
+  /**
+   * 入口 / Entry: NativeClipboard.controlledLaunch.
+   * 功能：按当前允许列表、映像摘要和位数建立原生应用受控启动流程。
+   * Purpose: Creates controlled native launch from current allowlists, image digests and bitness.
+   * 设计：维护、关闭或规则变更拒绝启动，原生协议回执完整后才登记运行；启动失败保持原清理能力。
+   * Design: Maintenance/draining/policy changes refuse launch; complete native receipts precede publication and failure retains original cleanup authority.
+   * 输入 / Inputs: input: Extract<z.infer<typeof nativeClipboardRequest>, { action: 'launch' }>
+   * 输出 / Returns: `{ process: item, view: this.view() }`.
+   * 副作用 / Effects: `this.start`; 更新 / updates `this.inventory`, `this.processes`, `this.error`, `this.ready`.
+   * 拒绝 / Refusals: 条件 / conditions `this.state.managed.length >= 256`; `(await this.hashImage(selected.image)) !== selected.sha256`; `bits === 32 && !this.hasX86`; 异常 / errors `new AppError('受管进程已达到 256 个上限')`; `new AppError('应用文件摘要已变化，请重新选择', 409)`.
+   * 失败处理：catch 分支执行 `if (owned) { this.processes = [ ...this.processes.filter((entry) => key(entry) !== key(owned!)), { ...owned, state: 'error', …`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if (owned) { this.processes = [ ...this.processes.filter((entry) => key(entry) !== key(owned!)), { ...owned, state: 'error', …`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async controlledLaunch(
     input: Extract<z.infer<typeof nativeClipboardRequest>, { action: 'launch' }>,
   ) {
+    /**
+     * 入口 / Entry: NativeClipboard.controlledLaunch.allowed.
+     * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `selected` 供上层消费（`NativeClipboard`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `selected` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+     * 处理：通过 `this.options.guard`, `this.options.maintenance`, `this.state.settings.applications.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.options.guard`, `this.options.maintenance`, `this.state.settings.applications.find`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `selected`.
+     * 副作用 / Effects: `this.state.settings.applications.find`.
+     * 拒绝 / Refusals: 条件 / conditions `this.closed || this.lifetime.signal.aborted`; `this.options.maintenance?.()`; `input.version !== this.state.version`; 异常 / errors `new AppError('剪贴板代理正在关闭', 503)`; `new AppError('数据目录迁移维护中', 409)`.
+     */
     const allowed = () => {
       if (this.closed || this.lifetime.signal.aborted) throw new AppError('剪贴板代理正在关闭', 503);
       this.options.guard?.();
@@ -1063,6 +1644,17 @@ export class NativeClipboard {
     if (!this.hasEarly) throw new AppError('此运行包未包含应用 DLL/TLS 初始化前的策略代理，请更新运行包');
     await this.ensureDescendants();
     allowed();
+    /**
+     * 入口 / Entry: NativeClipboard.controlledLaunch.sameIdentity.
+     * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `item` 供上层消费（`NativeClipboard`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `item` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+     * 处理：通过 `identity.parse`, `samePath` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `identity.parse`, `samePath`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: value: NativeClipboardProcess
+     * 输出 / Returns: `item`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `samePath(item.image) !== samePath(selected.image) || item.bits !== bits || item.pid === this.pid`; 异常 / errors `new AppError('受控启动进程身份与已保存应用不一致', 503)`.
+     */
     const sameIdentity = (value: NativeClipboardProcess) => {
       const item = identity.parse(value);
       if (samePath(item.image) !== samePath(selected.image) || item.bits !== bits || item.pid === this.pid)
@@ -1085,6 +1677,17 @@ export class NativeClipboard {
           ...input.args,
         ],
         {
+          /**
+           * 入口 / Entry: NativeClipboard.controlledLaunch.prepared.
+           * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`NativeClipboard`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; the calls and state transitions below complete the operation. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+           * 处理：通过 `allowed`, `sameIdentity`, `this.state.managed.some`, `this.inventory.some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `allowed`, `sameIdentity`, `this.state.managed.some`, `this.inventory.some`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: value
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: `this.saveManaged`; 更新 / updates `owned`.
+           * 拒绝 / Refusals: 条件 / conditions `this.state.managed.some((entry) => key(entry) === key(item)) || this.inventory.some((entry) => key(entry) === key(item))`; 异常 / errors `new AppError('受控启动返回了已有进程；拒绝复用其归属', 503)`.
+           */
           prepared: async (value) => {
             allowed();
             const item = sameIdentity(value);
@@ -1099,6 +1702,17 @@ export class NativeClipboard {
             owned = item;
             allowed();
           },
+          /**
+           * 入口 / Entry: NativeClipboard.controlledLaunch.attached.
+           * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`NativeClipboard`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; the calls and state transitions below complete the operation. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+           * 处理：通过 `allowed`, `sameIdentity`, `key`, `this.state.managed.some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `allowed`, `sameIdentity`, `key`, `this.state.managed.some`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: value; state
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: 更新 / updates `loaded`.
+           * 拒绝 / Refusals: 条件 / conditions `!owned || key(owned) !== key(item) || !this.state.managed.some( (entry) => key(entry) === key(item) && entry.sha256 === selec…`; `!coherent(nativeState.parse(state))`; `!coherent(observed)`; 异常 / errors `new AppError('受控启动缺少已保存的进程归属', 503)`; `new AppError('受控启动策略未加载完成', 503)`.
+           */
           attached: async (value, state) => {
             allowed();
             const item = sameIdentity(value);
@@ -1110,6 +1724,15 @@ export class NativeClipboard {
               )
             )
               throw new AppError('受控启动缺少已保存的进程归属', 503);
+            /**
+             * 入口 / Entry: NativeClipboard.controlledLaunch.coherent.
+             * 功能：从当前输入或状态计算 `value.present && value.ready && value.active && value.compatible && value.flags === flags(selected.rule) && value.maximum ===…`，供调用方后续验证或使用。
+             * Purpose: Computes `value.present && value.ready && value.active && value.compatible && value.flags === flags(selected.rule) && value.maximum ===…` from current inputs/state for the caller to validate or consume.
+             * 输入 / Inputs: value: z.infer<typeof statusSchema>
+             * 输出 / Returns: `value.present && value.ready && value.active && value.compatible && value.flags === flags(selected.rule) && value.maximum ===…`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             const coherent = (value: z.infer<typeof statusSchema>) =>
               value.present &&
               value.ready &&
@@ -1162,8 +1785,30 @@ export class NativeClipboard {
       throw error;
     }
   }
+  /**
+   * 入口 / Entry: NativeClipboard.action.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.serial(async () => { this.options.guard?.(); if (this.options.maintenance?.()) throw new AppError('数据目录迁移维护中', 409); thi…` 供上层消费（`NativeClipboard`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeClipboard`; this entry produces `this.serial(async () => { this.options.guard?.(); if (this.options.maintenance?.()) throw new AppError('数据目录迁移维护中', 409); thi…` for its caller. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `nativeClipboardRequest.parse`, `this.serial` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `nativeClipboardRequest.parse`, `this.serial`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: value: unknown
+   * 输出 / Returns: `this.serial(async () => { this.options.guard?.(); if (this.options.maintenance?.()) throw new AppError('数据目录迁移维护中', 409); thi…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   action(value: unknown) {
     const input = nativeClipboardRequest.parse(value);
+    /**
+     * 入口 / Entry: NativeClipboard.action.callback@1167.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `await this.controlledLaunch(input)`; `{ image: item.image, sha256 }`; `this.view()`.
+     * 副作用 / Effects: `this.stopDescendants`; `this.persist`; `this.failed.clear`.
+     * 拒绝 / Refusals: 条件 / conditions `this.options.maintenance?.()`; `input.action === 'identify'`; `!item`; 异常 / errors `new AppError('数据目录迁移维护中', 409)`; `new AppError('进程身份已变化，请刷新应用列表', 409)`.
+     * 收尾：退出 try 区域时始终执行 `this.options.mutation?.(-1);`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `this.options.mutation?.(-1);`; these steps also apply to exceptional exits.
+     */
     return this.serial(async () => {
       this.options.guard?.();
       if (this.options.maintenance?.()) throw new AppError('数据目录迁移维护中', 409);
@@ -1205,6 +1850,17 @@ export class NativeClipboard {
       }
     });
   }
+  /**
+   * 入口 / Entry: NativeClipboard.close.
+   * 功能：在管理 Windows 原生应用剪贴板规则与启动归属中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`NativeClipboard`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `NativeClipboard`; the outcome is recorded in `this.closed`. Module context: Owns Windows native application clipboard policies and launch identity, checking executable and managed process ownership.
+   * 处理：通过 `this.lifetime.abort`, `this.stopDescendants`, `this.timer.close`, `this.queue.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.lifetime.abort`, `this.stopDescendants`, `this.timer.close`, `this.queue.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.lifetime.abort`; `this.stopDescendants`; `this.timer.close`; 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true;
     this.lifetime.abort();

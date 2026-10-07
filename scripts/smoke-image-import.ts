@@ -1,4 +1,5 @@
-/** 烟雾验收：验证镜像格式导入、实例记录及受约束临时目录清理。 */
+/** 烟雾验收：验证镜像格式导入、实例记录及受约束临时目录清理。
+ * Smoke acceptance for image-format imports, instance records and bounded temporary cleanup. */
 import assert from 'node:assert/strict';
 import { createReadStream } from 'node:fs';
 import { mkdtemp, readFile, rm, stat, writeFile, mkdir } from 'node:fs/promises';
@@ -19,8 +20,12 @@ await machines.init();
 const importer = new DiskImports(machines);
 const stock = resolve('.data/images/alpine-3.23.qcow2');
 const log: string[] = [];
+/** 同时输出并保存本次验收结论，供最终报告按原顺序汇总；记录本身不替代此前的断言。
+ * Print and retain this verification result for ordered final reporting; recording does not replace the preceding assertions. */
 const record = (message: string) => { console.log(message); log.push(message); };
 
+/** 构造指定文件的 ustar 条目，按八进制写长度与校验和并填充至 512 字节边界；返回归档字节供导入格式验收。
+ * Build a ustar entry with octal length/checksum and 512-byte padding, returning archive bytes for import-format checks. */
 function tarEntry(name: string, payload: Buffer) {
   const header = Buffer.alloc(512);
   header.write(name);
@@ -38,6 +43,8 @@ function tarEntry(name: string, payload: Buffer) {
   return Buffer.concat([header, payload, Buffer.alloc((512 - payload.length % 512) % 512)]);
 }
 
+/** 启动转换后的镜像并在限定时间等待运行，验证 Alpine/workspace 标记后停止实例并记录格式通过。
+ * Boot the converted image within its deadline, verify Alpine/workspace markers, stop the VM and record format acceptance. */
 async function boot(id: string, format: string) {
   await machines.start(id);
   const deadline = Date.now() + 270000;

@@ -1,4 +1,5 @@
 # 在自有 VM 的独立认证 Xvfb 上验证 Xlib、XCB、Qt、增量传输及 fork 边界，避免触及用户桌面的剪贴板。
+# Verify Xlib/XCB/Qt/INCR/fork boundaries on authenticated owned-VM Xvfb, isolated from the user’s desktop clipboard.
 """Run only in the smoke script's owned VM on a separate, authenticated Xvfb."""
 import os
 import pwd
@@ -35,11 +36,15 @@ auth.chmod(0o600)
 environment = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": user.pw_dir,
                "DISPLAY": display, "XAUTHORITY": str(auth)}
 
+# 在夹具子进程清空补充组并降为自有测试账号，避免 root 剪贴板操作。
+# Clear groups and drop fixture children to the owned test account rather than operating clipboard as root.
 def credentials():
     os.setgroups([])
     os.setgid(user.pw_gid)
     os.setuid(user.pw_uid)
 
+# 递增策略代次并替换固定 ABI 策略文件，返回登记路径用于真实拦截库。
+# Advance policy generation and replace the fixed ABI policy, returning its registered path for the real interceptor.
 def rule(name, flags=23, maximum=1048576):
     global generation
     generation += 1
@@ -51,6 +56,8 @@ def rule(name, flags=23, maximum=1048576):
     policies[name] = path
     return path
 
+# 创建本轮内容文件和隔离环境，按工具包/方向启动真实夹具，显式传入策略状态 FD 并登记子进程。
+# Create owned content/environment and start the real toolkit/direction fixture with explicit policy/status FDs, tracking the child.
 def start(toolkit, action, target="UTF8_STRING", data=b"ordinary text", policy=None, extra=None, selection="CLIPBOARD"):
     global counter
     for child in children:
@@ -83,6 +90,8 @@ def start(toolkit, action, target="UTF8_STRING", data=b"ordinary text", policy=N
         os.close(descriptor)
     return process
 
+# 维护每进程显式有界行缓冲并限定等待，避免 TextIO 预读后 select 产生假超时。
+# Keep bounded explicit per-process line buffers under a deadline, avoiding false select timeouts after TextIO prefetch.
 def line(process):
     # TextIO.readline may prefetch the next complete line. Selecting its raw fd
     # again then reports a false timeout; keep explicit bounded per-process bytes.
@@ -104,17 +113,23 @@ def line(process):
     assert answer, (process.poll(), process.stderr.read() if process.poll() is not None else "fixture ended")
     return answer
 
+# 启动真实选择所有者并要求 READY 后返回，未取得私有剪贴板即失败。
+# Start a real selection owner and require READY before returning, failing if private clipboard ownership was not acquired.
 def owner(toolkit, **options):
     process = start(toolkit, "owner", **options)
     assert line(process) == "READY", "fixture did not own its private clipboard"
     return process
 
+# 启动真实读取器，取得一条结果并等待成功退出，失败附 stderr。
+# Start the real reader, collect one result and require successful exit, reporting stderr on failure.
 def read(toolkit, **options):
     process = start(toolkit, options.pop("action", "read"), **options)
     answer = line(process)
     assert process.wait(15) == 0, process.stderr.read()
     return answer
 
+# 创建 Qt 内容及 INCR 计数文件，以私有 X11/策略环境启动 Qt 夹具并登记其证据路径。
+# Create Qt content/INCR-counter files and launch the fixture with private X11/policy environment, tracking evidence paths.
 def qt_start(action, data, policy=None, selection="CLIPBOARD"):
     global counter
     counter += 1
@@ -139,6 +154,8 @@ def qt_start(action, data, policy=None, selection="CLIPBOARD"):
         os.close(descriptor)
     return process
 
+# 有界等待真实 Qt INCR 头计数达到最低值，超时失败，避免只观察名义标记。
+# Await the minimum real Qt INCR-header count under a deadline, failing instead of accepting nominal markers.
 def qt_headers(process, minimum):
     until = time.monotonic() + 5
     while time.monotonic() < until:
@@ -148,6 +165,8 @@ def qt_headers(process, minimum):
         time.sleep(.02)
     raise AssertionError("Qt did not emit the expected real INCR headers")
 
+# 自有代理只把首连接接到真实 Xvfb，后续连接停在认证，验证停滞时 broker 的拒绝与清理。
+# Route only the first owned proxy connection to Xvfb and stall later authentication to verify broker refusal/cleanup.
 def stalled_broker_authentication():
     # The first connection reaches the real owned Xvfb; later connections accept
     # TCP but never reply to X11 authentication. Only owned protocol bytes pass
@@ -160,6 +179,8 @@ def stalled_broker_authentication():
     listener = socket.socket(); listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind(("127.0.0.1", 6095)); listener.listen(4); listener.settimeout(.1)
     stopped = threading.Event(); connections = []; relays = []
+    # 只在本轮两端连接转发协议字节，停止或 EOF/OSError 即退出，不记录正文。
+    # Relay bytes only between the owned endpoints, stopping on cancellation/EOF/OSError without body logging.
     def relay(client, upstream):
         while not stopped.is_set():
             try:
@@ -171,6 +192,8 @@ def stalled_broker_authentication():
                     (upstream if source is client else client).sendall(data)
             except OSError:
                 return
+    # 接收并登记本轮 socket，仅首连接创建上游和转发线程，其余用于认证停滞。
+    # Accept/track owned sockets, creating upstream/relay only for the first; others simulate stalled authentication.
     def accept():
         while not stopped.is_set():
             try:
@@ -201,6 +224,8 @@ def stalled_broker_authentication():
             worker.join(2)
     print("Broker authentication stall on the original pinned socket refused within its 2s setup bound and process exit joined workers", flush=True)
 
+# 在 Xlib/XCB 多种 fork 模式中验证子进程继承通道封闭、父 broker 继续可用，并记录运行时差异。
+# Exercise Xlib/XCB fork modes to verify inherited-channel closure and continued parent-broker operation, recording runtime differences.
 def fork_after_broker():
     runtime = subprocess.run(["ldd", "--version"], text=True, capture_output=True)
     print("Fork runtime: " + (runtime.stdout or runtime.stderr).splitlines()[0], flush=True)
@@ -246,6 +271,8 @@ def fork_after_broker():
             source.kill(); source.wait(); primary.kill(); primary.wait()
         print(toolkit + ": live broker fork, fresh child MULTIPLE, policy tightening, normal C++ exit, inherited pointer/fd denial, parent continuation passed", flush=True)
 
+# 建立自有小请求预算 Xvfb，驱动 Qt 真实 INCR 并验证未检查数据不会提前释放。
+# Start an owned small-request-budget Xvfb to force real Qt INCR and verify unchecked bytes are not released early.
 def small_server_qt():
     small = ":94"
     subprocess.run(["xauth", "-f", str(auth), "add", small, ".", os.urandom(16).hex()], check=True)
@@ -297,6 +324,8 @@ def small_server_qt():
     print("Real Qt INCR receive completed on the small server; managed copy exceeding its atomic request limit was independently refused", flush=True)
 
 
+# 覆盖不同工具包、选择与源/接收侧策略组合，验证完整 MULTIPLE 目标表和禁用操作。
+# Cover toolkit/selection/source-sink policy combinations and verify complete MULTIPLE target tables plus forbidden operations.
 def multiple(toolkit, other):
     data = ("owned MULTIPLE \u754c\u00e9 text\n".encode() * 15000)
     assert len(data) > 256 * 1024
@@ -403,6 +432,8 @@ def multiple(toolkit, other):
     print(toolkit + ": MULTIPLE two INCR children, independent failures, live tightening, group/pair/buffer quotas, concurrent aliases, one parent notify, blocking waits, pinned authentication, malformed lists, cache/delete and stale cookies passed", flush=True)
 
 
+# 驱动真实 PropertyDelete 分块传输，保留 UTF-8 边界并验证整段内容/策略变化检查。
+# Drive real PropertyDelete chunk transfers, preserving UTF-8 boundaries and verifying whole-body/policy-change checks.
 def incremental(toolkit, other):
     """Exercise a real PropertyDelete-driven owner, never just an INCR marker."""
     data = ("ordinary \u754c\u00e9 incremental text\n".encode() * 14000)[:700001]

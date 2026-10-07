@@ -1,5 +1,8 @@
 /**
- * 模块职责：“容器工作台”插件的Docker/Compose/Dev Container 管理与模板工作台，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“容器工作台”插件的Docker/Compose/Dev Container 管理与模板工作台，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for containers, Compose and development containers.
+ * 详细范围（中文）：公开入口包括 ContainersPanel, tabs；职责覆盖容器、Compose 与开发容器的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ContainersPanel, tabs. The scope covers UI interaction and state presentation for containers, Compose and development containers. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { Download, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
@@ -15,6 +18,12 @@ type ContainersView = Extract<ContainersResponse, { supported: boolean }>;
 type TemplateMetadata = Extract<ContainersResponse, { reference: string }>;
 type TemplateInfo = TemplateMetadata & { projectId: string };
 
+/**
+ * 中文：呈现容器、Compose 与开发容器的界面交互与状态呈现中的 ContainersPanel 界面，订阅 /vms/{vm.id}/containers、/vms/{vm.id}/containers?logs={encodeURIComponent(logs)}，组合 RefreshCw、Download，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ContainersPanel surface for UI interaction and state presentation for containers, Compose and development containers, subscribing to /vms/{vm.id}/containers, /vms/{vm.id}/containers?logs={encodeURIComponent(logs)} and composing RefreshCw, Download. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request, projectId } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力）、projectId（当前项目标识） 上下文字段
+ * English: Inputs: { vm, request, projectId } provides context fields vm (vm state), request (transport capability bound to identity/authority scope), projectId (current project identifier)
+ */
 export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
   const remote = useRemote<ContainersView>(request, `/vms/${vm.id}/containers`, vm.status === 'running', 8000),
     action = useAction();
@@ -42,13 +51,23 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
     `/vms/${vm.id}/containers?logs=${encodeURIComponent(logs)}`,
     !!logs && vm.status === 'running',
   );
+  /**
+   * 中文：提交 POST /vms/{vm.id}/containers，完成容器、Compose 与开发容器的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/containers for UI interaction and state presentation for containers, Compose and development containers. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：value：待校验、转换或保存的输入值
+   * English: Inputs: value: input value to validate/transform/save
+   */
   const run = (value: unknown) =>
-    action.run(async (signal) => {
+    action.run(/** 中文：提交 POST /vms/{vm.id}/containers，完成容器、Compose 与开发容器的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/containers for UI interaction and state presentation for containers, Compose and development containers. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
       await request(`/vms/${vm.id}/containers`, 'POST', value, signal);
       remote.reload();
       output.reload();
     });
-  const inspectTemplate = () => action.run(async (signal) => {
+  /**
+   * 中文：读取 GET /vms/{vm.id}/containers?template={encodeURIComponent(templateId)}，完成容器、Compose 与开发容器的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform GET /vms/{vm.id}/containers?template={encodeURIComponent(templateId)} for UI interaction and state presentation for containers, Compose and development containers. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const inspectTemplate = () => action.run(/** 中文：读取 GET /vms/{vm.id}/containers?template={encodeURIComponent(templateId)}，完成容器、Compose 与开发容器的界面交互与状态呈现的数据交互并更新templateInfo 状态、templateVariant 状态、templateOmit 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vm.id}/containers?template={encodeURIComponent(templateId)} for UI interaction and state presentation for containers, Compose and development containers and update templateInfo state, templateVariant state, templateOmit state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：取消边界：执行前或关键异步步骤检查已取消信号，取消后不继续提交下一步工作 | English: Cancellation boundary: check aborted signals before execution/key asynchronous steps; canceled work must not submit the next step */ async (signal) => {
     const info = await request<TemplateMetadata>(
       `/vms/${vm.id}/containers?template=${encodeURIComponent(templateId)}`, 'GET', undefined, signal);
     signal.throwIfAborted();

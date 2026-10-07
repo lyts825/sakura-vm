@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目 Git 仓库认证、网络、操作与身份边界。 */
+/** 烟雾验收：验证项目 Git 仓库认证、网络、操作与身份边界。
+ * Smoke acceptance for project Git authentication/network/operations and identity boundaries. */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
@@ -21,14 +22,20 @@ if (process.argv.length === 2 || process.argv[2] === '--describe') {
   await run();
 }
 
+/** 建立真实自有仓库 HTTP 夹具和项目 UID，验收 clone/setup 的认证、私有网络、hooks/环境阻断及失败清理；所有 root 命令与资源归属留证。
+ * Create real owned repository HTTP fixtures/project UIDs and verify clone/setup authentication/private networking/hooks-environment denial/failure cleanup, retaining root-command/resource ownership evidence. */
 async function run() {
   const workspace = await realpath('.'), parent = join(workspace, '.data/project-repository-test-temp');
   await mkdir(parent, { recursive: true }); assert.equal(await realpath(parent), parent);
   const root = await mkdtemp(join(parent, 'sakura-repository-'));
   assert.equal(dirname(await realpath(root)), parent); assert.match(basename(root), /^sakura-repository-/);
+  /** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+   * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
   const invocation = randomUUID(), hash = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
   const proof: any = { version: 1, invocation, root, distro: 'alpine', passed: false, startedAt: new Date().toISOString(),
     sourceSha256: {}, executions: [], cases: [], phases: [], cleanupErrors: [], client: { node: process.version, execArgv: process.execArgv } };
+  /** 保存阶段名与时间并输出进度，为中断或失败报告定位最后执行边界。
+   * Retain phase name/time and print progress to locate the last execution boundary after interruption/failure. */
   const phase = (name: string) => { proof.phases.push({ name, at: new Date().toISOString() }); console.log('PHASE ' + name); };
   const files = ['server/project-repository.ts', 'server/project-repository-broker.py', 'server/repository-url.ts',
     'server/workspaces.ts', 'server/project-run-scope.ts', 'server/project-identity.ts', 'server/project-directory-migration.ts',
@@ -36,6 +43,8 @@ async function run() {
     'server/project-network-isolation.ts', 'server/project-dependency-cache.ts', 'server/dependency-downloads.ts', 'server/network-profiles.ts',
     'native/project-identity/protocol.h', 'native/project-identity/launcher.c', 'native/project-identity/controller.py',
     'scripts/smoke-project-repository.ts', 'scripts/project-repository-fixture.py', 'package.json', 'package-lock.json'];
+  /** 递归收集工作区源码相对路径并拒绝符号链接，供冻结摘要验证入口及依赖未被替换。
+   * Recursively collect workspace-relative source paths and reject symbolic links for frozen-hash checks against replaced entry points/dependencies. */
   const capture = async (directory: string) => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       assert.equal(entry.isSymbolicLink(), false);
@@ -75,6 +84,8 @@ async function run() {
   proof.binarySha256 = { [qemu]: hash(await readFile(qemu)), [img]: hash(await readFile(img)) };
   const children = new Map<ChildProcess, Promise<void>>();
   let vmId = '', qemuStarted = false;
+  /** 启动前核验已冻结二进制摘要，登记 argv/PID/exit/close 并限制累计输出；取消只终止自有 child，等待真实 close 后返回结果并清理监听。
+   * Verify frozen binary hashes before spawning, record argv/PID/exit/close and bound accumulated output; cancellation targets only the owned child, then await actual close/clean listeners before returning. */
   async function execute(executable: string, args: string[], options: Parameters<Engine['run']>[2] = {}, vm = false) {
     assert.equal(hash(await readFile(executable)), proof.binarySha256[executable]);
     const entry: any = { executable, argvSha256: hash(JSON.stringify(args)), vm, pid: null, exit: null, close: null };
@@ -90,6 +101,8 @@ async function run() {
       entry.close = { code, signal }; entry.stdoutClosed = child.stdout!.closed; entry.stderrClosed = child.stderr!.closed;
       children.delete(child); done();
     })); children.set(child, closed);
+    /** 取消只绑定当前自有 child 句柄，终止该进程；存在 receipt/entry 时同时记录取消证据，实际 close 仍由外层等待。
+     * Bind cancellation only to the current owned child and terminate it, recording receipt/entry evidence when present; outer code still awaits physical close. */
     const abort = () => { entry.abortRequested = true; child.kill(); };
     options?.signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => { entry.timeoutRequested = true; child.kill(); }, options?.timeoutMs || (vm ? 7_200_000 : 30000));
@@ -100,10 +113,16 @@ async function run() {
     } finally { clearTimeout(timer); options?.signal?.removeEventListener('abort', abort); }
   }
   const hardware = { memoryMiB: 1536, cpus: 2 };
+  /** 显式拒绝夹具没有授权的运行时能力，使意外走入其他主机操作立即失败，不能静默用替身绕过生产路径。
+   * Explicitly reject runtime capabilities not authorized by this fixture so accidental host operations fail immediately instead of silently bypassing production paths with a substitute. */
   const unsupported = () => { throw new Error('Unknown repository test engine operation'); };
   const engine = { version: 'test-only direct Engine', whpxAvailable: false, qemuIoAvailable: false, aarch64Available: false,
-    runtime: { close: async () => { for (const child of children.keys()) child.kill(); await Promise.all(children.values()); } },
-    runStatus: unsupported, get service() { return unsupported(); },
+    runtime: { /** 终止此适配器登记的全部自有子进程并等待实际关闭 Promise；存在总期限时届满失败且清理计时器，不把 kill 调用等同于完成。
+ * Terminate all owned children registered by this adapter and await actual closure promises; where bounded, expiry fails and clears the timer, since calling kill is not completion. */ close: async () => { for (const child of children.keys()) child.kill(); await Promise.all(children.values()); } },
+    runStatus: unsupported, /** 拒绝通用 service 访问，维持此夹具只允许明确 QEMU 启动的最小运行时边界。
+ * Reject generic service access, preserving the fixture’s minimum runtime boundary of explicitly permitted QEMU launch only. */ get service() { return unsupported(); },
+    /** 只允许指定自有磁盘的固定镜像创建和一次精确 QEMU 启动，逐项校验驱动器/启动参数并拒绝其他入口；调用 execute 保留实际进程关闭证据。
+     * Allow only fixed owned-disk image creation/one exact QEMU boot, validating drives/launch arguments and rejecting other entry points; execute retains physical-process closure evidence. */
     run: async (tool: string, args: string[], options?: Parameters<Engine['run']>[2]) => {
       if (tool === 'sakura-img') {
         const disk = args.at(-2)!;
@@ -113,6 +132,8 @@ async function run() {
         return execute(img, args, options);
       }
       assert.equal(tool, 'sakura-qemu'); assert.ok(vmId && !qemuStarted); qemuStarted = true;
+      /** 转义正则表达式的元字符，按字面匹配夹具路径或标记，避免名称被解释为匹配规则。
+       * Escape regular-expression metacharacters so fixture paths/markers match literally rather than act as pattern syntax. */
       const escape = (value: string) => value.replaceAll(',', ',,');
       const drives = args.flatMap((arg, index) => arg === '-drive' ? [args[index + 1]] : []);
       assert.deepEqual(drives, [`file=${escape(join(root, 'machines', vmId, 'disk.qcow2'))},if=virtio,id=sakura-disk,format=qcow2,${diskOptions(hardware)}`,
@@ -128,17 +149,31 @@ async function run() {
   const token = 'owned-git-' + randomBytes(24).toString('hex');
   const fixtureDirectory = '/run/sakura-repository-fixture.' + invocation;
   const projectParent = '/srv/projects/repository-' + invocation;
+  /** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+   * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
   const guest = async (command: string, timeout = 30_000) => {
     const result = await machines.exec(vmId, command, timeout); assert.equal(result.code, 0, result.stderr || result.stdout); return result.stdout.trim();
   };
+  /** 用真实 SFTP wx/0600 写入专用夹具文件，拒绝覆盖已有路径。
+   * Write dedicated fixture files using real SFTP wx/0600 and reject existing paths. */
   const write = (path: string, value: string) => machines.sftp(vmId, ftp =>
     pipeline(Readable.from([Buffer.from(value)]), ftp.createWriteStream(path, { flags: 'wx', mode: 0o600 })));
-  const check = async (name: string, work: () => Promise<unknown>) => {
+  /** 执行前后检查仓库夹具异步失败，再保存成功观测；夹具故障即使操作返回也必须使场景失败。
+   * Check asynchronous repository-fixture failures before/after work, retaining success only when neither failed; fixture faults fail even if operations returned. */
+  const check = async (name: string, work: /** 仓库用例异步工作返回观测，外层在已有夹具失败时跳过并记录结果；工作异常仍传播以触发资源清理。
+ * Repository-case work returns observations; the outer wrapper skips after fixture failure and records outcomes while propagating operation errors for cleanup. */ () => Promise<unknown>) => {
     if (fixtureFailure) throw fixtureFailure; phase(name); const observation = await work();
     if (fixtureFailure) throw fixtureFailure;
     proof.cases.push({ name, observation }); console.log('PASS ' + name); };
-  const projectScope = <T>(id: string, work: () => Promise<T>) => spaces.projects.with(vmId, id, work);
+  /** 在精确项目上下文运行并返回工作结果，固定仓库配置与账号归属。
+   * Execute/return work in the exact project context, binding repository settings/account ownership. */
+  const projectScope = <T>(id: string, work: /** 在选定仓库项目作用域执行异步 work 并返回 T，绑定下载/设置请求到目标身份。
+ * Execute asynchronous work in the selected repository project scope and return T, binding download/setup requests to the target identity. */ () => Promise<T>) => spaces.projects.with(vmId, id, work);
+  /** 读取自有仓库请求 JSONL 并逐行解析，返回实际服务流量证据。
+   * Read/parse owned repository request JSONL and return actual service-traffic evidence. */
   const requests = async () => (await guest(`cat ${quote(fixtureDirectory + '/requests.jsonl')}`)).split('\n').filter(Boolean).map(line => JSON.parse(line));
+  /** 运行项目 setup/start/stop 并等任务，验证输出不含认证令牌；失败额外保存仓库请求诊断，返回终态供场景比较。
+   * Run project setup/start/stop/await its job and reject token leakage; on failure retain repository-request diagnostics and return the final record for scenario comparison. */
   const runAction = (id: string, action: 'setup' | 'start' | 'stop') => projectScope(id, async () => {
     await spaces.run(vmId, action); const key = spaces.projects.key(vmId); await spaces.jobs.wait(key);
     const result = spaces.jobs.view(key)!; assert.ok(!JSON.stringify(result).includes(token));
@@ -152,6 +187,8 @@ async function run() {
   // Observe a failed admission before runProjectMain rolls its exact scope back.
   // These diagnostics are confined to this fresh test VM and contain no input frame.
   const nativeInput = machines.execInput.bind(machines);
+  /** 仅观察正式主进程启动标记，按精确 guest 路径读取 owner、锁、PID/cgroup 与 tmux 诊断，帮助定位受保护入场等待。
+   * Observe only production main-start markers and read owner/lock/PID-cgroup/tmux diagnostics at the exact guest path to diagnose protected admission waits. */
   const captureMainAdmission = async (command: string) => {
     if (!command.startsWith('# SAKURA_PROJECT_MAIN_START')) return;
     const line = command.split('\n').find(value => value.startsWith('# SAKURA_PROJECT_MAIN_REQUEST='))!;
@@ -183,7 +220,8 @@ print(json.dumps(result))`;
       console.log(JSON.stringify({ mainAdmissionDiagnostics: proof.mainAdmissionDiagnostics.at(-1) }));
     } catch (error) { (proof.mainAdmissionDiagnostics ||= []).push({ error: String(error) }); }
   };
-  machines.execInput = (async (...args: Parameters<typeof machines.execInput>) => {
+  machines.execInput = (/** 真实 execInput 抛错或非零后补采 main 入场证据，再返回原结果/重抛原错误；用于核验失败前是否已取得原运行资源。
+ * Capture main-admission evidence after real execInput throws or exits nonzero, then preserve the original result/error to establish whether original run resources were acquired before failure. */ async (...args: Parameters<typeof machines.execInput>) => {
     let result;
     try { result = await nativeInput(...args); }
     catch (error) { await captureMainAdmission(args[1]); throw error; }
@@ -192,7 +230,10 @@ print(json.dumps(result))`;
   }) as typeof machines.execInput;
   let endpoint = '', credentialReads = 0;
   const originalValue = secrets.value.bind(secrets);
-  secrets.value = async (id, name) => { if (name === 'git-reader') ++credentialReads; return originalValue(id, name); };
+  secrets.value = /** 只对 git-reader 密钥读取计数，所有名称仍调用正式 Secrets.value 并返回原值，证明预检拒绝未提前取凭据。
+ * Count only git-reader credential reads while forwarding every name to formal Secrets.value, proving preflight refusals did not read credentials early. */ async (id, name) => { if (name === 'git-reader') ++credentialReads; return originalValue(id, name); };
+  /** 建立自有目录、仓库 URL 和故意不安全环境，正式创建项目并确认迁移计划授权；返回 ID/配置/身份供 hooks 与认证边界验收。
+   * Create owned directories/repository URLs/intentionally unsafe environment, use production project creation/reviewed migration and return ID/settings/identity for hooks/authentication boundary checks. */
   const createProject = async (name: string, remote: string, setup = '', networkIsolation: 'private' | 'host' = 'private') => {
     const directory = projectParent + '/' + name; await guest(`mkdir ${quote(directory)}`);
     const config = projectSchema.parse({ directory, networkIsolation, repository: endpoint + '/' + remote,
@@ -293,8 +334,10 @@ print(json.dumps(result))`;
     });
     const observer = await createProject('shared-observer', 'public.git', '', 'host');
     const cancelled = await createProject('cancelled', 'slow.git');
-    await check('cancelled download retires its cgroup and exact protected resources', async () => {
-      await projectScope(cancelled.id, async () => {
+    await check('cancelled download retires its cgroup and exact protected resources', /** 启动慢仓库下载后以邻 UID 验证 root 环境不可读、公用 nonce 不可访问，再取消；要求下载目录、完整 cgroup 和状态均关闭。
+ * After starting slow repository download, use a neighbor UID to prove root environment unreadable/public nonce unusable, then cancel and require download-directory/whole-cgroup/state closure. */ async () => {
+      await projectScope(cancelled.id, /** 在被取消项目作用域等待真实 slow.git 请求，核实 pending 下载票据；邻身份观测完成后取消并等待正式 job，不能以发送 cancel 代替取消已完成。
+ * Within the cancelled project scope await a real slow.git request and validate its pending download receipt; after neighbor observation cancel and await the formal job instead of equating cancel delivery with completion. */ async () => {
         await spaces.run(vmId, 'setup'); const key = spaces.projects.key(vmId), deadline = Date.now() + 600_000;
         while (!(await requests()).some(value => value.path.startsWith('/slow.git/'))) { assert.ok(Date.now() < deadline); await delay(200); }
         const pending = JSON.parse(await readFile(join(vmDir(vmId), 'project-repository-' + cancelled.id + '.json'), 'utf8'));

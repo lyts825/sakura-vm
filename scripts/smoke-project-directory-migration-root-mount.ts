@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目目录迁移的根挂载、边界预检和日志容量拒绝。 */
+/** 烟雾验收：验证项目目录迁移的根挂载、边界预检和日志容量拒绝。
+ * Smoke acceptance for root-mount migration preflight boundaries and journal-capacity refusal. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -71,11 +72,15 @@ const proof: any = {
     .digest('hex'),
   cases: [],
 };
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string) => {
   const result = await machines.exec(expectedId, command, 15000);
   assert.equal(result.code, 0, result.stdout + result.stderr);
   return result.stdout.trim();
 };
+/** 以隔离 Python 读取自有路径的物理元数据和普通文件摘要，返回 JSON 供迁移前后比较；只观测，不修改所有权。
+ * Read owned-path physical metadata/regular-file hashes with isolated Python, returning JSON for pre/post-migration comparison without changing ownership. */
 const inspect = async (path: string) =>
   JSON.parse(
     await run(

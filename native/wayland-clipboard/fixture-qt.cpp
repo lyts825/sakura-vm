@@ -1,4 +1,7 @@
-/** Qt 原生 Wayland 剪贴板夹具，覆盖 CLIPBOARD、PRIMARY 及不同内容格式的实际数据传输。 */
+/**
+ * 中文：原生 Qt Wayland 夹具，通过真实全屏窗口取得输入序列，发布或读取精确 MIME 的 CLIPBOARD/PRIMARY 内容。延迟提供者和独立子客户端用于检查工具包生命周期与焦点边界。
+ * English: Native Qt Wayland fixture obtains an input serial through a real fullscreen window and publishes/reads exact-MIME CLIPBOARD/PRIMARY content. Delayed providers and independent child clients exercise toolkit lifetimes and focus boundaries.
+ */
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QMimeData>
@@ -22,11 +25,31 @@ class Window : public QWindow {
 public:
     bool inputReceived = false;
     QElapsedTimer inputTime;
+    /**
+     * 中文：初始化原生 Wayland 夹具窗口的尺寸和标题，等待真实 compositor 焦点。
+     * English: Initializes native Wayland fixture window size/title while waiting for real compositor focus.
+     * 参数 / Parameters: `Window()`.
+     */
     Window() { resize(360, 240); setTitle("Sakura owned native Wayland fixture"); }
+    /**
+     * 中文：记录真实 F8 输入并启动输入时刻计时。
+     * English: Records real F8 input and starts timing from that input event.
+     * 参数 / Parameters: `keyPressEvent(QKeyEvent *event) override`.
+     */
     void keyPressEvent(QKeyEvent *event) override {
         if (event->key() == Qt::Key_F8) { inputReceived = true; inputTime.start(); }
     }
+    /**
+     * 中文：记录真实鼠标输入并重新启动输入时刻计时。
+     * English: Records real mouse input and restarts timing from that event.
+     * 参数 / Parameters: `mousePressEvent(QMouseEvent *) override`.
+     */
     void mousePressEvent(QMouseEvent *) override { inputReceived = true; inputTime.start(); }
+    /**
+     * 中文：仅在窗口已曝光时通过 backing store 绘制夹具标识。
+     * English: Paints fixture identification through its backing store only when the window is exposed.
+     * 参数 / Parameters: `exposeEvent(QExposeEvent *) override`.
+     */
     void exposeEvent(QExposeEvent *) override {
         if (!isExposed()) return;
         store.resize(size());
@@ -44,12 +67,37 @@ class Data : public QMimeData {
     QString file, type;
     int delay;
 public:
+    /**
+     * 中文：捕获文件、MIME 和可选延迟供 Qt 延迟数据提供调用使用。
+     * English: Captures file, MIME and optional delay for Qt's lazy data-provider calls.
+     * 参数 / Parameters: `Data(QString file, QString type, int delay)`.
+     */
     Data(QString file, QString type, int delay) : file(std::move(file)), type(std::move(type)), delay(delay) {}
+    /**
+     * 中文：仅公布夹具配置的一个 MIME，避免提供额外隐式内容格式。
+     * English: Advertises only the fixture's configured MIME rather than extra implicit content formats.
+     * 参数 / Parameters: `formats() const override`.
+     */
     QStringList formats() const override { return {type}; }
+    /**
+     * 中文：按精确 MIME 字符串判断当前数据提供者是否支持请求格式。
+     * English: Tests supported format using an exact MIME string comparison.
+     * 参数 / Parameters: `hasFormat(const QString &format) const override`.
+     */
     bool hasFormat(const QString &format) const override { return format == type; }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    /**
+     * 中文：只为精确 MIME 提供输入文件完整字节，可延迟模拟数据提供者阻塞。
+     * English: Provides complete input-file bytes only for the exact MIME, optionally delaying to simulate a blocked provider.
+     * 参数 / Parameters: `retrieveData(const QString &format, QMetaType) const override`.
+     */
     QVariant retrieveData(const QString &format, QMetaType) const override {
 #else
+    /**
+     * 中文：只为精确 MIME 提供输入文件完整字节，可延迟模拟数据提供者阻塞。
+     * English: Provides complete input-file bytes only for the exact MIME, optionally delaying to simulate a blocked provider.
+     * 参数 / Parameters: `retrieveData(const QString &format, QVariant::Type) const override`.
+     */
     QVariant retrieveData(const QString &format, QVariant::Type) const override {
 #endif
         if (format != type) return {};
@@ -58,11 +106,21 @@ public:
     }
 };
 
+/**
+ * 中文：通过 QSaveFile 写入完整标记并原子提交，任一写入或提交失败返回 false。
+ * English: Writes a complete marker through QSaveFile and commits atomically, returning false for write/commit failure.
+ * 参数 / Parameters: `output(const QString &file, const QByteArray &bytes)`.
+ */
 static bool output(const QString &file, const QByteArray &bytes) {
     QSaveFile value(file);
     return value.open(QIODevice::WriteOnly) && value.write(bytes) == bytes.size() && value.commit();
 }
 
+/**
+ * 中文：要求原生 Wayland 并核对 PRIMARY 支持，创建真实焦点窗口后执行 owner、probe 或 child 模式。
+ * English: Requires native Wayland and checks PRIMARY support, then creates a real-focus window for owner/probe/child mode.
+ * 参数 / Parameters: `main(int argc, char **argv)`.
+ */
 int main(int argc, char **argv) {
     QGuiApplication application(argc, argv);
     if (argc < 5 || !QGuiApplication::platformName().startsWith("wayland")) return 42;
@@ -79,6 +137,13 @@ int main(int argc, char **argv) {
     QElapsedTimer lifetime; lifetime.start();
     QTimer timer;
     bool initialized = false;
+    /**
+     * 中文：在真实输入和活动焦点后发布选择或读取 MIME；probe 等待 offer 事件，child 启动独立原生客户端。
+     * English: Publishes a selection or reads MIME after real input/active focus; probe waits for offer events and child launches an independent native client.
+     * 参数 / Parameters: `()`.
+     * 设计 / Design: probe 至少等输入后 250ms 才读取，避免焦点紧邻的 offer 尚未分派；十秒无焦点明确输出诊断。
+     * Probe waits at least 250ms after input before reading so adjacent offer events can dispatch; ten seconds without focus produces explicit diagnostics.
+     */
     QObject::connect(&timer, &QTimer::timeout, [&]() {
         if (!initialized && window.isActive() && window.inputReceived) {
             if (action == "owner") {

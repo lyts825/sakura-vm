@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - a real 128 GiB sparse QCOW2 backup fits a 64 MiB free-space budget and retains its VM lock while queued
- * - real sparse LUKS QCOW2 measurement uses the encrypted output format before backup admission
- * - backup verification failure releases I/O, but an actual materialized-file cleanup failure remains charged
+ * 模块职责：回归验证模块，围绕 `backup-storage-runtime` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `backup-storage-runtime`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: a real 128 GiB sparse QCOW2 backup fits a 64 MiB free-space budget and retains its VM lock while queued; real sparse LUKS QCOW2 measurement uses the encrypted output format before backup admission.
  */
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
@@ -31,29 +32,98 @@ const binary = resolve(
   process.platform === 'win32' ? 'qemu-img.exe' : 'qemu-img',
 );
 const execute = promisify(execFile);
+/**
+ * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+ * English: Generate or verify digest and identity material required by this suite.
+ * 输入 / Inputs: value: Buffer。
+ * 结果：返回分支计算值（`createHash('sha256').update(value).digest('hex')`）。
+ * Result: Return the branch-computed value (`createHash('sha256').update(value).digest('hex')`).
+ * 协作入口 / Collaborators: `createHash('sha256').update(value).digest`, `createHash('sha256').update`, `createHash`.
+ */
 const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex');
 const signal = new AbortController().signal;
 after(async () => {
   assert.equal(dirname(root), resolve(tmpdir()));
   await rm(root, { recursive: true, force: true });
 });
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回受控对象，公开字段包括 `id, machines, host, storage, leases, bundles, backups`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `id, machines, host, storage, leases, bundles, backups`; the actual branch determines its shape.
+ * 状态影响 / State effects: `storage.acquire`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `randomUUID`, `createSchema.parse`, `storage.acquire.bind`.
+ */
 function fixture() {
   const id = randomUUID(),
     record = { ...createSchema.parse({ name: 'sparse', diskGiB: 128 }), id, snapshots: [] };
   const queues = new Map<string, Promise<unknown>>();
   const machines = {
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`record`）。
+     * Result: Return the branch-computed value (`record`).
+     */
     get: () => record,
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     */
     requireStopped() {},
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     */
     requireUnlocked() {},
     live: new Map(),
     records: new Map([[id, record]]),
-    locked<T>(key: string, work: () => Promise<T>) {
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: key: string; work: () => Promise<T>。
+     * 结果：返回分支计算值（`result`）。
+     * Result: Return the branch-computed value (`result`).
+     * 协作入口 / Collaborators: `(queues.get(key) || Promise.resolve()).catch(() => {}).then`, `(queues.get(key) || Promise.resolve()).catch`, `queues.get`, `Promise.resolve`.
+     */
+    locked<T>(key: string, work: /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+     * Result: The declared return type defines the result; its test provider supplies the implementation.
+     */
+    () => Promise<T>) {
       const result = (queues.get(key) || Promise.resolve()).catch(() => {}).then(work);
       queues.set(key, result);
       return result;
     },
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ key: 'fixture-private-key', seed: Buffer.alloc(34816) })`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ key: 'fixture-private-key', seed: Buffer.alloc(34816) })`) through a Promise.
+     * 协作入口 / Collaborators: `Buffer.alloc`.
+     */
     snapshotIdentity: async () => ({ key: 'fixture-private-key', seed: Buffer.alloc(34816) }),
     engine: {
+      /**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: _tool: string; args: string[]; options: { signal?: AbortSignal } = {}。
+       * 结果：返回分支计算值（`(await execute(binary, args, { windowsHide: true, signal: options.signal })).std…`），以 Promise 交付。
+       * Result: Return the branch-computed value (`(await execute(binary, args, { windowsHide: true, signal: options.signal })).std…`) through a Promise.
+       * 协作入口 / Collaborators: `execute`.
+       */
       run: async (_tool: string, args: string[], options: { signal?: AbortSignal } = {}) =>
         (await execute(binary, args, { windowsHide: true, signal: options.signal })).stdout,
     },
@@ -67,7 +137,15 @@ function fixture() {
     freeBytes: 64 * 1024 ** 2,
   }));
   const acquire = storage.acquire.bind(storage);
-  storage.acquire = async (request) => {
+  storage.acquire = /**
+   * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+   * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+   * 输入 / Inputs: request。
+   * 结果：返回分支计算值（`lease`），以 Promise 交付。
+   * Result: Return the branch-computed value (`lease`) through a Promise.
+   * 协作入口 / Collaborators: `acquire`, `leases.push`.
+   */
+  async (request) => {
     const lease = await acquire(request);
     leases.push(lease);
     return lease;
@@ -77,6 +155,19 @@ function fixture() {
   return { id, machines, host, storage, leases, bundles, backups };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a real 128 GiB sparse QCOW2 backup fits a 64 MiB free-space budget and retains its VM lock while queued
+ * 状态影响 / State effects: `machines.engine.run`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `mkdir`, `vmDir`, `join`.
+ * 检查边界 / Checked boundaries: `assert.equal(changed, false, 'The measured source must stay locked while admission waits')`; `assert.equal(job.status, 'done', job.error)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test(
   'a real 128 GiB sparse QCOW2 backup fits a 64 MiB free-space budget and retains its VM lock while queued',
   { skip: !existsSync(binary) },
@@ -96,12 +187,28 @@ test(
       buffers: 1,
       files: 1,
     });
-    let measured!: () => void;
+    let measured!: /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+     * Result: The declared return type defines the result; its test provider supplies the implementation.
+     */
+    () => void;
     const ready = new Promise<void>((done) => {
       measured = done;
     });
     const run = machines.engine.run.bind(machines.engine);
-    machines.engine.run = async (...args: Parameters<typeof run>) => {
+    machines.engine.run = /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: args: Parameters<typeof run>。
+     * 结果：返回分支计算值（`result`），以 Promise 交付。
+     * Result: Return the branch-computed value (`result`) through a Promise.
+     * 验证场景 / Scenario: a real 128 GiB sparse QCOW2 backup fits a 64 MiB free-space budget and retains its VM lock while queued
+     * 协作入口 / Collaborators: `run`, `measured`.
+     */
+    async (...args: Parameters<typeof run>) => {
       const result = await run(...args);
       if (args[1][0] === 'measure') measured();
       return result;
@@ -132,6 +239,19 @@ test(
   },
 );
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: real sparse LUKS QCOW2 measurement uses the encrypted output format before backup admission
+ * 状态影响 / State effects: `machines.get(id).diskEncryption`, `machines.withDiskSecret`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `mkdir`, `vmDir`, `join`.
+ * 检查边界 / Checked boundaries: `assert.equal(job.status, 'done', job.error)`; `assert.ok((await backups.view(id)).items[0].bytes < 32 * 1024 ** 2)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test(
   'real sparse LUKS QCOW2 measurement uses the encrypted output format before backup admission',
   { skip: !existsSync(binary) },
@@ -142,7 +262,16 @@ test(
       disk = join(vmDir(id), 'disk.qcow2');
     await writeFile(secret, 'test-disk-password-not-a-real-secret', { mode: 0o600 });
     machines.get(id).diskEncryption = { format: 'luks', secretName: 'disk-password' };
-    machines.withDiskSecret = async (_vm, work) => work(secret);
+    machines.withDiskSecret = /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: _vm; work。
+     * 结果：返回分支计算值（`work(secret)`），以 Promise 交付。
+     * Result: Return the branch-computed value (`work(secret)`) through a Promise.
+     * 验证场景 / Scenario: real sparse LUKS QCOW2 measurement uses the encrypted output format before backup admission
+     * 协作入口 / Collaborators: `work`.
+     */
+    async (_vm, work) => work(secret);
     await execute(
       binary,
       [
@@ -171,6 +300,19 @@ test(
   },
 );
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: backup verification failure releases I/O, but an actual materialized-file cleanup failure remains charged
+ * 状态影响 / State effects: `bad[bad.length - 1]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `Buffer.from`, `JSON.stringify`, `digest`.
+ * 检查边界 / Checked boundaries: `assert.rejects( backups.withVerifiedFile(id, badId, undefined, signal, async () => {}), /磁盘校验失败/, )`; `assert.equal(host.snapshot().resources.length, 0)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('backup verification failure releases I/O, but an actual materialized-file cleanup failure remains charged', async () => {
   const { id, host, leases, backups } = fixture();
   const disk = Buffer.from('disk-content'),
@@ -233,6 +375,16 @@ test('backup verification failure releases I/O, but an actual materialized-file 
   }
 });
 
+/**
+ * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+ * English: Generate or verify digest and identity material required by this suite.
+ * 输入 / Inputs: f: ReturnType<typeof fixture>; options: { indexed?: boolean; corrupt?: boolean; stagedOnly?: boolean } = {}。
+ * 结果：返回受控对象，公开字段包括 `directory, file, record, journal`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `directory, file, record, journal`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `import`, `join`, `randomUUID`, `Buffer.from`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function interruptedPublication(
   f: ReturnType<typeof fixture>,
   options: { indexed?: boolean; corrupt?: boolean; stagedOnly?: boolean } = {},
@@ -268,11 +420,33 @@ async function interruptedPublication(
   return { directory, file, record, journal };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: restarted backup controller reconciles publish-before-index and index-before-cleanup without another export
+ * 状态影响 / State effects: `f.bundles.withExportBudget`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `interruptedPublication`, `restarted.view`, `assert.deepEqual`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual( view.items.map((value) => value.id), [item.record.id], )`; `assert.equal(view.items[0].checksum, item.record.checksum)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('restarted backup controller reconciles publish-before-index and index-before-cleanup without another export', async () => {
   for (const indexed of [false, true]) {
     const f = fixture(),
       item = await interruptedPublication(f, { indexed });
-    f.bundles.withExportBudget = async () => {
+    f.bundles.withExportBudget = /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: restarted backup controller reconciles publish-before-index and index-before-cleanup without another export
+     * 失败 / Failure: `new Error('Recovery must never replay source export')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     */
+    async () => {
       throw new Error('Recovery must never replay source export');
     };
     try {
@@ -296,6 +470,18 @@ test('restarted backup controller reconciles publish-before-index and index-befo
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: interrupted staging is discarded, while a changed published backup remains available for inspection
+ * 协作入口 / Collaborators: `fixture`, `interruptedPublication`, `assert.equal`, `staged.backups.view`.
+ * 检查边界 / Checked boundaries: `assert.equal((await staged.backups.view(staged.id)).items.length, 0)`; `assert.rejects(stat(draft.file + '.part'), { code: 'ENOENT' })`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('interrupted staging is discarded, while a changed published backup remains available for inspection', async () => {
   const staged = fixture(),
     draft = await interruptedPublication(staged, { stagedOnly: true });
@@ -324,6 +510,18 @@ test('interrupted staging is discarded, while a changed published backup remains
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: reconciliation completes a journaled obsolete-file cleanup and preserves newly protected backups
+ * 协作入口 / Collaborators: `fixture`, `interruptedPublication`, `randomUUID`, `new Date(Date.now() + 60_000).toISOString`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual( view.items.map((value) => value.id), [item.record.id, protectedItem.id], )`; `assert.rejects(stat(join(item.directory, obsolete.id + '.sakura')), { code: 'ENOENT' })`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('reconciliation completes a journaled obsolete-file cleanup and preserves newly protected backups', async () => {
   const f = fixture(),
     item = await interruptedPublication(f, { indexed: true });
@@ -359,6 +557,18 @@ test('reconciliation completes a journaled obsolete-file cleanup and preserves n
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: an obstructed recovery temporary file retains I/O and repeat reads report the same failure without queueing again
+ * 协作入口 / Collaborators: `fixture`, `interruptedPublication`, `rm`, `mkdir`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.backups.view(f.id), { code: 'STORAGE_CLEANUP_PENDING' })`; `assert.equal(held.state, 'cleanup-pending')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('an obstructed recovery temporary file retains I/O and repeat reads report the same failure without queueing again', async () => {
   const f = fixture(),
     item = await interruptedPublication(f);

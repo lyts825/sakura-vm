@@ -1,4 +1,5 @@
-/** 烟雾验收：验证明确释放的停机 guest-task 夹具中命令字面输入及项目作用域。 */
+/** 烟雾验收：验证明确释放的停机 guest-task 夹具中命令字面输入及项目作用域。
+ * Smoke acceptance for literal command inputs and project scope in explicitly released stopped guest-task fixtures. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -41,6 +42,8 @@ assert.equal(dirname(dirname(machineDirectory)), root);
 assert.equal(dirname(await realpath(join(machineDirectory, 'disk.qcow2'))), machineDirectory);
 const proofPath = join(root, 'command-input-evidence.json');
 await assert.rejects(readFile(proofPath), { code: 'ENOENT' }, 'Keep any earlier proof intact.');
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const machinesSource = resolve('server/machines.ts');
 const machinesSourceSha256 = sha256(await readFile(machinesSource));
@@ -117,11 +120,17 @@ const proof: {
 };
 const machines = new Machines(await createRuntime());
 let initialized = false;
+/** 将已经通过断言的命名证据加入本轮检查报告并输出进度；调用者先完成核验，这里只负责保留结论。
+ * Add named evidence already validated by assertions to this run’s checks and print progress; callers validate first and this helper retains the result. */
 const check = (value: Record<string, unknown>) => {
   proof.checks.push({ ...value, passed: true });
   console.log('PASS ' + value.name);
 };
+/** 返回输入原始字节长度与摘要，供零字节/Unicode/大输入等 roundtrip 比较。
+ * Return input byte length/hash for roundtrip comparison of zero bytes/Unicode/large inputs. */
 const metadata = (bytes: Buffer) => ({ length: bytes.length, sha256: sha256(bytes) });
+/** 通过真实 SSH 的 execInput 传输原始 Buffer，验证退出码、两路输出和回调字节；调用后修改源 Buffer 时仍必须收到调用时快照。
+ * Transfer raw Buffer through real SSH execInput and verify exit code/both streams/callback bytes; mutating the source after invocation must still deliver the call-time snapshot. */
 async function roundtrip(name: string, payload: Buffer, mutateAfterCall = false, nonzero = false) {
   const expected = metadata(payload);
   const chunks: string[] = [];
@@ -168,7 +177,8 @@ try {
   // It proves execInput rejects before even attempting its actual connect entry.
   const originalConnect = machines.connect;
   let connectionAttempts = 0;
-  machines.connect = async () => {
+  machines.connect = /** 若超限输入进入 connect 就计数并抛错，证明正文预算检查发生在 SSH 资源分配之前。
+ * Count and fail any connect reached by oversized input, proving body-budget rejection occurs before SSH resource allocation. */ async () => {
     ++connectionAttempts;
     throw new Error('Oversize input attempted SSH.');
   };

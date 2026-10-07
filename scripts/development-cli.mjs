@@ -1,4 +1,5 @@
-/** CLI 开发子命令实现，包含命令预设、网络与迁移审阅操作，以及通过 API 下载已验证备份。 */
+/** CLI 开发子命令实现，包含命令预设、网络与迁移审阅操作，以及通过 API 下载已验证备份。
+ * Implement development CLI commands for presets, network/migration review and API downloads of verified backups. */
 import { networkFor } from './network-client.mjs';
 const { fetch } = networkFor('tool:development-cli');
 import { readFile, open, lstat, unlink } from 'node:fs/promises';
@@ -23,14 +24,20 @@ Passwords: set SAKURA_BACKUP_PASSWORD for backup/import; never pass it as an arg
 Secret values: set SAKURA_SECRET_VALUE for secrets put; values are never printed.
 Network apply and migration start accept the JSON returned by preview.
 Long operations return a job; use tasks to inspect progress and logs.`;
+/** 要求指定 JSON 文件，读取并解析供已审阅配置/计划输入，缺失或畸形直接抛错。
+ * Require/read/parse the supplied JSON file for reviewed configuration/plans, propagating absence/malformed input. */
 const jsonFile = async (path) => {
   if (!path) throw new Error('Specify a JSON file');
   return JSON.parse(await readFile(path, 'utf8'));
 };
+/** 独占创建 0600 输出并固定 inode，只接受本机固定下载 ticket；取消/失败清理本次文件，完整接收后才保留。
+ * Exclusively create/pin a 0600 output and accept only local fixed download tickets; cancellation/failure removes this file, retaining only completed downloads. */
 export async function downloadBackup(api, base, vm, backupId, destination) {
   if (!backupId || !destination) throw new Error('Usage: backup-download <name> <backup-id> <output-file>');
   const file = await open(destination, 'wx', 0o600),
     identity = await file.stat();
+  /** 触发本轮下载 AbortController，统一由下载 finally 恢复监听与文件状态。
+   * Abort this download through its controller so the shared finally restores listeners/file state. */
   const abort = new AbortController(),
     cancel = () => abort.abort();
   let complete = false;
@@ -54,6 +61,8 @@ export async function downloadBackup(api, base, vm, backupId, destination) {
     }
   }
 }
+/** 按开发 CLI 动作构造固定 API 请求和审阅数据，返回 handled/value；未知动作保留给其他路由，不执行任意 root 命令。
+ * Route development CLI actions to fixed API requests/reviewed data and return handled/value, leaving unhandled actions for other routes. */
 export async function developmentCommand(action, name, args, api, base) {
   if (action === 'migration') {
     if (!name || name === 'show') return { handled: true, value: await api('/migration') };

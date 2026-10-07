@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - GraphQL query validation remains visible through the controller without exposing unclassified HTTP errors
- * - a locked bootstrap displays the gate and never admits a pending mutation or replays it on unlock
- * - a private 423 clears credentials and stale bootstrap completion cannot restore a locked session
+ * 模块职责：回归验证模块，围绕 `controller-recovery` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `controller-recovery`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: GraphQL query validation remains visible through the controller without exposing unclassified HTTP errors; a locked bootstrap displays the gate and never admits a pending mutation or replays it on unlock.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -11,19 +12,56 @@ import { watchController } from '../src/controller-watch.ts';
 import { connectTerminal } from '../src/terminal-connection.ts';
 import { GraphApi } from '../server/graphql-api.ts';
 
+/**
+ * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+ * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `Promise.resolve`.
+ */
 const settle = async () => {
   for (let i = 0; i < 12; i++) await Promise.resolve();
 };
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回受控对象，公开字段包括 `promise, resolve`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `promise, resolve`; the actual branch determines its shape.
+ */
 const deferred = () => {
-  let resolve!: () => void;
+  let resolve!: /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void;
   return {
     promise: new Promise<void>((done) => {
       resolve = done;
     }),
+    /**
+     * 中文功能：完成夹具中预先保存的 Promise，使等待它的异步步骤取得传入值。
+     * English: Settle the Promise retained by the fixture so waiting asynchronous steps receive the supplied value.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`resolve()`）。
+     * Result: Return the branch-computed value (`resolve()`).
+     * 协作入口 / Collaborators: `resolve`.
+     */
     resolve: () => resolve(),
   };
 };
 
+/**
+ * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+ * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+ * 输入 / Inputs: locked: boolean。
+ * 结果：返回分支计算值（`({ configured: true, enabled: true, locked, idleMinutes: 1, retryAfterSeconds: 0…`）。
+ * Result: Return the branch-computed value (`({ configured: true, enabled: true, locked, idleMinutes: 1, retryAfterSeconds: 0…`).
+ */
 const sessionView = (locked: boolean) => ({
   configured: true,
   enabled: true,
@@ -31,6 +69,18 @@ const sessionView = (locked: boolean) => ({
   idleMinutes: 1,
   retryAfterSeconds: 0,
 });
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: GraphQL query validation remains visible through the controller without exposing unclassified HTTP errors
+ * 协作入口 / Collaborators: `t.after`, `assert.rejects`, `session.request`, `rejected.request`.
+ * 检查边界 / Checked boundaries: `assert.rejects(session.request('/graphql', 'POST', { query }), (error: any) => { assert.equal(error.status, 400); assert.equal(err…`; `assert.rejects(rejected.request(fixture.path, 'POST', {}), (error: any) => { assert.equal(error.status, fixture.status); assert.eq…`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('GraphQL query validation remains visible through the controller without exposing unclassified HTTP errors', async t => {
   const graph = new GraphApi(async () => { throw new Error('EXCLUDED_INTERNAL_SOURCE'); });
   t.after(() => graph.close());
@@ -74,6 +124,17 @@ test('GraphQL query validation remains visible through the controller without ex
   });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a locked bootstrap displays the gate and never admits a pending mutation or replays it on unlock
+ * 状态影响 / State effects: `locked`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `assert.rejects`, `session.request`, `assert.equal`, `session.getSession`.
+ * 检查边界 / Checked boundaries: `assert.rejects(session.request('/vms', 'POST', {}), /locked/)`; `assert.equal(session.getSession().locked, true)`.
+ */
 test('a locked bootstrap displays the gate and never admits a pending mutation or replays it on unlock', async () => {
   let locked = true,
     mutations = 0,
@@ -99,6 +160,18 @@ test('a locked bootstrap displays the gate and never admits a pending mutation o
   assert.equal(bootstraps, 2);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a private 423 clears credentials and stale bootstrap completion cannot restore a locked session
+ * 协作入口 / Collaborators: `deferred`, `session.authenticate`, `assert.rejects`, `session.request`.
+ * 检查边界 / Checked boundaries: `assert.rejects(session.request('/vms'), /locked/)`; `assert.rejects(stale, /会话状态/)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('a private 423 clears credentials and stale bootstrap completion cannot restore a locked session', async () => {
   const gate = deferred();
   let auth = 0;
@@ -119,6 +192,16 @@ test('a private 423 clears credentials and stale bootstrap completion cannot res
   assert.equal(session.getSession().locked, true);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: private data received after locking is discarded even when the old request succeeded
+ * 协作入口 / Collaborators: `deferred`, `session.authenticate`, `session.request`, `session.updateSession`.
+ * 检查边界 / Checked boundaries: `assert.rejects(pending, /会话状态/)`; `assert.equal(session.getToken(), '')`.
+ */
 test('private data received after locking is discarded even when the old request succeeded', async () => {
   const gate = deferred();
   const session = new ControllerSession(async (url) => {
@@ -134,6 +217,18 @@ test('private data received after locking is discarded even when the old request
   assert.equal(session.getToken(), '');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: expired replies retain their HTTP status and never automatically replay a mutation
+ * 协作入口 / Collaborators: `session.subscribe`, `session.authenticate`, `Promise.allSettled`, `session.request`.
+ * 检查边界 / Checked boundaries: `assert.ok(rejected.every(result => result.status === 'rejected' && result.reason.status === 401))`; `assert.equal(bootstraps, 1)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('expired replies retain their HTTP status and never automatically replay a mutation', async () => {
   let bootstraps = 0,
     writes = 0;
@@ -158,11 +253,29 @@ test('expired replies retain their HTTP status and never automatically replay a 
   unsubscribe();
 });
 
+/**
+ * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+ * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`({ error: '凭证已过期', code: 'UNAUTHORIZED', correlationId: '11111111-1111-4111-8111…`）。
+ * Result: Return the branch-computed value (`({ error: '凭证已过期', code: 'UNAUTHORIZED', correlationId: '11111111-1111-4111-8111…`).
+ */
 const rejectedBeforeExecution = () => ({ error: '凭证已过期', code: 'UNAUTHORIZED',
   correlationId: '11111111-1111-4111-8111-111111111111', operationResult: {
     correlationId: '11111111-1111-4111-8111-111111111111', outcome: 'failed', executed: false,
   } });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: retained artifact reads refresh a rejected controller credential once after restart
+ * 状态影响 / State effects: `token`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `session.authenticate`, `assert.deepEqual`, `session.request`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(await session.request(path), { name: 'report.txt', base64: 'cmV0YWluZWQ=' })`; `assert.deepEqual(credentials, ['before', 'after'])`.
+ */
 test('retained artifact reads refresh a rejected controller credential once after restart', async () => {
   for (const path of ['/sandboxes/artifact?run=run&artifact=artifact', '/vms/vm/rescue/artifact?run=run&artifact=artifact',
     '/vms/vm/backup-recovery/artifact?run=run&artifact=artifact']) {
@@ -182,6 +295,18 @@ test('retained artifact reads refresh a rejected controller credential once afte
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: parallel rejected reads share refresh and late old replies cannot clear the fresh credential
+ * 协作入口 / Collaborators: `deferred`, `session.authenticate`, `assert.rejects`, `session.request`.
+ * 检查边界 / Checked boundaries: `assert.rejects(session.request('/vms/vm/start', 'POST'), { status: 401 })`; `assert.equal(bootstraps, 2)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('parallel rejected reads share refresh and late old replies cannot clear the fresh credential', async () => {
   const refresh = deferred(), lateRead = deferred(), lateWrite = deferred();
   let bootstraps = 0, oldReads = 0, newReads = 0, writes = 0;
@@ -210,6 +335,16 @@ test('parallel rejected reads share refresh and late old replies cannot clear th
   assert.equal(oldReads, 2); assert.equal(newReads, 2); assert.equal(writes, 1);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: read refresh requires an explicit non-execution receipt and stops after one retry
+ * 协作入口 / Collaborators: `rejectedBeforeExecution`, `assert.rejects`, `session.request`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.rejects(session.request('/sandboxes/artifact'), { status: 401 })`; `assert.equal(reads, 1)`.
+ */
 test('read refresh requires an explicit non-execution receipt and stops after one retry', async () => {
   const confirmed = rejectedBeforeExecution();
   for (const result of [{ error: 'expired' }, { ...confirmed, operationResult: undefined },
@@ -233,6 +368,19 @@ test('read refresh requires an explicit non-execution receipt and stops after on
   assert.equal(reads, 2); assert.equal(bootstraps, 2); assert.equal(session.getToken(), '');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: confirmed 401 reads cannot fall back from account mode or bypass cancellation and locking
+ * 状态影响 / State effects: `bootstraps`, `requests`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `account.adoptAccount`, `'a'.repeat`, `Date.now`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.rejects(account.request('/sandboxes/artifact'), { status: 401 })`; `assert.equal(bootstraps, 0)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('confirmed 401 reads cannot fall back from account mode or bypass cancellation and locking', async () => {
   let bootstraps = 0, requests = 0;
   const account = new ControllerSession(async url => {
@@ -276,6 +424,18 @@ test('confirmed 401 reads cannot fall back from account mode or bypass cancellat
   assert.equal(changedSession.getToken(), 'a'.repeat(64)); assert.equal(changedBootstraps, 1);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: account credentials never fall back to public bootstrap or replay a rejected mutation
+ * 协作入口 / Collaborators: `session.setAccountMode`, `session.adoptAccount`, `'a'.repeat`, `Date.now`.
+ * 检查边界 / Checked boundaries: `assert.equal(await session.authenticate(), 'a'.repeat(64))`; `assert.equal(bootstrap, 0)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('account credentials never fall back to public bootstrap or replay a rejected mutation', async () => {
   let bootstrap = 0, writes = 0;
   const session = new ControllerSession(async (url) => {
@@ -296,6 +456,16 @@ test('account credentials never fall back to public bootstrap or replay a reject
   assert.equal(writes, 1);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a lost mutation response is never replayed and cancelled requests do not execute after authentication
+ * 协作入口 / Collaborators: `deferred`, `session.request`, `abort.abort`, `gate.resolve`.
+ * 检查边界 / Checked boundaries: `assert.rejects(cancelled, { name: 'AbortError' })`; `assert.equal(mutations, 0)`.
+ */
 test('a lost mutation response is never replayed and cancelled requests do not execute after authentication', async () => {
   const gate = deferred();
   let mutations = 0;
@@ -317,10 +487,30 @@ test('a lost mutation response is never replayed and cancelled requests do not e
   assert.equal(mutations, 1);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a refresh burst has at most one active read and includes changes received during that read
+ * 协作入口 / Collaborators: `deferred`, `queue.run`, `settle`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal(queue.run(read), first)`; `assert.equal(reads, 1)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('a refresh burst has at most one active read and includes changes received during that read', async () => {
   const queue = new RefreshQueue(),
     gate = deferred();
   let reads = 0;
+  /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: a refresh burst has at most one active read and includes changes received during that read
+   */
   const read = async () => {
     reads++;
     if (reads === 1) await gate.promise;
@@ -344,23 +534,89 @@ test('a refresh burst has at most one active read and includes changes received 
 
 class FakeSocket {
   readyState = 1;
-  onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
+  onopen: (/**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void) | null = null;
+  onclose: (/**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void) | null = null;
+  onerror: (/**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void) | null = null;
+  onmessage: (/**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: event: { data: string }。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  (event: { data: string }) => void) | null = null;
   sent: string[] = [];
+  /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `this.readyState`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `this.onclose`.
+   */
   close() {
     this.readyState = 3;
     this.onclose?.();
   }
+  /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: value: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `this.sent.push`.
+   */
   send(value: string) {
     this.sent.push(value);
   }
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: type: string; data: unknown。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `this.onmessage`, `JSON.stringify`.
+   */
   message(type: string, data?: unknown) {
     this.onmessage?.({ data: JSON.stringify({ type, data }) });
   }
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: controller events coalesce, hidden windows stop polling, and reconnect authenticates again
+ * 状态影响 / State effects: `document.visibilityState`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `t.mock.timers.enable`, `Object.assign`, `watchController`, `settle`.
+ * 检查边界 / Checked boundaries: `assert.equal(reads, 1)`; `assert.equal(reads, 2)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('controller events coalesce, hidden windows stop polling, and reconnect authenticates again', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
@@ -369,14 +625,56 @@ test('controller events coalesce, hidden windows stop polling, and reconnect aut
   let reads = 0,
     credentials = 0;
   const watch = watchController({
-    session: { authenticate: async () => String(++credentials) },
+    session: { /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`String(++credentials)`），以 Promise 交付。
+     * Result: Return the branch-computed value (`String(++credentials)`) through a Promise.
+     * 验证场景 / Scenario: controller events coalesce, hidden windows stop polling, and reconnect authenticates again
+     * 协作入口 / Collaborators: `String`.
+     */
+    authenticate: async () => String(++credentials) },
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: controller events coalesce, hidden windows stop polling, and reconnect authenticates again
+     */
     refresh: async () => {
       reads++;
     },
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: controller events coalesce, hidden windows stop polling, and reconnect authenticates again
+     */
     error: () => {},
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: controller events coalesce, hidden windows stop polling, and reconnect authenticates again
+     */
     settled: () => {},
     document: document as unknown as Document,
     window: window as unknown as Window,
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`socket as unknown as WebSocket`）。
+     * Result: Return the branch-computed value (`socket as unknown as WebSocket`).
+     * 验证场景 / Scenario: controller events coalesce, hidden windows stop polling, and reconnect authenticates again
+     * 协作入口 / Collaborators: `sockets.push`.
+     */
     socket: () => {
       const socket = new FakeSocket();
       sockets.push(socket);
@@ -412,6 +710,18 @@ test('controller events coalesce, hidden windows stop polling, and reconnect aut
   assert.equal(credentials, 3);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: terminal reattaches using a fresh credential without replaying input or reconnecting an exited shell
+ * 协作入口 / Collaborators: `t.mock.timers.enable`, `connectTerminal`, `settle`, `sockets[0].message`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(credentials, ['token-1', 'token-2'])`; `assert.equal(sockets[0].sent.length, 1)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('terminal reattaches using a fresh credential without replaying input or reconnecting an exited shell', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const sockets: FakeSocket[] = [],
@@ -419,15 +729,57 @@ test('terminal reattaches using a fresh credential without replaying input or re
     output: string[] = [];
   let auth = 0;
   const terminal = connectTerminal({
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`'token-' + ++auth`），以 Promise 交付。
+     * Result: Return the branch-computed value (`'token-' + ++auth`) through a Promise.
+     * 验证场景 / Scenario: terminal reattaches using a fresh credential without replaying input or reconnecting an exited shell
+     */
     authenticate: async () => 'token-' + ++auth,
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: token。
+     * 结果：返回分支计算值（`socket as unknown as WebSocket`）。
+     * Result: Return the branch-computed value (`socket as unknown as WebSocket`).
+     * 验证场景 / Scenario: terminal reattaches using a fresh credential without replaying input or reconnecting an exited shell
+     * 协作入口 / Collaborators: `credentials.push`, `sockets.push`.
+     */
     socket: (token) => {
       credentials.push(token);
       const socket = new FakeSocket();
       sockets.push(socket);
       return socket as unknown as WebSocket;
     },
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: text。
+     * 结果：返回分支计算值（`output.push(text)`）。
+     * Result: Return the branch-computed value (`output.push(text)`).
+     * 验证场景 / Scenario: terminal reattaches using a fresh credential without replaying input or reconnecting an exited shell
+     * 协作入口 / Collaborators: `output.push`.
+     */
     data: (text) => output.push(text),
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: terminal reattaches using a fresh credential without replaying input or reconnecting an exited shell
+     */
     report: () => {},
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: terminal reattaches using a fresh credential without replaying input or reconnecting an exited shell
+     */
     ready: () => {},
     logs: false,
   });

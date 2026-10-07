@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # 烟雾验收：验证Linux nft 出站规则的精确句柄拒绝，保证变化后不删除替代规则。
+# Smoke acceptance for exact Linux nft handle refusal so changed replacement rules are never deleted.
 """Real nft/UID checks inside a caller-owned PID, mount and network namespace.
 
 This is a Linux kernel/egress test, not proof of a VM boot or SSH/cron daemon.
@@ -87,14 +88,20 @@ finally:s.close()
 '''
 
 
+# 进入已持有的自有 netns，setns 失败报告 errno，不尝试其他网络。
+# Enter the held owned netns and report setns errno without switching to another realm.
 def enter_network(fd):
     library = ctypes.CDLL(None, use_errno=True)
     if library.setns(fd, 0x40000000) != 0: raise OSError(ctypes.get_errno(), 'owned network')
 
 
+# 在可选原 netns 内降为目标 UID，执行有界连接探针并返回结果，关闭网络 FD。
+# Drop to the target UID in the optional original netns, run a bounded connection probe and close the network FD.
 def client(uid, family, port, network=None):
     descriptor = os.open('/run/netns/' + network, os.O_RDONLY | os.O_CLOEXEC) if network else None
     try:
+        # 先进入自有 netns，再清空组并统一 UID/GID，确保连接按实际目标身份创建。
+        # Enter the owned netns before clearing groups/setting UID-GID so connections are created as the target identity.
         def drop():
             if descriptor is not None: enter_network(descriptor)
             os.setgroups([]);os.setresgid(uid, uid, uid);os.setresuid(uid, uid, uid)
@@ -107,6 +114,8 @@ def client(uid, family, port, network=None):
         if descriptor is not None: os.close(descriptor)
 
 
+# 在可选自有 netns 启动固定监听探针并读取 READY 端口，失败清理本轮进程/FD。
+# Start a fixed listener probe in the optional owned netns, read its READY port and clean owned process/FDs on failure.
 def server(port=0, network=None):
     descriptor = os.open('/run/netns/' + network, os.O_RDONLY | os.O_CLOEXEC) if network else None
     try:

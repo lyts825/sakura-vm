@@ -14,6 +14,8 @@ type Contract9 = { "type": "data"; "data": string };
 type Contract10 = { "project"?: string; "token": string; "app"?: string };
 type Contract11 = { "project"?: string; "token": string };
 
+/** 通道映射保留握手路径/查询/头部与双向消息；二进制为有序字节片段，JSON 按 type 判别，运行时仍由操作目录校验与授权。
+ * Map handshake path/query/headers and both message directions; binary values are ordered fragments and JSON uses type discriminators, with runtime validation/authorization owned by the operation catalog. */
 export type SocketContractMap = {
   "events": { operationId: "core.socket.events"; path: Record<string, never>; query: Contract0; headers: Contract1; client: Contract2; server: Contract3 };
   "terminal": { operationId: "core.socket.terminal"; path: { "vmId": string }; query: Contract4; headers: Contract1; client: Contract5; server: Contract6 };
@@ -22,12 +24,18 @@ export type SocketContractMap = {
   "desktop": { operationId: "core.socket.desktop"; path: { "vmId": string }; query: Contract10; headers: Contract1; client: Uint8Array; server: Uint8Array };
   "desktop-view": { operationId: "core.socket.desktop-view"; path: { "vmId": string }; query: Contract11; headers: Contract1; client: Uint8Array; server: Uint8Array };
 };
+/** 合法 socket 通道 ID，限定下列握手参数和消息类型索引。
+ * Valid socket channel IDs indexing the handshake and directional message types below. */
 export type SocketChannel = keyof SocketContractMap;
+/** 按通道提取握手参数及客户端/服务端消息；never 表示该方向不接受 JSON 消息，不得用类型断言跳过运行时协议边界。
+ * Project handshake inputs and client/server messages by channel; never forbids JSON messages in that direction and casts do not bypass runtime protocol boundaries. */
 export type SocketPath<C extends SocketChannel> = SocketContractMap[C]["path"];
 export type SocketQuery<C extends SocketChannel> = SocketContractMap[C]["query"];
 export type SocketHeaders<C extends SocketChannel> = SocketContractMap[C]["headers"];
 export type SocketClientMessage<C extends SocketChannel> = SocketContractMap[C]["client"];
 export type SocketServerMessage<C extends SocketChannel> = SocketContractMap[C]["server"];
+/** 构造 WebSocket URL 与选择编码的只读路由元数据；认证和消息生命周期由对应操作实现负责。
+ * Read-only routes for constructing socket URLs/selecting encoding; matching operations own authentication and message lifecycles. */
 export const socketRoutes = {
   "events": {
     "operationId": "core.socket.events",

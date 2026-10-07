@@ -1,5 +1,8 @@
 /**
- * 模块职责：插件协议的运行时校验 Schema，约束依赖、服务、贡献、生命周期预算和启用选择版本。
+ * 模块职责（中文）：插件协议的运行时校验 Schema，约束依赖、服务、贡献、生命周期预算和启用选择版本。
+ * Module responsibility (English): Validating plugin metadata, contributions, lifecycle budgets and selection versions.
+ * 详细范围（中文）：公开入口包括 httpContributionSchema, operationContributionSchema, operationRouteSchema, pluginManifestSchema, pluginPackSchema, pluginSelectionSchema, legacySelectionSchema, legacySelectionSchemaV2；职责覆盖校验插件元数据、贡献、生命周期预算和选择版本，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include httpContributionSchema, operationContributionSchema, operationRouteSchema, pluginManifestSchema, pluginPackSchema, pluginSelectionSchema, legacySelectionSchema, legacySelectionSchemaV2. The scope covers Validating plugin metadata, contributions, lifecycle budgets and selection versions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 import { operationPolicySchema } from './contracts/operations.ts';

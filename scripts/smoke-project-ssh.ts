@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目 SSH 配置、连接、授权与真实来宾操作。 */
+/** 烟雾验收：验证项目 SSH 配置、连接、授权与真实来宾操作。
+ * Smoke acceptance for project SSH configuration, connection, authorization and real guest actions. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -47,7 +48,8 @@ const { projectJetbrainsClientSmoke } = await import('./project-jetbrains-client
 const machines = new Machines(await createRuntime());
 const guestExec = machines.exec.bind(machines);
 let execution = 0;
-machines.exec = async (...args: Parameters<typeof machines.exec>) => {
+machines.exec = /** 为每次真实 guest exec 分配序号并记录调用栈/耗时，按环境开关打印成功跟踪，失败始终打印并重抛；参数和返回值不变。
+ * Number real guest exec calls and record call stack/duration, gate successful traces by environment but always log/rethrow failures, preserving arguments/results. */ async (...args: Parameters<typeof machines.exec>) => {
   const sequence = ++execution,
     began = Date.now();
   const origin = new Error('Guest execution call site').stack;
@@ -76,14 +78,23 @@ const sftpClient =
   process.platform === 'win32'
     ? join(process.env.SystemRoot || 'C:/Windows', 'System32/OpenSSH/sftp.exe')
     : 'sftp';
+/** 规范路径分隔符并转义双引号，编码 OpenSSH sftp 批处理的一个路径参数。
+ * Normalize separators/escape double quotes to encode one OpenSSH sftp-batch path argument. */
 const sftpPath = (value: string) => '"' + value.replaceAll('\\', '/').replaceAll('"', '\\"') + '"';
-const within = <T>(project: string, action: () => Promise<T>) =>
+/** 在明确项目的生产上下文运行回调并返回结果，避免当前活动项目影响 SSH 配置。
+ * Execute/return the callback in an explicit production project context so active-project state cannot alter SSH settings. */
+const within = <T>(project: string, action: /** 在指定 SSH 项目作用域执行异步 action 并返回 T，绑定命令与资源归属且退出恢复上下文。
+ * Execute asynchronous action in the selected SSH project scope and return T, binding command/resource ownership and restoring context on exit. */ () => Promise<T>) =>
   workspaces!.projects.with(vmId, project, action);
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function command(script: string) {
   const result = await machines.exec(vmId, script, 30_000);
   assert.equal(result.code, 0, result.stderr);
   return result.stdout.trim();
 }
+/** 用专用 SSH 配置和 BatchMode/ConnectTimeout 执行指定项目别名命令，受总期限约束并返回 stdout。
+ * Execute the project-alias command with dedicated SSH configuration/BatchMode/ConnectTimeout under a total deadline, returning stdout. */
 async function external(alias: string, script: string, timeout = 30_000) {
   const result = await run(
     ssh,
@@ -103,6 +114,8 @@ async function external(alias: string, script: string, timeout = 30_000) {
   return result.stdout.trim();
 }
 type TestProject = { id: string; name: string; path: string; alias: string; home: string; uid: number; gid: number };
+/** 从该项目落盘端点/主机公钥和指定项目私钥建立真实 SSH，固定回环端口并精确 pin；失败 destroy，成功返回调用方管理的 client。
+ * Connect real SSH from the project’s saved endpoint/host key and selected project private key with fixed loopback/exact pin; destroy on failure or return a caller-owned client. */
 async function clientFor(project: TestProject, keyProject = project.id) {
   const record = JSON.parse(
     await readFile(join(vmDir(vmId), 'project-ssh', project.id, 'runtime.json'), 'utf8'),
@@ -126,6 +139,8 @@ async function clientFor(project: TestProject, keyProject = project.id) {
         port,
         username: 'root',
         privateKey,
+        /** 按该项目生产公钥原始字节匹配主机身份，避免同端口替代服务获认可。
+         * Match raw host-key bytes against the project production key to reject replacement services on the same port. */
         hostVerifier: (key: Buffer) => key.equals(raw.getPublicSSH()),
         readyTimeout: 10_000,
       });
@@ -136,10 +151,14 @@ async function clientFor(project: TestProject, keyProject = project.id) {
     throw error;
   }
 }
+/** 经 SSH forwardOut 访问来宾回环 HTTP，十五秒收集完整结果，通道错误/超时拒绝并清理计时器。
+ * Access guest-loopback HTTP via SSH forwardOut, collect results within fifteen seconds and reject channel/timeout failures with timer cleanup. */
 async function forwardHttp(client: ssh2.Client, port: number, path: string) {
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<string>(/** 通过 SSH direct-tcpip 向项目回环 HTTP 服务发送 Connection: close 请求，限 15 秒并收集字节；stream end 才兑现，连接/流错误撤计时并拒绝。
+ * Send a Connection: close request through SSH direct-tcpip to project-loopback HTTP with a fifteen-second deadline; collect bytes and resolve only at stream end, clearing timers/rejecting connection or stream errors. */ (resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('SSH HTTP forwarding timed out')), 15_000);
-    client.forwardOut('127.0.0.1', 0, '127.0.0.1', port, (error, stream) => {
+    client.forwardOut('127.0.0.1', 0, '127.0.0.1', port, /** 转发建立失败即撤截止并拒绝，成功后收集 HTTP 字节并挂 error/end，再发送固定请求；完整结束才返回正文字符串。
+ * Clear deadline/reject on forwarding failure; on success collect HTTP bytes and attach error/end before sending the fixed request, returning the response string only after complete end. */ (error, stream) => {
       if (error) {
         clearTimeout(timer);
         reject(error);
@@ -159,26 +178,38 @@ async function forwardHttp(client: ssh2.Client, port: number, path: string) {
     });
   });
 }
+/** 对 alpha 的 owner receipt 注入损坏/缺字段/旧身份，验证正式停服务仍清理原域与脱离后代，同时 beta 的票据和服务持续不变。
+ * Inject malformed/missing/stale alpha owner receipts and verify production stop cleans original domain/detached children while beta receipts/service remain unchanged. */
 async function alpineReceiptStopRecovery(projects: TestProject[]) {
   const [alpha, beta] = projects;
   const runtime = '/run/sakura-project-ssh/' + alpha.id;
   const receipt = runtime + '/owner.json';
   const group = '/sys/fs/cgroup/openrc.sakura-ssh-' + alpha.id;
+  /** 用 base64 字面正文改写本夹具 alpha owner receipt，作为明确的故障输入，不改变其他项目。
+   * Rewrite the fixture alpha owner receipt from literal base64 as explicit fault input without altering other projects. */
   const writeOwner = (text: string) =>
     command(`printf '%s' ${quote(Buffer.from(text).toString('base64'))} | base64 -d >${receipt}`);
   const betaOwner = await command(`cat /run/sakura-project-ssh/${beta.id}/owner.json`);
+  /** 验证邻项目生产 runtime 合法、owner 字节未变，真实外部 SSH 仍返回 beta 项目标记。
+   * Verify neighbor production runtime validity/unchanged owner bytes and actual external SSH still returns the beta marker. */
   const assertBeta = async () => {
     const view = await within(beta.id, () => ide!.view(vmId));
     assert.ok('runtime' in view && view.runtime?.valid);
     assert.equal(await command(`cat /run/sakura-project-ssh/${beta.id}/owner.json`), betaOwner);
     assert.equal(await external(beta.alias, 'printf %s "$SAKURA_SCOPE"'), beta.name);
   };
-  const cases: Array<{ name: string; value: (owner: Record<string, unknown>) => string }> = [
-    { name: 'bad JSON', value: () => '{' },
-    { name: 'missing PID', value: (owner) => JSON.stringify({ ...owner, pid: undefined }) },
-    { name: 'invalid PID type', value: (owner) => JSON.stringify({ ...owner, pid: String(owner.pid) }) },
-    { name: 'old boot ID', value: (owner) => JSON.stringify({ ...owner, bootId: randomUUID() }) },
-    { name: 'old start ticks', value: (owner) => JSON.stringify({ ...owner, startTicks: '0' }) },
+  const cases: Array<{ name: string; value: /** 从可信 owner 结构生成某项错误所有权字符串，供 SSH 拒绝用例构造与原票据不一致的控制输入。
+ * Build a mismatching ownership string from the trusted owner structure for SSH refusal cases testing control inputs inconsistent with original receipts. */ (owner: Record<string, unknown>) => string }> = [
+    { name: 'bad JSON', /** 返回该场景专门畸形化的 owner JSON（损坏、缺失/类型错误 PID 或旧 boot/ticks），供停机恢复拒绝边界验证。
+ * Return the case-specific malformed owner JSON (corruption/missing-or-wrong-type PID/stale boot-or-ticks) for stop-recovery boundary checks. */ value: () => '{' },
+    { name: 'missing PID', /** 返回该场景专门畸形化的 owner JSON（损坏、缺失/类型错误 PID 或旧 boot/ticks），供停机恢复拒绝边界验证。
+ * Return the case-specific malformed owner JSON (corruption/missing-or-wrong-type PID/stale boot-or-ticks) for stop-recovery boundary checks. */ value: (owner) => JSON.stringify({ ...owner, pid: undefined }) },
+    { name: 'invalid PID type', /** 返回该场景专门畸形化的 owner JSON（损坏、缺失/类型错误 PID 或旧 boot/ticks），供停机恢复拒绝边界验证。
+ * Return the case-specific malformed owner JSON (corruption/missing-or-wrong-type PID/stale boot-or-ticks) for stop-recovery boundary checks. */ value: (owner) => JSON.stringify({ ...owner, pid: String(owner.pid) }) },
+    { name: 'old boot ID', /** 返回该场景专门畸形化的 owner JSON（损坏、缺失/类型错误 PID 或旧 boot/ticks），供停机恢复拒绝边界验证。
+ * Return the case-specific malformed owner JSON (corruption/missing-or-wrong-type PID/stale boot-or-ticks) for stop-recovery boundary checks. */ value: (owner) => JSON.stringify({ ...owner, bootId: randomUUID() }) },
+    { name: 'old start ticks', /** 返回该场景专门畸形化的 owner JSON（损坏、缺失/类型错误 PID 或旧 boot/ticks），供停机恢复拒绝边界验证。
+ * Return the case-specific malformed owner JSON (corruption/missing-or-wrong-type PID/stale boot-or-ticks) for stop-recovery boundary checks. */ value: (owner) => JSON.stringify({ ...owner, startTicks: '0' }) },
   ];
   for (const item of cases) {
     const owner = JSON.parse(await command(`cat ${receipt}`));
@@ -271,6 +302,8 @@ async function alpineReceiptStopRecovery(projects: TestProject[]) {
     'alpine: damaged receipt with matching sshd outside cgroup refuses stop/start/directory changes without killing it; restoring actual cgroup permits damaged stop and rebuild',
   );
 }
+/** 在五分钟内等待实例 running，期间每分钟输出串口尾部；终态断言附日志。
+ * Await running within five minutes and report serial tails each minute, attaching logs to final-state assertions. */
 async function waitBoot() {
   const deadline = Date.now() + 300_000;
   let progressAt = Date.now() + 60_000;
@@ -305,6 +338,8 @@ try {
   workspaces = new Workspaces(machines, { secrets });
   await within('default', () => workspaces!.save(vmId, { directory: '/workspace/ssh-shared' }));
   const migrations = new ProjectDirectoryMigrations(machines, workspaces);
+  /** 准备自有路径后在目标项目预览/确认精确迁移计划，要求 applied 和激活身份，返回非 root 运行依据。
+   * Prepare the owned path/preview-confirm exact migration in the project, require applied/activated identity and return authority for nonroot execution. */
   const migrate = async (id: string, path: string) => {
     await command('mkdir -p ' + quote(path));
     return within(id, async () => {

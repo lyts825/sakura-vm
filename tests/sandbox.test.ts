@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - sandbox inputs default to isolated disposable environments and reject policy escape fields
- * - creation persists immutable policy and produces independent sandboxes
- * - temporary COW policy persists and puts only its writable drive in snapshot mode
+ * 模块职责：回归验证模块，围绕 `sandbox` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `sandbox`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: sandbox inputs default to isolated disposable environments and reject policy escape fields; creation persists immutable policy and produces independent sandboxes.
  */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import assert from 'node:assert/strict';
@@ -30,11 +31,35 @@ after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: t: TestContext。
+ * 结果：返回受控对象，公开字段包括 `machines, service, add, launches, jobs, jobsDirectory`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `machines, service, add, launches, jobs, jobsDirectory`; the actual branch determines its shape.
+ * 状态影响 / State effects: `machines.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdir`, `join`, `randomUUID`, `t.after`.
+ */
 async function fixture(t: TestContext) {
   const launches: string[][] = [];
   const engine = {
     whpxAvailable: false,
-    runtime: { close: async () => {} },
+    runtime: { /**
+     * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+     * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     */
+    close: async () => {} },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: tool; args; options = {}。
+     * 结果：返回分支计算值（`''`），以 Promise 交付。
+     * Result: Return the branch-computed value (`''`) through a Promise.
+     * 协作入口 / Collaborators: `launches.push`.
+     */
     run: async (tool, args, options = {}) => {
       if (tool === 'sakura-qemu') {
         launches.push(args);
@@ -48,7 +73,14 @@ async function fixture(t: TestContext) {
   } as Engine;
   const machines = new Machines(engine, fakeVmNetwork);
   await mkdir(join(root, 'machines'), { recursive: true });
-  machines.exec = async () => ({ stdout: '', stderr: '', code: 0 });
+  machines.exec = /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`({ stdout: '', stderr: '', code: 0 })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`({ stdout: '', stderr: '', code: 0 })`) through a Promise.
+   */
+  async () => ({ stdout: '', stderr: '', code: 0 });
   const jobsDirectory = join(root, randomUUID());
   const jobs = new Jobs('sandbox', jobsDirectory);
   const service = new Sandboxes(machines, jobs);
@@ -59,6 +91,14 @@ async function fixture(t: TestContext) {
     await Promise.allSettled(running.map((live) => live.done));
     await machines.close();
   });
+  /**
+   * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+   * English: Generate or verify digest and identity material required by this suite.
+   * 输入 / Inputs: sandbox = true; expired = false; onExpire: 'stop' | 'delete' = 'stop'。
+   * 结果：返回分支计算值（`vm`），以 Promise 交付。
+   * Result: Return the branch-computed value (`vm`) through a Promise.
+   * 协作入口 / Collaborators: `randomUUID`, `createSchema.parse`, `id.slice`, `new Date().toISOString`.
+   */
   const add = async (sandbox = true, expired = false, onExpire: 'stop' | 'delete' = 'stop') => {
     const id = randomUUID();
     const vm: VMRecord = {
@@ -83,6 +123,16 @@ async function fixture(t: TestContext) {
   return { machines, service, add, launches, jobs, jobsDirectory };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sandbox inputs default to isolated disposable environments and reject policy escape fields
+ * 协作入口 / Collaborators: `sandboxCreateSchema.parse`, `assert.equal`, `sandboxCreateSchema.safeParse`, `sandboxRunSchema.safeParse`.
+ * 检查边界 / Checked boundaries: `assert.equal(input.network, 'isolated')`; `assert.equal(input.onExpire, 'delete')`.
+ */
 test('sandbox inputs default to isolated disposable environments and reject policy escape fields', () => {
   const input = sandboxCreateSchema.parse({ name: 'sample' });
   assert.equal(input.network, 'isolated');
@@ -113,6 +163,18 @@ test('sandbox inputs default to isolated disposable environments and reject poli
     assert.equal(sandboxRunSchema.safeParse(value).success, false);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: creation persists immutable policy and produces independent sandboxes
+ * 协作入口 / Collaborators: `fixture`, `service.create`, `assert.equal`, `JSON.parse`.
+ * 检查边界 / Checked boundaries: `assert.equal(vm.sandbox.network, 'isolated')`; `assert.equal(vm.forwards.length, 0)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('creation persists immutable policy and produces independent sandboxes', async (t) => {
   const { machines, service } = await fixture(t);
   const vm = await service.create({ name: 'created-sandbox' });
@@ -126,6 +188,18 @@ test('creation persists immutable policy and produces independent sandboxes', as
   await assert.rejects(machines.resize(vm.id, 16), /沙箱资源/);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: temporary COW policy persists and puts only its writable drive in snapshot mode
+ * 协作入口 / Collaborators: `fixture`, `service.create`, `assert.equal`, `JSON.parse`.
+ * 检查边界 / Checked boundaries: `assert.equal(vm.sandbox.storage, 'discard-on-stop')`; `assert.equal(saved.find((row: VMRecord) => row.id === vm.id).sandbox.storage, 'discard-on-stop')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('temporary COW policy persists and puts only its writable drive in snapshot mode', async (t) => {
   const { machines, service, launches, add } = await fixture(t);
   const vm = await service.create({ name: 'transient-cow', storage: 'discard-on-stop' });
@@ -151,6 +225,18 @@ test('temporary COW policy persists and puts only its writable drive in snapshot
   assert.equal(createSchema.safeParse({ name: 'ordinary', storage: 'discard-on-stop' }).success, false);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sandbox operations cannot target ordinary instances
+ * 协作入口 / Collaborators: `fixture`, `add`, `assert.rejects`, `service.control`.
+ * 检查边界 / Checked boundaries: `assert.rejects(service.control(vm.id, 'destroy'), /不是沙箱/)`; `assert.throws(() => service.run(vm.id, { command: 'pwd' }), /不是沙箱/)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('sandbox operations cannot target ordinary instances', async (t) => {
   const { service, add, machines } = await fixture(t);
   const vm = await add(false);
@@ -161,6 +247,18 @@ test('sandbox operations cannot target ordinary instances', async (t) => {
   assert.deepEqual((await service.list()).sandboxes, []);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: QEMU isolates network while keeping only the controller SSH forward
+ * 协作入口 / Collaborators: `fixture`, `add`, `machines.start`, `args.indexOf`.
+ * 检查边界 / Checked boundaries: `assert.match(network, /^stream,id=sakura-net,/)`; `assert.equal(lease.policy.isolated, true)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('QEMU isolates network while keeping only the controller SSH forward', async (t) => {
   const { machines, add, launches } = await fixture(t);
   const vm = await add();
@@ -178,11 +276,31 @@ test('QEMU isolates network while keeping only the controller SSH forward', asyn
   assert.equal(machines.live.get(ordinary.id)!.network!.policy.isolated, false);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: expiry terminates powered-on guests even while a separate instance operation holds the lock
+ * 状态影响 / State effects: `vm.sandbox!.expiresAt`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `add`, `machines.start`, `machines.locked`.
+ * 检查边界 / Checked boundaries: `assert.equal(machines.live.has(vm.id), false)`; `assert.rejects(machines.start(vm.id), /已到期/)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('expiry terminates powered-on guests even while a separate instance operation holds the lock', async (t) => {
   const { machines, add } = await fixture(t);
   const vm = await add();
   await machines.start(vm.id);
-  let release!: () => void;
+  let release!: /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void;
   const held = machines.locked(
     vm.id,
     () =>
@@ -199,6 +317,18 @@ test('expiry terminates powered-on guests even while a separate instance operati
   await assert.rejects(machines.resume(vm.id), /已到期/);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: startup without the plugin removes expired disposable disks but retains stop-only disks
+ * 协作入口 / Collaborators: `fixture`, `add`, `writeFile`, `join`.
+ * 检查边界 / Checked boundaries: `assert.equal(restarted.records.has(disposable.id), false)`; `assert.equal(restarted.records.has(retained.id), true)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('startup without the plugin removes expired disposable disks but retains stop-only disks', async (t) => {
   const { machines, add } = await fixture(t);
   const disposable = await add(true, true, 'delete');
@@ -218,11 +348,34 @@ test('startup without the plugin removes expired disposable disks but retains st
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: commands preserve shell quoting, record output and terminate the VM on completion
+ * 状态影响 / State effects: `machines.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `add`, `service.run`, `assert.throws`.
+ * 检查边界 / Checked boundaries: `assert.throws(() => service.run(vm.id, { command: 'pwd' }), /操作仍在进行/)`; `assert.equal(job.status, 'done')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('commands preserve shell quoting, record output and terminate the VM on completion', async (t) => {
   const { machines, service, add, jobs } = await fixture(t);
   const vm = await add();
   let submitted = '';
-  machines.exec = async (_id, command, _timeout, _signal, output) => {
+  machines.exec = /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: _id; command; _timeout; _signal; output。
+   * 结果：返回受控对象，公开字段包括 `stdout, stderr, code`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `stdout, stderr, code`; the actual branch determines its shape.
+   * 验证场景 / Scenario: commands preserve shell quoting, record output and terminate the VM on completion
+   * 状态影响 / State effects: `submitted`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `command.startsWith`, `output`.
+   */
+  async (_id, command, _timeout, _signal, output) => {
     if (command.startsWith('cd ')) {
       submitted = command;
       output?.('result\n');
@@ -241,15 +394,44 @@ test('commands preserve shell quoting, record output and terminate the VM on com
   assert.equal(jobs.list()[0].id, job.id);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: nonzero exits, timeouts and cancellation all stop the entire guest
+ * 状态影响 / State effects: `machines.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `add`, `service.run`, `jobs.cancel`.
+ * 检查边界 / Checked boundaries: `assert.equal(job.status, outcome === 'cancel' ? 'cancelled' : 'error')`; `assert.match( job.error || '', outcome === 'failure' ? /退出码 7/ : outcome === 'timeout' ? /超时/ : /取消/, )`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('nonzero exits, timeouts and cancellation all stop the entire guest', async (t) => {
   for (const outcome of ['failure', 'timeout', 'cancel'] as const) {
     const { machines, service, add, jobs } = await fixture(t);
     const vm = await add();
-    let entered!: () => void;
+    let entered!: /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+     * Result: The declared return type defines the result; its test provider supplies the implementation.
+     */
+    () => void;
     const executing = new Promise<void>((resolve) => {
       entered = resolve;
     });
-    machines.exec = async (_id, command, _timeout, signal) => {
+    machines.exec = /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _id; command; _timeout; signal。
+     * 结果：返回受控对象，公开字段包括 `stdout, stderr, code`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `stdout, stderr, code`; the actual branch determines its shape.
+     * 验证场景 / Scenario: nonzero exits, timeouts and cancellation all stop the entire guest
+     * 协作入口 / Collaborators: `command.startsWith`, `entered`.
+     */
+    async (_id, command, _timeout, signal) => {
       if (!command.startsWith('cd ')) return { stdout: '', stderr: '', code: 0 };
       entered();
       if (outcome === 'failure') return { stdout: '', stderr: 'failed', code: 7 };
@@ -277,10 +459,32 @@ test('nonzero exits, timeouts and cancellation all stop the entire guest', async
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: command metadata survives truncated output, destruction and history reload
+ * 状态影响 / State effects: `machines.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `add`, `service.run`, `jobs.wait`.
+ * 检查边界 / Checked boundaries: `assert.doesNotMatch(job.log, /original-command/)`; `assert.equal(job.execution?.command, 'original-command --quoted "value"')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('command metadata survives truncated output, destruction and history reload', async (t) => {
   const { machines, service, add, jobs, jobsDirectory } = await fixture(t);
   const vm = await add();
-  machines.exec = async (_id, command, _timeout, _signal, output) => {
+  machines.exec = /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: _id; command; _timeout; _signal; output。
+   * 结果：返回受控对象，公开字段包括 `stdout, stderr, code`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `stdout, stderr, code`; the actual branch determines its shape.
+   * 验证场景 / Scenario: command metadata survives truncated output, destruction and history reload
+   * 协作入口 / Collaborators: `command.startsWith`, `output`, `'x'.repeat`.
+   */
+  async (_id, command, _timeout, _signal, output) => {
     if (command.startsWith('cd ')) {
       output?.('x'.repeat(50000));
       return { stdout: '', stderr: '', code: 9 };
@@ -303,6 +507,18 @@ test('command metadata survives truncated output, destruction and history reload
   await restored.close();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sandbox plugin activates by itself, owns its routes and registers execution history
+ * 协作入口 / Collaborators: `fixture`, `Features.create`, `assert.deepEqual`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(host.errors, {})`; `assert.deepEqual([...host.enabled], ['sandbox'])`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('sandbox plugin activates by itself, owns its routes and registers execution history', async (t) => {
   const { machines } = await fixture(t);
   const host = await Features.create(machines, ['sandbox']);

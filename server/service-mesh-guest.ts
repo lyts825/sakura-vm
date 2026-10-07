@@ -1,5 +1,6 @@
 /**
  * 模块职责：生成客户机网格边车的配置和运行命令，核对项目策略及原会话绑定后才能停止。
+ * Module purpose: Builds guest sidecar configuration/run commands; stopping verifies project policy and original session binding.
  */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -10,11 +11,49 @@ import { projectNetworkCheckScript, projectNetworkNamespace } from './project-ne
 import { envPrefix } from './project-services.ts';
 
 type Ports = { name: string; listenPort: number; upstreamPort: number };
+/**
+ * 入口 / Entry: meshSession.
+ * 功能：从当前输入或状态计算 ``sakura-mesh-${projectIdSchema.parse(projectId)}``，供调用方后续验证或使用。
+ * Purpose: Computes ``sakura-mesh-${projectIdSchema.parse(projectId)}`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: ``sakura-mesh-${projectIdSchema.parse(projectId)}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const meshSession = (projectId: string) => `sakura-mesh-${projectIdSchema.parse(projectId)}`;
+/**
+ * 入口 / Entry: meshConfigPath.
+ * 功能：从当前输入或状态计算 ``/etc/sakura/mesh/${projectIdSchema.parse(projectId)}.json``，供调用方后续验证或使用。
+ * Purpose: Computes ``/etc/sakura/mesh/${projectIdSchema.parse(projectId)}.json`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: ``/etc/sakura/mesh/${projectIdSchema.parse(projectId)}.json``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const meshConfigPath = (projectId: string) =>
   `/etc/sakura/mesh/${projectIdSchema.parse(projectId)}.json`;
+/**
+ * 入口 / Entry: meshLogPath.
+ * 功能：从当前输入或状态计算 ``/var/log/sakura-mesh-${projectIdSchema.parse(projectId)}.log``，供调用方后续验证或使用。
+ * Purpose: Computes ``/var/log/sakura-mesh-${projectIdSchema.parse(projectId)}.log`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: ``/var/log/sakura-mesh-${projectIdSchema.parse(projectId)}.log``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const meshLogPath = (projectId: string) =>
   `/var/log/sakura-mesh-${projectIdSchema.parse(projectId)}.log`;
+/**
+ * 入口 / Entry: meshBinding.
+ * 功能：在生成客户机网格边车的配置和运行命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256') .update( JSON.stringify([ project._workspace || 'default', project.directory, project.networkIsolation |…` 供上层消费（`service-mesh-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-mesh-guest.ts`; this entry produces `createHash('sha256') .update( JSON.stringify([ project._workspace || 'default', project.directory, project.networkIsolation |…` for its caller. Module context: Builds guest sidecar configuration/run commands; stopping verifies project policy and original session binding.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project; policy: Ports
+ * 输出 / Returns: `createHash('sha256') .update( JSON.stringify([ project._workspace || 'default', project.directory, project.networkIsolation |…`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const meshBinding = (project: Project, policy: Ports) =>
   createHash('sha256')
     .update(
@@ -28,6 +67,15 @@ export const meshBinding = (project: Project, policy: Ports) =>
       ]),
     )
     .digest('hex');
+/**
+ * 入口 / Entry: argumentsFor.
+ * 功能：从当前输入或状态计算 `[ envoy, '-c', meshConfigPath(projectId), '--disable-hot-restart', '--concurrency', '1', '--log-level', 'warning', ]`，供调用方后续验证或使用。
+ * Purpose: Computes `[ envoy, '-c', meshConfigPath(projectId), '--disable-hot-restart', '--concurrency', '1', '--log-level', 'warning', ]` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: envoy: string; projectId: string
+ * 输出 / Returns: `[ envoy, '-c', meshConfigPath(projectId), '--disable-hot-restart', '--concurrency', '1', '--log-level', 'warning', ]`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const argumentsFor = (envoy: string, projectId: string) => [
   envoy,
   '-c',
@@ -40,6 +88,17 @@ const argumentsFor = (envoy: string, projectId: string) => [
 ];
 
 /** Enter the namespace before exporting project values or starting the executable. */
+/**
+ * 入口 / Entry: meshProjectCommand.
+ * 功能：在生成客户机网格边车的配置和运行命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( `set -eu\n` + (namespace ? `${projectNetworkCheckScript(namespace)}\n` : '') + (replaceShell ? 'exec ' : '') + (namespace ?…` 供上层消费（`service-mesh-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-mesh-guest.ts`; this entry produces `( `set -eu\n` + (namespace ? `${projectNetworkCheckScript(namespace)}\n` : '') + (replaceShell ? 'exec ' : '') + (namespace ?…` for its caller. Module context: Builds guest sidecar configuration/run commands; stopping verifies project policy and original session binding.
+ * 处理：通过 `projectNetworkNamespace`, `envPrefix`, `quote`, `projectNetworkCheckScript` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectNetworkNamespace`, `envPrefix`, `quote`, `projectNetworkCheckScript`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project; command: string; replaceShell: default=true
+ * 输出 / Returns: `( `set -eu\n` + (namespace ? `${projectNetworkCheckScript(namespace)}\n` : '') + (replaceShell ? 'exec ' : '') + (namespace ?…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function meshProjectCommand(project: Project, command: string, replaceShell = true) {
   const namespace = projectNetworkNamespace(project);
   const child = `set -eu\n${envPrefix(project.environment)}\ncd ${quote(project.directory)}\n${command}`;
@@ -53,6 +112,17 @@ export function meshProjectCommand(project: Project, command: string, replaceShe
   );
 }
 
+/**
+ * 入口 / Entry: meshStartScript.
+ * 功能：在生成客户机网格边车的配置和运行命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( `set -eu\ntmux new-session -d -s ${meshSession(projectId)} -c ${quote(project.directory)} ` + `-e SAKURA_MESH_BINDING=${mes…` 供上层消费（`service-mesh-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-mesh-guest.ts`; this entry produces `( `set -eu\ntmux new-session -d -s ${meshSession(projectId)} -c ${quote(project.directory)} ` + `-e SAKURA_MESH_BINDING=${mes…` for its caller. Module context: Builds guest sidecar configuration/run commands; stopping verifies project policy and original session binding.
+ * 处理：通过 `z.uuid().parse`, `z.uuid`, `meshProjectCommand`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`, `meshProjectCommand`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project; policy: Ports; envoy: string; runId: string
+ * 输出 / Returns: `( `set -eu\ntmux new-session -d -s ${meshSession(projectId)} -c ${quote(project.directory)} ` + `-e SAKURA_MESH_BINDING=${mes…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function meshStartScript(project: Project, policy: Ports, envoy: string, runId: string) {
   z.uuid().parse(runId);
   const projectId = project._workspace || 'default';
@@ -196,6 +266,17 @@ def stop():
         time.sleep(0.1)
 `;
 
+/**
+ * 入口 / Entry: meshRuntimeCommand.
+ * 功能：在生成客户机网格边车的配置和运行命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``${quote(tools.python)} -I -S -c ${quote( `import json\ndata=json.loads(${JSON.stringify(JSON.stringify(data))})\n` + runtime…` 供上层消费（`service-mesh-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-mesh-guest.ts`; this entry produces ``${quote(tools.python)} -I -S -c ${quote( `import json\ndata=json.loads(${JSON.stringify(JSON.stringify(data))})\n` + runtime…` for its caller. Module context: Builds guest sidecar configuration/run commands; stopping verifies project policy and original session binding.
+ * 处理：通过 `meshSession`, `meshConfigPath`, `projectNetworkNamespace`, `meshBinding` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `meshSession`, `meshConfigPath`, `projectNetworkNamespace`, `meshBinding`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project; policy: Ports | null; config: string | null; tools: { envoy: string; tmux: string; python: string }; mode: 'inspect' | 'stop' default='inspect'; expectedRunId: string optional
+ * 输出 / Returns: ``${quote(tools.python)} -I -S -c ${quote( `import json\ndata=json.loads(${JSON.stringify(JSON.stringify(data))})\n` + runtime…`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function meshRuntimeCommand(
   project: Project,
   policy: Ports | null,
@@ -226,6 +307,15 @@ export function meshRuntimeCommand(
   )}`;
 }
 
+/**
+ * 入口 / Entry: meshStopCommand.
+ * 功能：把本层请求转交 `meshRuntimeCommand`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `meshRuntimeCommand` and propagates the provider result or rejection.
+ * 输入 / Inputs: project: Project; tools: { envoy: string; tmux: string; python: string }; runId: string optional
+ * 输出 / Returns: `meshRuntimeCommand(project, null, null, tools, 'stop', runId)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function meshStopCommand(
   project: Project,
   tools: { envoy: string; tmux: string; python: string },

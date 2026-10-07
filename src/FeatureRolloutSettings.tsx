@@ -1,5 +1,8 @@
 /**
- * 模块职责：编辑功能灰度规则，预览目标匹配结果并查看当前发布策略。
+ * 模块职责（中文）：编辑功能灰度规则，预览目标匹配结果并查看当前发布策略。
+ * Module responsibility (English): Configuring feature rollout rules and previewing matching targets.
+ * 详细范围（中文）：公开入口包括 FeatureRolloutSettings；职责覆盖配置功能灰度规则并预览匹配结果，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include FeatureRolloutSettings. The scope covers Configuring feature rollout rules and previewing matching targets. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useState } from 'react';
 import type { RolloutPolicy } from '../server/feature-rollouts';
@@ -16,10 +19,26 @@ type RolloutView = {
   selected: string[];
   active: string[];
 };
+/**
+ * 中文：为指定插件创建启用、100% 比例与 v1 队列版本的灰度草稿，供尚无服务器规则时编辑。
+ * English: Create an enabled, one-hundred-percent, v1-cohort rollout draft for the plugin when no server rule exists.
+ * 中文：输入：pluginId：签名所示 string 业务值
+ * English: Inputs: pluginId: the string domain value in the signature
+ * 中文：结果：Draft，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: Draft carrying the described computation/transport result; throwing branches do not provide success
+ */
 const initial = (pluginId: string): Draft => ({
   pluginId, enabled: true, percentage: 100, cohortVersion: 'v1',
 });
 
+/**
+ * 中文：呈现配置功能灰度规则并预览匹配结果中的 FeatureRolloutSettings 界面，订阅 /feature-rollouts，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the FeatureRolloutSettings surface for Configuring feature rollout rules and previewing matching targets, subscribing to /feature-rollouts. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function FeatureRolloutSettings({ request }: { request: Request }) {
   const remote = useRemote<RolloutView>(request, '/feature-rollouts', true, 5000);
   const action = useAction();
@@ -32,6 +51,14 @@ export function FeatureRolloutSettings({ request }: { request: Request }) {
     pluginId, enabled: saved.enabled, percentage: saved.percentage,
     cohortVersion: saved.cohortVersion,
   } : initial(pluginId);
+  /**
+   * 中文：在配置功能灰度规则并预览匹配结果流程中编辑草稿，preview 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Configuring feature rollout rules and previewing matching targets, editing draft, preview state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：id：目标资源标识
+   * English: Inputs: id: target resource identifier
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const choose = (id: string) => {
     const policy = remote.data?.policies.find((item) => item.pluginId === id);
     setDraft(policy ? { pluginId: id, enabled: policy.enabled,
@@ -39,14 +66,22 @@ export function FeatureRolloutSettings({ request }: { request: Request }) {
     setPreview(null);
     action.clear();
   };
-  const save = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /feature-rollouts，完成配置功能灰度规则并预览匹配结果的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /feature-rollouts for Configuring feature rollout rules and previewing matching targets. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const save = () => void action.run(/** 中文：提交 POST /feature-rollouts，完成配置功能灰度规则并预览匹配结果的数据交互并更新preview 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /feature-rollouts for Configuring feature rollout rules and previewing matching targets and update preview state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     await request('/feature-rollouts', 'POST', {
       operation: 'save', ...(saved ? { revision: saved.revision } : {}), policy: current,
     }, signal);
     setPreview(null);
     remote.reload();
   }, '灰度策略已保存，重启 Sakura 服务后应用到插件启动');
-  const remove = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /feature-rollouts，完成配置功能灰度规则并预览匹配结果的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /feature-rollouts for Configuring feature rollout rules and previewing matching targets. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const remove = () => void action.run(/** 中文：提交 POST /feature-rollouts，完成配置功能灰度规则并预览匹配结果的数据交互并更新编辑草稿、preview 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /feature-rollouts for Configuring feature rollout rules and previewing matching targets and update editing draft, preview state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     if (!saved) return;
     await request('/feature-rollouts', 'POST', {
       operation: 'remove', pluginId, revision: saved.revision,
@@ -55,7 +90,11 @@ export function FeatureRolloutSettings({ request }: { request: Request }) {
     setPreview(null);
     remote.reload();
   }, '灰度策略已删除，重启 Sakura 服务后恢复默认启动');
-  const inspect = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /feature-rollouts，完成配置功能灰度规则并预览匹配结果的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /feature-rollouts for Configuring feature rollout rules and previewing matching targets. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const inspect = () => void action.run(/** 中文：提交 POST /feature-rollouts，完成配置功能灰度规则并预览匹配结果的数据交互并更新preview 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /feature-rollouts for Configuring feature rollout rules and previewing matching targets and update preview state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     setPreview(await request<Decision>('/feature-rollouts', 'POST',
       { operation: 'preview', policy: current }, signal));
   });

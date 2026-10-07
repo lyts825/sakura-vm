@@ -1,5 +1,6 @@
 /**
  * 模块职责：把资源能力请求分派到对应动作入口，校验目标和策略等动作必要输入。
+ * Module purpose: Dispatches resource capability actions after checking required target/policy inputs.
  */
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -35,6 +36,17 @@ export const resourceCapabilities = new Set([
   'memory-hotplug',
   'ipv6',
 ]);
+/**
+ * 入口 / Entry: resourceAction.
+ * 功能：按资源能力选择在线热插拔、策略保存、内存目标或预留检查。
+ * Purpose: Dispatches resource capabilities to hotplug, policy saves, memory targets or admission checks.
+ * 设计：目标及模式先验证，宿主与发行版额度共同限制变更；配置效果由持锁实例领域执行。
+ * Design: Targets/modes are validated and host/distribution limits constrain changes performed by the locked VM domain.
+ * 输入 / Inputs: machines: Machines; id: string; feature: string; p: any; signal: AbortSignal
+ * 输出 / Returns: `{ vm: await machines.configureHardware(id, hardware), nextBoot: true }`; `machines.hotplug( id, feature === 'vcpu-hotplug' ? 'cpu' : 'memory', p.mode === 'add' ? p.target : undefined, signal, )`; `machines.locked('launch', async () => { if (p.mode === 'save') { for (const key of Object.keys(p.policy?.priorities || {})) m…`；另有分支返回 / additional branch-specific returns.
+ * 副作用 / Effects: `machines.exec`; 更新 / updates `hardware.cpu`, `hardware.memory`.
+ * 拒绝 / Refusals: 条件 / conditions `feature === 'vcpu-hotplug' || feature === 'memory-hotplug'`; `p.mode === 'add' && p.target === undefined`; `feature === 'ipv6'`; 异常 / errors `new AppError('在线添加需要 target')`; `new AppError('隔离沙箱不允许 IPv6 外网')`.
+ */
 export async function resourceAction(
   machines: Machines,
   id: string,
@@ -59,6 +71,15 @@ export async function resourceAction(
     );
   }
   if (feature === 'resource-reservation')
+    /**
+     * 入口 / Entry: resourceAction.callback@62.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（machines.locked / launch）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (machines.locked / launch).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ policy: await resourcePolicy(), host: hostResources(), running: [...machines.live.keys()].map((key) => { const record = mac…`.
+     * 副作用 / Effects: `saveResourcePolicy`.
+     * 拒绝 / Refusals: 条件 / conditions `p.mode === 'save'`; `!p.policy`; 异常 / errors `new AppError('保存需要 policy')`.
+     */
     return machines.locked('launch', async () => {
       if (p.mode === 'save') {
         for (const key of Object.keys(p.policy?.priorities || {})) machines.get(key);
@@ -109,6 +130,15 @@ export async function resourceAction(
     };
   }
   if (feature === 'device-profiles')
+    /**
+     * 入口 / Entry: resourceAction.callback@112.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（machines.locked / device-profiles）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (machines.locked / device-profiles).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ profiles: entries, current: machines.get(id).hardware?.devices || deviceProfileSchema.parse({}), nextBoot: p.mode === 'appl…`.
+     * 副作用 / Effects: `entries.push`; `writeStore`; `entries.splice`; 更新 / updates `entry.profile`.
+     * 拒绝 / Refusals: 条件 / conditions `p.mode === 'save'`; `!p.name || !p.profile`; `entries.length >= 32`; 异常 / errors `new AppError('保存需要 name 和 profile')`; `new AppError('最多保存 32 个设备档案')`.
+     */
     return machines.locked('device-profiles', async () => {
       const file = join(DATA, 'device-profiles.json');
       const entries = z
@@ -143,6 +173,15 @@ export async function resourceAction(
       };
     });
   if (feature === 'resource-presets')
+    /**
+     * 入口 / Entry: resourceAction.callback@146.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（machines.locked / resource-presets）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (machines.locked / resource-presets).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ presets: [...builtins, ...custom], recommended, host, current: { memoryMiB: vm.memoryMiB, cpus: vm.cpus, diskGiB: vm.diskGi…`.
+     * 副作用 / Effects: `custom.push`; `writeStore`; `custom.splice`; `createSchema.parse`; `machines.update`; 更新 / updates `custom[index]`, `hardware.memory`, `config.diskGiB`.
+     * 拒绝 / Refusals: 条件 / conditions `p.mode === 'save'`; `builtins.some((entry) => entry.name === value.name)`; `custom.length >= 32`; 异常 / errors `new AppError('请为自定义预设选择其他名称')`; `new AppError('最多保存 32 个资源预设')`.
+     */
     return machines.locked('resource-presets', async () => {
       const file = join(DATA, 'resource-presets.json'),
         host = hostResources(),

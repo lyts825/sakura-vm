@@ -1,5 +1,6 @@
 /**
  * 模块职责：聚合领域恢复来源和持久索引，重试或重建前核对原记录摘要与当前领域证据。
+ * Module purpose: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -33,13 +34,68 @@ export type RecoveryCandidate = {
 };
 export type RecoverySource = {
   id: string;
+  /**
+   * 签名 / Signature: RecoverySource.discover.
+   * 功能：为聚合领域恢复来源和持久索引声明 discover 的输入与结果契约，所属容器为 RecoverySource。
+   * Purpose: Declares the input/result contract for discover in RecoverySource. Module responsibility: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<RecoveryCandidate[]> | RecoveryCandidate[].
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   discover(): Promise<RecoveryCandidate[]> | RecoveryCandidate[];
   /** Must confirm the original domain ticket. This directory has no budget release capability. */
+  /**
+   * 签名 / Signature: RecoverySource.recover.
+   * 功能：为聚合领域恢复来源和持久索引声明 recover 的输入与结果契约，所属容器为 RecoverySource。
+   * Purpose: Declares the input/result contract for recover in RecoverySource. Module responsibility: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 输入 / Inputs: candidate: RecoveryCandidate; action: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   recover?(candidate: RecoveryCandidate, action: string): Promise<void>;
+  /**
+   * 签名 / Signature: RecoverySource.confirmed.
+   * 功能：为聚合领域恢复来源和持久索引声明 confirmed 的输入与结果契约，所属容器为 RecoverySource。
+   * Purpose: Declares the input/result contract for confirmed in RecoverySource. Module responsibility: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 输入 / Inputs: record: RecoveryRecord
+   * 输出 / Returns: boolean | Promise<boolean>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   confirmed?(record: RecoveryRecord): boolean | Promise<boolean>;
 };
+/**
+ * 入口 / Entry: checksum.
+ * 功能：在聚合领域恢复来源和持久索引中，核对调用资格、输入或资源归属；本入口产生 `createHash('sha256').update(JSON.stringify(value)).digest('hex')` 供上层消费（`recovery-catalog.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `recovery-catalog.ts`; this entry produces `createHash('sha256').update(JSON.stringify(value)).digest('hex')` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: unknown
+ * 输出 / Returns: string；结果来自 / values from `createHash('sha256').update(JSON.stringify(value)).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const checksum = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const control = <T>(work: () => T): T =>
+/**
+ * 入口 / Entry: control.
+ * 功能：把本层请求转交 `withoutOperationContext`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `withoutOperationContext` and propagates the provider result or rejection.
+ * 输入 / Inputs: work: () => T
+ * 输出 / Returns: T；结果来自 / values from `withoutOperationContext(() => withoutPluginAuthority(() => withNewResourceContext({ owner: 'core:recovery' }, work)), )`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
+const control = <T>(work:
+/**
+ * 中文功能：在恢复控制上下文执行并返回泛型结果的同步工作。
+ * English: Synchronous work executing in recovery-control context and returning its generic result.
+ * 所属 / Owner: control.work.
+ * 输入 / Inputs: 无显式参数 / no explicit parameters.
+ * 结果 / Result: `T`.
+ */
+() => T): T =>
   withoutOperationContext(() =>
     withoutPluginAuthority(() => withNewResourceContext({ owner: 'core:recovery' }, work)),
   );
@@ -70,10 +126,29 @@ export class RecoveryCatalog {
   private sourceFailures: string[] = [];
   private quarantineFile?: string;
   private revision = randomUUID();
+  /**
+   * 入口 / Entry: RecoveryCatalog.constructor.
+   * 功能：建立 RecoveryCatalog 的聚合领域恢复来源和持久索引上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the RecoveryCatalog context for this module's responsibility: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: file: string; activeResources: () => readonly { id: string }[]
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private file: string,
     private activeResources: () => readonly { id: string }[],
   ) {}
+  /**
+   * 入口 / Entry: RecoveryCatalog.register.
+   * 功能：在聚合领域恢复来源和持久索引中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`RecoveryCatalog`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `RecoveryCatalog`; the calls and state transitions below complete the operation. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `this.sources.has`, `this.sources.set` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.sources.has`, `this.sources.set`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: source: RecoverySource
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.sources.set`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `this.sources.has(source.id)`; `source.recover && !source.confirmed`; 异常 / errors `new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED')`; `new Error('重复恢复领域：' + source.id)`.
+   */
   register(source: RecoverySource) {
     if (this.closed) throw new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED');
     if (this.sources.has(source.id)) throw new Error('重复恢复领域：' + source.id);
@@ -81,6 +156,19 @@ export class RecoveryCatalog {
       throw new Error('可执行恢复领域必须提供原票据确认：' + source.id);
     this.sources.set(source.id, source);
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.init.
+   * 功能：在聚合领域恢复来源和持久索引中，初始化并核对当前领域状态；处理结果记录到 `this.records`, `this.initialized`（`RecoveryCatalog`）。
+   * Purpose: Initializes and verifies current domain state in `RecoveryCatalog`; the outcome is recorded in `this.records`, `this.initialized`. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `lstat().catch`, `lstat`, `info.isFile`, `info.isSymbolicLink` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `lstat().catch`, `lstat`, `info.isFile`, `info.isSymbolicLink`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `loaded.set`; 更新 / updates `saved`, `this.records`, `this.initialized`.
+   * 拒绝 / Refusals: 条件 / conditions `info`; `!info.isFile() || info.isSymbolicLink() || info.size > RECOVERY_LIMITS.maxBytes`; `bytes.byteLength > RECOVERY_LIMITS.maxBytes`; 异常 / errors `new AppError('恢复目录类型或大小无效', 503, 'RECOVERY_CORRUPT')`; `new AppError('恢复目录超过读取容量', 503, 'RECOVERY_CORRUPT')`.
+   * 失败处理：catch 分支执行 `this.degrade(error);`; `throw new AppError('恢复目录 JSON 损坏', 503, 'RECOVERY_CORRUPT');`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.degrade(error);`; `throw new AppError('恢复目录 JSON 损坏', 503, 'RECOVERY_CORRUPT');`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async init() {
     try {
       const info = await lstat(this.file).catch((error: NodeJS.ErrnoException) => {
@@ -116,6 +204,14 @@ export class RecoveryCatalog {
     this.initialized = true;
     await this.refresh();
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.degrade.
+   * 功能：在聚合领域恢复来源和持久索引中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.fault`（`RecoveryCatalog`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `RecoveryCatalog`; the outcome is recorded in `this.fault`. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 输入 / Inputs: error: unknown
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.fault`.
+   */
   private degrade(error: unknown) {
     const code = error instanceof AppError ? error.code : undefined;
     this.fault ||= {
@@ -128,6 +224,17 @@ export class RecoveryCatalog {
             : '恢复目录不可用，原文件已保留；可隔离原文件并根据原领域票据重建。',
     };
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.diagnostics.
+   * 功能：在聚合领域恢复来源和持久索引中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ state: this.fault ? 'degraded' : 'healthy', ...this.fault, revision: checksum({ revision: this.revision, fault: this.fault,…` 供上层消费（`RecoveryCatalog`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `RecoveryCatalog`; this entry produces `{ state: this.fault ? 'degraded' : 'healthy', ...this.fault, revision: checksum({ revision: this.revision, fault: this.fault,…` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `checksum`, `this.sources.keys` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `checksum`, `this.sources.keys`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: RecoveryDiagnostics；结果来自 / values from `{ state: this.fault ? 'degraded' : 'healthy', ...this.fault, revision: checksum({ revision: this.revision, fault: this.fault,…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   diagnostics(): RecoveryDiagnostics {
     return {
       state: this.fault ? 'degraded' : 'healthy',
@@ -145,14 +252,45 @@ export class RecoveryCatalog {
       quarantineFile: this.quarantineFile,
     };
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.assertHealthy.
+   * 功能：在聚合领域恢复来源和持久索引中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`RecoveryCatalog`）。
+   * Purpose: Checks admission, input or resource ownership in `RecoveryCatalog`; the calls and state transitions below complete the operation. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `this.fault`; 异常 / errors `new AppError('恢复目录处于只读降级状态，请先诊断并重建', 503, 'RECOVERY_DEGRADED')`.
+   */
   private assertHealthy() {
     if (this.fault) throw new AppError('恢复目录处于只读降级状态，请先诊断并重建', 503, 'RECOVERY_DEGRADED');
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.serial.
+   * 功能：在聚合领域恢复来源和持久索引中，执行此领域的具体处理步骤并返回其结果；本入口产生 `pending` 供上层消费（`RecoveryCatalog`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `RecoveryCatalog`; this entry produces `pending` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `this.queue.catch().then`, `this.queue.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.queue.catch().then`, `this.queue.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: work: () => Promise<T>
+   * 输出 / Returns: `pending`.
+   * 副作用 / Effects: 更新 / updates `this.queue`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private serial<T>(work: () => Promise<T>) {
     const pending = this.queue.catch(() => {}).then(work);
     this.queue = pending;
     return pending;
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.publication.
+   * 功能：在聚合领域恢复来源和持久索引中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value` 供上层消费（`RecoveryCatalog`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `RecoveryCatalog`; this entry produces `value` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `inline.filter().sort`, `inline.filter`, `this.records.values`, `resolved.slice` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `inline.filter().sort`, `inline.filter`, `this.records.values`, `resolved.slice`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `value`.
+   * 副作用 / Effects: `this.records.delete`.
+   * 拒绝 / Refusals: 条件 / conditions `records.length > RECOVERY_LIMITS.maxRecords || Buffer.byteLength(JSON.stringify(value, null, 2)) > RECOVERY_LIMITS.maxBytes`; 异常 / errors `new AppError('恢复目录达到持久容量上限', 503, 'RECOVERY_CAPACITY')`.
+   */
   private publication() {
     const resolved = [...this.records.values()]
       .filter((record) => record.state === 'resolved')
@@ -170,6 +308,18 @@ export class RecoveryCatalog {
     envelope.parse(value);
     return value;
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.save.
+   * 功能：在聚合领域恢复来源和持久索引中，校验并提交领域状态变更；本入口产生 `void` 供上层消费（`RecoveryCatalog`）。
+   * Purpose: Validates and commits a domain state change in `RecoveryCatalog`; this entry produces `void` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `this.publication`, `control` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.publication`, `control`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.lastSaved === digest`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 更新 / updates `this.lastSaved`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async save() {
     const value = this.publication(),
       { digest } = value;
@@ -178,6 +328,19 @@ export class RecoveryCatalog {
     await control(() => writeStore(this.file, value));
     this.lastSaved = digest;
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.discover.
+   * 功能：读取所有登记领域的原恢复票据，合并索引状态并限制保留记录数量。
+   * Purpose: Reads registered domains' original recovery tickets, merges catalogue state and bounds retained records.
+   * 设计：领域证据决定 resolved，缺失票据不能推断成功；重复身份、摘要变化及扫描上限保留可诊断异常。
+   * Design: Domain evidence determines resolution, not absence; duplicates/digest changes/discovery bounds remain diagnosable.
+   * 输入 / Inputs: readonly: default=false
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `next.delete`; `sizes.delete`; `sizes.set`; `next.set`; `current.set`; 更新 / updates `this.sourceFailures`, `bytes`, `this.records`, `this.candidates`.
+   * 拒绝 / Refusals: 条件 / conditions `!this.initialized`; `binding.domain !== source.id`; `!terminal`; 异常 / errors `new Error('恢复目录尚未初始化')`; `new Error('恢复领域声明不匹配')`.
+   * 失败处理：catch 分支执行 `this.sourceFailures.push(source.id);`; `if (error instanceof AppError && error.code === 'RECOVERY_CAPACITY') throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.sourceFailures.push(source.id);`; `if (error instanceof AppError && error.code === 'RECOVERY_CAPACITY') throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async discover(readonly = false) {
     if (!this.initialized) throw new Error('恢复目录尚未初始化');
     const current = new Map<string, RecoveryCandidate>();
@@ -188,6 +351,14 @@ export class RecoveryCatalog {
     for (const record of resolved.slice(RECOVERY_LIMITS.resolvedRetention)) next.delete(record.id);
     this.sourceFailures = [];
     // Keep memory bounded too: indented record bytes are the same bytes used by writeStore.
+    /**
+     * 入口 / Entry: RecoveryCatalog.discover.recordBytes.
+     * 功能：从当前输入或状态计算 `Buffer.byteLength(JSON.stringify(record, null, 2).replace(/^/gm, ' ')) + 2`，供调用方后续验证或使用。
+     * Purpose: Computes `Buffer.byteLength(JSON.stringify(record, null, 2).replace(/^/gm, ' ')) + 2` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: record: RecoveryRecord
+     * 输出 / Returns: `Buffer.byteLength(JSON.stringify(record, null, 2).replace(/^/gm, ' ')) + 2`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     const recordBytes = (record: RecoveryRecord) =>
       Buffer.byteLength(JSON.stringify(record, null, 2).replace(/^/gm, '    ')) + 2;
     const sizes = new Map([...next].map(([id, record]) => [id, recordBytes(record)]));
@@ -276,6 +447,18 @@ export class RecoveryCatalog {
     }
     await this.save();
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.refresh.
+   * 功能：在聚合领域恢复来源和持久索引中，执行此领域的具体处理步骤并返回其结果；本入口产生 `Promise.reject(new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'))` / `this.serial(async () => { try { await this.discover(!!this.fault); } catch (error) { this.degrade(error); } return this.view(…` 供上层消费（`RecoveryCatalog`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `RecoveryCatalog`; this entry produces `Promise.reject(new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'))` / `this.serial(async () => { try { await this.discover(!!this.fault); } catch (error) { this.degrade(error); } return this.view(…` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `Promise.reject`, `this.serial` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.reject`, `this.serial`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `Promise.reject(new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'))`; `this.serial(async () => { try { await this.discover(!!this.fault); } catch (error) { this.degrade(error); } return this.view(…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   refresh() {
     if (this.closed) return Promise.reject(new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'));
     return this.serial(async () => {
@@ -287,7 +470,27 @@ export class RecoveryCatalog {
       return this.view();
     });
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.view.
+   * 功能：在聚合领域恢复来源和持久索引中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `[...this.records.values()].map((record) => { const candidate = this.candidates.get(record.id), source = this.sources.get(reco…` 供上层消费（`RecoveryCatalog`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `RecoveryCatalog`; this entry produces `[...this.records.values()].map((record) => { const candidate = this.candidates.get(record.id), source = this.sources.get(reco…` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `inline.map`, `this.records.values` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `inline.map`, `this.records.values`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: RecoveryView[]；结果来自 / values from `[...this.records.values()].map((record) => { const candidate = this.candidates.get(record.id), source = this.sources.get(reco…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   view(): RecoveryView[] {
+    /**
+     * 入口 / Entry: RecoveryCatalog.view.callback@291.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline.map）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline.map).
+     * 输入 / Inputs: record
+     * 输出 / Returns: `{ ...structuredClone(record), error: record.error || record.discoveryError, digest: checksum(record), available, actions: ava…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     return [...this.records.values()].map((record) => {
       const candidate = this.candidates.get(record.id),
         source = this.sources.get(record.binding.domain);
@@ -306,10 +509,33 @@ export class RecoveryCatalog {
       };
     });
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.retry.
+   * 功能：在聚合领域恢复来源和持久索引中，执行此领域的具体处理步骤并返回其结果；本入口产生 `Promise.reject(new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'))` / `this.serial(async () => { if (this.closed) throw new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'); this.assertHealthy(); awai…` 供上层消费（`RecoveryCatalog`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `RecoveryCatalog`; this entry produces `Promise.reject(new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'))` / `this.serial(async () => { if (this.closed) throw new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'); this.assertHealthy(); awai…` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `Promise.reject`, `recoveryRequest.parse`, `captureOperationCheck`, `this.serial` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.reject`, `recoveryRequest.parse`, `captureOperationCheck`, `this.serial`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed`.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: `Promise.reject(new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'))`; `this.serial(async () => { if (this.closed) throw new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'); this.assertHealthy(); awai…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   retry(input: unknown) {
     if (this.closed) return Promise.reject(new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'));
     const request = recoveryRequest.parse(input);
     const check = captureOperationCheck();
+    /**
+     * 入口 / Entry: RecoveryCatalog.retry.callback@313.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view().find((item) => item.id === record.id)!`.
+     * 副作用 / Effects: `this.save`; 更新 / updates `record.state`, `record.updatedAt`, `record.error`.
+     * 拒绝 / Refusals: 条件 / conditions `this.closed`; `!record || !candidate || record.state === 'resolved'`; `checksum(record) !== request.digest`; 异常 / errors `new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED')`; `error`.
+     * 失败处理：catch 分支执行 `this.degrade(error);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `this.degrade(error);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.serial(async () => {
       if (this.closed) throw new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED');
       this.assertHealthy();
@@ -374,9 +600,33 @@ export class RecoveryCatalog {
     });
   }
   /** Rebuild only the index. Domain budgets, original receipts and VM fences are never modified here. */
+  /**
+   * 入口 / Entry: RecoveryCatalog.rebuild.
+   * 功能：在聚合领域恢复来源和持久索引中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.serial(async () => { if (this.closed) throw new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'); if (!this.initialized) thr…` 供上层消费（`RecoveryCatalog`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `RecoveryCatalog`; this entry produces `this.serial(async () => { if (this.closed) throw new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'); if (!this.initialized) thr…` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `recoveryRebuildRequest.parse`, `captureOperationCheck`, `this.serial` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `recoveryRebuildRequest.parse`, `captureOperationCheck`, `this.serial`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<RecoveryCatalogView>；结果来自 / values from `this.serial(async () => { if (this.closed) throw new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED'); if (!this.initialized) thr…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   rebuild(input: unknown): Promise<RecoveryCatalogView> {
     const request = recoveryRebuildRequest.parse(input),
       check = captureOperationCheck();
+    /**
+     * 入口 / Entry: RecoveryCatalog.rebuild.callback@380.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ version: 1, records: this.view(), diagnostics: this.diagnostics() }`.
+     * 副作用 / Effects: `backup.close`; 更新 / updates `this.quarantineFile`, `this.lastSaved`, `this.fault`, `this.revision`.
+     * 拒绝 / Refusals: 条件 / conditions `this.closed`; `!this.initialized`; `request.revision !== this.diagnostics().revision`; 异常 / errors `new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED')`; `new AppError('恢复目录尚未初始化', 503, 'RECOVERY_UNAVAILABLE')`.
+     * 收尾：退出 try 区域时始终执行 `await backup.close();`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `await backup.close();`; these steps also apply to exceptional exits.
+     * 失败处理：catch 分支执行 `this.degrade(error);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `this.degrade(error);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.serial(async () => {
       if (this.closed) throw new AppError('恢复目录正在关闭', 503, 'RECOVERY_CLOSED');
       if (!this.initialized) throw new AppError('恢复目录尚未初始化', 503, 'RECOVERY_UNAVAILABLE');
@@ -421,9 +671,32 @@ export class RecoveryCatalog {
       }
     });
   }
+  /**
+   * 入口 / Entry: RecoveryCatalog.close.
+   * 功能：在聚合领域恢复来源和持久索引中，结束、撤销或清理本次拥有的领域资源；本入口产生 `this.closing` / `pending` 供上层消费（`RecoveryCatalog`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `RecoveryCatalog`; this entry produces `this.closing` / `pending` for its caller. Module context: Aggregates domain recovery sources and durable indexes, checking original digests/current evidence before retry or rebuild.
+   * 处理：通过 `this.serial`, `pending.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.serial`, `pending.catch`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closing`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>；结果来自 / values from `this.closing`; `pending`.
+   * 副作用 / Effects: 更新 / updates `this.closed`, `this.closing`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   close(): Promise<void> {
     if (this.closing) return this.closing;
     this.closed = true;
+    /**
+     * 入口 / Entry: RecoveryCatalog.close.callback@427.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `this.initialized`; 异常 / errors `error`.
+     * 失败处理：catch 分支执行 `this.degrade(error);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `this.degrade(error);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     const pending = this.serial(async () => {
       if (this.initialized) {
         // A diagnosed read-only index owns no native resources. Shutdown must not turn its known

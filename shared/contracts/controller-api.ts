@@ -1,5 +1,8 @@
 /**
- * 模块职责：控制面登录、会话与可访问项目的响应校验 Schema，定义核心身份接口的公开输出。
+ * 模块职责（中文）：控制面登录、会话与可访问项目的响应校验 Schema，定义核心身份接口的公开输出。
+ * Module responsibility (English): response validation for identity, login, sessions and project access.
+ * 详细范围（中文）：公开入口包括 sessionViewSchema, principalSchema, loginResponseSchema, accessibleProjectSchema, controllerResponses；职责覆盖身份、登录、会话和项目访问的响应验证，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include sessionViewSchema, principalSchema, loginResponseSchema, accessibleProjectSchema, controllerResponses. The scope covers response validation for identity, login, sessions and project access. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 export { recoveryViewSchema } from './recovery.ts';

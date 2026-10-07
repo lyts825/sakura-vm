@@ -1,4 +1,5 @@
-/** 构建 Windows x64/x86 剪贴板控制器与策略 DLL，核对 MinHook/Detours 来源摘要并记录源码和输出身份。 */
+/** 构建 Windows x64/x86 剪贴板控制器与策略 DLL，核对 MinHook/Detours 来源摘要并记录源码和输出身份。
+ * Build Windows x64/x86 clipboard controllers/policy DLLs, verify MinHook/Detours source provenance and record source/output identities. */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';

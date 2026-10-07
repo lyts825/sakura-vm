@@ -1,9 +1,12 @@
-/** 基础实例章节示意，展示发行版选择、资源配置和实例启动状态。 */
+/** 基础实例章节示意，展示发行版选择、资源配置和实例启动状态。
+ * Illustrate distribution selection/resource configuration/basic instance startup states. */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Badge, Button, Chapter, ScenePaper, type SceneProps, SoftFocus, Status, StepStrip, Tag, Terminal, Typed, useScene, Window} from '../stage';
 import {colors, font} from '../theme';
 
+/** 按 cue 展示 Alpine 实例启动、终端和资源信息，使基础实例流程与旁白对应。
+ * Use cues to illustrate Alpine boot, terminal and resource details in sync with the basic-instance narration. */
 const InstancesInner: React.FC<SceneProps> = ({style}) => {
   const {seconds, cue} = useScene('instances');
   const boot = seconds > cue(0) + 1.3;

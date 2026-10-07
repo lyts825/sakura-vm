@@ -1,5 +1,6 @@
 /**
  * 模块职责：读取目录迁移锁定记录，迁移状态不能完整核对时拒绝新的项目运行。
+ * Module purpose: Reads directory-migration admission locks; incomplete or unverifiable migration state blocks new project runs.
  */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -24,6 +25,19 @@ const directoryMigrationLatchSchema = z
       (value.phase !== 'applied' || value.identity.phase === 'active'),
   );
 /** Read-only early admission guard; native prepare checks the same latch atomically under its registry lock. */
+/**
+ * 入口 / Entry: assertNoPendingProjectDirectoryMigration.
+ * 功能：在读取目录迁移锁定记录中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`project-admission.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `project-admission.ts`; the calls and state transitions below complete the operation. Module context: Reads directory-migration admission locks; incomplete or unverifiable migration state blocks new project runs.
+ * 处理：通过 `projectIdSchema.parse`, `machines.exec`, `quote`, `directoryMigrationLatchSchema.safeParse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectIdSchema.parse`, `machines.exec`, `quote`, `directoryMigrationLatchSchema.safeParse`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: machines: Pick<Machines, 'exec'>; vmId: string; projectId: string; signal: AbortSignal optional
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `machines.exec`; 更新 / updates `value`.
+ * 拒绝 / Refusals: 条件 / conditions `result.code !== 0 || (value !== null && !directoryMigrationLatchSchema.safeParse(value).success)`; `value !== null`; `latch.projectId !== projectId || latch.phase !== 'applied'`; 异常 / errors `new AppError('目录迁移锁定记录无法核对，拒绝新运行', 409, 'PROJECT_DIRECTORY_LATCH_CHANGED')`; `new AppError( '目录迁移尚未完整确认，请回到原计划重试应用', 409, 'PROJECT_DIRECTORY_MIGRATION_PENDING', )`.
+ * 失败处理：catch 分支执行 `value = undefined;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `value = undefined;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function assertNoPendingProjectDirectoryMigration(
   machines: Pick<Machines, 'exec'>,
   vmId: string,

@@ -1,5 +1,6 @@
 /**
  * 模块职责：声明核心操作的请求契约、权限及响应元数据，为网关和公开操作目录提供依据。
+ * Module purpose: Declares core request contracts, permissions and response metadata used by the gateway and public operation catalogue.
  */
 import { z } from 'zod';
 import type { OperationPolicy } from '../shared/contracts/operations.ts';
@@ -60,11 +61,31 @@ import { operationResultArchiveRequest } from '../shared/contracts/operation-res
 
 
 const validators = new WeakMap<object, z.ZodType>();
+/**
+ * 入口 / Entry: request.
+ * 功能：在声明核心操作的请求契约、权限及响应元数据中，执行此领域的具体处理步骤并返回其结果；本入口产生 `json` 供上层消费（`core-operations.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `core-operations.ts`; this entry produces `json` for its caller. Module context: Declares core request contracts, permissions and response metadata used by the gateway and public operation catalogue.
+ * 处理：通过 `z.toJSONSchema`, `validators.set` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.toJSONSchema`, `validators.set`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: schema: z.ZodType
+ * 输出 / Returns: `json`.
+ * 副作用 / Effects: `validators.set`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const request = (schema: z.ZodType) => {
   const json = z.toJSONSchema(schema, { io: 'input' });
   validators.set(json, schema);
   return json;
 };
+/**
+ * 入口 / Entry: coreRequestSchema.
+ * 功能：从当前输入或状态计算 `body && validators.get(body)`，供调用方后续验证或使用。
+ * Purpose: Computes `body && validators.get(body)` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: body: object | undefined
+ * 输出 / Returns: `body && validators.get(body)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const coreRequestSchema = (body: object | undefined) => body && validators.get(body);
 const string = { type: 'string' };
 export const coreOperations: {

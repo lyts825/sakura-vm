@@ -1,4 +1,5 @@
-/** 反向隧道项目身份验证支撑，构造受控接收端、来宾内核观测和票据/进程归属断言。 */
+/** 反向隧道项目身份验证支撑，构造受控接收端、来宾内核观测和票据/进程归属断言。
+ * Coordinate owned reverse-connection fixtures, prove project UID/runtime scope and persist sanitized exact-run/cleanup evidence. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -13,6 +14,8 @@ import type { reverseTunnelSessionSchema } from '../server/reverse-tunnels.ts';
 import type { z } from 'zod';
 
 const clean = 'exec /usr/bin/env -i HOME=/ USER=root LOGNAME=root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C ';
+/** 将输入编码成单个 POSIX shell 字面参数，嵌入单引号用结束/转义/重开方式保留原值；调用方仍负责命令和路径授权。
+ * Encode input as one literal POSIX shell argument, preserving embedded quotes by closing/escaping/reopening; callers still authorize the command/path. */
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 type Session = z.infer<typeof reverseTunnelSessionSchema>;
 
@@ -210,6 +213,8 @@ elif r['op']=='observe':
 else:raise ValueError('unknown fixed smoke operation')
 `;
 
+/** 验证反向代理全部凭据、环境和运行域，并将监听 PID/出生时间/socket inode 绑定会话票据，拒绝同端口的替代进程。
+ * Verify reverse-broker credentials/environment/domain and bind listener PID/birth/socket inode to the session receipt, rejecting replacement processes on the same port. */
 export function assertReverseUidBroker(value: any, row: Session, marker: string, frameEnv: string) {
   const identity = row.execution!.identity, run = row.execution!.run!, listener = row.listener!;
   assert.deepEqual(value.uid, Array(4).fill(identity.uid)); assert.deepEqual(value.gid, Array(4).fill(identity.gid));
@@ -225,6 +230,8 @@ export function assertReverseUidBroker(value: any, row: Session, marker: string,
   assert.equal(value.caps.NoNewPrivs, '1'); assert.deepEqual(value.authorityDescriptors, []);
 }
 
+/** 按 QEMU 可执行文件名和本夹具根目录/实例参数精确筛选主机进程，返回观测数量；该数量是残留证据，不赋予终止其他进程的权限。
+ * Count host processes matching QEMU executable names and this fixture’s root/VM arguments; the count is residue evidence and grants no authority to terminate other processes. */
 function exactQemu(disk: string) {
   if (process.platform !== 'win32') return execFileSync('ps', ['-eo', 'args='], { encoding: 'utf8', timeout: 15000 })
     .split('\n').filter(line => /qemu-system/.test(line) && line.includes(disk)).length;
@@ -240,12 +247,20 @@ function exactQemu(disk: string) {
 export type ReverseSmokeContext = {
   machines: Machines; workspaces: Workspaces; vmId: string; alpha: string; beta: string;
   directories: Map<string, string>; namespaces: Map<string, string>;
-  job: (project: string, mode: 'open' | 'close' | 'status', duration?: number, signal?: AbortSignal) => Promise<Record<string, any>>;
-  prove: (project: string) => Promise<Session>; stopped: (row: Session) => Promise<void>;
-  scope: <T>(project: string, action: () => Promise<T>) => Promise<T>;
-  recordCase: (name: string, detail?: unknown) => Promise<void>;
+  job: /** 在指定项目中执行反向服务 open/close/status，可设置运行时长和取消信号；返回正式服务入口的结构化状态，拒绝非法或失效身份。
+ * Execute reverse-service open/close/status for the selected project with optional duration/abort signal; return structured formal-service state and reject invalid/stale identity. */ (project: string, mode: 'open' | 'close' | 'status', duration?: number, signal?: AbortSignal) => Promise<Record<string, any>>;
+  prove: /** 按项目核实反向隧道的正式运行、UID 进程和原命名空间，返回已验证 Session 供后续精确关闭观测。
+ * Prove the project’s formal reverse-tunnel run, UID processes and original namespace, returning the verified Session for exact closure observation. */ (project: string) => Promise<Session>; stopped: /** 验证原 Session 的 native/service 域及精确子进程均清空；失败拒绝，不以 VM 停机代替运行清理。
+ * Verify the original Session’s native/service domains and exact descendants are empty; reject failures instead of substituting VM shutdown for run cleanup. */ (row: Session) => Promise<void>;
+  scope: /** 在指定项目作用域执行 action 并返回 T，确保同一 VM 内两个项目的服务请求不串身份。
+ * Execute action within the selected project scope and return T, keeping two projects’ service requests from sharing identity on one VM. */ <T>(project: string, action: /** 选定项目作用域中的异步 action 返回 T；身份作用域只覆盖调用期间并随成功/失败退出。
+ * The asynchronous action returns T inside the selected project scope; identity binding lasts only for the call and unwinds on success/failure. */ () => Promise<T>) => Promise<T>;
+  recordCase: /** 记录已完成用例名称及可选详细证据并排队持久化，返回写入完成 Promise。
+ * Record a completed case name and optional evidence details and serialize persistence, returning the write-completion promise. */ (name: string, detail?: unknown) => Promise<void>;
 };
 
+/** 为发行版建立自有真实反向隧道场景，通过正式公开任务入场并捕获持久所有者；所有观测绑定同一 live，finally 验证关闭和保存清理错误。
+ * Create an owned real reverse-tunnel scenario per distribution, enter through production public jobs and capture durable ownership; pin observations to one live and verify closure/retain cleanup errors in finally. */
 export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubuntu', run: (context: ReverseSmokeContext) => Promise<void>) {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-reverse-uid-smoke-')), invocation = randomUUID();
   const marker = 'reverse-uid-' + invocation, frameEnv = 'protected 春\nquote" apostrophe\' ' + invocation;
@@ -254,6 +269,8 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
     retained: true, vmStarted: false, source: 'formal public ExtendedFeatures action with one durable tunnel owner',
     cases: [], identities: [], migrations: [], runs: [], receivers: [], jobs: [], rootCommands: [], cleanupErrors: [], passed: false };
   let writes = Promise.resolve();
+  /** 快照当前证据并串行写入文件，防止并发场景覆盖报告；返回写入完成 Promise。
+   * Snapshot evidence and serialize file writes to prevent concurrent cases overwriting reports; return the persistence promise. */
   const persist = () => { const bytes = JSON.stringify(proof, null, 2) + '\n';
     writes = writes.catch(() => {}).then(() => writeFile(proofFile, bytes)); return writes; };
   await writeFile(join(directory, 'owned-fixture.json'), JSON.stringify({ version: 1, invocation, directory, proofFile,
@@ -270,7 +287,9 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
   const holders: { projectId: string; bootId: string; receiver: any; stopped?: unknown }[] = [];
   let preparation: InstanceType<typeof import('../server/project-terminals.ts')['ProjectTerminals']> | undefined;
   let lease: Awaited<ReturnType<NonNullable<typeof preparation>['prepare']>> | undefined;
-  let closeOriginal: (() => Promise<void>) | undefined, stopReceivers: (() => Promise<void>) | undefined;
+  let closeOriginal: (/** 保留关闭原生反向服务或自有 root receiver 的异步清理器；取得资源后才设置，失败必须汇总而不能忽略。
+ * Retain asynchronous disposers for original native reverse services or owned root receivers, setting them only after acquisition and aggregating rather than ignoring failures. */ () => Promise<void>) | undefined, stopReceivers: (/** 保留关闭原生反向服务或自有 root receiver 的异步清理器；取得资源后才设置，失败必须汇总而不能忽略。
+ * Retain asynchronous disposers for original native reverse services or owned root receivers, setting them only after acquisition and aggregating rather than ignoring failures. */ () => Promise<void>) | undefined;
   try {
     const [{ Machines }, { createRuntime }, { Workspaces }, { ExtendedFeatures }, { ProjectDirectoryMigrations },
       { ProjectTerminals }, identityModule, { ProjectRunScopes }, { ProjectReverseTunnelScope }, tunnelModule, { vmDir }] = await Promise.all([
@@ -279,7 +298,8 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
       import('../server/project-identity.ts'), import('../server/project-run-scope.ts'), import('../server/project-service-scope.ts'),
       import('../server/reverse-tunnels.ts'), import('../server/model.ts')]);
     engine = await createRuntime(); const engineRun = engine.run;
-    engine.run = async (...args) => { const entry = { tool: args[0], args: [...args[1]], settled: false };
+    engine.run = /** 记录并透明转发运行时工具调用，finally 标记结算并移出未完成集合；证据写入用于验证清理边界，保留正式 runtime 的结果和错误。
+ * Record and transparently forward runtime tool calls, marking settlement/removing outstanding entries in finally; persist cleanup-boundary evidence while preserving real runtime results/errors. */ async (...args) => { const entry = { tool: args[0], args: [...args[1]], settled: false };
       engineRuns.add(entry); proof.engineRuns ||= []; proof.engineRuns.push(entry);
       try { return await engineRun(...args); } finally { entry.settled = true; engineRuns.delete(entry); await persist(); } };
     machines = new Machines(engine); await machines.init(); assert.equal(machines.records.size, 0, 'Fresh owned fixture contains a user VM');
@@ -290,13 +310,17 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
     while (machines.state(vm.id) !== 'running') { assert.ok(Date.now() < deadline && machines.state(vm.id) === 'starting', machines.logs.get(vm.id)); await delay(300); }
     live = machines.live.get(vm.id); assert.ok(live);
     originalExec = machines.exec; originalInput = machines.execInput;
+    /** 断言保护正文、环境与隧道令牌没有进入 root argv，保存命令及单独 stdin 的长度/摘要证据。
+     * Assert protected body/environment/tunnel tokens never enter root argv, retaining command and separate stdin length/hash evidence. */
     const audit = (command: string, input?: Buffer) => {
       for (const value of [marker, frameEnv, ...[...captured.values()].map(entry => entry.session.token).filter(Boolean)])
         assert.ok(!command.includes(value), 'Project broker body, secret or environment reached Root argv');
       proof.rootCommands.push({ command, input: !!input, ...(input ? { bytes: input.length, sha256: createHash('sha256').update(input).digest('hex') } : {}) });
     };
-    machines.exec = (...args) => { audit(args[1]); return originalExec!.apply(machines!, args); };
-    machines.execInput = (...args) => { audit(args[1], args[2]); return originalInput!.apply(machines!, args); };
+    machines.exec = /** 先审计 root 命令再以原 this 和参数转发 exec，项目正文或环境不得泄漏到 root argv。
+ * Audit the root command before forwarding exec with original this/arguments; project body/environment must not leak into root argv. */ (...args) => { audit(args[1]); return originalExec!.apply(machines!, args); };
+    machines.execInput = /** 审计 root 命令与 stdin 后转发原 execInput，检查传输边界而不改变正式输入或结果。
+ * Audit root argv/stdin before forwarding original execInput, checking the transport boundary without changing production input or results. */ (...args) => { audit(args[1], args[2]); return originalInput!.apply(machines!, args); };
     const tools = await machines.exec(vm.id, clean + '/bin/sh -ec ' + quote(
       'if ! command -v python3 >/dev/null || ! command -v tmux >/dev/null; then ' +
       'if command -v apk >/dev/null; then apk add --no-cache python3 tmux; ' +
@@ -309,6 +333,8 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
       ['host', 'alpha', 'beta'].map(name => quote(root + '/' + name)).join(' ')), 10000);
     assert.equal(made.code, 0, made.stderr); await machines.writeGuestFile(vm.id, holder + '/receiver.py', reverseSmokeReceiver, false);
     const directories = new Map<string, string>(), identities = new Map<string, ProjectIdentity>();
+    /** 为指定项目构造固定目录、空初始化和标记环境，并按 isolated 选择 private/host 网络；不直接创建账号。
+     * Build fixed-directory/empty-initialization/marked-environment project settings and select private/host networking from isolated without creating accounts directly. */
     const config = (name: string, isolated: boolean) => ({ directory: root + '/' + name, template: 'none', repository: '', setup: '', command: '',
       networkIsolation: isolated ? 'private' as const : 'host' as const,
       environment: { SAKURA_REVERSE_UID_TEST: marker, SAKURA_REVERSE_FRAME_ENV: frameEnv } });
@@ -316,7 +342,10 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
     const alpha = (await workspaces.projects.create(vm.id, 'Alpha', async () => { await workspaces!.save(vm.id, config('alpha', true)); })).active;
     const beta = (await workspaces.projects.create(vm.id, 'Beta', async () => { await workspaces!.save(vm.id, config('beta', true)); })).active;
     directories.set(alpha, root + '/alpha'); directories.set(beta, root + '/beta'); proof.projects = [...directories];
-    const scope = <T>(project: string, action: () => Promise<T>) => workspaces!.projects.with(vm.id, project, action);
+    /** 在指定项目的正式 Workspaces 上下文中执行回调并返回结果，避免验收依赖当前活动项目的全局状态。
+     * Execute the callback within the specified production Workspaces project context and return its result instead of depending on global active-project state. */
+    const scope = <T>(project: string, action: /** 选定项目作用域中的异步 action 返回 T；身份作用域只覆盖调用期间并随成功/失败退出。
+ * The asynchronous action returns T inside the selected project scope; identity binding lasts only for the call and unwinds on success/failure. */ () => Promise<T>) => workspaces!.projects.with(vm.id, project, action);
     const migrations = new ProjectDirectoryMigrations(machines, workspaces);
     for (const project of directories.keys()) await scope(project, async () => {
       const preview = await migrations.preview(vm.id); assert.ok(preview.plan);
@@ -332,11 +361,16 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
     });
     for (const key of ['uid', 'gid', 'home'] as const)
       assert.equal(new Set([...identities.values()].map(identity => identity[key])).size, 3, 'All three projects require independent ' + key);
+    /** 断言当前管理句柄仍是原自有 live 且运行中，防止重启后的新实例被当成原运行证据。
+     * Assert management still references the original owned running live so a rebooted replacement cannot count as original-run evidence. */
     const ensureLive = () => { assert.equal(machines!.live.get(vm.id), live, 'Original owned VM live changed'); assert.equal(machines!.state(vm.id), 'running'); };
+    /** 在执行前后核验 live，通过 JSON stdin 调用隔离 Python 内核观测器，断言成功并返回 JSON；不拼接项目正文进 root 命令。
+     * Check live before/after calling the isolated Python kernel observer with JSON stdin, assert success and return JSON without interpolating project bodies into root commands. */
     const kernel = async (request: object) => { ensureLive(); const result = await machines!.execInput(vm.id,
       clean + '/usr/bin/python3 -I -S -c ' + quote(reverseSmokeKernel), Buffer.from(JSON.stringify({ invocation, ...request })), 15000);
       ensureLive(); assert.equal(result.code, 0, result.stderr); return JSON.parse(result.stdout); };
-    stopReceivers = async () => {
+    stopReceivers = /** 逐个按原 bootId、PID+ticks、网络命名空间关闭已拥有 root receiver，记录全部结果；汇总失败以证明清理未完成，不能按新 PID 猜测终止。
+ * Stop owned root receivers one by one using original bootId, PID-plus-ticks and network namespace, recording all outcomes; aggregate failures rather than guessing replacement PIDs or claiming cleanup. */ async () => {
       const errors: unknown[] = [];
       for (const holder of holders) if (!holder.stopped) try { holder.stopped = await kernel({ op: 'receiver-stop', projectId: holder.projectId,
         bootId: holder.bootId, receiver: { pid: holder.receiver.pid, ticks: holder.receiver.ticks, network: holder.receiver.network } }); }
@@ -353,12 +387,20 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
     }
     const core = new identityModule.ProjectIdentities(machines), scopes = new ProjectRunScopes(machines);
     const sessionFile = join(directory, 'reverse-tunnels.json');
+    /** 读取并严格解析版本一反向会话表，文件尚未创建时返回空表，其他损坏或读取错误传播。
+     * Read/strictly parse version-one reverse sessions, return an empty table only if not yet created and propagate corruption/other read errors. */
     const rows = async (): Promise<Session[]> => { try { const value = JSON.parse(await readFile(sessionFile, 'utf8'));
       assert.equal(value.version, 1); assert.deepEqual(Object.keys(value).sort(), ['sessions', 'version']);
       return value.sessions.map((row: unknown) => tunnelModule.reverseTunnelSessionSchema.parse(row));
     } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; } };
+    /** 构造自有实例中指定项目的身份日志路径，供精确运行记录对比。
+     * Build the specified project identity-journal path within the owned VM for exact-run comparisons. */
     const journalFile = (project: string) => join(vmDir(vm.id), 'project-identities', project + '.json');
+    /** 将会话和已捕获子进程交给内核观测器，按会话项目定位原监听域。
+     * Pass session/captured children to the kernel observer, locating the original listener domain by session project. */
     const observe = (row: Session, processes: any[]) => kernel({ op: 'observe', projectId: row.projectId, session: row, processes });
+    /** 从落盘运行会话核验持久监听所有者、身份和正文密封，比较原生只读票据并证明观测未改文件，再验证真实监听进程和网络域。
+     * Verify durable listener ownership/identity/body sealing from the saved running session, compare native read-only receipts/prove unchanged files and validate the real listener/network domain. */
     const prove = async (project: string) => {
       ensureLive(); const row = (await rows()).find(row => row.projectId === project && row.vmId === vm.id); assert.ok(row);
       assert.equal(row.phase, 'running'); assert.ok(row.execution?.run && row.listener);
@@ -390,6 +432,8 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
         processes: observation.members.map((value: any) => ({ pid: value.pid, ticks: value.ticks })) };
       captured.set(row.execution.record.runId, entry); proof.runs = [...captured.values()]; await persist(); return row;
     };
+    /** 观察原监听域、socket 和 PID+ticks 全部消失，核对本地主机、传输与原生日志的关闭状态和密封字段，保留整域清理证据。
+     * Observe original listener domain/socket/PID+ticks disappearance and compare host/transport/native closed records and sealed fields, retaining whole-domain cleanup evidence. */
     const stopped = async (row: Session) => {
       ensureLive(); const entry = captured.get(row.execution!.record.runId); assert.ok(entry);
       const observation = await observe(row, entry.processes); assert.equal(observation.domain, null); assert.equal(observation.members.length, 0);
@@ -404,6 +448,8 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
       Object.assign(entry, { stopped: observation, closedNative: native, closedHost: host, nativeClosedBeforeVmShutdown: true });
       proof.runs = [...captured.values()]; await persist();
     };
+    /** 在指定项目提交反向隧道公开任务，等待 done 并保存任务记录；项目不一致或任务失败拒绝，返回正式任务结果。
+     * Submit a public reverse-tunnel job in the specified project, await done/save its record and reject project mismatch/failure before returning the production result. */
     const job: ReverseSmokeContext['job'] = async (project, mode, duration = 300, signal) => {
       const view = await scope(project, () => extended!.action(vm.id, { action: 'run', featureId: 'reverse-tunnel',
         options: mode === 'open' ? { mode, guestPort: 8765, durationSeconds: duration } : { mode } }, signal)) as { key: string; id: string; projectId: string };
@@ -411,7 +457,8 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
       proof.jobs.push(completed); await persist(); assert.equal(completed?.status, 'done', JSON.stringify(completed));
       return extended!.jobs.result(view.id);
     };
-    closeOriginal = async () => {
+    closeOriginal = /** 在 VM 停机前关闭全部反向服务并复验捕获的原生域与主机 journal，全部成功才记录完整清理；逐项失败汇总，防止停机掩盖域泄漏。
+ * Before VM shutdown close all reverse services and recheck captured native domains/host journals; record complete cleanup only after all pass and aggregate errors so VM shutdown cannot hide domain leaks. */ async () => {
       ensureLive(); const errors: unknown[] = [];
       for (const row of await rows()) try { await job(row.projectId, 'close');
         const entry = row.execution?.run && captured.get(row.execution.record.runId); if (entry) await stopped(entry.session);
@@ -425,11 +472,16 @@ export async function withOwnedReverseSmoke(distro: 'alpine' | 'debian' | 'ubunt
       proof.completeNativeCleanupBeforeVmShutdown = true; await persist();
     };
     await run({ machines, workspaces, vmId: vm.id, alpha, beta, directories, namespaces, job, prove, stopped, scope,
+      /** 保存已通过场景的名称与细节后等待落盘，保证最终结论具有持久证据。
+       * Retain a passed case name/details and await persistence so final conclusions have durable evidence. */
       recordCase: async (name, detail) => { proof.cases.push({ name, detail, passed: true }); await persist(); } });
     proof.publicCasesPassed = true;
   } catch (error) { proof.error = error instanceof Error ? error.stack : String(error); }
   finally {
-    const close = async (component: string, operation: () => Promise<unknown>) => {
+    /** 执行组件关闭，捕获并落盘清理错误以继续释放其他资源；错误仍由最终验收报告反映。
+     * Run component teardown and persist cleanup errors while releasing other resources; final acceptance still reflects those errors. */
+    const close = async (component: string, operation: /** 组件清理回调返回异步关闭结果；调用方逐项尝试并记录错误，某个组件失败不阻止其余清理。
+ * A component cleanup callback returns its asynchronous closure result; the caller attempts every component and records errors without skipping later cleanup. */ () => Promise<unknown>) => {
       try { await operation(); } catch (error) { proof.cleanupErrors.push({ component, error: error instanceof Error ? error.stack : String(error) }); await persist(); }
     };
     if (machines && vmId && machines.state(vmId) === 'paused') await close('Restore original VM before native retirement', async () => {

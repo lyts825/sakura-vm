@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - failback releases only a retired target, persists exact identity and waits for source health
- * - a restored route with a lost response resumes after restart without a second restore write
- * - automatic failback cannot overwrite traffic redirected to an unknown third VM
+ * 模块职责：回归验证模块，围绕 `ha-witness-failback` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `ha-witness-failback`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: failback releases only a retired target, persists exact identity and waits for source health; a restored route with a lost response resumes after restart without a second restore write.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,12 +17,30 @@ import { HaWitnessClient } from '../server/ha-witness-client.ts';
 import { startHaWitnessServer, witnessVms } from '../server/ha-witness-server.ts';
 import { checkHaWitnessDeployment } from '../server/ha-witness-preflight.ts';
 
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: label: string。
+ * 结果：返回分支计算值（`mkdtemp(join(parent, `${label}-`))`），以 Promise 交付。
+ * Result: Return the branch-computed value (`mkdtemp(join(parent, `${label}-`))`) through a Promise.
+ * 协作入口 / Collaborators: `resolve`, `mkdir`, `mkdtemp`, `join`.
+ */
 async function directory(label: string) {
   const parent = resolve('artifacts', 'ha-witness-tests');
   await mkdir(parent, { recursive: true });
   return mkdtemp(join(parent, `${label}-`));
 }
 
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回受控对象，公开字段包括 `root, file, vm, plan, identity, witness, actions, promote, heartbeat`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `root, file, vm, plan, identity, witness, actions, promote, heartbeat`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `directory`, `join`, `randomUUID`, `'f'.repeat`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function fixture() {
   const root = await directory('failback');
   const file = join(root, 'state.json');
@@ -38,21 +57,105 @@ async function fixture() {
   let denyRetire = false, denyRestore = false, loseRestoreResponse = false;
   let restoreCount = 0, retireCount = 0, activateCount = 0;
   const actions: HaWitnessActions = {
-    fence: async () => {}, confirmFence: async () => {},
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     */
+    fence: async () => {}, /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     */
+    confirmFence: async () => {},
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: _vm; candidate。
+     * 结果：返回分支计算值（`target`），以 Promise 交付。
+     * Result: Return the branch-computed value (`target`) through a Promise.
+     * 协作入口 / Collaborators: `assert.deepEqual`.
+     * 检查边界 / Checked boundaries: `assert.deepEqual(candidate, plan)`.
+     */
     targetStatus: async (_vm, candidate) => {
       assert.deepEqual(candidate, plan); return target;
     },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `target`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `assert.equal`.
+     * 检查边界 / Checked boundaries: `assert.equal(retired, false)`.
+     */
     activate: async () => { assert.equal(retired, false); target = 'running'; activateCount++; },
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回布尔判定，供用例选择路径或核对受控条件。
+     * Result: Return a boolean decision for path selection or controlled-condition assertions.
+     */
     applicationReady: async () => true,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `traffic`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     switchTraffic: async () => { traffic = plan.remoteVmId; },
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`traffic`），以 Promise 交付。
+     * Result: Return the branch-computed value (`traffic`) through a Promise.
+     */
     trafficTarget: async () => traffic,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: _vm; candidate。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `retired`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 失败 / Failure: `new Error('retirement not confirmed')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `assert.deepEqual`.
+     * 检查边界 / Checked boundaries: `assert.deepEqual(candidate, plan)`.
+     */
     retire: async (_vm, candidate) => {
       assert.deepEqual(candidate, plan);
       retireCount++;
       if (target !== 'stopped' || denyRetire) throw new Error('retirement not confirmed');
       retired = true;
     },
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`sourceHealthy`），以 Promise 交付。
+     * Result: Return the branch-computed value (`sourceHealthy`) through a Promise.
+     */
     sourceApplicationReady: async () => sourceHealthy,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: candidateVm; candidate。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `traffic`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 失败 / Failure: `new Error('restore rejected')`; `new Error('restore response lost')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `assert.equal`.
+     * 检查边界 / Checked boundaries: `assert.equal(candidateVm.sourceVmId, sourceVmId)`; `assert.equal(candidate.remoteVmId, plan.remoteVmId)`.
+     */
     restoreTraffic: async (candidateVm, candidate) => {
       assert.equal(candidateVm.sourceVmId, sourceVmId);
       assert.equal(candidate.remoteVmId, plan.remoteVmId);
@@ -66,27 +169,122 @@ async function fixture() {
   await HaWitness.initialize(file, [vm]);
   const witness = new HaWitness(file, [vm], actions, () => time);
   await witness.init();
+  /**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `time`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `witness.heartbeat`, `witness.sample`, `assert.equal`, `witness.status`.
+   * 检查边界 / Checked boundaries: `assert.equal((await witness.status(identity)).phase, 'promoted')`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   const promote = async () => {
     await witness.heartbeat({ ...identity, failureThreshold: 2, plan });
     time = 130_000;
     await witness.sample();
     assert.equal((await witness.status(identity)).phase, 'promoted');
   };
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`witness.heartbeat({ ...identity, failureThreshold: 2, plan: null })`）。
+   * Result: Return the branch-computed value (`witness.heartbeat({ ...identity, failureThreshold: 2, plan: null })`).
+   * 协作入口 / Collaborators: `witness.heartbeat`.
+   */
   const heartbeat = () => witness.heartbeat({ ...identity, failureThreshold: 2, plan: null });
   return { root, file, vm, plan, identity, witness, actions, promote, heartbeat,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: 'stopped' | 'running'。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `target`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     target: (value: 'stopped' | 'running') => { target = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `sourceHealthy`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     healthy: (value: boolean) => { sourceHealthy = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `denyRetire`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     denyRetire: (value: boolean) => { denyRetire = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `denyRestore`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     denyRestore: (value: boolean) => { denyRestore = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `loseRestoreResponse`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     loseRestoreResponse: (value: boolean) => { loseRestoreResponse = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: string。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `traffic`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     traffic: (value: string) => { traffic = value; },
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ restoreCount, retireCount, activateCount })`）。
+     * Result: Return the branch-computed value (`({ restoreCount, retireCount, activateCount })`).
+     */
     counts: () => ({ restoreCount, retireCount, activateCount }),
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`reopened`），以 Promise 交付。
+     * Result: Return the branch-computed value (`reopened`) through a Promise.
+     * 协作入口 / Collaborators: `reopened.init`.
+     */
     reopen: async () => {
       const reopened = new HaWitness(file, [vm], actions, () => time);
       await reopened.init(); return reopened;
     } };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: failback releases only a retired target, persists exact identity and waits for source health
+ * 协作入口 / Collaborators: `fixture`, `f.promote`, `assert.rejects`, `f.witness.rejoin`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.witness.rejoin({ ...f.identity, dataReconciled: true }), /retirement/)`; `assert.rejects(f.witness.authorizeStart(f.identity), { code: 'HA_WITNESS_FENCED' })`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('failback releases only a retired target, persists exact identity and waits for source health', async () => {
   const f = await fixture();
   await f.promote();
@@ -127,6 +325,18 @@ test('failback releases only a retired target, persists exact identity and waits
   assert.deepEqual(f.counts(), before, 'completed routing must not be rewritten');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a restored route with a lost response resumes after restart without a second restore write
+ * 协作入口 / Collaborators: `fixture`, `f.promote`, `f.target`, `f.witness.rejoin`.
+ * 检查边界 / Checked boundaries: `assert.equal(f.counts().restoreCount, 1)`; `assert.equal((await f.witness.status(f.identity)).failback?.phase, 'pending')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('a restored route with a lost response resumes after restart without a second restore write', async () => {
   const f = await fixture();
   await f.promote(); f.target('stopped');
@@ -143,6 +353,18 @@ test('a restored route with a lost response resumes after restart without a seco
     f.actions).init(), { code: 'HA_WITNESS_STATE_MISMATCH' });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: automatic failback cannot overwrite traffic redirected to an unknown third VM
+ * 协作入口 / Collaborators: `fixture`, `f.promote`, `f.target`, `f.witness.rejoin`.
+ * 检查边界 / Checked boundaries: `assert.equal(f.counts().restoreCount, 0)`; `assert.equal((await f.witness.status(f.identity)).failback?.phase, 'pending')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('automatic failback cannot overwrite traffic redirected to an unknown third VM', async () => {
   const f = await fixture();
   await f.promote(); f.target('stopped');
@@ -157,6 +379,18 @@ test('automatic failback cannot overwrite traffic redirected to an unknown third
   assert.equal(f.counts().restoreCount, 0, 'restart must retain the unknown-route refusal');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a failed durable rejoin write never grants source start or attempts traffic restoration
+ * 协作入口 / Collaborators: `fixture`, `f.promote`, `f.target`, `rename`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.witness.rejoin({ ...f.identity, dataReconciled: true }))`; `assert.rejects(f.witness.authorizeStart(f.identity), { code: 'HA_WITNESS_STORAGE_UNAVAILABLE' })`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('a failed durable rejoin write never grants source start or attempts traffic restoration', async () => {
   const f = await fixture();
   await f.promote(); f.target('stopped');
@@ -167,18 +401,50 @@ test('a failed durable rejoin write never grants source start or attempts traffi
   assert.equal(f.counts().restoreCount, 0);
 });
 
+/**
+ * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+ * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+ * 输入 / Inputs: server: Server。
+ * 结果：返回分支计算值（``https://127.0.0.1:${address.port}/``），以 Promise 交付。
+ * Result: Return the branch-computed value (``https://127.0.0.1:${address.port}/``) through a Promise.
+ * 失败 / Failure: `new Error('missing port')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `server.address`.
+ */
 async function listen(server: Server) {
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('missing port');
   return `https://127.0.0.1:${address.port}/`;
 }
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: request: import('node:http').IncomingMessage。
+ * 结果：返回分支计算值（`body ? JSON.parse(body) : null`），以 Promise 交付。
+ * Result: Return the branch-computed value (`body ? JSON.parse(body) : null`) through a Promise.
+ * 状态影响 / State effects: `body`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `chunk.toString`, `JSON.parse`.
+ */
 async function input(request: import('node:http').IncomingMessage) {
   let body = '';
   for await (const chunk of request) body += chunk.toString();
   return body ? JSON.parse(body) : null;
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: HTTPS failback authenticates exact source health and retire identity before restoring traffic
+ * 状态影响 / State effects: `service`, `time`, `targetRunning`, `sourceReady`, `healthIdentity`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 失败 / Failure: `new Error('witness port missing')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `directory`, `generate`, `Date.now`, `randomBytes(32).toString`.
+ * 检查边界 / Checked boundaries: `assert.equal((await client.status(identity)).phase, 'promoted')`; `assert.rejects(client.rejoin({ ...identity, dataReconciled: true }))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('HTTPS failback authenticates exact source health and retire identity before restoring traffic', async () => {
   const root = await directory('failback-https');
   const cert = await generate([{ name: 'commonName', value: 'localhost' }], {
@@ -198,7 +464,29 @@ test('HTTPS failback authenticates exact source health and retire identity befor
   const plan = { sourceHostId, sourceVmId, targetHostId, remoteVmId,
     transferId: randomUUID(), snapshotId: randomUUID(), sha256: 'a'.repeat(64),
     snapshotAt: new Date(time).toISOString(), maxReplicaAgeMinutes: 60 };
-  const adapter = createServer({ cert: cert.cert, key: cert.private }, (req, res) => void (async () => {
+  const adapter = createServer({ cert: cert.cert, key: cert.private }, /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: req; res。
+   * 结果：返回分支计算值（`void (async () => { const url = new URL(req.url!, 'https://localhost'); if (url.…`）。
+   * Result: Return the branch-computed value (`void (async () => { const url = new URL(req.url!, 'https://localhost'); if (url.…`).
+   * 验证场景 / Scenario: HTTPS failback authenticates exact source health and retire identity before restoring traffic
+   * 协作入口 / Collaborators: `(async () => { const url = new URL(req.url!, 'https://localhost'); if (url.…`.
+   */
+  (req, res) => void (/**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: HTTPS failback authenticates exact source health and retire identity before restoring traffic
+   * 状态影响 / State effects: `retired`, `targetRunning`, `activeVmId`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `res.end`, `JSON.stringify`, `assert.equal`, `url.pathname.startsWith`.
+   * 检查边界 / Checked boundaries: `assert.equal(req.headers.authorization, `Bearer ${targetToken}`)`; `assert.equal(req.headers.authorization, `Bearer ${targetToken}`)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
+  async () => {
     const url = new URL(req.url!, 'https://localhost');
     if (url.pathname === '/redfish/v1/Systems/1') {
       res.end(JSON.stringify({ UUID: sourceSystemUuid, PowerState: 'Off' })); return;

@@ -1,5 +1,6 @@
 /**
  * 模块职责：加载固定工程运行器并组织客户机调用，限制命令输入和结果边界并核对退出状态。
+ * Module purpose: Loads fixed engineering code and constructs guest invocations, bounding inputs/results and checking exit status.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { readFile } from 'node:fs/promises';
@@ -25,6 +26,17 @@ import { engineeringOperations, validateOperation } from './engineering-operatio
 import { capabilityDefinitions, capabilityParameters, hasCapability } from './capability-definitions.ts';
 
 let source: Promise<string> | undefined;
+/**
+ * 入口 / Entry: engineeringSource.
+ * 功能：在加载固定工程运行器并组织客户机调用中，执行此领域的具体处理步骤并返回其结果；本入口产生 `(source ||= readFile(join(ROOT, 'server', 'engineering-runner.py'), 'utf8').catch((error) => { if (error.code !== 'ENOENT') t…` 供上层消费（`engineering-runner.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `engineering-runner.ts`; this entry produces `(source ||= readFile(join(ROOT, 'server', 'engineering-runner.py'), 'utf8').catch((error) => { if (error.code !== 'ENOENT') t…` for its caller. Module context: Loads fixed engineering code and constructs guest invocations, bounding inputs/results and checking exit status.
+ * 处理：通过 `readFile().catch`, `readFile`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `readFile().catch`, `readFile`, `join`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `(source ||= readFile(join(ROOT, 'server', 'engineering-runner.py'), 'utf8').catch((error) => { if (error.code !== 'ENOENT') t…`.
+ * 副作用 / Effects: 更新 / updates `source`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function engineeringSource() {
   return (source ||= readFile(join(ROOT, 'server', 'engineering-runner.py'), 'utf8').catch((error) => {
     if (error.code !== 'ENOENT') throw error;
@@ -32,6 +44,15 @@ export function engineeringSource() {
   }));
 }
 export type EngineeringResult = { code: number; error?: string; [key: string]: unknown };
+/**
+ * 入口 / Entry: requireSuccessfulResult.
+ * 功能：在加载固定工程运行器并组织客户机调用中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`engineering-runner.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `engineering-runner.ts`; the calls and state transitions below complete the operation. Module context: Loads fixed engineering code and constructs guest invocations, bounding inputs/results and checking exit status.
+ * 输入 / Inputs: result: Record<string, unknown>
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; 异常 / errors `new AppError( String(result.error || '工程操作未通过（退出码 ' + (result.code ?? '未知') + '）'), 409, )`.
+ */
 export function requireSuccessfulResult(result: Record<string, unknown>) {
   if (result.code !== 0)
     throw new AppError(
@@ -61,8 +82,38 @@ export const engineeringLimits = Object.freeze({
   requestBytes: 64 * 1024, compressedRequestBytes: 16 * 1024,
   commandBytes: 65536, outputBytes: 8 * 1024 * 1024,
 });
+/**
+ * 入口 / Entry: boundary.
+ * 功能：从当前输入或状态计算 `new AppError('工程执行正文超过传输边界', 413, 'ENGINEERING_INPUT_TOO_LARGE')`，供调用方后续验证或使用。
+ * Purpose: Computes `new AppError('工程执行正文超过传输边界', 413, 'ENGINEERING_INPUT_TOO_LARGE')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `new AppError('工程执行正文超过传输边界', 413, 'ENGINEERING_INPUT_TOO_LARGE')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const boundary = () => new AppError('工程执行正文超过传输边界', 413, 'ENGINEERING_INPUT_TOO_LARGE');
+/**
+ * 入口 / Entry: digest.
+ * 功能：在加载固定工程运行器并组织客户机调用中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(value).digest('hex')` 供上层消费（`engineering-runner.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `engineering-runner.ts`; this entry produces `createHash('sha256').update(value).digest('hex')` for its caller. Module context: Loads fixed engineering code and constructs guest invocations, bounding inputs/results and checking exit status.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: Buffer
+ * 输出 / Returns: `createHash('sha256').update(value).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex');
+/**
+ * 入口 / Entry: encode.
+ * 功能：在加载固定工程运行器并组织客户机调用中，转换协议或持久数据表示并保持调用边界；本入口产生 `{ data: compressed.toString('base64'), bytes: value.length, sha256: digest(value) }` 供上层消费（`engineering-runner.ts`）。
+ * Purpose: Converts protocol or durable data representations at the call boundary in `engineering-runner.ts`; this entry produces `{ data: compressed.toString('base64'), bytes: value.length, sha256: digest(value) }` for its caller. Module context: Loads fixed engineering code and constructs guest invocations, bounding inputs/results and checking exit status.
+ * 处理：通过 `boundary`, `deflateSync`, `compressed.toString`, `digest` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `boundary`, `deflateSync`, `compressed.toString`, `digest`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: Buffer; rawLimit: number; compressedLimit: number
+ * 输出 / Returns: `{ data: compressed.toString('base64'), bytes: value.length, sha256: digest(value) }`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!value.length || value.length > rawLimit`; `compressed.length > compressedLimit`; 异常 / errors `boundary()`.
+ */
 const encode = (value: Buffer, rawLimit: number, compressedLimit: number) => {
   if (!value.length || value.length > rawLimit) throw boundary();
   const compressed = deflateSync(value, { level: 9 });
@@ -73,6 +124,17 @@ const encode = (value: Buffer, rawLimit: number, compressedLimit: number) => {
 // than recompressing it for every project operation or caching private requests.
 let encodedSource: { source: string; packed: ReturnType<typeof encode> } | undefined;
 /** Trusted source is unpacked only by the selected process after UID drop. */
+/**
+ * 入口 / Entry: engineeringInvocation.
+ * 功能：在加载固定工程运行器并组织客户机调用中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ command, ...(administrative ? { input: rawRequest } : {}) }` 供上层消费（`engineering-runner.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `engineering-runner.ts`; this entry produces `{ command, ...(administrative ? { input: rawRequest } : {}) }` for its caller. Module context: Loads fixed engineering code and constructs guest invocations, bounding inputs/results and checking exit status.
+ * 处理：通过 `rawSource.toString`, `moduleSource.includes`, `boundary`, `encode` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `rawSource.toString`, `moduleSource.includes`, `boundary`, `encode`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: moduleSource: string; request: object; administrative: default=false
+ * 输出 / Returns: `{ command, ...(administrative ? { input: rawRequest } : {}) }`.
+ * 副作用 / Effects: 更新 / updates `encodedSource`.
+ * 拒绝 / Refusals: 条件 / conditions `rawSource.toString('utf8') !== moduleSource || moduleSource.includes('\0')`; `rawRequest.length > engineeringLimits.requestBytes`; `Buffer.byteLength(command) > engineeringLimits.commandBytes`; 异常 / errors `boundary()`.
+ */
 export function engineeringInvocation(moduleSource: string, request: object, administrative = false) {
   const rawSource = Buffer.from(moduleSource, 'utf8');
   if (rawSource.toString('utf8') !== moduleSource || moduleSource.includes('\0')) throw boundary();
@@ -114,8 +176,28 @@ export type EngineeringRunOptions = {
   runAdministrativeTask?: typeof guestTask;
   source?: typeof engineeringSource;
   presets?: Pick<CommandPresets, 'list' | 'save' | 'close'>;
+  /**
+   * 签名 / Signature: EngineeringRunOptions.onResult.
+   * 功能：为加载固定工程运行器并组织客户机调用声明 onResult 的输入与结果契约，所属容器为 EngineeringRunOptions。
+   * Purpose: Declares the input/result contract for onResult in EngineeringRunOptions. Module responsibility: Loads fixed engineering code and constructs guest invocations, bounding inputs/results and checking exit status.
+   * 输入 / Inputs: result: EngineeringResult
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   onResult?: (result: EngineeringResult) => Promise<void>;
 };
+/**
+ * 入口 / Entry: runEngineeringOperation.
+ * 功能：校验工程操作输入，部署固定 Python 运行器并在项目执行域读取结构化结果。
+ * Purpose: Validates engineering input, deploys fixed Python code and reads structured results in the project execution scope.
+ * 设计：命令正文和结果均有界；工具失败、非零检查以及原账户票据未签发不能当成成功结果。
+ * Design: Command/results are bounded; tool failures, failed checks and unissued original account tickets cannot become successful outcomes.
+ * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; id: string; operation: string; parameters: Record<string, unknown>; signal: AbortSignal; options: EngineeringRunOptions default={}
+ * 输出 / Returns: Promise<EngineeringResult>；结果来自 / values from `workspaces.projects.inScope(id, projectId, async () => { const originalConfig = await workspaces.config(id); if ((originalCon…`.
+ * 副作用 / Effects: 更新 / updates `parameters`.
+ * 拒绝 / Refusals: 条件 / conditions `!live || machines.state(id) !== 'running'`; `operation === 'feature-run'`; 异常 / errors `new AppError('请先启动或恢复实例', 409)`; `new AppError('没有此工程执行器', 400, 'ENGINEERING_OPERATION_UNSUPPORTED')`.
+ */
 export async function runEngineeringOperation(
   machines: Machines, workspaces: WorkspacesV1, id: string, operation: string,
   parameters: Record<string, unknown>, signal: AbortSignal, options: EngineeringRunOptions = {},
@@ -134,6 +216,19 @@ export async function runEngineeringOperation(
     parameters = capabilityParameters(operation, parameters);
   else throw new AppError('没有此工程执行器', 400, 'ENGINEERING_OPERATION_UNSUPPORTED');
   parameters = structuredClone(parameters);
+  /**
+   * 入口 / Entry: runEngineeringOperation.callback@137.
+   * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（workspaces.projects.inScope）。
+   * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (workspaces.projects.inScope).
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `result`.
+   * 副作用 / Effects: `executionSignal.throwIfAborted`; `presets.save`; `presets.close`; `prepared.release`; `ownedTerminals.close`; 更新 / updates `ownedTerminals`, `prepared`, `result`, `result.code`.
+   * 拒绝 / Refusals: 条件 / conditions `(originalConfig._workspace || 'default') !== projectId`; `!captured || !executionSignal || prepared.projectId !== projectId || vmLiveIdentity(captured.live) !== vmLiveIdentity(live) |…`; `Buffer.byteLength(output.stdout) > engineeringLimits.outputBytes`; 异常 / errors `new AppError('工程任务原项目配置或客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`; `new AppError('工程任务准备租约不属于原项目或客户机', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`.
+   * 收尾：退出 try 区域时始终执行 `try { try { await prepared?.release(); } finally { await ownedTerminals?.close(); } } catch (error) { if (failure instanceof …`; `await presets.close();`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `try { try { await prepared?.release(); } finally { await ownedTerminals?.close(); } } catch (error) { if (failure instanceof …`; `await presets.close();`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `failed = true;`; `failure = error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `failed = true;`; `failure = error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   return workspaces.projects.inScope(id, projectId, async () => {
     const originalConfig = await workspaces.config(id);
     if ((originalConfig._workspace || 'default') !== projectId)
@@ -143,6 +238,17 @@ export async function runEngineeringOperation(
     // structuredClone drops non-enumerable properties; preserve this binding.
     Object.defineProperty(capturedConfig, '_workspace', { value: originalConfig._workspace, enumerable: false });
     const version = projectVersion(capturedConfig);
+    /**
+     * 入口 / Entry: runEngineeringOperation.assertCurrent.
+     * 功能：在加载固定工程运行器并组织客户机调用中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`engineering-runner.ts`）。
+     * Purpose: Checks admission, input or resource ownership in `engineering-runner.ts`; the calls and state transitions below complete the operation. Module context: Loads fixed engineering code and constructs guest invocations, bounding inputs/results and checking exit status.
+     * 处理：通过 `signal.throwIfAborted`, `workspaces.config`, `workspaces.projects.current`, `machines.live.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `signal.throwIfAborted`, `workspaces.config`, `workspaces.projects.current`, `machines.live.get`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `workspaces.projects.current(id) !== projectId || machines.live.get(id) !== live || machines.state(id) !== 'running' || (curre…`; 异常 / errors `new AppError('工程任务原项目配置或客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`.
+     */
     const assertCurrent = async () => {
       signal.throwIfAborted();
       const currentConfig = await workspaces.config(id);
@@ -226,6 +332,17 @@ export async function runEngineeringOperation(
         } finally { await presets.close(); }
       }
       const privateValues = projectPrivateValues(project);
+      /**
+       * 入口 / Entry: runEngineeringOperation.redact.
+       * 功能：在加载固定工程运行器并组织客户机调用中，执行此领域的具体处理步骤并返回其结果；本入口产生 `typeof value === 'string' ? redactValues(value, privateValues) : Array.isArray(value) ? value.map(redact) : value && typeof v…` 供上层消费（`engineering-runner.ts`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `engineering-runner.ts`; this entry produces `typeof value === 'string' ? redactValues(value, privateValues) : Array.isArray(value) ? value.map(redact) : value && typeof v…` for its caller. Module context: Loads fixed engineering code and constructs guest invocations, bounding inputs/results and checking exit status.
+       * 处理：通过 `redactValues`, `value.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `redactValues`, `value.map`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: value: unknown
+       * 输出 / Returns: unknown；结果来自 / values from `typeof value === 'string' ? redactValues(value, privateValues) : Array.isArray(value) ? value.map(redact) : value && typeof v…`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       const redact = (value: unknown): unknown => typeof value === 'string' ? redactValues(value, privateValues)
         : Array.isArray(value) ? value.map(redact)
           : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redact(item)])) : value;

@@ -1,4 +1,5 @@
-/** 烟雾验收：验证来宾调用已注册 Windows EXE 的退出码、禁止列表与授权撤销。 */
+/** 烟雾验收：验证来宾调用已注册 Windows EXE 的退出码、禁止列表与授权撤销。
+ * Smoke acceptance for registered Windows executables invoked from guests, exit codes, deny lists and authorization revocation. */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -19,7 +20,8 @@ const machines = new Machines(await createRuntime());
 await machines.init();
 const port = await freePort();
 const interop = new ProcessInterop(machines, port);
-const server = createServer(async (req, res) => {
+const server = createServer(/** 本机 interop HTTP 夹具严格检查路径、POST、回环对端及 Host，再按 4096 字节预算解析结构并传递来宾令牌；错误以正式状态与 JSON 返回。
+ * The local interop HTTP fixture checks path, POST, loopback peer and Host before parsing a 4096-byte bounded schema and passing the guest token; return formal error status/JSON on failures. */ async (req, res) => {
   try {
     assert.equal(req.url, '/api/guest/interop');
     assert.equal(req.method, 'POST');

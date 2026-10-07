@@ -1,4 +1,5 @@
-/** 烟雾验收：验证审阅后的事件 Runbook 顺序执行、首个失败停止和去重。 */
+/** 烟雾验收：验证审阅后的事件 Runbook 顺序执行、首个失败停止和去重。
+ * Smoke acceptance for reviewed runbook order, stop-on-first-failure and deduplication. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

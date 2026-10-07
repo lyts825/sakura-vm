@@ -1,5 +1,6 @@
 /**
  * 模块职责：保存并执行项目流水线，管理运行记录和产物，执行中的流水线配置受保护。
+ * Module purpose: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
  */
 import type { FilesV1, ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
@@ -65,6 +66,14 @@ export class Pipelines {
   jobs = new Jobs('pipelines');
   private active = new Map<string, PipelineRun>();
   private ownedTerminals?: ProjectTerminals;
+  /**
+   * 入口 / Entry: Pipelines.constructor.
+   * 功能：建立 Pipelines 的保存并执行项目流水线上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the Pipelines context for this module's responsibility: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; files: FilesV1; options: { terminals?: Pick<ProjectTerminalsV1, 'prepare'>; runTask?: typeof projectIdentityTa… default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
@@ -72,15 +81,57 @@ export class Pipelines {
     private options: { terminals?: Pick<ProjectTerminalsV1, 'prepare'>;
       runTask?: typeof projectIdentityTask } = {},
   ) {}
+  /**
+   * 入口 / Entry: Pipelines.file.
+   * 功能：在保存并执行项目流水线中，执行此领域的具体处理步骤并返回其结果；本入口产生 `projectMetadataFile(id, this.workspaces.projects.current(id), kind)` 供上层消费（`Pipelines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Pipelines`; this entry produces `projectMetadataFile(id, this.workspaces.projects.current(id), kind)` for its caller. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+   * 处理：通过 `projectMetadataFile`, `this.workspaces.projects.current` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `projectMetadataFile`, `this.workspaces.projects.current`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; kind: default='pipelines'
+   * 输出 / Returns: `projectMetadataFile(id, this.workspaces.projects.current(id), kind)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private file(id: string, kind = 'pipelines') {
     return projectMetadataFile(id, this.workspaces.projects.current(id), kind);
   }
+  /**
+   * 入口 / Entry: Pipelines.list.
+   * 功能：在保存并执行项目流水线中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `readStore<Pipeline[]>(this.file(id), () => [])` 供上层消费（`Pipelines`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `Pipelines`; this entry produces `readStore<Pipeline[]>(this.file(id), () => [])` for its caller. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+   * 处理：通过 `this.machines.get`, `readStore`, `this.file` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `readStore`, `this.file`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `readStore<Pipeline[]>(this.file(id), () => [])`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async list(id: string) {
     this.machines.get(id);
     return readStore<Pipeline[]>(this.file(id), () => []);
   }
+  /**
+   * 入口 / Entry: Pipelines.save.
+   * 功能：在保存并执行项目流水线中，校验并提交领域状态变更；本入口产生 `this.machines.locked(`pipelines:${this.workspaces.projects.key(id)}`, async () => { const list = await this.list(id), entry =…` 供上层消费（`Pipelines`）。
+   * Purpose: Validates and commits a domain state change in `Pipelines`; this entry produces `this.machines.locked(`pipelines:${this.workspaces.projects.key(id)}`, async () => { const list = await this.list(id), entry =…` for its caller. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+   * 处理：通过 `pipelineSchema.parse`, `this.machines.locked`, `this.workspaces.projects.key` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `pipelineSchema.parse`, `this.machines.locked`, `this.workspaces.projects.key`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: `this.machines.locked(`pipelines:${this.workspaces.projects.key(id)}`, async () => { const list = await this.list(id), entry =…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async save(id: string, input: unknown) {
     const value = pipelineSchema.parse(input);
+    /**
+     * 入口 / Entry: Pipelines.save.callback@84.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.machines.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.machines.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `entry`.
+     * 副作用 / Effects: `writeStore`.
+     * 拒绝 / Refusals: 条件 / conditions `list.length >= 30 && !list.some((p) => p.id === entry.id)`; 异常 / errors `new AppError('最多 30 个流水线')`.
+     */
     return this.machines.locked(`pipelines:${this.workspaces.projects.key(id)}`, async () => {
       const list = await this.list(id),
         entry = { ...value, id: value.id || randomUUID() };
@@ -89,6 +140,17 @@ export class Pipelines {
       return entry;
     });
   }
+  /**
+   * 入口 / Entry: Pipelines.remove.
+   * 功能：在保存并执行项目流水线中，结束、撤销或清理本次拥有的领域资源；本入口产生 `this.machines.locked(`pipelines:${this.workspaces.projects.key(id)}`, async () => { if (this.jobs.view(this.workspaces.projec…` 供上层消费（`Pipelines`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `Pipelines`; this entry produces `this.machines.locked(`pipelines:${this.workspaces.projects.key(id)}`, async () => { if (this.jobs.view(this.workspaces.projec…` for its caller. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+   * 处理：通过 `z.uuid().parse`, `z.uuid`, `this.machines.locked`, `this.workspaces.projects.key` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`, `this.machines.locked`, `this.workspaces.projects.key`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; key: string
+   * 输出 / Returns: `this.machines.locked(`pipelines:${this.workspaces.projects.key(id)}`, async () => { if (this.jobs.view(this.workspaces.projec…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async remove(id: string, key: string) {
     z.uuid().parse(key);
     return this.machines.locked(`pipelines:${this.workspaces.projects.key(id)}`, async () => {
@@ -101,6 +163,17 @@ export class Pipelines {
       return { ok: true };
     });
   }
+  /**
+   * 入口 / Entry: Pipelines.runs.
+   * 功能：在保存并执行项目流水线中，执行此领域的具体处理步骤并返回其结果；本入口产生 `values.map( (v) => this.active.get(v.id) || (v.status === 'running' ? { ...v, status: 'interrupted' as const, error: '服务重启，运行…` 供上层消费（`Pipelines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Pipelines`; this entry produces `values.map( (v) => this.active.get(v.id) || (v.status === 'running' ? { ...v, status: 'interrupted' as const, error: '服务重启，运行…` for its caller. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+   * 处理：通过 `readStore`, `this.file`, `values.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `readStore`, `this.file`, `values.map`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `values.map( (v) => this.active.get(v.id) || (v.status === 'running' ? { ...v, status: 'interrupted' as const, error: '服务重启，运行…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async runs(id: string) {
     const values = await readStore<PipelineRun[]>(this.file(id, 'pipeline-runs'), () => []);
     return values.map(
@@ -111,6 +184,17 @@ export class Pipelines {
           : v),
     );
   }
+  /**
+   * 入口 / Entry: Pipelines.view.
+   * 功能：在保存并执行项目流水线中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ projectId: this.workspaces.projects.current(id), pipelines: await this.list(id), runs: (await this.runs(id)).reverse(), job…` 供上层消费（`Pipelines`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `Pipelines`; this entry produces `{ projectId: this.workspaces.projects.current(id), pipelines: await this.list(id), runs: (await this.runs(id)).reverse(), job…` for its caller. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+   * 处理：通过 `this.workspaces.projects.current`, `this.list`, `inline.reverse`, `this.runs` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.workspaces.projects.current`, `this.list`, `inline.reverse`, `this.runs`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ projectId: this.workspaces.projects.current(id), pipelines: await this.list(id), runs: (await this.runs(id)).reverse(), job…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async view(id: string) {
     return {
       projectId: this.workspaces.projects.current(id),
@@ -119,10 +203,32 @@ export class Pipelines {
       job: this.jobs.view(this.workspaces.projects.key(id)),
     };
   }
+  /**
+   * 入口 / Entry: Pipelines.run.
+   * 功能：在保存并执行项目流水线中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.workspaces.projects.inScope(id, projectId, () => this.runSelected(id, pipelineId, projectId))` 供上层消费（`Pipelines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Pipelines`; this entry produces `this.workspaces.projects.inScope(id, projectId, () => this.runSelected(id, pipelineId, projectId))` for its caller. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+   * 处理：通过 `this.workspaces.projects.current`, `this.workspaces.projects.inScope` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.workspaces.projects.current`, `this.workspaces.projects.inScope`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; pipelineId: string
+   * 输出 / Returns: `this.workspaces.projects.inScope(id, projectId, () => this.runSelected(id, pipelineId, projectId))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async run(id: string, pipelineId: string) {
     const projectId = this.workspaces.projects.current(id);
     return this.workspaces.projects.inScope(id, projectId, () => this.runSelected(id, pipelineId, projectId));
   }
+  /**
+   * 入口 / Entry: Pipelines.runSelected.
+   * 功能：读取选定流水线并按步骤登记、运行项目任务，保存结果和收集产物。
+   * Purpose: Loads a selected pipeline, registers/runs project steps and persists results/artifacts.
+   * 设计：定义与原项目在开始时捕获，步骤失败或取消停止后续工作；日志、产物及清理仍归属于原流水线运行。
+   * Design: Definitions/project identity are captured at admission; step failure/cancellation stops successors while logs/artifacts/cleanup retain original ownership.
+   * 输入 / Inputs: id: string; pipelineId: string; projectId: string
+   * 输出 / Returns: `this.jobs.start( this.workspaces.projects.key(id), async (rawLog, signal, update) => { this.active.set(record.id, record); le…`.
+   * 副作用 / Effects: `this.jobs.start`.
+   * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; `!definition`; 异常 / errors `new AppError('请先启动发行版')`; `new AppError('流水线不存在', 404)`.
+   */
   private async runSelected(id: string, pipelineId: string, projectId: string) {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
     const definition = (await this.list(id)).find((p) => p.id === pipelineId);
@@ -138,6 +244,17 @@ export class Pipelines {
       artifacts: [],
     };
     const file = this.file(id, 'pipeline-runs');
+    /**
+     * 入口 / Entry: Pipelines.runSelected.persist.
+     * 功能：在保存并执行项目流水线中，校验并提交领域状态变更；完成下述调用及状态处理（`Pipelines`）。
+     * Purpose: Validates and commits a domain state change in `Pipelines`; the calls and state transitions below complete the operation. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+     * 处理：通过 `readStore`, `runs.filter`, `next.splice`, `writeStore` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `readStore`, `runs.filter`, `next.splice`, `writeStore`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `next.splice`; `writeStore`; `rm`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const persist = async () => {
       const runs = await readStore<PipelineRun[]>(file, () => []);
       const next = [...runs.filter((r) => r.id !== record.id), record];
@@ -148,6 +265,19 @@ export class Pipelines {
         await rm(join(vmDir(id), 'pipeline-artifacts', old.id), { recursive: true, force: true });
       }
     };
+    /**
+     * 入口 / Entry: Pipelines.runSelected.callback@153.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.jobs.start）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.jobs.start).
+     * 输入 / Inputs: rawLog; signal; update
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.active.set`; `persist`; `executionSignal.throwIfAborted`; `update`; `mkdir`; 更新 / updates `this.ownedTerminals`, `prepared`, `privateValues`, `step.status`.
+     * 拒绝 / Refusals: 条件 / conditions `!captured || !executionSignal || this.machines.live.get(id) !== captured.live`; `result.code !== 0`; `info.size > 32 * 1024 ** 2 || total > 64 * 1024 ** 2`; 异常 / errors `new AppError('流水线准备的客户机身份未确认', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`; `new AppError(`步骤「${step.name}」退出码 ${result.code}`)`.
+     * 收尾：退出 try 区域时始终执行 `record.finishedAt = new Date().toISOString();`; `try { await persist(); } finally { this.active.delete(record.id); await prepared?.release(); }`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `record.finishedAt = new Date().toISOString();`; `try { await persist(); } finally { this.active.delete(record.id); await prepared?.release(); }`; these steps also apply to exceptional exits.
+     * 失败处理：catch 分支执行 `const cleanupFailed = error instanceof AppError && /_CLEANUP_FAILED$/.test(error.code || '');`; `record.status = signal.aborted && !cleanupFailed ? 'cancelled' : 'error';`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `const cleanupFailed = error instanceof AppError && /_CLEANUP_FAILED$/.test(error.code || '');`; `record.status = signal.aborted && !cleanupFailed ? 'cancelled' : 'error';`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.jobs.start(
       this.workspaces.projects.key(id),
       async (rawLog, signal, update) => {
@@ -237,6 +367,17 @@ export class Pipelines {
       },
     );
   }
+  /**
+   * 入口 / Entry: Pipelines.artifact.
+   * 功能：在保存并执行项目流水线中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ file: join(vmDir(id), 'pipeline-artifacts', runId, String(index)), name: posix.basename(artifact.name), }` 供上层消费（`Pipelines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Pipelines`; this entry produces `{ file: join(vmDir(id), 'pipeline-artifacts', runId, String(index)), name: posix.basename(artifact.name), }` for its caller. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+   * 处理：通过 `z.uuid().parse`, `z.uuid`, `z.number().int().min().max().parse`, `z.number().int().min().max` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`, `z.number().int().min().max().parse`, `z.number().int().min().max`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; runId: string; index: number
+   * 输出 / Returns: `{ file: join(vmDir(id), 'pipeline-artifacts', runId, String(index)), name: posix.basename(artifact.name), }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!artifact`; 异常 / errors `new AppError('产物不存在', 404)`.
+   */
   async artifact(id: string, runId: string, index: number) {
     z.uuid().parse(runId);
     z.number().int().min(0).max(19).parse(index);
@@ -248,6 +389,17 @@ export class Pipelines {
       name: posix.basename(artifact.name),
     };
   }
+  /**
+   * 入口 / Entry: Pipelines.close.
+   * 功能：在保存并执行项目流水线中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`Pipelines`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `Pipelines`; the calls and state transitions below complete the operation. Module context: Persists/runs project pipelines and owns run records/artifacts, protecting settings while execution is active.
+   * 处理：通过 `this.jobs.close`, `this.ownedTerminals.close` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.jobs.close`, `this.ownedTerminals.close`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.jobs.close`; `this.ownedTerminals.close`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     await this.jobs.close();
     await this.ownedTerminals?.close();

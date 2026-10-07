@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目目录迁移预览识别祖先 bind 别名；本入口不应用迁移。 */
+/** 烟雾验收：验证项目目录迁移预览识别祖先 bind 别名；本入口不应用迁移。
+ * Smoke acceptance for migration previews identifying ancestor bind aliases; this entry does not apply migration. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -102,13 +103,19 @@ const proof: any = {
     .digest('hex'),
   cases: [],
 };
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string) => {
   const result = await machines.exec(expectedId, command, 15000);
   assert.equal(result.code, 0, result.stdout + result.stderr);
   return result.stdout.trim();
 };
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const py = (code: string) =>
   'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' + quote(code);
+/** 以隔离 Python 读取自有路径的物理元数据和普通文件摘要，返回 JSON 供迁移前后比较；只观测，不修改所有权。
+ * Read owned-path physical metadata/regular-file hashes with isolated Python, returning JSON for pre/post-migration comparison without changing ownership. */
 const inspect = async (path: string) =>
   JSON.parse(
     await run(

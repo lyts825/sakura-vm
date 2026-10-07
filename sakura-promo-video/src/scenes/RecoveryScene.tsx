@@ -1,10 +1,13 @@
-/** 恢复章节示意，对齐快照、克隆、备份说明与 Manim 流程，并保留停机前提。 */
+/** 恢复章节示意，对齐快照、克隆、备份说明与 Manim 流程，并保留停机前提。
+ * Align snapshots/clones/backups with the recovery diagram while preserving the stopped-instance prerequisite. */
 import {Interactive} from 'remotion';
 import {Icon} from '../components';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Tag, useScene} from '../stage';
 import {colors} from '../theme';
 import {ManimClip} from './KernelScene';
 
+/** 按 cue 展示停机快照、独立克隆和备份保留概念，搭配预渲染恢复流程解释各自用途。
+ * Reveal stopped snapshots, independent clones and backup retention at cues, using the prerendered recovery flow to explain their purposes. */
 const RecoveryInner: React.FC<SceneProps> = ({style}) => {
   const {cue} = useScene('recovery');
   return <ScenePaper id="recovery" style={style}>

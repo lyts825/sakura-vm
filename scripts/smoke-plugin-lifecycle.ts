@@ -1,4 +1,5 @@
-/** 烟雾验收：验证插件独立连接寿命、真实 VM 资源身份和缓存传输授权撤销。 */
+/** 烟雾验收：验证插件独立连接寿命、真实 VM 资源身份和缓存传输授权撤销。
+ * Smoke acceptance for independent plugin connection lifetime, actual VM-resource identity and transfer-authorization revocation. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,14 +19,19 @@ const machines = new Machines(await createRuntime());
 const manager = new PluginManager(join(root, 'plugins.json'));
 const original = loaders.metrics;
 let context!: PluginContext;
-loaders.metrics = async () => ({
+loaders.metrics = /** 沿用正式插件 loader 和描述符，只包装 activate 捕获真实 host context 后执行原激活，供生命周期用例观测注册/撤销行为。
+ * Preserve the formal plugin loader/descriptor, wrapping activate only to capture the real host context before original activation for lifecycle registration/removal observations. */ async () => ({
   ...(await original()),
+  /** 保存传入真实插件上下文并委托原入口激活，供之后停用观测同一依赖对象。
+   * Retain the real plugin context and delegate original activation so later deactivation observes the same dependency object. */
   activate: async (host) => {
     context = host;
     await (await original()).activate(host);
   },
 });
 
+/** 按短间隔等待同步状态条件，默认十五秒总期限，届满断言失败而不无限等待生命周期。
+ * Poll a synchronous lifecycle predicate at short intervals under a default fifteen-second deadline, failing instead of waiting indefinitely. */
 async function eventually(check: () => boolean, timeout = 15_000) {
   const deadline = Date.now() + timeout;
   while (!check()) {
@@ -33,6 +39,8 @@ async function eventually(check: () => boolean, timeout = 15_000) {
     await new Promise((done) => setTimeout(done, 50));
   }
 }
+/** 在已连接 SSH client 打开 exec，收集 stdout 并仅接受零退出；通道和建连错误拒绝。
+ * Open exec on the connected SSH client, collect stdout and accept only zero exit; channel/open errors reject. */
 function exec(client: Client, command: string) {
   return new Promise<string>((done, reject) =>
     client.exec(command, (error, channel) => {
@@ -84,6 +92,8 @@ try {
     code: 'PLUGIN_PERMISSION_DENIED',
   });
   instance.setPermissions(permissions);
+  /** 保存由生命周期观测回调触发的无参数完成信号，调用者据此解除等待。
+   * Represent a no-argument completion signal invoked by lifecycle observation to release the caller’s wait. */
   let finish!: () => void;
   const held = new Promise<void>((done) => {
     finish = done;

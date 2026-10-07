@@ -1,4 +1,7 @@
-/** 项目身份控制器与 C 启动器的定长二进制 ABI，包含绑定、运行、网络释放守卫及瞬时 stdin 负载帧。 */
+/**
+ * 中文：项目身份控制器与 C 启动器共享的定长小端 ABI，定义绑定、运行、UID 映射、注册表、网络释放守卫和瞬时负载头。尺寸断言和保留字段约束防止两端布局漂移。
+ * English: Fixed-size little-endian ABI shared by the project-identity controller and C launcher, defining bindings, runs, UID maps, registry, network-release guard and transient payload headers. Size assertions and reserved-field constraints prevent layout drift.
+ */
 #ifndef SAKURA_PROJECT_IDENTITY_PROTOCOL_H
 #define SAKURA_PROJECT_IDENTITY_PROTOCOL_H
 #include <stdint.h>
@@ -32,6 +35,10 @@
 
 /* 与 Python struct 格式共享小端定长布局；保留字节必须为零，新增字段需同步版本和尺寸断言。 */
 #pragma pack(push, 1)
+/**
+ * 中文：固定项目目录、home、用户和身份注册的授权记录；设备/inode 与 revision 用于启动时复核。
+ * English: Authority record pinning project directory, home, user and identity registration; device/inode and revision are rechecked at launch.
+ */
 struct sk_binding {
     char magic[8];
     uint32_t version, flags, uid, gid;
@@ -40,6 +47,10 @@ struct sk_binding {
     uint32_t network;
     unsigned char reserved[577];
 };
+/**
+ * 中文：固定一次运行的模式、boot、构建、网络 namespace 与 cgroup 身份，关闭状态不得重新启动。
+ * English: Pins one run's mode, boot, build, network namespace and cgroup identity; a closed state must not be relaunched.
+ */
 struct sk_run {
     char magic[8];
     uint32_t version, flags, mode, reserved_word;
@@ -48,12 +59,20 @@ struct sk_run {
     char cgroup[64], namespace_name[32];
     unsigned char reserved[634];
 };
+/**
+ * 中文：将 UID 绑定到唯一 registry/project/identity，防止已有账号被复用为另一身份。
+ * English: Binds a UID to one registry/project/identity, preventing account reuse for another identity.
+ */
 struct sk_uid_map {
     char magic[8];
     uint32_t version, uid;
     char registry[37], project[17], identity[37];
     unsigned char reserved[149];
 };
+/**
+ * 中文：保存 root 管理的 registry 世代身份，供其他授权记录交叉核验。
+ * English: Stores the root-managed registry-generation identity used to cross-check other authority records.
+ */
 struct sk_registry {
     char magic[8];
     uint32_t version;
@@ -62,6 +81,10 @@ struct sk_registry {
 };
 /* One root-owned release authority per project. Pending/deleting blocks new
  * launches under the same flock; released retains its exact nonce/epoch. */
+/**
+ * 中文：固定网络释放世代与 nonce；pending/deleting 与启动共用锁，released 保留准确释放身份。
+ * English: Pins network-release generation/nonce; pending/deleting shares the launch lock and released retains exact release identity.
+ */
 struct sk_network_guard {
     char magic[8];
     uint32_t version, flags;
@@ -77,6 +100,10 @@ struct sk_network_guard {
  * SESSION uses readable FIFO/socket/tty fd 3 inherited at launcher entry as
  * client stdin after accepting the frame and dropping privileges. TERMINAL
  * and SESSION are mutually exclusive; other flags are invalid. */
+/**
+ * 中文：瞬时 stdin 帧的尺寸、脚本和环境数量及互斥终端/会话标志；主体后必须精确 EOF。
+ * English: Transient stdin frame sizes, script/environment counts and mutually exclusive terminal/session flags; the body requires exact EOF.
+ */
 struct sk_payload_header {
     char magic[8];
     uint32_t version, flags, body_size, environment_count, script_size, reserved;

@@ -1,9 +1,18 @@
 /**
- * 模块职责：读取主机磁盘健康报告并呈现设备指标、告警及检查结果。
+ * 模块职责（中文）：读取主机磁盘健康报告并呈现设备指标、告警及检查结果。
+ * Module responsibility (English): Presenting host disk metrics, warnings and health reports.
+ * 详细范围（中文）：公开入口包括 HostDiskHealthReport；职责覆盖显示主机磁盘指标、告警与健康报告，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include HostDiskHealthReport. The scope covers Presenting host disk metrics, warnings and health reports. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from './localization';
 import type { hostDiskHealth } from '../server/host-disk-health';
 
+/**
+ * 中文：呈现显示主机磁盘指标、告警与健康报告中的 HostDiskHealthReport 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the HostDiskHealthReport surface for Presenting host disk metrics, warnings and health reports. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ report } 提供 report（向调用者交付状态或进度的回调） 上下文字段
+ * English: Inputs: { report } provides context fields report (callback delivering status/progress to the caller)
+ */
 export function HostDiskHealthReport({ report }: { report: Awaited<ReturnType<typeof hostDiskHealth>> }) {
   const states: Record<string, string> = {
     healthy: '未发现已报告异常',
@@ -11,6 +20,12 @@ export function HostDiskHealthReport({ report }: { report: Awaited<ReturnType<ty
     critical: '设备报告异常',
     unknown: '健康数据不完整',
   };
+  /**
+   * 中文：缺失指标显示未知，有值时附指定单位；不把未采集数据伪装成零。
+   * English: Display unknown for absent metrics and append the supplied unit for present values, never presenting uncollected data as zero.
+   * 中文：输入：value：待校验、转换或保存的输入值；unit：此处理器的调用值（缺省 ''）
+   * English: Inputs: value: input value to validate/transform/save; unit: the invocation value for this handler (default '')
+   */
   const reading = (value: number | null | undefined, unit = '') => (value == null ? '未知' : value + unit);
   return (
     <div className="feature-card" aria-label="主机磁盘健康报告">

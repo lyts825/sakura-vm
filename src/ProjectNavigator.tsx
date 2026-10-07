@@ -1,5 +1,8 @@
 /**
- * 模块职责：呈现当前实例的项目导航，协调项目切换、创建与列表刷新。
+ * 模块职责（中文）：呈现当前实例的项目导航，协调项目切换、创建与列表刷新。
+ * Module responsibility (English): Providing a project file tree, keyboard navigation and file-opening actions.
+ * 详细范围（中文）：公开入口包括 ProjectNavigator；职责覆盖提供项目文件树、键盘导航与文件打开入口，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ProjectNavigator. The scope covers Providing a project file tree, keyboard navigation and file-opening actions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { FileText, Folder, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
@@ -7,6 +10,20 @@ import type { ProjectFile, SearchMatch } from '../server/project-files';
 import { Feedback, type Request } from './feature-shared';
 import { nextSelection } from './keyboard-navigation';
 
+/**
+ * 中文：呈现提供项目文件树、键盘导航与文件打开入口中的 ProjectNavigator 界面，组合 RefreshCw、Search，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ProjectNavigator surface for Providing a project file tree, keyboard navigation and file-opening actions and composing RefreshCw, Search. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  id,
+  request,
+  open,
+} 提供 id（目标资源标识）、request（带身份和权限作用域的传输能力）、open（open 状态） 上下文字段
+ * English: Inputs: {
+  id,
+  request,
+  open,
+} provides context fields id (target resource identifier), request (transport capability bound to identity/authority scope), open (open state)
+ */
 export function ProjectNavigator({
   id,
   request,
@@ -14,7 +31,7 @@ export function ProjectNavigator({
 }: {
   id: string;
   request: Request;
-  open: (path: string, line?: number) => void;
+  open: /** 中文：把选中文件路径交给文件编辑器入口；这是 ProjectNavigator 的调用契约 | English: Pass the selected file path to the file-editor entry point; this is the callable contract of ProjectNavigator | 中文：输入：path：目标文件或请求路径；line：签名所示 number 业务值 | English: Inputs: path: target file/request path; line: the number domain value in the signature | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (path: string, line?: number) => void;
 }) {
   const [query, setQuery] = useState(''),
     [content, setContent] = useState(false),
@@ -29,9 +46,15 @@ export function ProjectNavigator({
     } | null>(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
-  useEffect(() => {
+  useEffect(/** 中文：读取 GET /vms/{id}/project-files?q={encodeURIComponent(query)}&content={content ? 1 : 0}，完成提供项目文件树、键盘导航与文件打开入口的数据交互并更新timeout 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{id}/project-files?q={encodeURIComponent(query)}&content={content ? 1 : 0} for Providing a project file tree, keyboard navigation and file-opening actions and update timeout state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     const abort = new AbortController();
     const timer = setTimeout(
+      /**
+       * 中文：读取 GET /vms/{id}/project-files?q={encodeURIComponent(query)}&content={content ? 1 : 0}，完成提供项目文件树、键盘导航与文件打开入口的数据交互并更新远端数据、忙碌标记、错误反馈；异步失败传给此处的捕获分支或外层动作反馈
+       * English: Perform GET /vms/{id}/project-files?q={encodeURIComponent(query)}&content={content ? 1 : 0} for Providing a project file tree, keyboard navigation and file-opening actions and update remote data, busy flag, error feedback. Propagate asynchronous failure to this catch path or the outer action feedback
+       * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+       * English: Result: deliver through the described state/resource effects without returning business data
+       */
       () => {
         if (content && !query.trim()) {
           setData(null);
@@ -61,22 +84,48 @@ export function ProjectNavigator({
       },
       query ? 300 : 0,
     );
+    /**
+     * 中文：在提供项目文件树、键盘导航与文件打开入口流程中取消延迟计时任务，取消捕获的异步寿命；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Providing a project file tree, keyboard navigation and file-opening actions, cancel delayed timers, abort the captured asynchronous lifetime. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     return () => {
       clearTimeout(timer);
       abort.abort();
     };
   }, [id, request, query, content, revision]);
+  /**
+   * 中文：根据  判断提供项目文件树、键盘导航与文件打开入口中的输入或条目是否符合条件，返回布尔判断供调用者筛选/保护分支
+   * English: Evaluate  to test inputs/entries in Providing a project file tree, keyboard navigation and file-opening actions, returning a boolean for filtering/guard branches
+   * 中文：输入：path：目标文件或请求路径
+   * English: Inputs: path: target file/request path
+   */
   const visible = (path: string) =>
     query ||
     path
       .split('/')
       .slice(0, -1)
       .every((_segment, index, parts) => expanded.has(parts.slice(0, index + 1).join('/')));
+  /**
+   * 中文：仅在项目树已加载时把相对路径接到根目录，并将可选行号交给编辑器打开入口。
+   * English: Join a relative path to the root only after the project tree is loaded, forwarding the optional line number to the editor opening entry.
+   * 中文：输入：path：目标文件或请求路径；line：签名所示 number 业务值
+   * English: Inputs: path: target file/request path; line: the number domain value in the signature
+   */
   const openFile = (path: string, line?: number) =>
     data && open(`${data.root.replace(/\/$/, '')}/${path}`, line);
   const files = !content
     ? (data?.files || []).filter((file) => visible(file.path)).sort((a, b) => a.path.localeCompare(b.path))
     : [];
+  /**
+   * 中文：在提供项目文件树、键盘导航与文件打开入口流程中把输入焦点移到目标元素；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Providing a project file tree, keyboard navigation and file-opening actions, move input focus to the target. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：index：签名所示 number 业务值；key：签名所示 string 业务值
+   * English: Inputs: index: the number domain value in the signature; key: the string domain value in the signature
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const focusTreeEntry = (index: number, key: string) => {
     const entries = Array.from(
       treeRef.current?.querySelectorAll<HTMLButtonElement>('[data-project-entry]') || [],
@@ -84,6 +133,14 @@ export function ProjectNavigator({
     const next = nextSelection(index, entries.length, key);
     if (next !== null) entries[next]?.focus();
   };
+  /**
+   * 中文：在提供项目文件树、键盘导航与文件打开入口流程中expanded 状态，阻止浏览器默认行为，把输入焦点移到目标元素；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Providing a project file tree, keyboard navigation and file-opening actions, expanded state, prevent browser default behavior, move input focus to the target. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：event：触发本处理器的事件及其数据；index：签名所示 number 业务值；file：当前上传或处理的文件
+   * English: Inputs: event: triggering event and its data; index: the number domain value in the signature; file: file being uploaded/processed
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const onTreeKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number, file: ProjectFile) => {
     const directory = file.directory;
     if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
@@ -141,7 +198,14 @@ export function ProjectNavigator({
           placeholder="文件名或内容"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(event) => {
+          onKeyDown={/**
+           * 中文功能：在查询框处理 Escape 清空搜索和 ArrowDown 聚焦第一个项目条目，仅在实际处理时阻止默认键盘行为。
+           * English: Handle Escape to clear search and ArrowDown to focus the first project entry, preventing default keyboard behavior only when handled.
+           * 输入 / Inputs: event.
+           * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+           * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+           */
+          (event) => {
             if (event.key === 'Escape' && query) {
               event.preventDefault();
               setQuery('');

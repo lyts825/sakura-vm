@@ -1,4 +1,5 @@
-/** 烟雾验收：验证新 VM 运行票据归档、容量与冲突拒绝；明确区分真实运行和闭合记录夹具。 */
+/** 烟雾验收：验证新 VM 运行票据归档、容量与冲突拒绝；明确区分真实运行和闭合记录夹具。
+ * Smoke acceptance for fresh-VM run-ticket archives/capacity/conflict refusal, distinguishing real runs from closed-record fixtures. */
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -20,6 +21,8 @@ if (process.argv.length === 2 || process.argv[2] === '--describe') {
   await run(distro, process.argv.length === 5);
 }
 
+/** 在新建自有实例核验身份运行归档容量、同字节重复发布和碰撞/写失败恢复，保留源码/进程/资源证据；可显式选择真实全量或已标识 seed 容量模式。
+ * Verify identity-run archive capacity/idempotent publication/collision-and-write recovery in a new owned VM, retaining source/process/resource evidence with explicitly labeled actual or seeded capacity modes. */
 async function run(distro: keyof typeof images, seededCapacity: boolean) {
   const workspace = await realpath('.');
   const parent = join(workspace, '.data', 'project-identity-archive-test-temp');
@@ -27,12 +30,16 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
   const root = await mkdtemp(join(parent, 'sakura-identity-archive-'));
   assert.equal(dirname(await realpath(root)), parent); assert.match(basename(root), /^sakura-identity-archive-/);
   const invocation = randomUUID(), proofFile = join(root, 'project-identity-archive-' + invocation + '.json');
+  /** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+   * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
   const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
   const proof: any = { version: 1, invocation, distro, root, passed: false, startedAt: new Date().toISOString(),
     sourceSha256: {}, executions: [], cases: [], phases: [], bootProbes: [], cleanupErrors: [], vmId: '', client: { node: process.version, execArgv: process.execArgv } };
   const hardware = { memoryMiB: 1536, cpus: 2 };
   proof.capacityMode = seededCapacity ? 'one actual closed run and 1022 explicitly seeded closed receipts' : '1023 actual prepare/stop pairs';
   proof.testBudgets = { vmMs: 3600000, capacityMs: 1800000, neighborMs: 3600000, hardware };
+  /** 保存阶段名与时间并输出进度，为中断或失败报告定位最后执行边界。
+   * Retain phase name/time and print progress to locate the last execution boundary after interruption/failure. */
   const phase = (name: string) => { proof.phases.push({ name, at: new Date().toISOString() }); console.log('PHASE ' + name); };
   const sources = ['native/project-identity/protocol.h', 'native/project-identity/launcher.c', 'native/project-identity/controller.py',
     'server/project-identity.ts', 'server/project-run-scope.ts', 'server/guest-task.ts', 'server/machines.ts',
@@ -63,6 +70,8 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
   proof.binarySha256 = { [qemu]: hash(await readFile(qemu)), [img]: hash(await readFile(img)) };
   const children = new Map<ChildProcess, Promise<void>>();
   let vmId = '', qemuStarted = false;
+  /** 启动前核验已冻结二进制摘要，登记 argv/PID/exit/close 并限制累计输出；取消只终止自有 child，等待真实 close 后返回结果并清理监听。
+   * Verify frozen binary hashes before spawning, record argv/PID/exit/close and bound accumulated output; cancellation targets only the owned child, then await actual close/clean listeners before returning. */
   async function execute(executable: string, args: string[], options: Parameters<Engine['run']>[2] = {}, vm = false) {
     assert.equal(hash(await readFile(executable)), proof.binarySha256[executable]);
     const actualArgs = [...args];
@@ -82,6 +91,8 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
       receipt.close = { code, signal }; receipt.stdoutClosed = child.stdout!.closed; receipt.stderrClosed = child.stderr!.closed;
       children.delete(child); done();
     })); children.set(child, closed);
+    /** 取消只绑定当前自有 child 句柄，终止该进程；存在 receipt/entry 时同时记录取消证据，实际 close 仍由外层等待。
+     * Bind cancellation only to the current owned child and terminate it, recording receipt/entry evidence when present; outer code still awaits physical close. */
     const abort = () => { receipt.abortRequested = true; child.kill(); };
     options?.signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => { receipt.timeoutRequested = true; child.kill(); }, options?.timeoutMs || (vm ? proof.testBudgets.vmMs : 30000));
@@ -94,10 +105,16 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
       return Buffer.concat(output).toString('utf8');
     } finally { clearTimeout(timer); options?.signal?.removeEventListener('abort', abort); }
   }
+  /** 显式拒绝夹具没有授权的运行时能力，使意外走入其他主机操作立即失败，不能静默用替身绕过生产路径。
+   * Explicitly reject runtime capabilities not authorized by this fixture so accidental host operations fail immediately instead of silently bypassing production paths with a substitute. */
   const unsupported = () => { throw new Error('Unknown archive-test runtime operation.'); };
   const engine = { version: 'test-only direct Engine', whpxAvailable: false, qemuIoAvailable: false, aarch64Available: false,
-    runtime: { close: async () => { for (const child of children.keys()) child.kill(); await Promise.all(children.values()); } },
-    runStatus: unsupported, get service() { return unsupported(); },
+    runtime: { /** 终止此适配器登记的全部自有子进程并等待实际关闭 Promise；存在总期限时届满失败且清理计时器，不把 kill 调用等同于完成。
+ * Terminate all owned children registered by this adapter and await actual closure promises; where bounded, expiry fails and clears the timer, since calling kill is not completion. */ close: async () => { for (const child of children.keys()) child.kill(); await Promise.all(children.values()); } },
+    runStatus: unsupported, /** 拒绝通用 service 访问，维持此夹具只允许明确 QEMU 启动的最小运行时边界。
+ * Reject generic service access, preserving the fixture’s minimum runtime boundary of explicitly permitted QEMU launch only. */ get service() { return unsupported(); },
+    /** 只允许指定自有磁盘的固定镜像创建和一次精确 QEMU 启动，逐项校验驱动器/启动参数并拒绝其他入口；调用 execute 保留实际进程关闭证据。
+     * Allow only fixed owned-disk image creation/one exact QEMU boot, validating drives/launch arguments and rejecting other entry points; execute retains physical-process closure evidence. */
     run: async (tool: string, args: string[], options?: Parameters<Engine['run']>[2]) => {
       if (tool === 'sakura-img') {
         const disk = args.at(-2)!;
@@ -108,6 +125,8 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
         return execute(img, args, options);
       }
       assert.equal(tool, 'sakura-qemu'); assert.ok(vmId && !qemuStarted); qemuStarted = true;
+      /** 转义正则表达式元字符，保证自有路径作为字面匹配条件使用。
+       * Escape regular-expression metacharacters so owned paths remain literal matching conditions. */
       const escaped = (value: string) => value.replaceAll(',', ',,');
       const drives = args.flatMap((arg, index) => arg === '-drive' ? [args[index + 1]] : []);
       assert.deepEqual(drives, [`file=${escaped(join(root, 'machines', vmId, 'disk.qcow2'))},if=virtio,id=sakura-disk,format=qcow2,${diskOptions(hardware)}`,
@@ -117,7 +136,8 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
     } } as unknown as Engine;
   const machines = new Machines(engine), identities = new ProjectIdentities(machines);
   const originalExec = machines.exec.bind(machines);
-  machines.exec = async (...args) => {
+  machines.exec = /** 仅为已知 boot readiness 命令记录开始、摘要、耗时及原结果/错误；不延长或替换命令，finally 输出诊断证据。
+ * Record start/digest/duration and original results/errors only for known boot-readiness commands; never extend or substitute commands and emit diagnostic evidence in finally. */ async (...args) => {
     const boot = args[1].startsWith('test -f /var/lib/cloud/instance/boot-finished') || args[1].includes('test -f /var/lib/cloud/.bootstrap-complete');
     if (!boot) return originalExec(...args);
     const probe: any = { startedAt: new Date().toISOString(), timeoutMs: args[2], commandSha256: hash(args[1]) };
@@ -127,10 +147,17 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
     finally { probe.elapsedMs = performance.now() - started; console.log(JSON.stringify({ bootProbe: probe })); }
   };
   const neighborAbort = new AbortController(); let neighbor: Promise<any> | undefined;
-  const check = async (name: string, work: () => Promise<unknown>) => { const observation = await work(); proof.cases.push({ name, observation }); console.log('PASS ' + name); };
+  /** 按名称执行异步断言，成功后记录返回证据；异常直接传播，不记录通过。
+   * By case name, run asynchronous assertions and retain returned evidence on success; propagate errors without recording a pass. */
+  const check = async (name: string, work: /** 用例异步工作返回观测，外层检查器保存通过证据并传播失败；不自行覆盖归档票据。
+ * Asynchronous case work returns observations for the outer checker to persist pass evidence/propagate failures without overwriting archived receipts. */ () => Promise<unknown>) => { const observation = await work(); proof.cases.push({ name, observation }); console.log('PASS ' + name); };
+  /** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+   * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
   const guest = async (script: string, timeout = 30000) => {
     const result = await machines.exec(vmId, script, timeout); assert.equal(result.code, 0, result.stderr || result.stdout); return result.stdout.trim();
   };
+  /** 执行清空环境、禁用 site 的固定 heredoc Python，传入期限并返回来宾结果，避免环境改变归档故障注入。
+   * Execute clean-environment/site-disabled fixed heredoc Python under the supplied timeout and return results without environmental interference in archive fault injection. */
   const python = (script: string, timeout = 30000) => guest('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /usr/bin/python3 -I -S - <<\'ARCHIVE_FIXTURE\'\n' + script + '\nARCHIVE_FIXTURE', timeout);
   const imported = `import importlib.util,json,os,stat,uuid\nspec=importlib.util.spec_from_file_location('owned',${JSON.stringify(source.directory + '/controller.py')});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);build=m.sources();boot=open('/proc/sys/kernel/random/boot_id').read().strip()\n`;
   try {
@@ -148,6 +175,8 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
     phase('prepare two project accounts and the active neighbor');
     const directory = '/srv/sakura-archive-' + invocation;
     await guest(`mkdir ${quote(directory)}; mkdir ${quote(directory + '/alpha')} ${quote(directory + '/beta')}; chmod 755 ${quote(directory)}`);
+    /** 要求目录未授权时只生成 intent，显式授权自有目录并建私有网络后再次 ensure，返回真实项目身份。
+     * Require unapproved directories create only intent, explicitly authorize the owned directory/create private network and re-ensure the real project identity. */
     async function identity(projectId: string, suffix: string) {
       await assert.rejects(identities.ensure(vmId, { projectId, directory: directory + '/' + suffix, networkIsolation: 'private' }), /DIRECTORY_MIGRATION_REQUIRED/);
       const intent = await identities.inspect(vmId, projectId); assert.ok(intent); assert.equal(intent.phase, 'intent');
@@ -187,7 +216,8 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
       assert.deepEqual(await identities.runReadonly(vmId, beta, betaRun.runId), betaRun); assert.equal((await identities.status(vmId, beta, betaRun)).populated, true);
       return { ...state, executedRun: ticket, actualUid: alpha.uid, actualGid: alpha.gid };
     });
-    await check('archived ID refuses normal and inherited replay before the body', async () => {
+    await check('archived ID refuses normal and inherited replay before the body', /** 对已归档 runId 的重新 prepare/正文执行必须 RUN_ARCHIVED 且无标记；只读与重复 stop 返回原归档并不重建热票据，证明归档终态不可复活。
+ * Require RUN_ARCHIVED and no body marker for prepare/body execution using an archived runId; read-only/repeated stop return the original archive without rebuilding hot receipts, proving terminal archives cannot revive. */ async () => {
       await assert.rejects(identities.prepare(vmId, alpha, { runId: archived.runId }), /RUN_ARCHIVED/);
       const marker = 'archived-must-not-run-' + invocation;
       const payload = await identities.inheritedInput(alpha, { command: 'touch ' + quote(marker) }, { runId: archived.runId });
@@ -250,6 +280,8 @@ async function run(distro: keyof typeof images, seededCapacity: boolean) {
   if (!proof.passed) process.exitCode = 1;
 }
 
+/** 生成持有正式控制器锁的归档碰撞/写入故障脚本，验证外来目标不被替换、原运行票据保持可恢复且无暂存残留。
+ * Generate archive-collision/write-failure checks under the production controller lock, verifying foreign targets preserved/original receipts recoverable/no staging residue. */
 function faultChecks(identity: { projectId: string }) {
   return `import errno,hashlib\nlock=m.initialize()\nchecks=[]\ntry:\n value=m.binding_read(${JSON.stringify(identity.projectId)});ticket=m.prepare(value,{},boot,build);closed=m.stop(value,ticket,boot);path=m.run_path(closed['runId']);original=m.read(path);inode=os.lstat(path).st_ino\n real_publish=m.run_archive_publish;foreign={}\n def collision(parent,temp,target):\n  fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=parent)\n  try: os.write(fd,b'OWNED_ARCHIVE_COLLISION');os.fsync(fd);foreign['inode']=os.fstat(fd).st_ino\n  finally: os.close(fd)\n  real_publish(parent,temp,target)\n m.run_archive_publish=collision\n try:\n  m.run_archive(closed,boot);raise AssertionError('collision accepted')\n except m.Refusal as e: assert e.code=='RUN_ARCHIVE_CONFLICT'\n finally: m.run_archive_publish=real_publish\n parent=m.run_archive_fd(closed['runId']);name=closed['runId']+'.bin';fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW,dir_fd=parent)\n try: assert os.fstat(fd).st_ino==foreign['inode'];assert os.read(fd,1024)==b'OWNED_ARCHIVE_COLLISION'\n finally: os.close(fd)\n assert m.read(path)==original and os.lstat(path).st_ino==inode\n os.unlink(name,dir_fd=parent);os.fsync(parent);os.close(parent);assert m.run_archive(closed,boot);assert m.run_read(closed['runId'])==closed;checks.append('actual-renameat2-no-replace')\n ticket=m.prepare(value,{},boot,build);closed=m.stop(value,ticket,boot);path=m.run_path(closed['runId']);original=m.read(path);inode=os.lstat(path).st_ino\n parent=m.run_archive_fd(closed['runId'],True);target=os.fstat(parent);os.close(parent);real_sync=os.fsync\n def lose_sync(fd):\n  info=os.fstat(fd)\n  if stat.S_ISDIR(info.st_mode) and (info.st_dev,info.st_ino)==(target.st_dev,target.st_ino): raise OSError(errno.EIO,'owned injected archive-directory fsync loss')\n  real_sync(fd)\n os.fsync=lose_sync\n try:\n  m.run_archive(closed,boot);raise AssertionError('sync loss accepted')\n except OSError as e: assert e.errno==errno.EIO\n finally: os.fsync=real_sync\n assert m.read(path)==original and os.lstat(path).st_ino==inode;assert m.run_archive_read(closed['runId'])==original\n assert m.run_archive(closed,boot);assert not os.path.lexists(path);assert m.run_read(closed['runId'])==closed;checks.append('injected-directory-fsync-loss-and-exact-retry')\n print(json.dumps({'checks':checks,'allOriginalBytesPreserved':True,'failureIsExplicitlyInjected':True}))\nfinally: os.close(lock)`;
 }

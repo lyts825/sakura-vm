@@ -1,5 +1,8 @@
 /**
- * 模块职责：“沙箱工作台”插件的隔离环境创建、资源策略、命令执行和制品页面，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“沙箱工作台”插件的隔离环境创建、资源策略、命令执行和制品页面，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for isolated environments, timed execution and expiry cleanup.
+ * 详细范围（中文）：公开入口包括 SandboxPage, pages；职责覆盖隔离环境、限时执行与到期清理的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include SandboxPage, pages. The scope covers UI interaction and state presentation for isolated environments, timed execution and expiry cleanup. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
@@ -26,8 +29,20 @@ const statusLabels = {
   stopping: '停止中',
   error: '异常',
 };
+/**
+ * 中文：按当前语言与时区显示沙箱时间，关闭十二小时制以保持到期读数清晰。
+ * English: Display sandbox dates in current language/time zone with twelve-hour time disabled for clear expiry readings.
+ * 中文：输入：value：待校验、转换或保存的输入值
+ * English: Inputs: value: input value to validate/transform/save
+ */
 const date = (value: string) => formatDateTime(new Date(value), { hour12: false });
 
+/**
+ * 中文：呈现隔离环境、限时执行与到期清理的界面交互与状态呈现中的 SandboxPage 界面，订阅 /sandboxes，组合 Shield、Plus、TerminalSquare、Play、Square，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the SandboxPage surface for UI interaction and state presentation for isolated environments, timed execution and expiry cleanup, subscribing to /sandboxes and composing Shield, Plus, TerminalSquare, Play, Square. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request, refresh } 提供 request（带身份和权限作用域的传输能力）、refresh（refresh 状态） 上下文字段
+ * English: Inputs: { request, refresh } provides context fields request (transport capability bound to identity/authority scope), refresh (refresh state)
+ */
 export function SandboxPage({ request, refresh }: PluginPageProps) {
   const remote = useRemote<SandboxOverview>(request, '/sandboxes', true, 1500);
   const creation = useAction(),
@@ -50,10 +65,24 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
   const vm = vms.find((item) => item.id === selected) || vms[0];
   const runningJob = vm && runs.find((job) => job.vmId === vm.id && job.status === 'running');
   const job = runs.find((item) => item.id === logId) || runs.find((item) => item.vmId === vm?.id) || runs[0];
+  /**
+   * 中文：在隔离环境、限时执行与到期清理的界面交互与状态呈现流程中触发所属资源重新读取，重新核对父级远端视图；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In UI interaction and state presentation for isolated environments, timed execution and expiry cleanup, trigger rereading of the owned resource, reconcile the parent's remote view. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   */
   const reload = async () => {
     remote.reload();
     await refresh();
   };
+  /**
+   * 中文：提交 verb === 'destroy' ? 'DELETE' : 'POST' '/vms/' + target.id + '/sandbox'，完成隔离环境、限时执行与到期清理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform verb === 'destroy' ? 'DELETE' : 'POST' '/vms/' + target.id + '/sandbox' for UI interaction and state presentation for isolated environments, timed execution and expiry cleanup. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：target：事件目标或操作目标；verb：签名所示 'start' | 'stop' | 'destroy' 业务值
+   * English: Inputs: target: event/operation target; verb: the 'start' | 'stop' | 'destroy' domain value in the signature
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const control = (target: SandboxView, verb: 'start' | 'stop' | 'destroy') => {
     if (
       verb === 'destroy' &&
@@ -61,6 +90,14 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
     )
       return;
     void action.run(
+      /**
+       * 中文：提交 verb === 'destroy' ? 'DELETE' : 'POST' '/vms/' + target.id + '/sandbox'，完成隔离环境、限时执行与到期清理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+       * English: Perform verb === 'destroy' ? 'DELETE' : 'POST' '/vms/' + target.id + '/sandbox' for UI interaction and state presentation for isolated environments, timed execution and expiry cleanup. Propagate asynchronous failure to this catch path or the outer action feedback
+       * 中文：输入：signal：本次调用的取消寿命
+       * English: Inputs: signal: cancellation lifetime for this invocation
+       * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+       * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+       */
       async (signal) => {
         await request(
           '/vms/' + target.id + '/sandbox',
@@ -91,9 +128,16 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
       <div className="sandbox-layout">
         <form
           className="feature-card sandbox-create"
-          onSubmit={(event) => {
+          onSubmit={/**
+           * 中文功能：拦截创建表单，提交沙箱资源、网络、寿命和存储配置；成功后选择新沙箱并重置名称与日志选择。
+           * English: Intercept creation submission and send sandbox resources/network/lifetime/storage configuration; select the new sandbox and reset name/log selection on success.
+           * 输入 / Inputs: event.
+           * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+           * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+           */
+          (event) => {
             event.preventDefault();
-            void creation.run(async (signal) => {
+            void creation.run(/** 中文：提交 POST /sandboxes，完成隔离环境、限时执行与到期清理的界面交互与状态呈现的数据交互并更新当前选择、名称输入、logId 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /sandboxes for UI interaction and state presentation for isolated environments, timed execution and expiry cleanup and update current selection, name input, logId state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
               const created = await request<SandboxView>(
                 '/sandboxes',
                 'POST',
@@ -334,9 +378,16 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
           {vm && (
             <form
               className="feature-card"
-              onSubmit={(event) => {
+              onSubmit={/**
+               * 中文功能：拦截执行表单，提交命令、工作目录、超时和整理后的产物路径，再选择返回的日志任务并刷新。
+               * English: Intercept run submission, send command/cwd/timeout/normalized artifact paths, then select the returned log job and refresh.
+               * 输入 / Inputs: event.
+               * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+               * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+               */
+              (event) => {
                 event.preventDefault();
-                void action.run(async (signal) => {
+                void action.run(/** 中文：提交 POST '/vms/' + vm.id + '/sandbox/run'，完成隔离环境、限时执行与到期清理的界面交互与状态呈现的数据交互并更新logId 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST '/vms/' + vm.id + '/sandbox/run' for UI interaction and state presentation for isolated environments, timed execution and expiry cleanup and update logId state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                   const result = await request<{ id: string }>(
                     '/vms/' + vm.id + '/sandbox/run',
                     'POST',
@@ -394,7 +445,7 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
                     min={1}
                     max={3600}
                     value={timeoutSeconds}
-                    onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
+                    onChange={/** 中文：在隔离环境、限时执行与到期清理的界面交互与状态呈现流程中timeoutSeconds 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In UI interaction and state presentation for isolated environments, timed execution and expiry cleanup, timeoutSeconds state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：输入：e：此处理器的调用值 | English: Inputs: e: the invocation value for this handler */ (e) => setTimeoutSeconds(Number(e.target.value))}
                   />
                 </label>
               </div>
@@ -494,7 +545,7 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
                           className="secondary compact"
                           disabled={action.busy}
                           onClick={() =>
-                            void action.run(async (signal) => {
+                            void action.run(/** 中文：读取 GET /sandboxes/artifact?run={job.id}&artifact={artifact.id}，完成隔离环境、限时执行与到期清理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /sandboxes/artifact?run={job.id}&artifact={artifact.id} for UI interaction and state presentation for isolated environments, timed execution and expiry cleanup. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                               const value = await request<SandboxArtifact & { base64: string }>(
                                 `/sandboxes/artifact?run=${job.id}&artifact=${artifact.id}`,
                                 'GET',

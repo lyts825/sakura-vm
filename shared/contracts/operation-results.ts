@@ -1,5 +1,8 @@
 /**
- * 模块职责：操作执行结果、结果池及归档契约，区分执行结论与 HTTP 请求是否成功。
+ * 模块职责（中文）：操作执行结果、结果池及归档契约，区分执行结论与 HTTP 请求是否成功。
+ * Module responsibility (English): operation execution, validation, audit, delivery and archival outcomes.
+ * 详细范围（中文）：公开入口包括 operationResultSchema, OperationResult, operationResultPoolSchema, OperationResultPool, operationResultArchiveRequest, operationResultArchiveSchema, operationResultDirectorySchema, OperationResultDirectory, OperationResultArchive；职责覆盖操作执行、校验、审计、投递与归档结果，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include operationResultSchema, OperationResult, operationResultPoolSchema, OperationResultPool, operationResultArchiveRequest, operationResultArchiveSchema, operationResultDirectorySchema, OperationResultDirectory, OperationResultArchive. The scope covers operation execution, validation, audit, delivery and archival outcomes. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 

@@ -1,5 +1,8 @@
 /**
- * 模块职责：应用主界面装配：连接控制面状态、实例/项目选择、插件导航及按需加载的工作区页面。
+ * 模块职责（中文）：应用主界面装配：连接控制面状态、实例/项目选择、插件导航及按需加载的工作区页面。
+ * Module responsibility (English): The application shell joining controller state, VM/project selection and plugin surfaces.
+ * 详细范围（中文）：公开入口包括 App；职责覆盖连接控制面状态、实例/项目选择与插件页面的应用外壳，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include App. The scope covers The application shell joining controller state, VM/project selection and plugin surfaces. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import {
   Accessibility,
@@ -79,66 +82,66 @@ import {
 import { workspaceCommandDefinitions, type WorkspaceCommandDefinition } from '../workspace-navigation';
 import { workspacePath } from '../workspace-request';
 
-const TerminalWorkspace = lazy(() =>
+const TerminalWorkspace = lazy(/** 中文：懒加载 ../TerminalWorkspace 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../TerminalWorkspace and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../TerminalWorkspace').then((module) => ({ default: module.TerminalWorkspace })),
 );
-const CommandPalette = lazy(() =>
+const CommandPalette = lazy(/** 中文：懒加载 ../CommandPalette 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../CommandPalette and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../CommandPalette').then((module) => ({ default: module.CommandPalette })),
 );
-const PluginCenter = lazy(() =>
+const PluginCenter = lazy(/** 中文：懒加载 ../PluginCenter 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../PluginCenter and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../PluginCenter').then((module) => ({ default: module.PluginCenter })),
 );
-const TasksPanel = lazy(() => import('../TasksPanel').then((module) => ({ default: module.TasksPanel })));
-const ApiExplorer = lazy(() => import('../ApiExplorer').then((module) => ({ default: module.ApiExplorer })));
-const GraphQLExplorer = lazy(() =>
+const TasksPanel = lazy(/** 中文：懒加载 ../TasksPanel 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../TasksPanel and adapt its selected export as the default React component, deferring this feature's UI code download */ () => import('../TasksPanel').then((module) => ({ default: module.TasksPanel })));
+const ApiExplorer = lazy(/** 中文：懒加载 ../ApiExplorer 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../ApiExplorer and adapt its selected export as the default React component, deferring this feature's UI code download */ () => import('../ApiExplorer').then((module) => ({ default: module.ApiExplorer })));
+const GraphQLExplorer = lazy(/** 中文：懒加载 ../GraphQLExplorer 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../GraphQLExplorer and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../GraphQLExplorer').then((module) => ({ default: module.GraphQLExplorer })),
 );
-const LogRetentionSettings = lazy(() =>
+const LogRetentionSettings = lazy(/** 中文：懒加载 ../LogRetentionSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../LogRetentionSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../LogRetentionSettings').then((module) => ({ default: module.LogRetentionSettings })),
 );
-const WebhookSettings = lazy(() =>
+const WebhookSettings = lazy(/** 中文：懒加载 ../WebhookSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../WebhookSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../WebhookSettings').then((module) => ({ default: module.WebhookSettings })),
 );
-const AutomationRuleSettings = lazy(() =>
+const AutomationRuleSettings = lazy(/** 中文：懒加载 ../AutomationRuleSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../AutomationRuleSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../AutomationRuleSettings').then((module) => ({ default: module.AutomationRuleSettings })),
 );
-const FeatureRolloutSettings = lazy(() =>
+const FeatureRolloutSettings = lazy(/** 中文：懒加载 ../FeatureRolloutSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../FeatureRolloutSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../FeatureRolloutSettings').then((module) => ({ default: module.FeatureRolloutSettings })),
 );
-const HostPeersSettings = lazy(() =>
+const HostPeersSettings = lazy(/** 中文：懒加载 ../HostPeersSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../HostPeersSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../HostPeersSettings').then((module) => ({ default: module.HostPeersSettings })),
 );
-const FleetPolicyRolloutSettings = lazy(() =>
+const FleetPolicyRolloutSettings = lazy(/** 中文：懒加载 ../FleetPolicyRolloutSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../FleetPolicyRolloutSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../FleetPolicyRolloutSettings').then((module) => ({ default: module.FleetPolicyRolloutSettings })),
 );
-const GpuProfilesSettings = lazy(() =>
+const GpuProfilesSettings = lazy(/** 中文：懒加载 ../GpuProfilesSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../GpuProfilesSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../GpuProfilesSettings').then((module) => ({ default: module.GpuProfilesSettings })),
 );
-const BuildFarmSettings = lazy(() =>
+const BuildFarmSettings = lazy(/** 中文：懒加载 ../BuildFarmSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../BuildFarmSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../BuildFarmSettings').then((module) => ({ default: module.BuildFarmSettings })),
 );
-const MediaDevicesSettings = lazy(() =>
+const MediaDevicesSettings = lazy(/** 中文：懒加载 ../MediaDevicesSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../MediaDevicesSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../MediaDevicesSettings').then((module) => ({ default: module.MediaDevicesSettings })),
 );
-const LocalAssistant = lazy(() =>
+const LocalAssistant = lazy(/** 中文：懒加载 ../LocalAssistant 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../LocalAssistant and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
 );
-const NativeIntegrationSettings = lazy(() =>
+const NativeIntegrationSettings = lazy(/** 中文：懒加载 ../NativeIntegration 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../NativeIntegration and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../NativeIntegration').then((module) => ({ default: module.NativeIntegrationSettings })),
 );
-const NativeClipboardSettings = lazy(() =>
+const NativeClipboardSettings = lazy(/** 中文：懒加载 ../NativeClipboardSettings 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../NativeClipboardSettings and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../NativeClipboardSettings').then((module) => ({ default: module.NativeClipboardSettings })),
 );
-const RecordingLibrary = lazy(() =>
+const RecordingLibrary = lazy(/** 中文：懒加载 ../DesktopRecording 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../DesktopRecording and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../DesktopRecording').then((module) => ({ default: module.RecordingLibrary })),
 );
-const AccessibilityAudit = lazy(() =>
+const AccessibilityAudit = lazy(/** 中文：懒加载 ../AccessibilityAudit 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../AccessibilityAudit and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../AccessibilityAudit').then((module) => ({ default: module.AccessibilityAudit })),
 );
-const DevelopmentPanel = lazy(() =>
+const DevelopmentPanel = lazy(/** 中文：懒加载 ../DevelopmentPanel 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../DevelopmentPanel and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../DevelopmentPanel').then((module) => ({ default: module.DevelopmentPanel })),
 );
-const MigrationPanel = lazy(() =>
+const MigrationPanel = lazy(/** 中文：懒加载 ../../plugins/migration/client 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../../plugins/migration/client and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../../plugins/migration/client').then((module) => ({ default: module.MigrationPanel })),
 );
 
@@ -170,6 +173,10 @@ const pageIcons = {
 };
 const builtInTabIds = new Set(['terminal', 'config', 'development']);
 
+/**
+ * 中文：呈现连接控制面状态、实例/项目选择与插件页面的应用外壳中的 App 界面，组合 Plus、ShieldCheck、CircleHelp、ArrowUpRight、Monitor、ChevronRight、SessionLockButton、AccountLogoutButton，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the App surface for The application shell joining controller state, VM/project selection and plugin surfaces and composing Plus, ShieldCheck, CircleHelp, ArrowUpRight, Monitor, ChevronRight, SessionLockButton, AccountLogoutButton. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ */
 export function App() {
   const token = useSyncExternalStore(controllerSession.subscribe, controllerSession.getToken);
   const [initialSession] = useState(readSessionState);
@@ -180,6 +187,12 @@ export function App() {
     useControllerState(setSelectedRaw);
   const enabled = system?.pluginRuntime ? system.pluginRuntime.instances.filter(item =>
     item.source === 'official' && item.phase === 'running').map(item => item.pluginId) : system?.plugins || [];
+  /**
+   * 中文：根据  判断连接控制面状态、实例/项目选择与插件页面的应用外壳中的输入或条目是否符合条件，返回布尔判断供调用者筛选/保护分支
+   * English: Evaluate  to test inputs/entries in The application shell joining controller state, VM/project selection and plugin surfaces, returning a boolean for filtering/guard branches
+   * 中文：输入：id：目标资源标识
+   * English: Inputs: id: target resource identifier
+   */
   const has = (id: string) => enabled.includes(id);
   const page = pluginSurfaceEnabled(enabled, 'pages', requestedPage, system?.pluginRuntime) ? requestedPage : 'workspace';
   const tab = pluginSurfaceEnabled(enabled, 'tabs', requestedTab, system?.pluginRuntime) ? requestedTab : 'terminal';
@@ -210,19 +223,43 @@ export function App() {
     hasProjects,
     token,
   );
+  /**
+   * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中selectedRaw 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In The application shell joining controller state, VM/project selection and plugin surfaces, selectedRaw state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：value：待校验、转换或保存的输入值
+   * English: Inputs: value: input value to validate/transform/save
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   */
   const setSelected = async (value: string) => {
     if (value === selected || (await mayLeaveEditor())) setSelectedRaw(value);
   };
+  /**
+   * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中pageRaw 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In The application shell joining controller state, VM/project selection and plugin surfaces, pageRaw state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：value：待校验、转换或保存的输入值
+   * English: Inputs: value: input value to validate/transform/save
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   */
   const setPage = async (value: string) => {
     if (value === page || (await mayLeaveEditor())) setPageRaw(value);
   };
+  /**
+   * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中tabRaw 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In The application shell joining controller state, VM/project selection and plugin surfaces, tabRaw state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：value：待校验、转换或保存的输入值
+   * English: Inputs: value: input value to validate/transform/save
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   */
   const setTab = async (value: string) => {
     if (value === tab || (await mayLeaveEditor())) setTabRaw(value);
   };
   const [busy, setBusy] = useState(false),
     [query, setQuery] = useState('');
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
-  useEffect(() => installClipboardProtection(document, (text) => setToast({ text, error: true })), []);
+  useEffect(/** 中文：当依赖 [] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership */ () => installClipboardProtection(document, (text) => setToast({ text, error: true })), []);
   const [modal, setModal] = useState<'create' | 'help' | 'delete' | null>(null);
   const [confirm, setConfirm] = useState('');
   const [palette, setPalette] = useState(false);
@@ -250,6 +287,14 @@ export function App() {
     revision: number;
     directory?: boolean;
   }>();
+  /**
+   * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中palette 状态，selectedRaw 状态，pageRaw 状态，tabRaw 状态，openFile 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In The application shell joining controller state, VM/project selection and plugin surfaces, palette state, selectedRaw state, pageRaw state, tabRaw state, openFile state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：target：事件目标或操作目标
+   * English: Inputs: target: event/operation target
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   */
   const navigatePalette = async (target: PaletteTarget) => {
     setPalette(false);
     if (!(await mayLeaveEditor())) return;
@@ -258,7 +303,7 @@ export function App() {
     if (target.tab) setTabRaw(target.tab);
     if (target.file) setOpenFile({ id: target.id || selected, path: target.file, revision: Date.now() });
   };
-  const [theme, setTheme] = useState<'day' | 'night'>(() => {
+  const [theme, setTheme] = useState<'day' | 'night'>(/** 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中读取浏览器缓存值；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In The application shell joining controller state, VM/project selection and plugin surfaces, read a browser-cache value. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation */ () => {
     try {
       return localStorage.getItem('sakura-theme') === 'night' ? 'night' : 'day';
     } catch {
@@ -273,18 +318,34 @@ export function App() {
   const [moreTabsOpen, setMoreTabsOpen] = useState(false);
   const vm = vms.find((v) => v.id === selected);
   const [shortcuts, setShortcuts] = useState(readShortcuts);
-  useEffect(() => watchShortcuts(() => setShortcuts(readShortcuts())), []);
+  useEffect(/** 中文：当依赖 [] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership */ () => watchShortcuts(() => setShortcuts(readShortcuts())), []);
   const shortcutScope = shortcutContext(selected, hasProjects ? projectId : undefined);
   const bindings = effectiveShortcuts(shortcuts, shortcutScope);
+  /**
+   * 中文：提交 operation workspacePath(path, projectId)，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform operation workspacePath(path, projectId) for The application shell joining controller state, VM/project selection and plugin surfaces. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：path：目标文件或请求路径；method：请求 HTTP 方法（缺省 'GET'）；body：待按操作契约编码的请求正文；signal：本次调用的取消寿命
+   * English: Inputs: path: target file/request path; method: request HTTP method (default 'GET'); body: request body to encode under the operation contract; signal: cancellation lifetime for this invocation
+   */
   const workspaceApi = useCallback<Request>(
     (path, method = 'GET', body, signal) => api(workspacePath(path, projectId), method, body, signal),
     [projectId],
   );
-  useEffect(() => {
+  useEffect(/** 中文：提交 operation /native-integration，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform operation /native-integration for The application shell joining controller state, VM/project selection and plugin surfaces. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     if (!token || !system) return;
     let alive = true,
       handling = false;
     const abort = new AbortController();
+    /**
+     * 中文：提交 operation /native-integration，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互并更新selectedRaw 状态、pageRaw 状态、tabRaw 状态、openFile 状态、toast 状态；异步失败传给此处的捕获分支或外层动作反馈
+     * English: Perform operation /native-integration for The application shell joining controller state, VM/project selection and plugin surfaces and update selectedRaw state, pageRaw state, tabRaw state, openFile state, toast state. Propagate asynchronous failure to this catch path or the outer action feedback
+     * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+     * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+     * 中文：拒绝原因：无效的 Windows 打开请求；请启用项目和文件插件后重新打开。这些错误交给直接调用者或本函数 catch 处理
+     * English: Refusal reasons: 无效的 Windows 打开请求; 请启用项目和文件插件后重新打开. These errors reach the direct caller or this function's catch handler
+     * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+     * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+     */
     const receive = async () => {
       if (handling) return;
       const params = new URLSearchParams(location.hash.slice(1));
@@ -323,6 +384,12 @@ export function App() {
     };
     void receive();
     window.addEventListener('hashchange', receive);
+    /**
+     * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中取消捕获的异步寿命，移除登记的事件监听；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In The application shell joining controller state, VM/project selection and plugin surfaces, abort the captured asynchronous lifetime, remove registered event listeners. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     return () => {
       alive = false;
       abort.abort();
@@ -330,21 +397,37 @@ export function App() {
     };
   }, [token, !!system, hasProjects]);
   const focusMode = focused && page === 'workspace' && !!vm;
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [selected, page, tab] 变化时持久化浏览器缓存值；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [selected, page, tab] change, persist a browser-cache value. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     try {
       localStorage.setItem('sakura-session', JSON.stringify({ selected, page, tab }));
     } catch {
       // The workspace remains usable when browser storage is unavailable.
     }
   }, [selected, page, tab]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [focusMode] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [focusMode] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (focusMode) machineRef.current?.scrollIntoView({ block: 'start' });
   }, [focusMode]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [moreTabsOpen] 变化时登记浏览器或资源事件监听；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [moreTabsOpen] change, register browser/resource event listeners. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     if (!moreTabsOpen) return;
+    /**
+     * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中moreTabsOpen 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In The application shell joining controller state, VM/project selection and plugin surfaces, moreTabsOpen state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：输入：event：触发本处理器的事件及其数据
+     * English: Inputs: event: triggering event and its data
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     const closeOnOutsidePress = (event: PointerEvent) => {
       if (event.target instanceof Node && !tabMoreRef.current?.contains(event.target)) setMoreTabsOpen(false);
     };
+    /**
+     * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中moreTabsOpen 状态，把输入焦点移到目标元素；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In The application shell joining controller state, VM/project selection and plugin surfaces, moreTabsOpen state, move input focus to the target. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：输入：event：触发本处理器的事件及其数据
+     * English: Inputs: event: triggering event and its data
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMoreTabsOpen(false);
@@ -353,12 +436,18 @@ export function App() {
     };
     document.addEventListener('pointerdown', closeOnOutsidePress);
     document.addEventListener('keydown', closeOnEscape);
+    /**
+     * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中移除登记的事件监听；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In The application shell joining controller state, VM/project selection and plugin surfaces, remove registered event listeners. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     return () => {
       document.removeEventListener('pointerdown', closeOnOutsidePress);
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [moreTabsOpen]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [theme] 变化时持久化浏览器缓存值；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [theme] change, persist a browser-cache value. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     document.documentElement.dataset.theme = theme;
     document
       .querySelector('meta[name="theme-color"]')
@@ -369,7 +458,15 @@ export function App() {
       // Theme switching still works when browser storage is unavailable.
     }
   }, [theme]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [bindings, page, focusMode, vm, hasPalette, enabled, navigatePalette] 变化时登记浏览器或资源事件监听；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [bindings, page, focusMode, vm, hasPalette, enabled, navigatePalette] change, register browser/resource event listeners. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
+    /**
+     * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中focused 状态，palette 状态，theme 状态，阻止浏览器默认行为，把输入焦点移到目标元素；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In The application shell joining controller state, VM/project selection and plugin surfaces, focused state, palette state, theme state, prevent browser default behavior, move input focus to the target. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：输入：event：触发本处理器的事件及其数据
+     * English: Inputs: event: triggering event and its data
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     const handleKey = (event: KeyboardEvent) => {
       if (document.querySelector('dialog[open]') || shortcutInputTarget(event.target)) return;
       if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.altKey) setFocused(false);
@@ -395,14 +492,28 @@ export function App() {
       else void navigatePalette({ page: command });
     };
     window.addEventListener('keydown', handleKey);
+    /**
+     * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中移除登记的事件监听；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In The application shell joining controller state, VM/project selection and plugin surfaces, remove registered event listeners. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     */
     return () => window.removeEventListener('keydown', handleKey);
   }, [bindings, page, focusMode, vm, hasPalette, enabled, navigatePalette]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [toast] 变化时timeout 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [toast] change, timeout state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 5500);
     return () => clearTimeout(timer);
   }, [toast]);
-  async function run(action: () => Promise<unknown>, message?: string) {
+  /**
+   * 中文：动作入口统一设置忙碌状态，执行后失效并刷新控制面，再显示成功提示；失败显示 toast，finally 恢复按钮。命令回调仅委托 executeWorkspaceCommand。
+   * English: The action entry marks busy, executes, invalidates/refreshes controller state and then shows success. Failures show a toast and finally restores controls; command callbacks only delegate to executeWorkspaceCommand.
+   * 中文：输入：action：本次动作或状态机输入；message：签名所示 string 业务值
+   * English: Inputs: action: current action/state-machine input; message: the string domain value in the signature
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+   * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+   */
+  async function run(action: /** 中文：在调用者提供的取消信号范围内执行用户动作，失败以拒绝或抛错传回；这是 App.run 的调用契约 | English: Execute a user action within the supplied cancellation signal, propagating failure through rejection/throw; this is the callable contract of App.run | 中文：结果：Promise<unknown>；调用者依赖此类型约定，Promise 拒绝表示异步失败 | English: Result: Promise<unknown>; callers depend on this type contract, with promise rejection representing asynchronous failure */ () => Promise<unknown>, message?: string) {
     setBusy(true);
     try {
       await action();
@@ -415,12 +526,36 @@ export function App() {
       setBusy(false);
     }
   }
+  /**
+   * 中文：提交 operation /vms/{vm.id}/start，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform operation /vms/{vm.id}/start for The application shell joining controller state, VM/project selection and plugin surfaces. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const start = () =>
     vm && run(() => api(`/vms/${vm.id}/start`, 'POST'), '正在启动 Linux，终端将在就绪后连接');
+  /**
+   * 中文：提交 operation /vms/{vm.id}/stop，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform operation /vms/{vm.id}/stop for The application shell joining controller state, VM/project selection and plugin surfaces. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const stop = () =>
     vm && run(() => api(`/vms/${vm.id}/stop`, 'POST', { force: false }), '发行版已停止，磁盘数据已保留');
+  /**
+   * 中文：提交 operation /vms/{vm.id}/suspend，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform operation /vms/{vm.id}/suspend for The application shell joining controller state, VM/project selection and plugin surfaces. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const suspend = () => vm && run(() => api(`/vms/${vm.id}/suspend`, 'POST'), '发行版已暂停，可随时恢复');
+  /**
+   * 中文：提交 operation /vms/{vm.id}/resume，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform operation /vms/{vm.id}/resume for The application shell joining controller state, VM/project selection and plugin surfaces. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const resume = () => vm && run(() => api(`/vms/${vm.id}/resume`, 'POST'), '发行版已恢复');
+  /**
+   * 中文：提交 operation /vms/{id}/start；operation /vms/{id}/stop；operation /vms/{id}/suspend；operation /vms/{id}/resume，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互并更新palette 状态、modal 状态、confirm 状态；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform operation /vms/{id}/start; operation /vms/{id}/stop; operation /vms/{id}/suspend; operation /vms/{id}/resume for The application shell joining controller state, VM/project selection and plugin surfaces and update palette state, modal state, confirm state. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：command：签名所示 WorkspaceCommandDefinition 业务值
+   * English: Inputs: command: the WorkspaceCommandDefinition domain value in the signature
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const executeWorkspaceCommand = (command: WorkspaceCommandDefinition) => {
     if (command.disabled) return;
     const id = command.target?.id || selected;
@@ -475,6 +610,10 @@ export function App() {
       detail: command.detail,
       keywords: command.keywords,
       disabled: command.disabled,
+      /**
+       * 中文：动作入口统一设置忙碌状态，执行后失效并刷新控制面，再显示成功提示；失败显示 toast，finally 恢复按钮。命令回调仅委托 executeWorkspaceCommand。
+       * English: The action entry marks busy, executes, invalidates/refreshes controller state and then shows success. Failures show a toast and finally restores controls; command callbacks only delegate to executeWorkspaceCommand.
+       */
       run: () => executeWorkspaceCommand(command),
     }));
   const running = vms.filter((v) => v.status === 'running').length;
@@ -490,6 +629,14 @@ export function App() {
     .sort((a, b) => Number(!!b.organization?.favorite) - Number(!!a.organization?.favorite));
   const allocated = vms.filter(active).reduce((sum, v) => sum + v.memoryMiB, 0);
   const engineState = offline ? 'error' : system?.nativeHost ? 'running' : 'starting';
+  /**
+   * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中moreTabsOpen 状态，分区选择；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In The application shell joining controller state, VM/project selection and plugin surfaces, moreTabsOpen state, tab selection. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：id：目标资源标识
+   * English: Inputs: id: target resource identifier
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const focusWorkspaceTab = (id: string) => {
     setMoreTabsOpen(false);
     void setTab(id);
@@ -497,6 +644,14 @@ export function App() {
       tabMoreRef.current?.querySelector<HTMLButtonElement>(`[data-tab="${id}"]`)?.focus();
     });
   };
+  /**
+   * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中moreTabsOpen 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In The application shell joining controller state, VM/project selection and plugin surfaces, moreTabsOpen state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：focusFirst：此处理器的调用值（缺省 false）
+   * English: Inputs: focusFirst: the invocation value for this handler (default false)
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const openAdvancedTabs = (focusFirst = false) => {
     setMoreTabsOpen(true);
     if (focusFirst) {
@@ -523,7 +678,14 @@ export function App() {
         </a>
         <div className="side-caption">你的工作空间</div>
         <nav aria-label="主导航">
-          {['core', 'extensions'].map((group) => {
+          {['core', 'extensions'].map(/**
+           * 中文功能：按基础与扩展分组过滤已经可见的导航页，空分组不渲染，并展示当前页及实例/插件数量。
+           * English: Group already-visible navigation pages into core/extensions, omit empty groups and show current-page plus VM/plugin counts.
+           * 输入 / Inputs: group.
+           * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+           * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+           */
+          (group) => {
             const items = visiblePages.filter((item) => corePageIds.has(item.id) === (group === 'core'));
             if (!items.length) return null;
             return (
@@ -1028,7 +1190,14 @@ export function App() {
                                 setMoreTabsOpen(false);
                                 void setTab(t.id);
                               }}
-                              onKeyDown={(event) => {
+                              onKeyDown={/**
+                               * 中文功能：在主要工作区标签和更多入口间处理左右键、Home/End，选择目标时分别打开高级菜单或聚焦普通标签。
+                               * English: Handle left/right/Home/End across primary workspace tabs and the more entry, opening the advanced menu or focusing an ordinary tab as appropriate.
+                               * 输入 / Inputs: event.
+                               * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+                               * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+                               */
+                              (event) => {
                                 const ids = [
                                   ...primaryWorkspaceTabs.map((item) => item.id),
                                   ...(advancedWorkspaceTabs.length ? ['more'] : []),
@@ -1069,7 +1238,14 @@ export function App() {
                               aria-expanded={moreTabsOpen}
                               aria-haspopup="menu"
                               onClick={() => setMoreTabsOpen((open) => !open)}
-                              onKeyDown={(event) => {
+                              onKeyDown={/**
+                               * 中文功能：让更多入口的左右键/Home 回到主要标签，ArrowDown 打开并进入高级标签菜单。
+                               * English: Return from the more entry to primary tabs on left/right/Home and open/enter the advanced menu on ArrowDown.
+                               * 输入 / Inputs: event.
+                               * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+                               * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+                               */
+                              (event) => {
                                 if (event.key === 'ArrowLeft') {
                                   event.preventDefault();
                                   focusWorkspaceTab(primaryWorkspaceTabs[primaryWorkspaceTabs.length - 1].id);
@@ -1114,7 +1290,14 @@ export function App() {
                                 setMoreTabsOpen(false);
                                 void setTab(t.id);
                               }}
-                              onKeyDown={(event) => {
+                              onKeyDown={/**
+                               * 中文功能：让高级标签菜单支持上下/左右循环、Home/End 和 Escape，选择后同步标签及焦点，退出时回到更多按钮。
+                               * English: Support up/down/left/right cycling, Home/End and Escape in advanced tabs, synchronize tab/focus on selection, and return to the more button on exit.
+                               * 输入 / Inputs: event.
+                               * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+                               * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+                               */
+                              (event) => {
                                 const ids = advancedWorkspaceTabs.map((item) => item.id);
                                 const index = ids.indexOf(t.id);
                                 const next =
@@ -1627,7 +1810,7 @@ export function App() {
           names={vms.map((v) => v.name)}
           close={() => setModal(null)}
           submit={(config, boot) =>
-            run(async () => {
+            run(/** 中文：提交 operation /vms；operation /vms/{result.id}/start，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互并更新当前选择、页面选择、分区选择、搜索或查询文本、statusFilter 状态、modal 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform operation /vms; operation /vms/{result.id}/start for The application shell joining controller state, VM/project selection and plugin surfaces and update current selection, page selection, tab selection, search/query text, statusFilter state, modal state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
               const result = await api<VMView>('/vms', 'POST', config);
               upsertVm(result);
               setSelected(result.id);
@@ -1680,7 +1863,7 @@ export function App() {
               className="danger"
               disabled={busy || confirm !== vm.name}
               onClick={() =>
-                run(async () => {
+                run(/** 中文：提交 operation /vms/{vm.id}，完成连接控制面状态、实例/项目选择与插件页面的应用外壳的数据交互并更新modal 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform operation /vms/{vm.id} for The application shell joining controller state, VM/project selection and plugin surfaces and update modal state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                   await api(`/vms/${vm.id}`, 'DELETE');
                   setModal(null);
                 }, '发行版已删除')

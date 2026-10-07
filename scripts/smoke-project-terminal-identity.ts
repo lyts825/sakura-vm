@@ -1,4 +1,5 @@
-/** 烟雾验收：验证新自有 VM 的项目 PTY/tmux、只读连接、作用域清理和陈旧 ID 拒绝。 */
+/** 烟雾验收：验证新自有 VM 的项目 PTY/tmux、只读连接、作用域清理和陈旧 ID 拒绝。
+ * Smoke acceptance for fresh owned-VM PTY/tmux/read-only connections/scope cleanup and stale-ID refusal. */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
@@ -23,11 +24,15 @@ if (process.argv.length === 2 || process.argv[2] === '--describe') {
   await run(reused ? process.argv[4] : undefined);
 }
 
+/** 新建或核验自有 Alpine 夹具，使用正式终端入场票据检验 PTY 的项目 UID、只读/迁移门控与整域回收，保留原生和主机证据。
+ * Create or validate an owned Alpine fixture, testing production PTY admission for project UID/read-only-migration gates/whole-domain retirement with host/native evidence. */
 async function run(ownedDirectory?: string) {
   const workspace = await realpath('.'), parent = join(workspace, '.data/project-terminal-test-temp');
   await mkdir(parent, { recursive: true }); assert.equal(await realpath(parent), parent);
   const root = ownedDirectory ? await realpath(ownedDirectory) : await mkdtemp(join(parent, 'sakura-terminal-'));
   assert.equal(dirname(await realpath(root)), parent); assert.match(basename(root), /^sakura-terminal-/);
+  /** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+   * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
   const invocation = randomUUID(), hash = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
   const proof: any = { version: 1, invocation, root, distro: 'alpine', passed: false, startedAt: new Date().toISOString(),
     sourceSha256: {}, executions: [], cases: [], phases: [], cleanupErrors: [], client: { node: process.version, execArgv: process.execArgv } };
@@ -42,6 +47,8 @@ async function run(ownedDirectory?: string) {
     assert.ok(prior.executions.every((entry: any) => entry.exit && entry.close && entry.stdoutClosed && entry.stderrClosed));
     proof.kind = 'owned-terminal-fixture-new-boot'; proof.previousInvocation = prior.invocation;
   } else proof.kind = 'fresh-owned-terminal-fixture';
+  /** 保存阶段名与时间并输出进度，为中断或失败报告定位最后执行边界。
+   * Retain phase name/time and print progress to locate the last execution boundary after interruption/failure. */
   const phase = (name: string) => { proof.phases.push({ name, at: new Date().toISOString() }); console.log('PHASE ' + name); };
   const files = ['server/project-repository.ts', 'server/project-repository-broker.py', 'server/repository-url.ts',
     'server/workspaces.ts', 'server/project-run-scope.ts', 'server/project-identity.ts', 'server/project-directory-migration.ts',
@@ -49,6 +56,8 @@ async function run(ownedDirectory?: string) {
     'server/project-network-isolation.ts', 'server/project-dependency-cache.ts', 'server/dependency-downloads.ts', 'server/network-profiles.ts',
     'native/project-identity/protocol.h', 'native/project-identity/launcher.c', 'native/project-identity/controller.py',
     'scripts/smoke-project-terminal-identity.ts', 'plugins/terminal-workspace/server.ts', 'plugins/terminal-workspace/manifest.ts', 'package.json', 'package-lock.json'];
+  /** 递归收集工作区源码相对路径并拒绝符号链接，供冻结摘要验证入口及依赖未被替换。
+   * Recursively collect workspace-relative source paths and reject symbolic links for frozen-hash checks against replaced entry points/dependencies. */
   const capture = async (directory: string) => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       assert.equal(entry.isSymbolicLink(), false);
@@ -94,6 +103,8 @@ async function run(ownedDirectory?: string) {
   proof.binarySha256 = { [qemu]: hash(await readFile(qemu)), [img]: hash(await readFile(img)) };
   const children = new Map<ChildProcess, Promise<void>>();
   let vmId = '', qemuStarted = false;
+  /** 启动前核验已冻结二进制摘要，登记 argv/PID/exit/close 并限制累计输出；取消只终止自有 child，等待真实 close 后返回结果并清理监听。
+   * Verify frozen binary hashes before spawning, record argv/PID/exit/close and bound accumulated output; cancellation targets only the owned child, then await actual close/clean listeners before returning. */
   async function execute(executable: string, args: string[], options: Parameters<Engine['run']>[2] = {}, vm = false) {
     assert.equal(hash(await readFile(executable)), proof.binarySha256[executable]);
     const entry: any = { executable, argvSha256: hash(JSON.stringify(args)), vm, pid: null, exit: null, close: null };
@@ -109,6 +120,8 @@ async function run(ownedDirectory?: string) {
       entry.close = { code, signal }; entry.stdoutClosed = child.stdout!.closed; entry.stderrClosed = child.stderr!.closed;
       children.delete(child); done();
     })); children.set(child, closed);
+    /** 取消只绑定当前自有 child 句柄，终止该进程；存在 receipt/entry 时同时记录取消证据，实际 close 仍由外层等待。
+     * Bind cancellation only to the current owned child and terminate it, recording receipt/entry evidence when present; outer code still awaits physical close. */
     const abort = () => { entry.abortRequested = true; child.kill(); };
     options?.signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => { entry.timeoutRequested = true; child.kill(); }, options?.timeoutMs || (vm ? 7_200_000 : 30000));
@@ -119,10 +132,16 @@ async function run(ownedDirectory?: string) {
     } finally { clearTimeout(timer); options?.signal?.removeEventListener('abort', abort); }
   }
   const hardware = { memoryMiB: 1536, cpus: 2 };
+  /** 显式拒绝夹具没有授权的运行时能力，使意外走入其他主机操作立即失败，不能静默用替身绕过生产路径。
+   * Explicitly reject runtime capabilities not authorized by this fixture so accidental host operations fail immediately instead of silently bypassing production paths with a substitute. */
   const unsupported = () => { throw new Error('Unknown terminal test engine operation'); };
   const engine = { version: 'test-only direct Engine', whpxAvailable: false, qemuIoAvailable: false, aarch64Available: false,
-    runtime: { close: async () => { for (const child of children.keys()) child.kill(); await Promise.all(children.values()); } },
-    runStatus: unsupported, get service() { return unsupported(); },
+    runtime: { /** 终止此适配器登记的全部自有子进程并等待实际关闭 Promise；存在总期限时届满失败且清理计时器，不把 kill 调用等同于完成。
+ * Terminate all owned children registered by this adapter and await actual closure promises; where bounded, expiry fails and clears the timer, since calling kill is not completion. */ close: async () => { for (const child of children.keys()) child.kill(); await Promise.all(children.values()); } },
+    runStatus: unsupported, /** 拒绝通用 service 访问，维持此夹具只允许明确 QEMU 启动的最小运行时边界。
+ * Reject generic service access, preserving the fixture’s minimum runtime boundary of explicitly permitted QEMU launch only. */ get service() { return unsupported(); },
+    /** 只允许指定自有磁盘的固定镜像创建和一次精确 QEMU 启动，逐项校验驱动器/启动参数并拒绝其他入口；调用 execute 保留实际进程关闭证据。
+     * Allow only fixed owned-disk image creation/one exact QEMU boot, validating drives/launch arguments and rejecting other entry points; execute retains physical-process closure evidence. */
     run: async (tool: string, args: string[], options?: Parameters<Engine['run']>[2]) => {
       if (tool === 'sakura-img') {
         const disk = args.at(-2)!;
@@ -132,6 +151,8 @@ async function run(ownedDirectory?: string) {
         return execute(img, args, options);
       }
       assert.equal(tool, 'sakura-qemu'); assert.ok(vmId && !qemuStarted); qemuStarted = true;
+      /** 转义正则表达式的元字符，按字面匹配夹具路径或标记，避免名称被解释为匹配规则。
+       * Escape regular-expression metacharacters so fixture paths/markers match literally rather than act as pattern syntax. */
       const escape = (value: string) => value.replaceAll(',', ',,');
       const drives = args.flatMap((arg, index) => arg === '-drive' ? [args[index + 1]] : []);
       assert.deepEqual(drives, [`file=${escape(join(root, 'machines', vmId, 'disk.qcow2'))},if=virtio,id=sakura-disk,format=qcow2,${diskOptions(hardware)}`,
@@ -146,18 +167,25 @@ async function run(ownedDirectory?: string) {
   const terminals = new ProjectTerminals(machines, spaces), scopes = new ProjectRunScopes(machines);
   const projectParent = '/srv/projects/terminal-' + invocation;
   const channels = new Set<Awaited<ReturnType<typeof open>>>();
+  /** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+   * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
   async function guest(command: string, timeout = 30000) {
     const result = await machines.exec(vmId, command, timeout);
     assert.equal(result.code, 0, result.stderr || result.stdout); return result.stdout.trim();
   }
+  /** 按名称执行异步断言，成功后记录返回证据；异常直接传播，不记录通过。
+   * By case name, run asynchronous assertions and retain returned evidence on success; propagate errors without recording a pass. */
   async function check(name: string, action: () => Promise<unknown>) {
     phase(name); const observation = await action(); proof.cases.push({ name, observation }); console.log('PASS ' + name);
   }
+  /** 创建自有私有网络终端项目并确认迁移计划；仅新夹具的明确 NNP 拒绝允许重启 SSH/cron 后重试，旧夹具和其他错误不自动修复。
+   * Create/authorize an owned private-network terminal project; only explicit NNP denial on a new fixture permits SSH/cron restart/retry, while old fixtures/other errors are not automatically repaired. */
   async function project(name: string) {
     const directory = projectParent + '/' + name; await guest('mkdir ' + quote(directory));
     const config = projectSchema.parse({ directory, networkIsolation: 'private', template: 'none' });
     const index = await spaces.projects.create(vmId, name + '-' + invocation.slice(0, 8), () => writeStore(projectMetadataFile(vmId, spaces.projects.current(vmId)), config));
-    const identity = await spaces.projects.with(vmId, index.active, async () => {
+    const identity = await spaces.projects.with(vmId, index.active, /** 正式迁移 preview 遇 NNP 重启拒绝时，仅新建自有 VM 可一次显式重启 sshd/crond，前后核实原 live+boot；既有目录或重复拒绝直接失败，再按冻结计划 apply 身份。
+ * When formal migration preview requires NNP restart, only a fresh owned VM may restart sshd/crond once with original live/boot checks; existing directories/repeated refusal fail, then apply identity using the frozen plan. */ async () => {
       let preview: Awaited<ReturnType<typeof migrations.preview>>;
       try { preview = await migrations.preview(vmId); }
       catch (error) {
@@ -192,6 +220,8 @@ async function run(ownedDirectory?: string) {
     });
     return { id: index.active, directory, identity };
   }
+  /** 由生产 prepare 取得精确终端 lease，再经真实 SSH PTY attach，三分钟内要求初始化输出；返回流、观测和 lease 清理句柄。
+   * Obtain the exact terminal lease through production prepare/attach via real SSH PTY and require initialized output within three minutes, returning stream/observation/lease-cleanup handles. */
   async function open(id: string, session?: string, readOnly = false, terminalId?: string) {
     const lease = await terminals.prepare(vmId, id, session, readOnly, undefined, terminalId);
     const ssh = await machines.connect(vmId); let output = '';
@@ -202,7 +232,10 @@ async function run(ownedDirectory?: string) {
     });
     stream.on('data', (bytes: Buffer) => { output += bytes.toString(); });
     stream.stderr.on('data', (bytes: Buffer) => { output += bytes.toString(); });
-    const connection = { lease, ssh, stream, output: () => output,
+    const connection = { lease, ssh, stream, /** 读取本次 PTY 累积的两路输出，供交互就绪和命令结果断言。
+ * Read both accumulated PTY outputs for interactive readiness/command-result assertions. */ output: () => output,
+      /** 关闭 PTY 与 SSH，再等待精确 lease.release 并移除本连接登记，撤销生产终端所有者。
+       * Close PTY/SSH, await exact lease.release and remove this connection registration to revoke the production terminal owner. */
       close: async () => { stream.close(); ssh.end(); await lease.release(); channels.delete(connection); } };
     channels.add(connection);
     const deadline = Date.now() + 180000;
@@ -211,6 +244,8 @@ async function run(ownedDirectory?: string) {
     }
     return connection;
   }
+  /** 在六十秒内读取自有目录的指定 JSON 标记，未发布即失败，避免复用缺失身份报告。
+   * Read the owned directory’s JSON marker within sixty seconds, failing on absence rather than using missing identity reports. */
   async function observed(directory: string, name: string) {
     const deadline = Date.now() + 60000;
     for (;;) {
@@ -241,7 +276,8 @@ async function run(ownedDirectory?: string) {
     await guest('printf protected > ' + quote(beta.directory + '/private.txt') + '; chown ' + beta.identity.uid + ':' +
       beta.identity.gid + ' ' + quote(beta.directory + '/private.txt') + '; chmod 600 ' + quote(beta.directory + '/private.txt'));
     let namedId = '';
-    await check('actual interactive PTY runs as the private project UID and cannot read another project', async () => {
+    await check('actual interactive PTY runs as the private project UID and cannot read another project', /** 通过项目 PTY 验证实际 UID/GID/Home、TTY、原 cgroup/网络且邻目录不可读；关闭匿名终端后原域必须消失，返回来宾观测。
+ * Verify actual UID/GID/Home, TTY, original cgroup/network and neighbor-directory denial through project PTY; after anonymous-terminal close require original-domain disappearance and return guest observations. */ async () => {
       const connection = await open(alpha.id);
       const script = `import json,os\ndenied=False\ntry:open(${JSON.stringify(beta.directory + '/private.txt')}).read()\nexcept PermissionError:denied=True\nassert denied\njson.dump({'uid':os.getuid(),'gid':os.getgid(),'home':os.environ['HOME'],'tty':os.isatty(0),'scope':open('/proc/self/cgroup').read().strip(),'namespace':str(os.stat('/proc/self/ns/net').st_ino),'otherProjectDenied':denied},open('pty.json','w'))`;
       connection.stream.write('/usr/bin/python3 -I -S -c ' + quote(script) + '\r');
@@ -254,7 +290,8 @@ async function run(ownedDirectory?: string) {
       await guest('test ! -e ' + quote('/sys/fs/cgroup/' + ticket.run.cgroupName));
       return actual;
     });
-    await check('named terminals and additional windows retain UID and full ownership across disconnect', async () => {
+    await check('named terminals and additional windows retain UID and full ownership across disconnect', /** 命名终端创建额外 tmux 窗口，客户端关闭后用正式票据重连须复用 terminalId；后台窗仍为项目 UID 且位于原终端域。
+ * Create an extra tmux window in a named terminal and require formal-receipt reconnection to reuse terminalId after client closure; the background window retains project UID/original terminal domain. */ async () => {
       const connection = await open(alpha.id, 'main'); namedId = connection.lease.terminalId!;
       const child = '/bin/sh -c ' + quote('echo $$ > window.pid; exec sleep 600');
       connection.stream.write('tmux new-window -d -n worker ' + quote(child) + '; printf \'{"created":true}\' > window.json\r');
@@ -274,7 +311,8 @@ async function run(ownedDirectory?: string) {
       await guest('test ! -e ' + quote(alpha.directory + '/readonly-write.txt')); await viewer.close();
       return { terminalId: namedId, readonlyWriteRefused: true };
     });
-    await check('exact terminal stop kills detached windows and invalidates the old shared UUID', async () => {
+    await check('exact terminal stop kills detached windows and invalidates the old shared UUID', /** 停止命名终端必须删精确 cgroup、控制目录及身份票据，旧共享 ID 永久 stale；新终端发新 ID 且邻项目终端仍可核验，最后关两者。
+ * Stopping a named terminal must remove its exact cgroup/control directory/identity receipt and permanently stale the shared ID; fresh terminals get new IDs while neighbor verification works, then close both. */ async () => {
       const saved = await scopes.terminalRun(vmId, alpha.id, namedId);
       const betaConnection = await open(beta.id, 'main'); await betaConnection.close();
       await terminals.stop(vmId, alpha.id, 'main');

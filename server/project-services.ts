@@ -1,5 +1,6 @@
 /**
  * 模块职责：声明项目服务及依赖顺序，生成环境和启动命令并绑定项目服务运行作用域。
+ * Module purpose: Declares service dependency order, builds environment/start commands and binds project service run scopes.
  */
 import { z } from 'zod';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -42,12 +43,36 @@ export const serviceSchema = z
   })
   .strict();
 export type ProjectService = z.infer<typeof serviceSchema>;
+/**
+ * 入口 / Entry: serviceOrder.
+ * 功能：在声明项目服务及依赖顺序中，执行此领域的具体处理步骤并返回其结果；本入口产生 `order` / `order.filter((s) => needed.has(s.name))` 供上层消费（`project-services.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-services.ts`; this entry produces `order` / `order.filter((s) => needed.has(s.name))` for its caller. Module context: Declares service dependency order, builds environment/start commands and binds project service run scopes.
+ * 处理：通过 `services.map`, `visit`, `byName.has`, `include` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `services.map`, `visit`, `byName.has`, `include`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!only`.
+ * 输入 / Inputs: services: ProjectService[]; only: string optional
+ * 输出 / Returns: `order`; `order.filter((s) => needed.has(s.name))`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `byName.size !== services.length`; `!byName.has(only)`; 异常 / errors `new AppError('服务名称不能重复')`; `new AppError('服务不存在', 404)`.
+ */
 export function serviceOrder(services: ProjectService[], only?: string) {
   const byName = new Map(services.map((s) => [s.name, s]));
   if (byName.size !== services.length) throw new AppError('服务名称不能重复');
   const seen = new Set<string>(),
     pending = new Set<string>(),
     order: ProjectService[] = [];
+  /**
+   * 入口 / Entry: serviceOrder.visit.
+   * 功能：在声明项目服务及依赖顺序中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`project-services.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-services.ts`; this entry produces `void` for its caller. Module context: Declares service dependency order, builds environment/start commands and binds project service run scopes.
+   * 处理：通过 `seen.has`, `pending.has`, `byName.get`, `pending.add` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `seen.has`, `pending.has`, `byName.get`, `pending.add`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `seen.has(name)`.
+   * 输入 / Inputs: name: string
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `pending.add`; `pending.delete`; `seen.add`; `order.push`.
+   * 拒绝 / Refusals: 条件 / conditions `pending.has(name)`; `!service`; 异常 / errors `new AppError('服务依赖存在循环')`; `new AppError(`依赖的服务不存在：${name}`)`.
+   */
   const visit = (name: string) => {
     if (seen.has(name)) return;
     if (pending.has(name)) throw new AppError('服务依赖存在循环');
@@ -63,6 +88,17 @@ export function serviceOrder(services: ProjectService[], only?: string) {
   if (!only) return order;
   if (!byName.has(only)) throw new AppError('服务不存在', 404);
   const needed = new Set<string>();
+  /**
+   * 入口 / Entry: serviceOrder.include.
+   * 功能：在声明项目服务及依赖顺序中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`project-services.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-services.ts`; the calls and state transitions below complete the operation. Module context: Declares service dependency order, builds environment/start commands and binds project service run scopes.
+   * 处理：通过 `needed.add`, `byName.get`, `include` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `needed.add`, `byName.get`, `include`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: name: string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `needed.add`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const include = (name: string) => {
     needed.add(name);
     for (const dep of byName.get(name)!.dependsOn) include(dep);
@@ -70,14 +106,50 @@ export function serviceOrder(services: ProjectService[], only?: string) {
   include(only);
   return order.filter((s) => needed.has(s.name));
 }
+/**
+ * 入口 / Entry: serviceSession.
+ * 功能：从当前输入或状态计算 ``sakura-service-${project?._workspace ? project._workspace + '-' : ''}${name}``，供调用方后续验证或使用。
+ * Purpose: Computes ``sakura-service-${project?._workspace ? project._workspace + '-' : ''}${name}`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: name: string; project: Project optional
+ * 输出 / Returns: ``sakura-service-${project?._workspace ? project._workspace + '-' : ''}${name}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export const serviceSession = (name: string, project?: Project) =>
   `sakura-service-${project?._workspace ? project._workspace + '-' : ''}${name}`;
+/**
+ * 入口 / Entry: serviceLog.
+ * 功能：从当前输入或状态计算 ``/tmp/${serviceSession(name, project)}.log``，供调用方后续验证或使用。
+ * Purpose: Computes ``/tmp/${serviceSession(name, project)}.log`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: name: string; project: Project optional
+ * 输出 / Returns: ``/tmp/${serviceSession(name, project)}.log``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const serviceLog = (name: string, project?: Project) => `/tmp/${serviceSession(name, project)}.log`;
+/**
+ * 入口 / Entry: envPrefix.
+ * 功能：从当前输入或状态计算 `Object.entries(values) .map(([name, value]) => `export ${name}=${quote(value)}`) .join('\n')`，供调用方后续验证或使用。
+ * Purpose: Computes `Object.entries(values) .map(([name, value]) => `export ${name}=${quote(value)}`) .join('\n')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: values: Record<string, string> default={}
+ * 输出 / Returns: `Object.entries(values) .map(([name, value]) => `export ${name}=${quote(value)}`) .join('\n')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export function envPrefix(values: Record<string, string> = {}) {
   return Object.entries(values)
     .map(([name, value]) => `export ${name}=${quote(value)}`)
     .join('\n');
 }
+/**
+ * 入口 / Entry: prepareProjectScopeTools.
+ * 功能：在声明项目服务及依赖顺序中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`project-services.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-services.ts`; the calls and state transitions below complete the operation. Module context: Declares service dependency order, builds environment/start commands and binds project service run scopes.
+ * 处理：通过 `machines.get`, `guestTask().catch`, `guestTask` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `machines.get`, `guestTask().catch`, `guestTask`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: machines: Machines; id: string; signal: AbortSignal; kind: 'service' | 'main' default='service'
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `dependencies.code !== 0`; 异常 / errors `new AppError('无法准备运行归属工具 python3/tmux；项目代码未执行', 409, prefix + '_SCOPE_UNAVAILABLE')`.
+ */
 export async function prepareProjectScopeTools(machines: Machines, id: string, signal: AbortSignal,
   kind: 'service' | 'main' = 'service') {
   const prefix = kind === 'main' ? 'PROJECT_MAIN' : 'SERVICE';
@@ -98,6 +170,19 @@ export async function prepareProjectScopeTools(machines: Machines, id: string, s
   if (dependencies.code !== 0)
     throw new AppError('无法准备运行归属工具 python3/tmux；项目代码未执行', 409, prefix + '_SCOPE_UNAVAILABLE');
 }
+/**
+ * 入口 / Entry: runServices.
+ * 功能：按依赖顺序启动、停止或重启选定项目服务，核验每项完整运行记录。
+ * Purpose: Starts/stops/restarts selected project services in dependency order using complete run records.
+ * 设计：启动按依赖前向、停止逆序，未知或未确认原运行拒绝覆盖；正文通过账户域运输，管理员控制脚本保持固定。
+ * Design: Start follows dependencies and stop reverses them; unknown/pending runs cannot be overwritten and payload transport stays account-scoped.
+ * 输入 / Inputs: machines: Machines; id: string; project: Project; action: 'start' | 'stop'; log: (s: string) => void; signal: AbortSignal; only: string optional
+ * 输出 / Returns: `void`.
+ * 副作用 / Effects: `scopes.stop`; `started.push`; `scopes.persistIntent`; `scopes.start`; `started.reverse`; 更新 / updates `ready`.
+ * 拒绝 / Refusals: 条件 / conditions `action === 'stop'`; `only`; `live.status === 'running' || live.status === 'prepared' || live.status === 'exited' || live.status === 'unconfirmed'`; 异常 / errors `new AppError(`请先停止依赖服务 ${dependent.name}`, 409)`; `new AppError(`${service.name} 的上次启动尚未确认，请先停止并重建`, 409, 'SERVICE_SCOPE_CHANGED')`.
+ * 失败处理：catch 分支执行 `const failures: string[] = [];`; `for (const record of started.reverse()) { try { await scopes.stop(record, log); } catch (cleanupError) { failures.push(cleanu…`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `const failures: string[] = [];`; `for (const record of started.reverse()) { try { await scopes.stop(record, log); } catch (cleanupError) { failures.push(cleanu…`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function runServices(
   machines: Machines,
   id: string,

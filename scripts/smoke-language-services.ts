@@ -1,11 +1,13 @@
-/** 烟雾验收：验证真实项目 UID 下 TypeScript/Python LSP 的补全、定义、诊断与重命名。 */
+/** 烟雾验收：验证真实项目 UID 下 TypeScript/Python LSP 的补全、定义、诊断与重命名。
+ * Smoke acceptance for real project-UID TypeScript/Python LSP completion, definitions, diagnostics and rename. */
 import assert from 'node:assert/strict';
 import { withOwnedProtocolSmoke, protocolSmokeObserver, protocolLspProbe } from './project-protocol-smoke-support.ts';
 const source = 'export const flower = 1;\n';
 if (process.argv.includes('--validate-only')) {
   console.log(JSON.stringify({ kind: 'lsp', vmStarted: false, observerBytes: Buffer.byteLength(protocolSmokeObserver),
     uidProbeBytes: Buffer.byteLength(protocolLspProbe), migration: 'explicit preview/apply', fixture: 'fresh owned and retained' }));
-} else await withOwnedProtocolSmoke('lsp', async ({ features, machines, vmId, directory, lsp }) => {
+} else await withOwnedProtocolSmoke('lsp', /** 通过正式 UID LSP 入口验证 TypeScript/Python 诊断、补全、定义及多文件 rename；先证明预览不写源，再按 token 应用并检查两文件变化。
+ * Use formal UID LSP entry points to verify TypeScript/Python diagnostics, completion, definition and multifile rename; prove preview leaves sources unchanged before applying its token and checking both files. */ async ({ features, machines, vmId, directory, lsp }) => {
   const { textVersion } = await import('../server/files.ts');
   const distro = machines.get(vmId).distro, isolated = process.env.SAKURA_LSP_PRIVATE === '1';
   const before = await features.languageServices.status(vmId, directory + '/a.ts');

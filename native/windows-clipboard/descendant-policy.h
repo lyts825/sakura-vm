@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：拦截普通进程创建，在系统创建前预绑定关闭即终止 Job 并固定文件和源 token；保持调用者原参数与暂停意图，通过精确代理确认后交付孩子，任何不可证明路径失败关闭。
+ * Module responsibilities (English): Intercept ordinary process creation, prebind a kill-on-close Job and pin image/source token before OS creation; retain original arguments/suspension intent and deliver only after exact broker confirmation, refusing unprovable paths.
+ */
 /** 拦截常规 CreateProcess 系列入口，为子进程固定映像、预留 Job 并保持挂起，直到后代代理完成策略接管。 */
 #pragma once
 #include "descendant.h"
@@ -5,7 +9,9 @@
 #include "descendant-token.h"
 #include <memory>
 
+/** 中文：保留宽字符 CreateProcess 的完整调用参数契约，受控路径仅包围授权、暂停和 Job 绑定。 English: Retain the complete wide CreateProcess calling contract, with controlled paths surrounding authorization/suspension/Job binding. 参数声明 / Declared parameters: LPCWSTR,LPWSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,LPVOID,LPCWSTR,LPSTARTUPINFOW,LPPROCESS_INFORMATION. */
 using DescendantCreateW=BOOL(WINAPI*)(LPCWSTR,LPWSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,LPVOID,LPCWSTR,LPSTARTUPINFOW,LPPROCESS_INFORMATION);
+/** 中文：保留 ANSI CreateProcess 的完整调用参数契约，避免在 hook 层改变调用者编码和参数 ABI。 English: Retain the complete ANSI CreateProcess calling contract without changing caller encoding/argument ABI at the hook layer. 参数声明 / Declared parameters: LPCSTR,LPSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,LPVOID,LPCSTR,LPSTARTUPINFOA,LPPROCESS_INFORMATION. */
 using DescendantCreateA=BOOL(WINAPI*)(LPCSTR,LPSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,LPVOID,LPCSTR,LPSTARTUPINFOA,LPPROCESS_INFORMATION);
 static DescendantCreateW originalProcessW=nullptr;
 static DescendantCreateA originalProcessA=nullptr;
@@ -15,20 +21,27 @@ static decltype(&CreateProcessWithTokenW) originalProcessWithTokenW=nullptr;
 static decltype(&CreateProcessWithLogonW) originalProcessWithLogonW=nullptr;
 static thread_local unsigned descendantSystemDepth=0;
 struct DescendantSystemScope {
+  /** 中文：增加线程局部系统调用深度，原 API 内部调用重入时绕过重复代理而不影响其他线程。 English: Increment thread-local system-call depth so internal original-API reentry bypasses duplicate brokering without affecting other threads. */
   DescendantSystemScope(){++descendantSystemDepth;}
+  /** 中文：递减本线程重入深度，恢复外层正常后代策略拦截。 English: Decrement this thread's reentry depth, restoring normal outer descendant interception. */
   ~DescendantSystemScope(){--descendantSystemDepth;}
 };
 struct DescendantFailure {
   DWORD error=ERROR_ACCESS_DENIED;
   bool failed=false;
+  /** 中文：仅在失败标记成立时恢复保存的 Win32 错误，避免清理 API 覆盖真实创建失败原因。 English: Restore saved Win32 error only for marked failure so cleanup APIs cannot overwrite the actual creation error. */
   ~DescendantFailure(){if(failed)SetLastError(error);}
 };
 struct DescendantHandle {
   HANDLE value;
+  /** 中文：保存本层独占的后代句柄，禁止复制使相同数字句柄不会被多次释放。 English: Retain this layer's exclusively owned descendant handle and prohibit copies to avoid repeated release. 参数声明 / Declared parameters: HANDLE input=nullptr. */
   explicit DescendantHandle(HANDLE input=nullptr):value(input){}
+  /** 中文：关闭本层保留的有效精确句柄，失败路径展开也回收资源。 English: Close this layer's valid exact handle during normal destruction or failure unwinding. */
   ~DescendantHandle(){if(value && value!=INVALID_HANDLE_VALUE)CloseHandle(value);}
+  /** 中文：删除此类型的复制构造，避免裸句柄或自有缓冲区被多个对象重复释放；传入对象不能通过此声明复制。 English: Delete this type's copy constructor to prevent multiple objects releasing the same raw handle/owned buffer; the supplied object cannot be copied through this declaration. 参数声明 / Declared parameters: const DescendantHandle&. */
   DescendantHandle(const DescendantHandle&)=delete;
 };
+/** 中文：将 ANSI 参数按当前 ACP 转宽文本，空指针保留空值，转换失败抛错。 English: Convert ANSI arguments with current ACP, retain empty values for null pointers and throw on conversion failure. 参数声明 / Declared parameters: const char* value. */
 static std::wstring descendantWide(const char* value) {
   if(!value)return {};
   const int size=MultiByteToWideChar(CP_ACP,0,value,-1,nullptr,0);
@@ -37,6 +50,7 @@ static std::wstring descendantWide(const char* value) {
   if(!MultiByteToWideChar(CP_ACP,0,value,-1,answer.data(),size))throw std::runtime_error("child ANSI path unavailable");
   answer.resize(size-1);return answer;
 }
+/** 中文：从固定文件句柄取规范 DOS 路径并移除长路径前缀，查询失败返回空值供上层拒绝。 English: Read normalized DOS paths from pinned files/remove the long-path prefix, returning empty on failure for caller refusal. 参数声明 / Declared parameters: HANDLE file. */
 static std::wstring descendantFilePath(HANDLE file) {
   std::wstring path(32768,L'\0');
   const DWORD size=GetFinalPathNameByHandleW(file,path.data(),DWORD(path.size()),FILE_NAME_NORMALIZED|VOLUME_NAME_DOS);
@@ -47,6 +61,7 @@ static std::wstring descendantFilePath(HANDLE file) {
 // the OS-selected image is one of those exact locked files. This supports an
 // explicit application name and the documented quoted/unquoted command search.
 // A replacement cannot make the persisted digest describe a different image.
+/** 中文：按显式应用名或文档化 EXE 搜索顺序打开候选，仅 FILE_SHARE_READ 保持字节与路径不被替换，拒绝目录及重解析点。 English: Open candidates by explicit app name/documented EXE search order with FILE_SHARE_READ to prevent byte/path replacement, rejecting directories/reparse points. 参数声明 / Declared parameters: const std::wstring& value,bool search. */
 static HANDLE descendantPinCandidate(const std::wstring& value,bool search) {
   std::wstring name=value;
   const auto slash=name.find_last_of(L"\\/");
@@ -76,11 +91,14 @@ static HANDLE descendantPinCandidate(const std::wstring& value,bool search) {
 }
 struct DescendantPins {
   std::vector<HANDLE> files;
+  /** 中文：关闭所有已固定候选文件，结束本次创建的映像约束寿命。 English: Close all pinned candidate files, ending this creation's image-constraint lifetime. */
   ~DescendantPins(){for(HANDLE file:files)CloseHandle(file);}
+  /** 中文：把非空候选句柄纳入所有权集合，容器分配失败先关闭句柄再重抛。 English: Own a nonnull candidate handle, closing it before rethrow if collection allocation fails. 参数声明 / Declared parameters: HANDLE file. */
   void remember(HANDLE file) {
     if(!file)return;
     try{files.push_back(file);}catch(...){CloseHandle(file);throw;}
   }
+  /** 中文：在原系统创建前解析显式/引号/非引号应用候选并固定实际可能选中的文件，不通过事后同名路径证明早期身份。 English: Resolve/pin explicit/quoted/unquoted executable candidates before original creation, without using a later same-name path as proof of early identity. 参数声明 / Declared parameters: const std::wstring& application,const std::wstring& command. */
   DescendantPins(const std::wstring& application,const std::wstring& command) {
     if(!application.empty()){remember(descendantPinCandidate(application,false));return;}
     size_t start=command.find_first_not_of(L" \t");if(start==std::wstring::npos)return;
@@ -95,6 +113,7 @@ struct DescendantPins {
       if(files.size() || end==command.size())break;
     }
   }
+  /** 中文：把实际子进程映像路径与已锁候选最终路径比较，返回匹配的原文件句柄；没有匹配拒绝受控接管。 English: Compare the child's actual image with pinned candidates' final paths and return the original matching file handle; absence rejects controlled takeover. 参数声明 / Declared parameters: HANDLE process. */
   HANDLE matching(HANDLE process) {
     std::wstring image(32768,L'\0');DWORD size=DWORD(image.size());
     if(!QueryFullProcessImageNameW(process,0,image.data(),&size))return nullptr;image.resize(size);
@@ -104,10 +123,12 @@ struct DescendantPins {
 };
 struct DescendantAttributes {
   LPPROC_THREAD_ATTRIBUTE_LIST value;
+  /** 中文：调用 DeleteProcThreadAttributeList 释放本层创建的属性表，不接管 caller 的不透明属性。 English: Delete this layer's created attribute list without taking ownership of the caller's opaque attributes. */
   ~DescendantAttributes(){if(value)DeleteProcThreadAttributeList(value);}
 };
 #include "shell-policy.h"
 template<class Startup,class Extended,class Call>
+/** 中文：只支持可证明的常规 startup 或本 Shell scope 来源表；创建前放入预留 Job并固定候选，强制子挂起并核对实际映像/令牌，再向精确 broker 交付句柄。只有服务回复已提交才返回子句柄，失败终止本次精确子，caller 的原 suspended 意图保留。 English: Support only provable ordinary startup or this Shell scope's source table. Reserve a creation-time Job/pin candidates, force suspension/check actual image-token and hand exact handles to the pinned broker. Return child handles only after committed service reply; fail by terminating this exact child while retaining caller suspension intent. 参数声明 / Declared parameters: const std::wstring& application,const std::wstring& command,DWORD flags, Startup* startup,PROCESS_INFORMATION* output,Call call,const DescendantToken* token=nullptr. */
 static BOOL descendantCreate(const std::wstring& application,const std::wstring& command,DWORD flags,
     Startup* startup,PROCESS_INFORMATION* output,Call call,const DescendantToken* token=nullptr) {
   if(!current().active){if(shellScope){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}return call(flags,startup,output);}
@@ -170,6 +191,7 @@ static BOOL descendantCreate(const std::wstring& application,const std::wstring&
     BOOL created=FALSE;
     if(assigned){
       if(token)token->verifySource();DescendantSystemScope systemCall;
+      /** 中文：在原 CreateProcess 调用前复核 Shell source，附加 CREATE_SUSPENDED和创建时 Job 属性；原调用同步部分受 ledger 锁保护。 English: Recheck Shell source immediately before original CreateProcess and add CREATE_SUSPENDED/creation-time Job attributes; ledger lock protects the synchronous original call. */
       const auto create=[&]{if(shellExtended && !shellScope->sourceValid()){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}return call(flags|CREATE_SUSPENDED|EXTENDED_STARTUPINFO_PRESENT,shellExtended?startup:&extended.StartupInfo,&child);};
       created=shellExtended?shellAttributes.invoke(shellTable,child,create):create();
     }
@@ -194,6 +216,7 @@ static BOOL descendantCreate(const std::wstring& application,const std::wstring&
     result.failed=true;result.error=failure;return FALSE;
   }
 }
+/** 中文：宽字符 CreateProcess 钩子保留原参数，系统内部重入或非活动策略直接委托，否则进入固定映像、预留 Job和代理提交。 English: Preserve wide CreateProcess arguments, delegate system reentry/inactive policy directly and otherwise use pinned-image/reservation-Job/broker commit handling. 参数声明 / Declared parameters: LPCWSTR application,LPWSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity, BOOL inherit,DWORD flags,LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output. */
 static BOOL WINAPI descendantCreateW(LPCWSTR application,LPWSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity,
     BOOL inherit,DWORD flags,LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output) {
   if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessW(application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
@@ -201,6 +224,7 @@ static BOOL WINAPI descendantCreateW(LPCWSTR application,LPWSTR command,LPSECURI
     [&](DWORD actual,LPSTARTUPINFOW info,LPPROCESS_INFORMATION result){return originalProcessW(application,command,processSecurity,threadSecurity,inherit,actual,environment,directory,info,result);});}
   catch(...){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
 }
+/** 中文：ANSI CreateProcess 钩子仅转换身份检查所需路径，原参数仍交给原 API，受控创建共用同一挂起/提交边界。 English: Convert only paths needed for identity checks in the ANSI hook while retaining original API arguments/shared suspended-commit boundaries. 参数声明 / Declared parameters: LPCSTR application,LPSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity, BOOL inherit,DWORD flags,LPVOID environment,LPCSTR directory,LPSTARTUPINFOA startup,LPPROCESS_INFORMATION output. */
 static BOOL WINAPI descendantCreateA(LPCSTR application,LPSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity,
     BOOL inherit,DWORD flags,LPVOID environment,LPCSTR directory,LPSTARTUPINFOA startup,LPPROCESS_INFORMATION output) {
   if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessA(application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
@@ -208,6 +232,7 @@ static BOOL WINAPI descendantCreateA(LPCSTR application,LPSTR command,LPSECURITY
     [&](DWORD actual,LPSTARTUPINFOA info,LPPROCESS_INFORMATION result){return originalProcessA(application,command,processSecurity,threadSecurity,inherit,actual,environment,directory,info,result);});}
   catch(...){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
 }
+/** 中文：固定并校验显式或允许的隐式用户令牌后调用宽字符原 API，源与实际子令牌需一致，不改变 token 权限掩码。 English: Pin/validate explicit or allowed implicit user tokens for the wide API, requiring source/actual child identity consistency without altering token access masks. 参数声明 / Declared parameters: HANDLE token,LPCWSTR application,LPWSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity, BOOL inherit,DWORD flags,LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output. */
 static BOOL WINAPI descendantCreateAsUserW(HANDLE token,LPCWSTR application,LPWSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity,
     BOOL inherit,DWORD flags,LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output) {
   if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessAsUserW(token,application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
@@ -217,6 +242,7 @@ static BOOL WINAPI descendantCreateAsUserW(HANDLE token,LPCWSTR application,LPWS
       [&](DWORD actual,LPSTARTUPINFOW info,LPPROCESS_INFORMATION result){return originalProcessAsUserW(identity.argument(),application,command,processSecurity,threadSecurity,inherit,actual,environment,directory,info,result);},&identity);
   }catch(...){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
 }
+/** 中文：保留 ANSI 参数并固定指定用户令牌，前后核对身份后共用受控创建流程。 English: Retain ANSI arguments/pin the user token and share controlled creation after identity checks around the call. 参数声明 / Declared parameters: HANDLE token,LPCSTR application,LPSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity, BOOL inherit,DWORD flags,LPVOID environment,LPCSTR directory,LPSTARTUPINFOA startup,LPPROCESS_INFORMATION output. */
 static BOOL WINAPI descendantCreateAsUserA(HANDLE token,LPCSTR application,LPSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity,
     BOOL inherit,DWORD flags,LPVOID environment,LPCSTR directory,LPSTARTUPINFOA startup,LPPROCESS_INFORMATION output) {
   if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessAsUserA(token,application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
@@ -226,6 +252,7 @@ static BOOL WINAPI descendantCreateAsUserA(HANDLE token,LPCSTR application,LPSTR
       [&](DWORD actual,LPSTARTUPINFOA info,LPPROCESS_INFORMATION result){return originalProcessAsUserA(identity.argument(),application,command,processSecurity,threadSecurity,inherit,actual,environment,directory,info,result);},&identity);
   }catch(...){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
 }
+/** 中文：活动策略下先核验指定 primary token，再因实际 API 不支持带 Job 的扩展 startup 返回 NOT_SUPPORTED；不能先创建再绑定 Job。非活动或系统重入仍委托原 API。 English: Under active policy validate the supplied primary token then return NOT_SUPPORTED because the actual API rejects Job-bearing extended startup; never create before Job assignment. Delegate the original API when inactive or internally reentered. 参数声明 / Declared parameters: HANDLE token,DWORD logon,LPCWSTR application,LPWSTR command,DWORD flags, LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output. */
 static BOOL WINAPI descendantCreateWithTokenW(HANDLE token,DWORD logon,LPCWSTR application,LPWSTR command,DWORD flags,
     LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output) {
   if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessWithTokenW(token,logon,application,command,flags,environment,directory,startup,output);
@@ -235,6 +262,7 @@ static BOOL WINAPI descendantCreateWithTokenW(HANDLE token,DWORD logon,LPCWSTR a
   // empty attribute list. Never create first and assign a Job afterward.
   SetLastError(ERROR_NOT_SUPPORTED);return FALSE;
 }
+/** 中文：活动策略下因 WithLogon 不支持带 Job 的扩展 startup 直接返回 NOT_SUPPORTED，不尝试认证、配置文件或网络副作用；非活动或系统重入委托原 API。 English: Under active policy return NOT_SUPPORTED because WithLogon does not support Job-bearing extended startup, without attempting authentication/profile/network side effects; delegate when inactive or internally reentered. 参数声明 / Declared parameters: LPCWSTR user,LPCWSTR domain,LPCWSTR password,DWORD logon,LPCWSTR application,LPWSTR command,DWORD flags, LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output. */
 static BOOL WINAPI descendantCreateWithLogonW(LPCWSTR user,LPCWSTR domain,LPCWSTR password,DWORD logon,LPCWSTR application,LPWSTR command,DWORD flags,
     LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output) {
   if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessWithLogonW(user,domain,password,logon,application,command,flags,environment,directory,startup,output);

@@ -391,6 +391,8 @@ type Contract359 = { "ok": boolean; "projectId": string };
 type Contract360 = { "tools": Array<{ "id": string; "name": ("Go") | ("Git") | ("Node.js / npm") | ("Python / pip") | ("Rust / Cargo") | ("Java JDK") | ("PHP"); "installed": boolean; "version": string; "required": boolean }>; "job": (null) | ({ "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
 type Contract361 = { "tools": Array<"git" | "node" | "python" | "rust" | "go" | "java" | "php"> };
 type Contract362 = ({ "type": "file"; "path": string }) | ({ "type": "export" });
+/** 操作 ID 到 wire 形状的映射；input 联合约束 bodylessQuery 与请求体互斥。这里只描述类型，运行时校验由服务端操作契约执行。
+ * Map operation IDs to wire shapes; input unions enforce bodylessQuery/body exclusivity. These are type declarations; server operation contracts perform runtime validation. */
 export type OperationContractMap = {
   "core.operation-results.get": { request: undefined; response: Contract1; path: { "correlationId": string }; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
   "core.operation-results.list": { request: undefined; response: Contract2; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
@@ -695,13 +697,23 @@ export type OperationContractMap = {
   "toolchains.legacy.post.vms.vmId.tools": { request: Contract361; response: Contract146; path: { "vmId": string }; query: Contract92; headers: Contract0; method: "POST"; contract: "declared" };
   "transfers.legacy.post.vms.vmId.download": { request: Contract362; response: Contract189; path: { "vmId": string }; query: Contract92; headers: Contract0; method: "POST"; contract: "declared" };
 };
+/** 从统一操作目录选择合法操作 ID，作为下列请求/响应类型索引。
+ * Select valid operation IDs from the shared catalog for the request/response projections below. */
 export type OperationId = keyof OperationContractMap;
+/** 按 Id 提取请求体，保留无体、二进制和可选 JSON 的区别；查询与头部需分别提供。
+ * Project the body by Id, preserving bodyless/binary/optional JSON distinctions; query and headers are supplied separately. */
 export type OperationRequest<Id extends OperationId> = OperationContractMap[Id]['request'];
+/** 按 Id 提取成功响应类型；流/二进制保留 Response，空响应为 undefined。
+ * Project successful responses by Id; streaming/binary values remain Response and empty responses are undefined. */
 export type OperationResponse<Id extends OperationId> = OperationContractMap[Id]['response'];
+/** 按操作提取路径占位符字典、查询输入和显式头部输入；与目录声明的 HTTP method 同源。
+ * Project path placeholders, query inputs and explicit header inputs from the same declaration as the HTTP method. */
 export type OperationPath<Id extends OperationId> = OperationContractMap[Id]['path'];
 export type OperationQuery<Id extends OperationId> = OperationContractMap[Id]['query'];
 export type OperationHeaders<Id extends OperationId> = OperationContractMap[Id]['headers'];
 export type OperationMethod<Id extends OperationId> = OperationContractMap[Id]['method'];
+/** 客户端构造 URL/方法/传输和状态检查的只读元数据；访问与 session 字段描述准入要求，不能代替服务端授权。
+ * Read-only metadata for client URL/method/transport/status checks; access/session describe admission requirements and never replace server authorization. */
 export const operationRoutes = {
   "core.operation-results.get": {
     "path": "/api/operation-results/{correlationId}",

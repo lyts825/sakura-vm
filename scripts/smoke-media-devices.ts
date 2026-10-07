@@ -1,4 +1,5 @@
-/** 烟雾验收：验证HDA 音频后端能力与真实来宾 PCI 枚举。 */
+/** 烟雾验收：验证HDA 音频后端能力与真实来宾 PCI 枚举。
+ * Smoke acceptance for HDA audio-backend capabilities and guest PCI enumeration. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

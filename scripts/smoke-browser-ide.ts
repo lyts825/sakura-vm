@@ -1,4 +1,5 @@
-/** 烟雾验收：验证独立新 VM 中 Browser IDE 会话、项目账户和受控请求边界。 */
+/** 烟雾验收：验证独立新 VM 中 Browser IDE 会话、项目账户和受控请求边界。
+ * Smoke acceptance for Browser IDE sessions, project accounts and request boundaries in a fresh independent VM. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -155,6 +156,8 @@ try {
     assert.ok(Date.now() < deadline, machines.logs.get(vm.id));
     await delay(300);
   }
+  /** 用清空环境的隔离 Python 和 JSON stdin 观察原 IDE 域，断言来宾执行成功并解析报告。
+   * Observe the original IDE domain with a clean environment/isolated Python/JSON stdin, asserting guest success and parsing its report. */
   const observe = async (request: object) => {
     const result = await machines.execInput(vm.id,
       'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' + quote(observer),
@@ -202,6 +205,8 @@ try {
   const result = await ide.run(vm.id, { mode: 'start', guestPort: 8080,
     hostPort, ttlMinutes: checkTerminal ? 3 : 1 }, signal, (line) => process.stdout.write(line));
   assert.equal(result.session?.status, 'running');
+  /** 从落盘 IDE 状态查找本实例 default 会话并校验 schema，必须存在精确 execution.run 才返回。
+   * Find/schema-validate this VM’s saved default IDE session and require an exact execution.run before returning. */
   const savedSession = async () => {
     const store = JSON.parse(await readFile(join(directory, 'browser-ide.json'), 'utf8'));
     const session = browserIdeSessionSchema.parse(store.sessions.find((row: { vmId: string; projectId: string }) =>
@@ -218,6 +223,8 @@ try {
   const scope = new ProjectBrowserIdeScope(machines, vm.id, project, session.expiresAt);
   assert.deepEqual(projectBrowserIdeRecordSchema.parse(JSON.parse(await readFile(scope.receipt(), 'utf8'))), execution.record);
   assert.deepEqual((await scope.status(signal, execution.sha256)).record, execution.record);
+  /** 在项目身份日志按 runId 找到服务记录，核对身份、owner 的 boot/run ID 和正文哈希，解析原生运行票据。
+   * Find the runId in the identity journal, compare identity/owner boot-and-run IDs/body hash and parse its native run receipt. */
   const journalEntry = async () => {
     const journal = JSON.parse(await readFile(join(vmDir(vm.id), 'project-identities', 'default.json'), 'utf8'));
     assert.deepEqual(projectIdentitySchema.parse(journal.identity), identity);
@@ -231,6 +238,8 @@ try {
   assert.deepEqual(await identities.runReadonly(vm.id, identity, execution.run.runId), execution.run);
   assert.equal(await scopes.readonlyActive(vm.id, 'default', execution.run.runId), true);
   assert.equal(machines.get(vm.id).forwards.length, 0, 'both network modes must own only a loopback SSH bridge');
+  /** 验证全部 UID/GID、空附加组、Home/标记、cgroup/网络设备 inode 和零能力；要求 NoNewPrivs，避免弱化隔离结论。
+   * Verify all UID/GID values/empty groups/home/marker/cgroup/network device-inode/zero capabilities, requiring NoNewPrivs for isolation evidence. */
   const checkCredentials = (value: any) => {
     assert.deepEqual(value.uid, [identity.uid, identity.uid, identity.uid, identity.uid]);
     assert.deepEqual(value.gid, [identity.gid, identity.gid, identity.gid, identity.gid]);
@@ -241,6 +250,8 @@ try {
     assert.equal(value.caps.NoNewPrivs, '1');
   };
   const children: { pid: number; ticks: string }[] = [];
+  /** 以精确票据、来宾端口和会话凭据观察 IDE 原域及子进程，返回观测器结果。
+   * Observe the original IDE domain/children using exact receipt/guest port/session credentials and return observer results. */
   const domain = () => observe({ operation: 'domain', run: execution.run, projectId: 'default', port: session.guestPort,
     password: session.password, children });
   const runtime = await domain();

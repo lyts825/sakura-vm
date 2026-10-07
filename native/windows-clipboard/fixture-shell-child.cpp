@@ -1,9 +1,15 @@
+/**
+ * 模块职责（中文）：自有 Shell 孩子记录 DLL/TLS/入口阶段策略及真实 argv、环境、标准句柄，私有命令通道可继续驱动受控 ExW 后代并精确追踪退出。
+ * Module responsibilities (English): An owned Shell child records DLL/TLS/entry policy and actual argv/environment/standard handles, continuing controlled ExW descendants/exact exit tracking through a private command channel.
+ */
 /** Shell 子进程夹具，在 DLL、EXE TLS 和入口阶段记录策略状态与常规创建证据。 */
 #include "fixture-shell.h"
 #include <shellapi.h>
 #include "fixture-shell-call.h"
+/** 中文：EXE 进程附加 TLS 阶段记录 Shell 阶段 2，其他通知无操作。 English: Record Shell phase 2 at EXE process-attach TLS, ignoring other notifications. 参数声明 / Declared parameters: PVOID,DWORD reason,PVOID. */
 static void NTAPI shellTls(PVOID,DWORD reason,PVOID){if(reason==DLL_PROCESS_ATTACH)ShellRecord(2);}
 PIMAGE_TLS_CALLBACK shellTlsCallback __attribute__((section(".CRT$XLB"),used))=shellTls;
+/** 中文：记录入口阶段并创建 marker，通过私有管道报告真实 argv/环境/工作目录/阶段证据；随后处理精确 track/wait 与受控 ExW 后代创建，最后关闭自有句柄。 English: Record entry/create a marker and report actual argv/environment/cwd/phase evidence over a private pipe; process exact track/wait and controlled ExW descendant creation, then close owned handles. */
 int wmain(){
   ShellRecord(3);const auto station=shellPrivateStation(),pipeName=shellArgument(L"--shell-pipe="),marker=shellArgument(L"--shell-marker=");
   HANDLE reached=CreateFileW(marker.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);if(reached==INVALID_HANDLE_VALUE)return 85;CloseHandle(reached);

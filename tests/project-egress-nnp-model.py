@@ -1,3 +1,7 @@
+# 模块职责：生产出口准入与 SSH 服务祖先模型，覆盖无新权限配置、进程出生证据和监听归属。
+# Module: Models for production egress admission and SSH-service ancestry, covering no-new-privileges configuration, process birth evidence and listener ownership.
+# 阅读方式：按初始化、具名辅助函数与测试情景阅读；便携模型与模拟接口不能证明真实 Linux 隔离。
+# Reading guide: Follow initialization, named helpers and cases; portable models and substituted interfaces do not attest real Linux isolation.
 # 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
 """Portable admission and exact SSH service ancestry models; no live Linux proof."""
 import ast
@@ -20,12 +24,26 @@ tree = ast.parse(source)
 definitions = ast.Module(body=[node for node in tree.body if isinstance(node, (ast.Assign, ast.FunctionDef, ast.ClassDef))], type_ignores=[])
 
 
+# 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+# English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+# 输入 / Inputs: 无 / none。
+# 结果：返回分支计算值（`ns`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`ns`); its implementation and call sites define the actual type.
+# 协作入口 / Collaborators: `dict`, `exec`, `compile`.
 def namespace():
     ns = dict(base64=base64, hashlib=hashlib, json=json, os=os, re=re, stat=stat, struct=struct, time=time, uuid=uuid)
     exec(compile(definitions, 'production-egress-nnp-definitions', 'exec'), ns)
     return ns
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: ns, call, code。
+# 结果：返回分支计算值（`error.detail`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`error.detail`); its implementation and call sites define the actual type.
+# 失败 / Failure: `AssertionError('expected ' + code)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `call`, `AssertionError`.
+# 检查边界 / Checked boundaries: `error.code == code`.
 def refused(ns, call, code):
     try:
         call()
@@ -35,16 +53,35 @@ def refused(ns, call, code):
     raise AssertionError('expected ' + code)
 
 
+# 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+# English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+# 输入 / Inputs: inode = 1。
+# 结果：返回分支计算值（`types.SimpleNamespace(st_dev=1, st_ino=inode, st_uid=0, st_mode=stat.S_IFREG | 493, st_nlink=1)`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`types.SimpleNamespace(st_dev=1, st_ino=inode, st_uid=0, st_mode=stat.S_IFREG | 493, st_nlink=1)`); its implementation and call sites define the actual type.
+# 协作入口 / Collaborators: `types.SimpleNamespace`.
 def image(inode=1):
     return types.SimpleNamespace(st_dev=1, st_ino=inode, st_uid=0, st_mode=stat.S_IFREG | 0o755, st_nlink=1)
 
 
+# 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+# English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+# 输入 / Inputs: pid, parent_pid, executable = '/usr/sbin/sshd', nnp = 1, uid = 0, arguments = None, group = '/openrc.sshd', inode = 1。
+# 结果：返回分支计算值（`dict(pid=pid, parentPid=parent_pid, startTicks=str(pid * 100), executable=executable, image=image(in…`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`dict(pid=pid, parentPid=parent_pid, startTicks=str(pid * 100), executable=executable, image=image(in…`); its implementation and call sites define the actual type.
+# 协作入口 / Collaborators: `dict`, `str`, `image`, `executable.encode`.
 def process(pid, parent_pid, executable='/usr/sbin/sshd', nnp=1, uid=0, arguments=None, group='/openrc.sshd', inode=1):
     return dict(pid=pid, parentPid=parent_pid, startTicks=str(pid * 100), executable=executable,
                 image=image(inode), uids=[uid] * 4, nnp=nnp, caps=[0, 0, 0],
                 arguments=arguments or [executable.encode()], cgroupName=group)
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：返回分支计算值（`(ns, processes, pid_files, flags)`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`(ns, processes, pid_files, flags)`); its implementation and call sites define the actual type.
+# 状态影响 / State effects: `ns['os']`, `ns['directory_fd']`, `ns['egress_nnp_directory']`, `ns['egress_nnp_process']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `namespace`, `image`, `process`, `dict`.
 def live_fixture():
     ns = namespace()
     installed = {'/usr/sbin/sshd': image(), '/usr/sbin/crond': image(2), '/usr/lib/ssh/sshd-auth': image(3),
@@ -72,6 +109,15 @@ def live_fixture():
     return ns, processes, pid_files, flags
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：返回分支计算值（`(ns, processes, responses, queries, closed, flags)`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`(ns, processes, responses, queries, closed, flags)`); its implementation and call sites define the actual type.
+# 状态影响 / State effects: `item['cgroupName']`, `processes[1040]`, `processes[1040]['startTicks']`, `processes[1743]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `live_fixture`, `processes.values`, `process`, `dict`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def systemd_fixture():
     ns, processes, _pid_files, flags = live_fixture()
     for item in processes.values():
@@ -93,6 +139,13 @@ def systemd_fixture():
     ns['tool'] = lambda name: '/usr/bin/' + name
     ns['directory_fd'] = lambda path: 12 if path == '/usr/bin' else 10
     ns['egress_nnp_directory'] = lambda path: 11 if path == '/proc' else 10
+    # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+    # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+    # 输入 / Inputs: name, mode, **kwargs。
+    # 结果：返回分支计算值（`20 / previous_open(name, mode, **kwargs)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`20 / previous_open(name, mode, **kwargs)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `dict`, `previous_open`.
+    # 检查边界 / Checked boundaries: `kwargs == dict(dir_fd=12)`.
     def open_fd(name, mode, **kwargs):
         if name == 'systemctl':
             assert kwargs == dict(dir_fd=12)
@@ -101,6 +154,13 @@ def systemd_fixture():
     ns['os'].open = open_fd
     ns['os'].fstat = lambda descriptor: image(9) if descriptor == 20 else previous_stat(descriptor)
     ns['os'].close = closed.append
+    # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+    # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+    # 输入 / Inputs: argv, **kwargs。
+    # 结果：返回分支计算值（`'\n'.join((key + '=' + value for key, value in responses[unit].items())).encode() + b'\n'`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`'\n'.join((key + '=' + value for key, value in responses[unit].items())).encode() + b'\n'`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `dict`, `len`, `queries.append`, `flags.get`.
+    # 检查边界 / Checked boundaries: `argv[:5] == ['systemctl', 'show', '--system', '--no-pager', '--all']`; `argv[5] == '--property=Id,LoadState,ActiveState,SubState,NeedDaemonReload,NoNewPrivileges,MainPID,Co…`.
     def execute(argv, **kwargs):
         assert argv[:5] == ['systemctl', 'show', '--system', '--no-pager', '--all']
         assert argv[5] == '--property=Id,LoadState,ActiveState,SubState,NeedDaemonReload,NoNewPrivileges,MainPID,ControlGroup'
@@ -115,6 +175,14 @@ def systemd_fixture():
     return ns, processes, responses, queries, closed, flags
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `processes[1800]`, `processes[1801]`, `processes[1802]`, `processes[pid]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `systemd_fixture`, `process`, `range`, `copy.deepcopy`.
+# 检查边界 / Checked boundaries: `processes == original`; `queries == ['ssh.service', 'ssh.service']`.
 def systemd_pam_sessions_and_bounded_authority():
     ns, processes, _responses, queries, closed, _flags = systemd_fixture()
     scope = '/user.slice/user-1000.slice/session-c12.scope'
@@ -144,6 +212,16 @@ def systemd_pam_sessions_and_bounded_authority():
     assert not queries and 20 not in closed, 'the existing service-cgroup path does not open or query systemctl'
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `listener['uids']`, `listener['cgroupName']`, `child['parentPid']`, `child['arguments']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `systemd_fixture`, `listener.update`, `image`, `process`.
+# 检查边界 / Checked boundaries: `closed.count(20) == (0 if variant in ('generic-user-slice', 'foreign-session-name') else 1)`; `detail['pid'] == pid`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def systemd_scope_and_listener_refusals():
     for variant in ('missing-main-pid', 'nonroot-listener', 'helper-listener', 'wrong-listener-group',
                     'orphan', 'fake-title', 'unknown-parent', 'foreign-image', 'foreign-exe', 'retired-image',
@@ -197,11 +275,28 @@ def systemd_scope_and_listener_refusals():
         assert detail['pid'] == 1800 and closed.count(20) == 1, 'even an already verified listener cannot exempt an NNP=0 child'
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `flags['query_hook']`, `ns['execute']`, `ns['os'].open`, `ns['os'].fstat`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('missing tool-open failure')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `systemd_fixture`, `refused`, `closed.count`, `ns['egress_nnp_live']`.
+# 检查边界 / Checked boundaries: `queries == ['ssh.service', 'ssh.service'] and closed.count(20) == 1`; `closed.count(20) == (0 if variant == 'open-failed' else 1)`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def systemd_authority_changes_and_fd_cleanup():
     for field, value in (('MainPID', '100'), ('ControlGroup', '/system.slice/sshd.service'), ('Id', 'sshd.service'),
                          ('LoadState', 'masked'), ('ActiveState', 'inactive'), ('SubState', 'dead'),
                          ('NeedDaemonReload', 'yes'), ('NoNewPrivileges', 'no')):
         ns, _processes, responses, queries, closed, flags = systemd_fixture()
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: unit, count。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 状态影响 / State effects: `responses[unit][field]`. Follow the actual model assignments / 以模型中的实际赋值为准。
         def drift(unit, count):
             if count == 2:
                 responses[unit][field] = value
@@ -216,6 +311,12 @@ def systemd_authority_changes_and_fd_cleanup():
             code = 'EGRESS_NNP_PROCESS_CHANGED' if phase == 'final' else 'EGRESS_NNP_SERVICE_UNVERIFIED'
             if variant == 'query-failed':
                 execute = ns['execute']
+                # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+                # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+                # 输入 / Inputs: argv, **kwargs。
+                # 结果：返回分支计算值（`execute(argv, **kwargs)`），实际类型由实现及使用处约定。
+                # Result: Return the branch-computed value (`execute(argv, **kwargs)`); its implementation and call sites define the actual type.
+                # 协作入口 / Collaborators: `ns['refuse']`, `execute`.
                 def fail(argv, **kwargs):
                     if phase == 'initial' or queries:
                         ns['refuse']('SYSTEM_TOOL_FAILED')
@@ -223,6 +324,13 @@ def systemd_authority_changes_and_fd_cleanup():
                 ns['execute'] = fail
             elif variant == 'open-failed':
                 open_fd = ns['os'].open
+                # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+                # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+                # 输入 / Inputs: name, mode, **kwargs。
+                # 结果：返回分支计算值（`open_fd(name, mode, **kwargs)`），实际类型由实现及使用处约定。
+                # Result: Return the branch-computed value (`open_fd(name, mode, **kwargs)`); its implementation and call sites define the actual type.
+                # 失败 / Failure: `PermissionError('model-tool-open-refused')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+                # 协作入口 / Collaborators: `PermissionError`, `open_fd`.
                 def fail_open(name, mode, **kwargs):
                     if name == 'systemctl':
                         raise PermissionError('model-tool-open-refused')
@@ -230,6 +338,13 @@ def systemd_authority_changes_and_fd_cleanup():
                 ns['os'].open = fail_open
             else:
                 fstat = ns['os'].fstat
+                # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+                # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+                # 输入 / Inputs: descriptor。
+                # 结果：返回分支计算值（`info`），实际类型由实现及使用处约定。
+                # Result: Return the branch-computed value (`info`); its implementation and call sites define the actual type.
+                # 状态影响 / State effects: `info.st_uid`, `info.st_mode`. Follow the actual model assignments / 以模型中的实际赋值为准。
+                # 协作入口 / Collaborators: `fstat`.
                 def unsafe_tool(descriptor):
                     info = fstat(descriptor)
                     if descriptor == 20:
@@ -253,11 +368,28 @@ def systemd_authority_changes_and_fd_cleanup():
             assert closed.count(11) == closed.count(12) == 1, 'both proc and tool parent pins are closed exactly once'
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['egress_nnp_process']`, `processes[1743]['parentPid']`, `processes[1040]['startTicks']`, `processes[pid]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `systemd_fixture`, `refused`, `closed.count`, `range`.
+# 检查边界 / Checked boundaries: `detail['pid'] == (1040 if variant == 'listener-birth' else 1743)`; `closed.count(20) == 1`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def systemd_pam_identity_changes_and_chain_bounds():
     for stage in ('initial', 'final'):
         for variant in ('parent', 'birth', 'image', 'executable', 'uid', 'caps', 'cgroup', 'nnp', 'exited', 'listener-birth'):
             ns, _processes, _responses, queries, closed, _flags = systemd_fixture()
             original, reads = ns['egress_nnp_process'], {}
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: parent, pid。
+            # 结果：返回分支计算值（`None / current`），实际类型由实现及使用处约定。
+            # Result: Return the branch-computed value (`None / current`); its implementation and call sites define the actual type.
+            # 状态影响 / State effects: `reads[pid]`, `current['parentPid']`, `current['startTicks']`, `current['image']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+            # 协作入口 / Collaborators: `original`, `reads.get`, `len`, `str`.
             def changed(parent, pid):
                 current = original(parent, pid)
                 reads[pid] = reads.get(pid, 0) + 1
@@ -305,6 +437,14 @@ def systemd_pam_identity_changes_and_chain_bounds():
         assert closed.count(20) == 1
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `processes[100]['nnp']`, `processes[500]['nnp']`, `processes[100]['cgroupName']`, `pid_files['/run/sshd.pid']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `live_fixture`, `ns['egress_nnp_live']`, `refused`, `processes.values`.
+# 检查边界 / Checked boundaries: `detail['pid'] == 100 and detail['parentPid'] == 1 and (detail['service'] == 'sshd')`; `detail['startTicks'] == '10000' and detail['executable'] == '/usr/sbin/sshd'`.
 def live_services_and_root_management():
     ns, processes, pid_files, _flags = live_fixture()
     ns['egress_nnp_live']({'uid': 20000}, 'openrc')
@@ -331,6 +471,14 @@ def live_services_and_root_management():
     refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'systemd'), 'EGRESS_NNP_SERVICE_UNVERIFIED')
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `child['uids']`, `processes[400]`, `processes[200]['parentPid']`, `processes[300]['parentPid']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `live_fixture`, `process`, `child.update`, `image`.
+# 检查边界 / Checked boundaries: `detail['pid'] == 400`; `before == {pid: (item['uids'], item['nnp']) for pid, item in processes.items()}`.
 def surviving_pre_auth_and_nonroot_sessions():
     for variant in ('root-title', 'orphan', 'nonroot', 'split-auth', 'retired-image'):
         ns, processes, _pid_files, _flags = live_fixture()
@@ -358,6 +506,16 @@ def surviving_pre_auth_and_nonroot_sessions():
     refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'openrc'), 'EGRESS_NNP_RESTART_REQUIRED')
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `processes[3326]`, `processes[3326]['startTicks']`, `pid_files['/run/sshd.pid']`, `processes[4407]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `live_fixture`, `process`, `ns['egress_nnp_live']`, `fixture`.
+# 检查边界 / Checked boundaries: `processes == before`; `detail['pid'] == pid`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def openrc_ssh_descendants_and_listener_identity():
     ns, processes, pid_files, _flags = live_fixture()
     # Replay the observed 4407 -> 3326 kernel identity against a controlled
@@ -368,6 +526,13 @@ def openrc_ssh_descendants_and_listener_identity():
     processes[4407] = process(4407, 3326, executable='/usr/lib/ssh/sshd-session', inode=6, group='/')
     processes[4407]['startTicks'] = '37665'
     ns['egress_nnp_live']({'uid': 20000}, 'openrc')
+    # 中文功能：构造本组边界验证所需的模型对象或输入材料。
+    # English: Construct model objects or input material required by this boundary-verification group.
+    # 输入 / Inputs: 无 / none。
+    # 结果：返回分支计算值（`(ns, processes, pid_files)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`(ns, processes, pid_files)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `processes[100]['cgroupName']`, `pid_files['/run/sshd.pid']`, `processes[3326]`, `processes[3326]['startTicks']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `live_fixture`, `process`.
     def fixture():
         ns, processes, pid_files, _flags = live_fixture()
         processes[100]['cgroupName'] = '/'
@@ -421,6 +586,13 @@ def openrc_ssh_descendants_and_listener_identity():
         ns, processes, _pid_files = fixture()
         reads = {}
         original = ns['egress_nnp_process']
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: parent, pid。
+        # 结果：返回分支计算值（`None / current`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`None / current`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `reads[pid]`, `current['parentPid']`, `current['startTicks']`, `current['image']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `original`, `reads.get`, `str`, `int`.
         def changed(parent, pid):
             current = original(parent, pid)
             reads[pid] = reads.get(pid, 0) + 1
@@ -449,6 +621,12 @@ def openrc_ssh_descendants_and_listener_identity():
         assert detail['pid'] == (100 if variant == 'changed-listener' else 4407)
     ns, processes, pid_files = fixture()
     reads = dict(count=0)
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: path。
+    # 结果：返回分支计算值（`b'100\n' if reads['count'] == 1 else b'9999\n' / None`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`b'100\n' if reads['count'] == 1 else b'9999\n' / None`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `reads['count']`. Follow the actual model assignments / 以模型中的实际赋值为准。
     def changed_pidfile(path):
         if path == '/run/sshd.pid':
             reads['count'] += 1
@@ -465,6 +643,14 @@ def openrc_ssh_descendants_and_listener_identity():
     refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'openrc'), 'EGRESS_NNP_PROCESS_CHANGED')
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['time']`, `processes[9000]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `systemd_fixture`, `dict`, `types.SimpleNamespace`, `process`.
+# 检查边界 / Checked boundaries: `queries == ['ssh.service', 'ssh.service'] and closed.count(20) == 1`; `calls['listdir'] == 3`.
 def initial_snapshot_recovers_unrelated_churn():
     for variant in ('new-unrelated-pid', 'unrelated-transient-image'):
         ns, processes, _responses, queries, closed, _flags = systemd_fixture()
@@ -475,11 +661,25 @@ def initial_snapshot_recovers_unrelated_churn():
                             group='/user.slice/user-1000.slice/session-99.scope')
         if variant == 'unrelated-transient-image':
             processes[9000] = unrelated
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: fd。
+        # 结果：返回分支计算值（`original_list(fd)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`original_list(fd)`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `calls['listdir']`, `processes[9000]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `original_list`.
         def listed(fd):
             calls['listdir'] += 1
             if variant == 'new-unrelated-pid' and calls['listdir'] == 2:
                 processes[9000] = unrelated
             return original_list(fd)
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: parent, pid。
+        # 结果：返回分支计算值（`original_read(parent, pid)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`original_read(parent, pid)`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `reads[pid]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `reads.get`, `ns['refuse']`, `original_read`.
         def read(parent, pid):
             reads[pid] = reads.get(pid, 0) + 1
             if variant == 'unrelated-transient-image' and pid == 9000 and reads[pid] == 1:
@@ -493,6 +693,14 @@ def initial_snapshot_recovers_unrelated_churn():
         assert processes[1743]['parentPid'] == 1040 and processes[1743]['startTicks'] == '78472'
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['time']`, `child['caps']`, `child['uids'][1]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `systemd_fixture`, `types.SimpleNamespace`, `dict`, `process`.
+# 检查边界 / Checked boundaries: `detail['pid'] == 9000 and calls['listdir'] == 4 and (read_pids.count(9000) == 1)`; `all((pid in read_pids for pid in processes))`.
 def initial_snapshot_rejects_dangerous_new_pids():
     for born_at in (2, 4):
         for variant, code in (('ssh-nnp-zero', 'EGRESS_NNP_RESTART_REQUIRED'), ('cron-nnp-zero', 'EGRESS_NNP_RESTART_REQUIRED'),
@@ -514,6 +722,13 @@ def initial_snapshot_rejects_dangerous_new_pids():
                     child['caps'] = [0, 1, 0]
                 elif variant == 'project-mixed-uid':
                     child['uids'][1] = 0
+            # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+            # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+            # 输入 / Inputs: fd。
+            # 结果：返回分支计算值（`original_list(fd)`），实际类型由实现及使用处约定。
+            # Result: Return the branch-computed value (`original_list(fd)`); its implementation and call sites define the actual type.
+            # 状态影响 / State effects: `calls['listdir']`, `processes[pid]`, `processes[9000]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+            # 协作入口 / Collaborators: `process`, `original_list`.
             def listed(fd):
                 calls['listdir'] += 1
                 if calls['listdir'] >= 2:
@@ -522,6 +737,12 @@ def initial_snapshot_rejects_dangerous_new_pids():
                 if calls['listdir'] == born_at:
                     processes[9000] = child
                 return original_list(fd)
+            # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+            # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+            # 输入 / Inputs: parent, pid。
+            # 结果：返回分支计算值（`original_read(parent, pid)`），实际类型由实现及使用处约定。
+            # Result: Return the branch-computed value (`original_read(parent, pid)`); its implementation and call sites define the actual type.
+            # 协作入口 / Collaborators: `read_pids.append`, `original_read`.
             def read(parent, pid):
                 read_pids.append(pid)
                 return original_read(parent, pid)
@@ -532,11 +753,27 @@ def initial_snapshot_rejects_dangerous_new_pids():
             assert detail.get('stage') != 'process-snapshot' and closed.count(20) == 1
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['time']`, `processes[9000]`, `ns['egress_nnp_process']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `systemd_fixture`, `dict`, `types.SimpleNamespace`, `process`.
+# 检查边界 / Checked boundaries: `detail['manager'] == 'systemd' and detail['stage'] == 'process-snapshot' and (not queries) and (20 n…`; `detail['snapshotAttempts'] == (3 if variant == 'continuous-read-change' else 2 if variant == 'retry-…`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def initial_snapshot_retry_bounds_and_safe_reasons():
     for variant in ('continuous-read-change', 'before-read-deadline', 'after-read-deadline', 'after-birth-deadline',
                     'after-census-deadline', 'between-increments-deadline', 'retry-read-deadline'):
         ns, processes, _responses, queries, closed, _flags = systemd_fixture()
         clock, calls, reads, births = [0], dict(listdir=0, monotonic=0), [], []
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: 无 / none。
+        # 结果：返回分支计算值（`clock[0]`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`clock[0]`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `calls['monotonic']`, `clock[0]`. Follow the actual model assignments / 以模型中的实际赋值为准。
         def monotonic():
             calls['monotonic'] += 1
             if variant == 'before-read-deadline' and calls['monotonic'] == 4:
@@ -546,6 +783,13 @@ def initial_snapshot_retry_bounds_and_safe_reasons():
         original_list, original_read, original_birth = ns['os'].listdir, ns['egress_nnp_process'], ns['egress_nnp_birth']
         if variant in ('continuous-read-change', 'retry-read-deadline'):
             processes[9000] = process(9000, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: fd。
+        # 结果：返回分支计算值（`original_list(fd)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`original_list(fd)`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `calls['listdir']`, `processes[9000]`, `clock[0]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `variant.endswith`, `process`, `original_list`.
         def listed(fd):
             calls['listdir'] += 1
             if variant.endswith('deadline') and calls['listdir'] == 2:
@@ -554,6 +798,13 @@ def initial_snapshot_retry_bounds_and_safe_reasons():
                (variant == 'between-increments-deadline' and calls['listdir'] == 3):
                 clock[0] = 15
             return original_list(fd)
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: parent, pid。
+        # 结果：返回分支计算值（`current`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`current`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `clock[0]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `reads.append`, `ns['refuse']`, `original_read`.
         def read(parent, pid):
             reads.append(pid)
             if pid == 9000 and (variant == 'continuous-read-change' or (variant == 'retry-read-deadline' and calls['listdir'] == 1)):
@@ -563,6 +814,13 @@ def initial_snapshot_retry_bounds_and_safe_reasons():
                (variant == 'retry-read-deadline' and calls['listdir'] == 2):
                 clock[0] = 15.1
             return current
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: parent, pid。
+        # 结果：返回分支计算值（`current`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`current`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `clock[0]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `births.append`, `original_birth`.
         def birth(parent, pid):
             births.append(pid)
             current = original_birth(parent, pid)
@@ -592,6 +850,13 @@ def initial_snapshot_retry_bounds_and_safe_reasons():
     clock = [0]
     ns['time'] = types.SimpleNamespace(monotonic=lambda: clock[0])
     original_read = ns['egress_nnp_process']
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: parent, pid。
+    # 结果：返回分支计算值（`original_read(parent, pid)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`original_read(parent, pid)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `clock[0]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `original_read`.
     def slow(parent, pid):
         clock[0] += 3
         return original_read(parent, pid)
@@ -600,11 +865,26 @@ def initial_snapshot_retry_bounds_and_safe_reasons():
     assert clock[0] > 5 and queries == ['ssh.service', 'ssh.service']
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['time']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `systemd_fixture`, `dict`, `types.SimpleNamespace`, `ns['egress_nnp_live']`.
+# 检查边界 / Checked boundaries: `calls['listdir'] == 4 and set(snapshots[0]) == set(processes)`; `all((reads.count(pid) == 1 for pid in processes if pid >= 9000))`.
 def incremental_census_includes_continuous_births():
     ns, processes, _responses, queries, closed, _flags = systemd_fixture()
     calls, reads, snapshots = dict(listdir=0), [], []
     ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
     original_list, original_read, original_snapshot = ns['os'].listdir, ns['egress_nnp_process'], ns['egress_nnp_snapshot']
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: fd。
+    # 结果：返回分支计算值（`original_list(fd)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`original_list(fd)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `calls['listdir']`, `processes[pid]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `range`, `process`, `original_list`.
     def listed(fd):
         calls['listdir'] += 1
         if calls['listdir'] > 1:
@@ -612,9 +892,21 @@ def incremental_census_includes_continuous_births():
                 pid = 9000 + calls['listdir'] * 2 + offset
                 processes[pid] = process(pid, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
         return original_list(fd)
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: parent, pid。
+    # 结果：返回分支计算值（`original_read(parent, pid)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`original_read(parent, pid)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `reads.append`, `original_read`.
     def read(parent, pid):
         reads.append(pid)
         return original_read(parent, pid)
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: parent, manager。
+    # 结果：返回分支计算值（`current`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`current`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `original_snapshot`, `snapshots.append`.
     def snapshot(parent, manager):
         current = original_snapshot(parent, manager)
         snapshots.append(current)
@@ -627,6 +919,14 @@ def incremental_census_includes_continuous_births():
     assert queries == ['ssh.service', 'ssh.service'] and closed.count(20) == closed.count(11) == 1
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['time']`, `processes[9000]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `systemd_fixture`, `dict`, `types.SimpleNamespace`, `process`.
+# 检查边界 / Checked boundaries: `detail['snapshotAttempts'] == 1 and detail['stage'] == 'process-snapshot'`; `detail['incrementRounds'] == (3 if variant in ('reused-last-increment', 'vanished-then-reused') else…`.
 def incremental_census_rejects_pid_reuse_and_unstable_reads():
     for variant in ('reused-first-increment', 'reused-last-increment', 'vanished-then-reused', 'new-read-changed', 'cached-birth-invalid'):
         ns, processes, _responses, queries, closed, _flags = systemd_fixture()
@@ -634,6 +934,13 @@ def incremental_census_rejects_pid_reuse_and_unstable_reads():
         ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
         processes[9000] = process(9000, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
         original_list, original_read, original_birth = ns['os'].listdir, ns['egress_nnp_process'], ns['egress_nnp_birth']
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: fd。
+        # 结果：返回分支计算值（`original_list(fd)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`original_list(fd)`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `calls['listdir']`, `processes[pid]`, `processes[9000]`, `processes[9000]['startTicks']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `process`, `original_list`.
         def listed(fd):
             calls['listdir'] += 1
             if calls['listdir'] > 1:
@@ -644,11 +951,23 @@ def incremental_census_rejects_pid_reuse_and_unstable_reads():
                 processes[9000] = process(9000, 1, executable='/bin/sh', inode=91, uid=20000, nnp=0)
                 processes[9000]['startTicks'] = '900001'
             return original_list(fd)
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: parent, pid。
+        # 结果：返回分支计算值（`original_read(parent, pid)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`original_read(parent, pid)`); its implementation and call sites define the actual type.
+        # 协作入口 / Collaborators: `reads.append`, `ns['refuse']`, `original_read`.
         def read(parent, pid):
             reads.append(pid)
             if variant == 'new-read-changed' and pid == 9102:
                 ns['refuse']('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-identity-or-image-changed'})
             return original_read(parent, pid)
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: parent, pid。
+        # 结果：返回分支计算值（`None / original_birth(parent, pid)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`None / original_birth(parent, pid)`); its implementation and call sites define the actual type.
+        # 协作入口 / Collaborators: `births.append`, `ns['refuse']`, `original_birth`.
         def birth(parent, pid):
             births.append(pid)
             if variant == 'vanished-then-reused' and pid == 9000 and calls['listdir'] < 4:
@@ -666,6 +985,17 @@ def incremental_census_rejects_pid_reuse_and_unstable_reads():
         assert reads.count(9000) == 1, 'a changed kernel birth is rejected rather than silently overwriting the cached PID'
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `fields[0]`, `fields[6]`, `ns['os']`, `ns['os'].listdir`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('an unknown stat-read error was accepted')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `namespace`, `b' '.join`, `raw.replace`, `types.SimpleNamespace`.
+# 检查边界 / Checked boundaries: `ns['egress_nnp_birth'](10, 70) == dict(startTicks='7000', inactive=variant in ('zombie', 'dead', 'ke…`; `ns['egress_nnp_birth'](10, 70) is None`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def pinned_process_birth_and_fd_cleanup():
     for variant in ('valid', 'name-contains-parentheses', 'zombie', 'dead', 'kernel-thread', 'fake-kthread-name',
                     'wrong-pid', 'truncated', 'invalid-birth', 'invalid-flags', 'overflow-flags', 'too-large',
@@ -691,16 +1021,39 @@ def pinned_process_birth_and_fd_cleanup():
             raw = raw.replace(b'7000', b'+7000')
         elif variant == 'too-large':
             raw = b'x' * 16385
+        # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+        # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+        # 输入 / Inputs: name, flags, **kwargs。
+        # 结果：返回分支计算值（`20 if name == '70' else 21`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`20 if name == '70' else 21`); its implementation and call sites define the actual type.
+        # 失败 / Failure: `FileNotFoundError('model-gone')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+        # 协作入口 / Collaborators: `opened.append`, `FileNotFoundError`.
         def open_fd(name, flags, **kwargs):
             opened.append((name, flags, kwargs))
             if (variant == 'missing-directory' and name == '70') or (variant in ('missing-stat', 'gone-after-stat-open') and name == 'stat'):
                 raise FileNotFoundError('model-gone')
             return 20 if name == '70' else 21
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: fd, count。
+        # 结果：返回分支计算值（`raw`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`raw`); its implementation and call sites define the actual type.
+        # 失败 / Failure: `PermissionError('model-read-refused')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+        # 协作入口 / Collaborators: `PermissionError`.
+        # 检查边界 / Checked boundaries: `fd == 21 and count == 16385`.
         def read(fd, count):
             assert fd == 21 and count == 16385
             if variant == 'read-failed':
                 raise PermissionError('model-read-refused')
             return raw
+        # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+        # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+        # 输入 / Inputs: name, **kwargs。
+        # 结果：返回分支计算值（`types.SimpleNamespace(st_mode=stat.S_IFDIR)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`types.SimpleNamespace(st_mode=stat.S_IFDIR)`); its implementation and call sites define the actual type.
+        # 失败 / Failure: `ProcessLookupError('model-process-exited')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+        # 协作入口 / Collaborators: `dict`, `ProcessLookupError`, `types.SimpleNamespace`.
+        # 检查边界 / Checked boundaries: `name == '70' and kwargs == dict(dir_fd=10, follow_symlinks=False)`.
         def exists(name, **kwargs):
             assert name == '70' and kwargs == dict(dir_fd=10, follow_symlinks=False)
             if variant == 'gone-after-stat-open':
@@ -746,11 +1099,26 @@ def pinned_process_birth_and_fd_cleanup():
                 assert closed == [21, 20] * 3
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['os'].listdir`, `processes[200]['parentPid']`, `processes[300]['uids']`, `ns['egress_nnp_process']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `systemd_fixture`, `dict`, `refused`, `detail.get`.
+# 检查边界 / Checked boundaries: `calls['listdir'] == 2 and detail.get('stage') != 'process-snapshot'`; `detail['pid'] == 1743 and queries == ['ssh.service', 'ssh.service'] and (closed.count(20) == 1)`.
 def root_ancestor_failures_and_used_nodes_are_not_retried():
     for variant in ('cycle', 'missing-controller', 'nonroot-controller', 'used-node-reparented'):
         ns, processes, _responses, queries, closed, _flags = systemd_fixture()
         calls = dict(listdir=0)
         original_list = ns['os'].listdir
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: fd。
+        # 结果：返回分支计算值（`original_list(fd)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`original_list(fd)`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `calls['listdir']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `original_list`.
         def listed(fd):
             calls['listdir'] += 1
             return original_list(fd)
@@ -763,6 +1131,13 @@ def root_ancestor_failures_and_used_nodes_are_not_retried():
             processes[300]['uids'] = [1000] * 4
         else:
             read = ns['egress_nnp_process']
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: parent, pid。
+            # 结果：返回分支计算值（`current`），实际类型由实现及使用处约定。
+            # Result: Return the branch-computed value (`current`); its implementation and call sites define the actual type.
+            # 状态影响 / State effects: `current['parentPid']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+            # 协作入口 / Collaborators: `read`, `len`.
             def changed(parent, pid):
                 current = read(parent, pid)
                 if pid == 1743 and len(queries) >= 2:
@@ -778,6 +1153,14 @@ def root_ancestor_failures_and_used_nodes_are_not_retried():
             assert detail['reason'] == ('root-ancestor-cycle-or-limit' if variant == 'cycle' else 'controller-process-not-root-or-missing')
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `processes[600]`, `processes[600]['nnp']`, `processes[600]['caps']`, `processes[600]['uids']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `live_fixture`, `process`, `ns['egress_nnp_live']`, `refused`.
+# 检查边界 / Checked boundaries: `detail['service'] == 'project-existing-process'`.
 def existing_account_flags_and_capabilities():
     ns, processes, _pid_files, _flags = live_fixture()
     processes[600] = process(600, 1, executable='/bin/sh', inode=5, uid=20000, group='/sakura/project')
@@ -794,6 +1177,16 @@ def existing_account_flags_and_capabilities():
     refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'openrc'), 'EGRESS_NNP_ACCOUNT_PRIVILEGED')
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['os']`, `files['cmdline']`, `ns['os'].listdir`, `ns['time']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `namespace`, `dict`, `types.SimpleNamespace`, `ns['egress_nnp_process']`.
+# 检查边界 / Checked boundaries: `item['parentPid'] == 1 and item['startTicks'] == '7000' and (item['nnp'] == 1)`; `detail == {'pid': 70, 'reason': 'process-identity-or-image-changed'}`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def pinned_process_identity():
     ns = namespace()
     flags = dict(stat_reads=0, image_reads=0, parent_changed=False, image_changed=False)
@@ -802,6 +1195,13 @@ def pinned_process_identity():
         'cmdline': b'/usr/sbin/sshd\0-D\0',
         'cgroup': b'0::/openrc.sshd\n',
     }
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: descriptor, _limit。
+    # 结果：返回分支计算值（`files[descriptor] / b'70 (sshd arbitrary) ' + b' '.join(fields)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`files[descriptor] / b'70 (sshd arbitrary) ' + b' '.join(fields)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `flags['stat_reads']`, `fields[1]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `b' '.join`.
     def read(descriptor, _limit):
         if descriptor != 'stat':
             return files[descriptor]
@@ -810,6 +1210,13 @@ def pinned_process_identity():
         if flags['parent_changed'] and flags['stat_reads'] > 1:
             fields[1] = b'2'
         return b'70 (sshd arbitrary) ' + b' '.join(fields)
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: *_args, **_kwargs。
+    # 结果：返回分支计算值（`image(2 if flags['image_changed'] and flags['image_reads'] > 1 else 1)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`image(2 if flags['image_changed'] and flags['image_reads'] > 1 else 1)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `flags['image_reads']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `image`.
     def current_image(*_args, **_kwargs):
         flags['image_reads'] += 1
         return image(2 if flags['image_changed'] and flags['image_reads'] > 1 else 1)
@@ -832,10 +1239,24 @@ def pinned_process_identity():
     ns['os'].listdir = lambda _: ['70']
     ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
     for missing in ('stat', 'status', 'cmdline', 'cgroup', 'exe'):
+        # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+        # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+        # 输入 / Inputs: name, *args, **kwargs。
+        # 结果：返回分支计算值（`original_open(name, *args, **kwargs)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`original_open(name, *args, **kwargs)`); its implementation and call sites define the actual type.
+        # 失败 / Failure: `FileNotFoundError('model-live-source-missing')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+        # 协作入口 / Collaborators: `FileNotFoundError`, `original_open`.
         def missing_open(name, *args, **kwargs):
             if name == missing:
                 raise FileNotFoundError('model-live-source-missing')
             return original_open(name, *args, **kwargs)
+        # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+        # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+        # 输入 / Inputs: *args, **kwargs。
+        # 结果：返回分支计算值（`original_readlink(*args, **kwargs)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`original_readlink(*args, **kwargs)`); its implementation and call sites define the actual type.
+        # 失败 / Failure: `FileNotFoundError('model-live-executable-missing')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+        # 协作入口 / Collaborators: `FileNotFoundError`, `original_readlink`.
         def missing_exe(*args, **kwargs):
             if missing == 'exe':
                 raise FileNotFoundError('model-live-executable-missing')
@@ -847,6 +1268,16 @@ def pinned_process_identity():
         assert detail['pid'] == 70 and detail['snapshotAttempts'] == 3 and detail['incrementRounds'] == 0
 
 
+# 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+# English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['egress_boot_read']`, `ns['directory_fd']`, `ns['tool']`, `ns['os']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `namespace`, `dict`, `types.SimpleNamespace`, `ns['egress_openrc_nnp']`.
+# 检查边界 / Checked boundaries: `len(invocations) == 2`; `detail['reason'] == 'launcher-help-unavailable' and detail['tool'] == 'start-stop-daemon'`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def openrc_current_launchers():
     ns = namespace()
     library = '/lib/rc/sh'
@@ -863,6 +1294,14 @@ def openrc_current_launchers():
                                     listdir=lambda _path: conf_entries,
                                     O_RDONLY=0, O_NOFOLLOW=0, O_CLOEXEC=0,
                                     open=lambda *_args, **_kwargs: 20, fstat=lambda _: image(), close=lambda *_: None)
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: argv, **kwargs。
+    # 结果：返回分支计算值（`b'--no-new-privs' if flags['help'] else b'older version'`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`b'--no-new-privs' if flags['help'] else b'older version'`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `environment['RC_SVCNAME']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `dict`, `invocations.append`, `ns['refuse']`.
+    # 检查边界 / Checked boundaries: `argv == ['supervise-daemon', 'sshd', '--help']`; `argv == ['start-stop-daemon', '--help']`.
     def help_result(argv, **kwargs):
         name = argv[0]
         environment = dict(ns['CLEAN_ENV'])
@@ -898,6 +1337,14 @@ def openrc_current_launchers():
     refused(ns, lambda: ns['egress_openrc_nnp']('sshd', standard, b''), 'EGRESS_NNP_UNSUPPORTED')
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['json_read']`, `ns['os']`, `ns['os'].lstat`, `ns['egress_boot_plan']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `namespace`, `dict`, `hashlib.sha256(data).hexdigest`, `hashlib.sha256`.
+# 检查边界 / Checked boundaries: `ns['egress_nnp_configuration']() == 'systemd'`; `queries == [ns['EGRESS_SYSTEMD_UNITS'], ns['EGRESS_SYSTEMD_UNITS'], ('user@20000.service',)]`.
 def configuration_is_separate_from_live_admission():
     ns = namespace()
     data = b'[Service]\nNoNewPrivileges=yes\n'
@@ -919,6 +1366,14 @@ def configuration_is_separate_from_live_admission():
     refused(ns, lambda: ns['egress_nnp_configuration'](), 'EGRESS_NNP_PENDING')
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['directory_fd']`, `ns['os']`, `ns['os'].fstat`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `namespace`, `types.SimpleNamespace`, `ns['egress_nnp_directory']`, `dict`.
+# 检查边界 / Checked boundaries: `ns['egress_nnp_directory']('/proc') == 20`; `events == [('pin', '/proc'), ('open', '.', 15, dict(dir_fd=10)), ('close', 10)]`.
 def readable_pinned_directories():
     ns = namespace()
     events = []

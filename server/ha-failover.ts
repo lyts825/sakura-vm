@@ -1,5 +1,6 @@
 /**
  * 模块职责：声明并检查 HA 接管策略，核对已配对目标、实例状态与接管前置条件。
+ * Module purpose: Declares/checks HA policies against paired targets, VM state and failover prerequisites.
  */
 import type { HostPeersV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
@@ -13,6 +14,19 @@ export const haFailoverOptions = z.object({
   autoHostFailover: z.boolean().default(false),
 }).strict();
 
+/**
+ * 入口 / Entry: checkHaFailover.
+ * 功能：核对故障接管策略、目标配对、副本及见证前提，形成可执行性报告。
+ * Purpose: Checks policy, pairing, replicas and witness prerequisites to report failover eligibility.
+ * 设计：此入口用于检查与预览；没有完成隔离和原副本验证时不得根据可达性推断可安全接管。
+ * Design: This checks/previews eligibility; reachability alone is not safe promotion without fencing and original replica verification.
+ * 输入 / Inputs: machines: Machines; peers: HostPeersV1; replications: SnapshotReplicationsV1 | undefined; id: string; raw: unknown; enabled: boolean; signal: AbortSignal optional; processObserved: default=false; failureSuspected: default=false
+ * 输出 / Returns: `{ ready: false, executed: false, checkedAt: new Date().toISOString(), localProcessReady, hostPlanReady, processObservedInSess…`.
+ * 副作用 / Effects: `blockers.push`; 更新 / updates `target`, `compatible`, `receiptVerified`, `standbyStatus`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ * 失败处理：catch 分支执行 `blockers.push(`目标主机资源观测失败：${(error as Error).message}`);`; `signal?.throwIfAborted();`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `blockers.push(`目标主机资源观测失败：${(error as Error).message}`);`; `signal?.throwIfAborted();`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function checkHaFailover(machines: Machines, peers: HostPeersV1,
   replications: SnapshotReplicationsV1 | undefined, id: string, raw: unknown,
   enabled: boolean, signal?: AbortSignal, processObserved = false,
@@ -46,6 +60,15 @@ export async function checkHaFailover(machines: Machines, peers: HostPeersV1,
   const replicas = replications?.view().entries.filter((entry) =>
     entry.vmId === id && entry.peerId === peer?.id && entry.status === 'replicated' &&
     !!entry.remoteVmId && !!entry.sha256) || [];
+  /**
+   * 入口 / Entry: checkHaFailover.snapshotAt.
+   * 功能：从当前输入或状态计算 `vm.snapshots.find((item) => item.id === snapshotId)?.createdAt || ''`，供调用方后续验证或使用。
+   * Purpose: Computes `vm.snapshots.find((item) => item.id === snapshotId)?.createdAt || ''` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: snapshotId: string
+   * 输出 / Returns: `vm.snapshots.find((item) => item.id === snapshotId)?.createdAt || ''`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const snapshotAt = (snapshotId: string) =>
     vm.snapshots.find((item) => item.id === snapshotId)?.createdAt || '';
   const latest = replicas.sort((a, b) =>

@@ -1,4 +1,5 @@
 # 绘制 PosixLoom 管理与 QEMU/Linux 内核职责的 Manim 流程动画，使用 Pango 文本并保留两个分支的职责区别。
+# Animate the distinct PosixLoom command/session and QEMU/Linux-kernel responsibilities with Pango text in reusable flow clips.
 """Eight-second Sakura runtime explainer, rendered with Manim Community.
 
 The two branches represent responsibilities, not alternative Linux backends.
@@ -24,6 +25,8 @@ FONT = "Segoe UI"
 class KernelFlow(Scene):
     """Sakura coordinates host commands and QEMU virtual machines."""
 
+    # 按标题、副标题、宽度和位置构造统一流程节点，accent 使用品牌强调色，返回可整体动画的 VGroup。
+    # Build a flow node from title/subtitle/width/position with optional brand accent, returning one animatable VGroup.
     def node(self, title, subtitle, width, position, title_size=48, accent=False):
         box = RoundedRectangle(
             width=width, height=1.58, corner_radius=0.23,
@@ -40,6 +43,8 @@ class KernelFlow(Scene):
         labels = VGroup(heading, caption).arrange(DOWN, buff=0.16).move_to(box)
         return VGroup(box, labels)
 
+    # 以固定 16:9 布局演示 Sakura 编排、PosixLoom 会话与 QEMU/Linux 内核分工，按步骤播放节点和连接。
+    # Animate the fixed 16:9 Sakura orchestration/PosixLoom sessions/QEMU-Linux responsibilities diagram step by step.
     def construct(self):
         self.camera.background_color = BG
         # 16 x 9 logical canvas; substantial labels survive the Remotion inset.

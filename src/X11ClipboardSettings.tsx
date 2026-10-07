@@ -1,11 +1,30 @@
 /**
- * 模块职责：配置原生 X11/Wayland 剪贴板桥接，查看会话与应用策略及安装状态。
+ * 模块职责（中文）：配置原生 X11/Wayland 剪贴板桥接，查看会话与应用策略及安装状态。
+ * Module responsibility (English): Configuring native Linux clipboard sessions, application policies and installation.
+ * 详细范围（中文）：公开入口包括 X11ClipboardSettings；职责覆盖配置 Linux 原生剪贴板会话、应用策略与安装，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include X11ClipboardSettings. The scope covers Configuring native Linux clipboard sessions, application policies and installation. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useEffect, useState } from 'react';
 import { defaultClipboardRule, type ClipboardRule } from '../shared/clipboard-policy';
 import type { X11ClipboardApplication, X11ClipboardView } from '../shared/x11-clipboard';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-shared';
 
+/**
+ * 中文：呈现配置 Linux 原生剪贴板会话、应用策略与安装中的 X11ClipboardSettings 界面，订阅 path，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the X11ClipboardSettings surface for Configuring native Linux clipboard sessions, application policies and installation, subscribing to path. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  vmId,
+  desktopReady,
+  request,
+  transport = 'x11',
+} 提供 vmId（当前实例标识）、desktopReady（desktopReady 状态）、request（带身份和权限作用域的传输能力）、transport（transport 状态） 上下文字段
+ * English: Inputs: {
+  vmId,
+  desktopReady,
+  request,
+  transport = 'x11',
+} provides context fields vmId (current VM identifier), desktopReady (desktopReady state), request (transport capability bound to identity/authority scope), transport (transport state)
+ */
 export function X11ClipboardSettings({
   vmId,
   desktopReady,
@@ -26,22 +45,34 @@ export function X11ClipboardSettings({
     [image, setImage] = useState('/usr/bin/konsole');
   const [applications, setApplications] = useState<X11ClipboardApplication[]>([]);
   const [args, setArgs] = useState('');
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [remote.data, version] 变化时version 状态，applications 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data, version] change, version state, applications state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (remote.data && remote.data.version > version) {
       setVersion(remote.data.version);
       setApplications(remote.data.applications);
     }
   }, [remote.data, version]);
+  /**
+   * 中文：提交 POST path，完成配置 Linux 原生剪贴板会话、应用策略与安装的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST path for Configuring native Linux clipboard sessions, application policies and installation. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：input：尚待校验的输入数据；message：此处理器的调用值（缺省 ''）
+   * English: Inputs: input: input data requiring validation; message: the invocation value for this handler (default '')
+   */
   const post = (input: object, message = '') =>
-    void action.run(async (signal) => {
+    void action.run(/** 中文：提交 POST path，完成配置 Linux 原生剪贴板会话、应用策略与安装的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST path for Configuring native Linux clipboard sessions, application policies and installation. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断 | English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately */ async (signal) => {
       try {
         await request(path, 'POST', input, signal);
       } finally {
         remote.reload();
       }
     }, message);
+  /**
+   * 中文：提交 POST path，完成配置 Linux 原生剪贴板会话、应用策略与安装的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST path for Configuring native Linux clipboard sessions, application policies and installation. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：input：尚待校验的输入数据
+   * English: Inputs: input: input data requiring validation
+   */
   const save = (input: object) =>
-    void action.run(async (signal) => {
+    void action.run(/** 中文：提交 POST path，完成配置 Linux 原生剪贴板会话、应用策略与安装的数据交互并更新version 状态、applications 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST path for Configuring native Linux clipboard sessions, application policies and installation and update version state, applications state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断 | English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately */ async (signal) => {
       try {
         const value = await request<X11ClipboardView>(path, 'POST', { ...input, version }, signal);
         setVersion(value.version);
@@ -51,6 +82,12 @@ export function X11ClipboardSettings({
         remote.reload();
       }
     }, 'Linux 应用规则已保存；请查看各应用的状态');
+  /**
+   * 中文：在配置 Linux 原生剪贴板会话、应用策略与安装流程中applications 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Configuring native Linux clipboard sessions, application policies and installation, applications state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：image：签名所示 string 业务值；rule：签名所示 ClipboardRule 业务值
+   * English: Inputs: image: the string domain value in the signature; rule: the ClipboardRule domain value in the signature
+   */
   const update = (image: string, rule: ClipboardRule) =>
     setApplications(applications.map((app) => (app.image === image ? { ...app, rule } : app)));
   const installing = remote.data?.installation?.status === 'running';
@@ -99,7 +136,7 @@ export function X11ClipboardSettings({
           className="secondary compact"
           disabled={!image || !version}
           onClick={() =>
-            void action.run(async (signal) => {
+            void action.run(/** 中文：提交 POST path，完成配置 Linux 原生剪贴板会话、应用策略与安装的数据交互并更新image 状态、applications 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST path for Configuring native Linux clipboard sessions, application policies and installation and update image state, applications state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
               const value = await request<{ image: string; sha256: string }>(
                 path,
                 'POST',

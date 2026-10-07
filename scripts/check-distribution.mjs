@@ -1,4 +1,5 @@
-/** 验证实际发行目录、编译入口、运行依赖和原生资源摘要，确保安装布局无需源码即可运行。 */
+/** 验证实际发行目录、编译入口、运行依赖和原生资源摘要，确保安装布局无需源码即可运行。
+ * Validate actual release layout, compiled entries, runtime dependencies and native-asset hashes so installed packages work without source code. */
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -357,6 +358,8 @@ for (const file of [
   if (checked.status !== 0) throw new Error(`Invalid release script: ${file}`);
 }
 const jsFiles = [];
+/** 递归收集发行目录的 JavaScript 文件路径，后续统一核对打包导入与依赖。
+ * Recursively collect distribution JavaScript paths for packaged import/dependency checks. */
 async function collect(folder) {
   for (const item of await readdir(folder, { withFileTypes: true })) {
     const path = join(folder, item.name);
@@ -381,10 +384,14 @@ const bytes = (await stat(join(root, 'dist', 'assets', entry))).size;
 if (bytes > 450_000) throw new Error(`Frontend entry exceeds 450 KB: ${bytes}`);
 // Vite records all static imports. Count the transitive graph once per page; lazy chunks are excluded.
 const frontendManifest = JSON.parse(await readFile(join(root, 'dist', '.vite', 'manifest.json'), 'utf8'));
+/** 从 Vite manifest 找到页面入口并递归静态依赖，核对固定 assets 路径/文件并统计首屏资源预算。
+ * Resolve a page entry from the Vite manifest, traverse static dependencies and validate fixed asset paths/files for initial-load budgets. */
 async function initialJavaScript(entryFile, page) {
   const key = Object.keys(frontendManifest).find(key => frontendManifest[key].file === 'assets/' + entryFile);
   if (!key) throw new Error(`Frontend entry is missing from Vite manifest: ${entryFile}`);
   const visited = new Set(), files = new Set(), assets = new Set();
+  /** 有 visited 集合地遍历 Vite chunk，核对 JS/CSS/资源路径并收集依赖，缺失或非法 manifest 条目抛错。
+   * Traverse Vite chunks with cycle tracking, validating JS/CSS/asset paths and collecting dependencies; absent/invalid entries throw. */
   const walk = key => {
     if (visited.has(key)) return;
     visited.add(key);

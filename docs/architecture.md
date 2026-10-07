@@ -2,7 +2,7 @@
 
 Sakura 使用一个本机 Node.js 控制进程管理 QEMU 与原生辅助进程。React 和 CLI 通过 HTTP/WebSocket 使用同一控制面；业务能力按插件选择激活。
 
-基于应用 2.3.6 / 插件 API 5 的逐层接口、权限、资源归属、失败与验收要求见 [插件设计契约与统管层接口](plugin-design-contract.md)。
+基于应用 2.3.7 / 插件 API 5 的逐层接口、权限、资源归属、失败与验收要求见 [插件设计契约与统管层接口](plugin-design-contract.md)。
 
 ```mermaid
 flowchart TD

@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理工程扩展功能配置及动作，区分可持久策略与一次性命令输入。
+ * Module purpose: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
  */
 import { jsonValueSchema } from '../shared/contracts/json-values.ts';
 import type { IdeV1, TrustedBootServiceV1, WorkspacesV1 } from './service-contracts/v1.ts';
@@ -71,6 +72,14 @@ type ExtendedState = {
   manifests: Record<string, { createdAt: string; path: string; entries: number; checksum: string }>;
   executions: Record<string, FeatureExecution[]>;
 };
+/**
+ * 入口 / Entry: defaultState.
+ * 功能：从当前输入或状态计算 `({ settings: {}, manifests: {}, executions: {} })`，供调用方后续验证或使用。
+ * Purpose: Computes `({ settings: {}, manifests: {}, executions: {} })` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: ExtendedState；结果来自 / values from `({ settings: {}, manifests: {}, executions: {} })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const defaultState = (): ExtendedState => ({ settings: {}, manifests: {}, executions: {} });
 const idSchema = z.enum(
   extendedFeatureCatalog.map(([id]) => id) as [ExtendedFeatureId, ...ExtendedFeatureId[]],
@@ -78,6 +87,17 @@ const idSchema = z.enum(
 const pathSchema = z.string().optional();
 const oneShotFeatures = new Set(['secure-erase', 'gpg-agent-forward', 'ssh-agent-forward']);
 
+/**
+ * 入口 / Entry: adapterFor.
+ * 功能：在管理工程扩展功能配置及动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `({ id: spec.id, category: spec.category, mode: spec.category === '虚拟机' || spec.category === '网络' ? 'guest-aware' : 'portable'…` 供上层消费（`extended-features.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `extended-features.ts`; this entry produces `({ id: spec.id, category: spec.category, mode: spec.category === '虚拟机' || spec.category === '网络' ? 'guest-aware' : 'portable'…` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+ * 处理：通过 `inline.includes`, `hasCapability` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `inline.includes`, `hasCapability`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: spec: ExtendedFeature
+ * 输出 / Returns: Record<string, unknown>；结果来自 / values from `({ id: spec.id, category: spec.category, mode: spec.category === '虚拟机' || spec.category === '网络' ? 'guest-aware' : 'portable'…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
   id: spec.id,
   category: spec.category,
@@ -117,10 +137,42 @@ export const extendedFeatureActionRequest = z
 
 export class ExtendedFeatures {
   jobs = new Jobs('extended-features');
+  /**
+   * 入口 / Entry: ExtendedFeatures.trustedBoot.
+   * 功能：向调用者提供 `this.domains.trustedBoot` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.trustedBoot` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: TrustedBootServiceV1 | undefined；结果来自 / values from `this.domains.trustedBoot`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get trustedBoot(): TrustedBootServiceV1 | undefined { return this.domains.trustedBoot; }
+  /**
+   * 入口 / Entry: ExtendedFeatures.projectTerminals.
+   * 功能：向调用者提供 `this.domains.projectTerminals` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.projectTerminals` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: ProjectTerminals | undefined；结果来自 / values from `this.domains.projectTerminals`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get projectTerminals(): ProjectTerminals | undefined { return this.domains.projectTerminals; }
   private domains: EngineeringDomainServices;
+  /**
+   * 入口 / Entry: ExtendedFeatures.tunnels.
+   * 功能：向调用者提供 `this.domains.tunnels` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.domains.tunnels` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.domains.tunnels`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get tunnels() { return this.domains.tunnels; }
+  /**
+   * 入口 / Entry: ExtendedFeatures.constructor.
+   * 功能：建立 ExtendedFeatures 的管理工程扩展功能配置及动作上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the ExtendedFeatures context for this module's responsibility: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; dependencies: HostServiceResolver default=noHostServices; editor: () => Pick<IdeV1, 'profile'> | undefined optional
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.domains`.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
@@ -132,20 +184,73 @@ export class ExtendedFeatures {
   
   
 
+  /**
+   * 入口 / Entry: ExtendedFeatures.file.
+   * 功能：把本层请求转交 `join`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `join` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `join(DATA, 'extended-features.json')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private file() {
     return join(DATA, 'extended-features.json');
   }
+  /**
+   * 入口 / Entry: ExtendedFeatures.store.
+   * 功能：在管理工程扩展功能配置及动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `metadataFile(this.file(), defaultState, raw => { const value = raw as ExtendedState; value.executions ||= {}; return value; }…` 供上层消费（`ExtendedFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ExtendedFeatures`; this entry produces `metadataFile(this.file(), defaultState, raw => { const value = raw as ExtendedState; value.executions ||= {}; return value; }…` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `metadataFile`, `this.file` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `metadataFile`, `this.file`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `metadataFile(this.file(), defaultState, raw => { const value = raw as ExtendedState; value.executions ||= {}; return value; }…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private store() {
     return metadataFile(this.file(), defaultState, raw => {
       const value = raw as ExtendedState;
       value.executions ||= {}; return value;
     });
   }
+  /**
+   * 入口 / Entry: ExtendedFeatures.state.
+   * 功能：在管理工程扩展功能配置及动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `(await this.store().read()).value` 供上层消费（`ExtendedFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ExtendedFeatures`; this entry produces `(await this.store().read()).value` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `this.store().read`, `this.store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.store().read`, `this.store`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `(await this.store().read()).value`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async state() { return (await this.store().read()).value; }
+  /**
+   * 入口 / Entry: ExtendedFeatures.spec.
+   * 功能：在管理工程扩展功能配置及动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `catalog.find((item) => item.id === id)!` 供上层消费（`ExtendedFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ExtendedFeatures`; this entry produces `catalog.find((item) => item.id === id)!` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `idSchema.parse`, `catalog.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `idSchema.parse`, `catalog.find`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: featureId: string
+   * 输出 / Returns: `catalog.find((item) => item.id === id)!`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private spec(featureId: string) {
     const id = idSchema.parse(featureId) as ExtendedFeatureId;
     return catalog.find((item) => item.id === id)!;
   }
+  /**
+   * 入口 / Entry: ExtendedFeatures.catalog.
+   * 功能：在管理工程扩展功能配置及动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ features: catalog, operations: operationViews(), capabilities: capabilityViews('extended'), count: catalog.length, generate…` 供上层消费（`ExtendedFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ExtendedFeatures`; this entry produces `{ features: catalog, operations: operationViews(), capabilities: capabilityViews('extended'), count: catalog.length, generate…` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `operationViews`, `capabilityViews` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `operationViews`, `capabilityViews`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ features: catalog, operations: operationViews(), capabilities: capabilityViews('extended'), count: catalog.length, generate…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async catalog() {
     return {
       features: catalog,
@@ -155,6 +260,17 @@ export class ExtendedFeatures {
       generatedAt: new Date().toISOString(),
     };
   }
+  /**
+   * 入口 / Entry: ExtendedFeatures.view.
+   * 功能：在管理工程扩展功能配置及动作中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ projectId, features: catalog, operations: operationViews(), capabilities: capabilityViews('extended'), settings: state.sett…` 供上层消费（`ExtendedFeatures`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `ExtendedFeatures`; this entry produces `{ projectId, features: catalog, operations: operationViews(), capabilities: capabilityViews('extended'), settings: state.sett…` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `this.machines.get`, `this.state`, `this.workspaces.projects.current`, `operationViews` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.state`, `this.workspaces.projects.current`, `operationViews`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ projectId, features: catalog, operations: operationViews(), capabilities: capabilityViews('extended'), settings: state.sett…`.
+   * 副作用 / Effects: 更新 / updates `state.executions`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async view(id: string) {
     this.machines.get(id);
     const state = await this.state();
@@ -174,6 +290,18 @@ export class ExtendedFeatures {
         .slice(0, 30),
     };
   }
+  /**
+   * 入口 / Entry: ExtendedFeatures.configure.
+   * 功能：在管理工程扩展功能配置及动作中，校验并提交领域状态变更；本入口产生 `(await this.store().update(state => { const settings = (state.settings[id] ||= {}); settings[value.featureId] = { enabled: va…` 供上层消费（`ExtendedFeatures`）。
+   * Purpose: Validates and commits a domain state change in `ExtendedFeatures`; this entry produces `(await this.store().update(state => { const settings = (state.settings[id] ||= {}); settings[value.featureId] = { enabled: va…` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `this.machines.get`, `z.object().strict().parse`, `z.object().strict`, `z.object` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `z.object().strict().parse`, `z.object().strict`, `z.object`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `value.featureId === 'disk-encryption'`.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: `(await this.store().update(state => { const settings = (state.settings[id] ||= {}); settings[value.featureId] = { enabled: va…`.
+   * 副作用 / Effects: `this.store().update`; 更新 / updates `value.options`.
+   * 拒绝 / Refusals: 条件 / conditions `oneShotFeatures.has(value.featureId) && Object.keys(value.options).length`; 异常 / errors `new AppError('一次性命令与确认不能保存为持久配置', 409)`.
+   */
   async configure(id: string, input: unknown) {
     this.machines.get(id);
     const value = z
@@ -200,6 +328,19 @@ export class ExtendedFeatures {
       return settings[value.featureId];
     })).result;
   }
+  /**
+   * 入口 / Entry: ExtendedFeatures.probe.
+   * 功能：针对工程扩展读取实例、工具与项目状态，生成实际可用性和操作前提。
+   * Purpose: Probes VM/tool/project state for engineering extensions and reports measured availability/prerequisites.
+   * 设计：按功能分支读取真实状态；缺少工具、停止实例或不支持平台保留明确不可用原因。
+   * Design: Each branch probes real state and keeps explicit reasons for missing tools, stopped VMs or unsupported platforms.
+   * 输入 / Inputs: id: string; spec: ExtendedFeature; signal: AbortSignal optional; options: Record<string, unknown> default={}
+   * 输出 / Returns: `{ ready: true, state: spec.state, adapter, commandline: this.machines.commandline(id) }`; `{ ...base, ready: false, active: false, verification: 'not-configured', reason: '在项目设置中选择独立命名空间，完成目录权限迁移后启动项目。' }`; `{ ...base, ready: false, active: false, verification: 'stopped', reason: '启动或恢复实例后，可只读核对原项目账号及网络策略。' }`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `spec.id === 'network-isolation'`; `!live || this.machines.live.get(id) !== live || this.machines.state(id) !== 'running' || (current._workspace || 'default') !=…`; 异常 / errors `new AppError('网络检查期间项目配置已改变，请重新检查', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`.
+   * 失败处理：catch 分支执行 `signal?.throwIfAborted();`; `return { ...base, ready: false, active: false, verification: 'unverified', code: error instanceof AppError && error.code ? er…`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `signal?.throwIfAborted();`; `return { ...base, ready: false, active: false, verification: 'unverified', code: error instanceof AppError && error.code ? er…`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async probe(
     id: string,
     spec: ExtendedFeature,
@@ -462,6 +603,17 @@ export class ExtendedFeatures {
     };
   }
 
+  /**
+   * 入口 / Entry: ExtendedFeatures.executeFeature.
+   * 功能：按扩展功能 ID 选择工程执行方案，连接客户机运行器或对应领域服务。
+   * Purpose: Selects engineering execution by extension ID and invokes the guest runner or owning domain.
+   * 设计：输入先按目录契约验证，项目代码仍通过捕获的账户运行域执行，返回值保留原检查退出码。
+   * Design: Catalogue validation precedes execution; project code uses the captured account scope and results retain check exit status.
+   * 输入 / Inputs: id: string; spec: ExtendedFeature; action: 'check' | 'run'; signal: AbortSignal optional; options: Record<string, unknown> optional
+   * 输出 / Returns: `result`.
+   * 副作用 / Effects: `this.tunnels.stop`; `this.store().update`; 更新 / updates `result`.
+   * 拒绝 / Refusals: 条件 / conditions `action === 'run' && configured?.enabled === false`; `spec.id === 'self-update' && action === 'run'`; `spec.id === 'network-isolation' && action === 'run'`; 异常 / errors `new AppError('此能力已禁用', 409)`; `new AppError('请在安装目录运行离线更新命令；此入口仅供检查', 409)`.
+   */
   private async executeFeature(
     id: string,
     spec: ExtendedFeature,
@@ -557,6 +709,15 @@ export class ExtendedFeatures {
       result = await this.probe(id, spec, signal, merged);
       if (spec.state !== 'available') result = { ...result, ready: false, executed: false };
     }
+    /**
+     * 入口 / Entry: ExtendedFeatures.executeFeature.callback@560.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.store().update）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.store().update).
+     * 输入 / Inputs: state
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `history.push`; `history.shift`; 更新 / updates `state.executions`, `state.executions[id]`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     await this.store().update(state => {
       state.executions ||= {};
       const history = (state.executions[id] ||= []);
@@ -572,10 +733,33 @@ export class ExtendedFeatures {
     });
     return result;
   }
+  /**
+   * 入口 / Entry: ExtendedFeatures.runGuest.
+   * 功能：在管理工程扩展功能配置及动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.machines.exec(id, `set +e\n${command}`, 60000, signal)` 供上层消费（`ExtendedFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ExtendedFeatures`; this entry produces `this.machines.exec(id, `set +e\n${command}`, 60000, signal)` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `this.machines.state`, `this.machines.exec` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.state`, `this.machines.exec`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; command: string; signal: AbortSignal optional
+   * 输出 / Returns: `this.machines.exec(id, `set +e\n${command}`, 60000, signal)`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; 异常 / errors `new AppError('请先启动发行版', 409)`.
+   */
   private async runGuest(id: string, command: string, signal?: AbortSignal) {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
     return this.machines.exec(id, `set +e\n${command}`, 60000, signal);
   }
+  /**
+   * 入口 / Entry: ExtendedFeatures.runOperation.
+   * 功能：在管理工程扩展功能配置及动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value` / `runEngineeringOperation( this.machines, this.workspaces, id, operation, parameters, signal || new AbortController().signal, {…` 供上层消费（`ExtendedFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ExtendedFeatures`; this entry produces `value` / `runEngineeringOperation( this.machines, this.workspaces, id, operation, parameters, signal || new AbortController().signal, {…` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `this.spec`, `this.executeFeature`, `onResult`, `runEngineeringOperation` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.spec`, `this.executeFeature`, `onResult`, `runEngineeringOperation`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `operation === 'feature-run'`.
+   * 输入 / Inputs: id: string; operation: EngineeringOperation; parameters: Record<string, unknown>; signal: AbortSignal optional; onResult: (result: EngineeringResult) => Promise<void> optional
+   * 输出 / Returns: `value`; `runEngineeringOperation( this.machines, this.workspaces, id, operation, parameters, signal || new AbortController().signal, {…`.
+   * 副作用 / Effects: `this.executeFeature`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async runOperation(
     id: string,
     operation: EngineeringOperation,
@@ -608,6 +792,18 @@ export class ExtendedFeatures {
     );
   }
 
+  /**
+   * 入口 / Entry: ExtendedFeatures.action.
+   * 功能：在管理工程扩展功能配置及动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.configure(id, configuration)` / `this.jobs.start( `${this.workspaces.projects.key(id)}:operation:${validated.operation}`, async (log, taskSignal, _update, sav…` 供上层消费（`ExtendedFeatures`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ExtendedFeatures`; this entry produces `this.configure(id, configuration)` / `this.jobs.start( `${this.workspaces.projects.key(id)}:operation:${validated.operation}`, async (log, taskSignal, _update, sav…` for its caller. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `extendedFeatureActionRequest.parse`, `this.machines.get`, `this.machines.requireUnlocked`, `this.configure` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `extendedFeatureActionRequest.parse`, `this.machines.get`, `this.machines.requireUnlocked`, `this.configure`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `value.action !== 'check'`; `value.action === 'configure'`; `value.action === 'check'`.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal optional
+   * 输出 / Returns: `this.configure(id, configuration)`; `this.jobs.start( `${this.workspaces.projects.key(id)}:operation:${validated.operation}`, async (log, taskSignal, _update, sav…`; `this.executeFeature(id, spec, 'check', signal)`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: `this.jobs.start`; `this.executeFeature`.
+   * 拒绝 / Refusals: 条件 / conditions `value.action === 'operation'`; `setting?.enabled === false`; 异常 / errors `new AppError('此能力已禁用', 409)`.
+   */
   async action(id: string, input: unknown, signal?: AbortSignal) {
     const value = extendedFeatureActionRequest
       .parse(input);
@@ -622,10 +818,30 @@ export class ExtendedFeatures {
       const setting = (await this.state()).settings[id]?.[engineeringOperations[validated.operation].feature];
       if (setting?.enabled === false) throw new AppError('此能力已禁用', 409);
       const projectId = this.workspaces.projects.current(id);
+      /**
+       * 入口 / Entry: ExtendedFeatures.action.callback@627.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.jobs.start）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.jobs.start).
+       * 输入 / Inputs: log; taskSignal; _update; saveResult
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: `persist`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       return this.jobs.start(
         `${this.workspaces.projects.key(id)}:operation:${validated.operation}`,
         async (log, taskSignal, _update, saveResult) => {
           let stored = false;
+          /**
+           * 入口 / Entry: ExtendedFeatures.action.persist.
+           * 功能：在管理工程扩展功能配置及动作中，校验并提交领域状态变更；完成下述调用及状态处理（`ExtendedFeatures`）。
+           * Purpose: Validates and commits a domain state change in `ExtendedFeatures`; the calls and state transitions below complete the operation. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+           * 处理：通过 `saveResult` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `saveResult`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: result: EngineeringResult
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: `saveResult`; 更新 / updates `stored`.
+           * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+           */
           const persist = async (result: EngineeringResult) => { await saveResult(result); stored = true; };
           const result = await this.runOperation(id, validated.operation, validated.parameters, taskSignal, persist);
           if (!stored) await persist(result);
@@ -648,6 +864,15 @@ export class ExtendedFeatures {
       capabilityParameters(spec.id, { ...configured, ...value.options });
     }
     const projectId = this.workspaces.projects.current(id);
+    /**
+     * 入口 / Entry: ExtendedFeatures.action.callback@653.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.jobs.start）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.jobs.start).
+     * 输入 / Inputs: log; taskSignal; _update; saveResult
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.executeFeature`; `saveResult`.
+     * 拒绝 / Refusals: 条件 / conditions `!result.ready`; 异常 / errors `new AppError('能力尚未就绪或执行失败', 409)`.
+     */
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:${spec.id}`,
       async (log, taskSignal, _update, saveResult) => {
@@ -662,6 +887,19 @@ export class ExtendedFeatures {
       { title: `扩展能力 · ${spec.name}`, vmId: id, projectId, action: `extended:${spec.id}` },
     );
   }
+  /**
+   * 入口 / Entry: ExtendedFeatures.close.
+   * 功能：在管理工程扩展功能配置及动作中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`ExtendedFeatures`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `ExtendedFeatures`; the calls and state transitions below complete the operation. Module context: Owns engineering extension settings and actions, distinguishing persistent policies from one-shot commands.
+   * 处理：通过 `this.jobs.close`, `this.tunnels.close`, `this.store().flush`, `this.store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.jobs.close`, `this.tunnels.close`, `this.store().flush`, `this.store`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.jobs.close`; `this.tunnels.close`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `await this.tunnels.close();`; `await this.store().flush();`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `await this.tunnels.close();`; `await this.store().flush();`; these steps also apply to exceptional exits.
+   */
   async close() {
     try {
       await this.jobs.close();

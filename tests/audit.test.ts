@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - rejected mutations record paired safe audit events while ordinary reads need no audit
- * - a failed rejection audit never replaces the primary rejection, including primitive throws
- * - falsy failures have a stable receipt code and never imply a failed execution after admission
+ * 模块职责：回归验证模块，围绕 `audit` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `audit`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: rejected mutations record paired safe audit events while ordinary reads need no audit; a failed rejection audit never replaces the primary rejection, including primitive throws.
  */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,6 +35,16 @@ const event: AuditEvent = {
   spanId: '2'.repeat(16),
 };
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: rejected mutations record paired safe audit events while ordinary reads need no audit
+ * 协作入口 / Collaborators: `join`, `rejectedRequestAuditEvent`, `assert.equal`, `auditRejectedRequest`.
+ * 检查边界 / Checked boundaries: `assert.equal(requestEvent.name, 'POST /api/audit-smoke')`; `assert.equal(auditFailed, false)`.
+ */
 test('rejected mutations record paired safe audit events while ordinary reads need no audit', async () => {
   const audit = new AuditLog(join(root, 'rejected-request'));
   const requestEvent = rejectedRequestAuditEvent({ method: 'POST', url: '/api/audit-smoke?token=QUERY_SECRET' })!;
@@ -63,11 +74,32 @@ test('rejected mutations record paired safe audit events while ordinary reads ne
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a failed rejection audit never replaces the primary rejection, including primitive throws
+ * 状态影响 / State effects: `audit.record`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `audit.record.bind`, `auditRejectedRequest`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal(auditFailed, true)`; `assert.equal(failure.status, error instanceof AppError ? 401 : 500)`.
+ */
 test('a failed rejection audit never replaces the primary rejection, including primitive throws', async () => {
   for (const phase of ['start', 'end']) {
     const audit = new AuditLog(join(root, 'rejected-audit-' + phase));
     const original = audit.record.bind(audit);
-    audit.record = async value => {
+    audit.record = /**
+     * 中文功能：构造测试所需的数据、身份、协议帧或适配器，保持生成结果可被本组断言观察。
+     * English: Construct test data, identity, protocol frames or adapters with results observable by this suite.
+     * 输入 / Inputs: value。
+     * 结果：返回分支计算值（`original(value)`），以 Promise 交付。
+     * Result: Return the branch-computed value (`original(value)`) through a Promise.
+     * 验证场景 / Scenario: a failed rejection audit never replaces the primary rejection, including primitive throws
+     * 失败 / Failure: `new AppError('private audit secret', 503, 'AUDIT_UNAVAILABLE')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `original`.
+     */
+    async value => {
       if (value.phase === phase) throw new AppError('private audit secret', 503, 'AUDIT_UNAVAILABLE');
       return original(value);
     };
@@ -84,6 +116,18 @@ test('a failed rejection audit never replaces the primary rejection, including p
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: falsy failures have a stable receipt code and never imply a failed execution after admission
+ * 协作入口 / Collaborators: `join`, `results.start`, `randomUUID`, `results.finish`.
+ * 检查边界 / Checked boundaries: `assert.equal(rejected.outcome, 'failed')`; `assert.equal(rejected.executed, false)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('falsy failures have a stable receipt code and never imply a failed execution after admission', async () => {
   const results = new OperationResults(join(root, 'falsy-receipts'));
   for (const error of [null, undefined, 0, false]) {
@@ -101,11 +145,34 @@ test('falsy failures have a stable receipt code and never imply a failed executi
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: end audit failure preserves the exact business exception and attaches a separate safe diagnostic
+ * 状态影响 / State effects: `audit.record`, `caught`, `rejected`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `audit.record.bind`, `assert.rejects`, `audit.span`.
+ * 检查边界 / Checked boundaries: `assert.rejects(audit.span({ kind: 'request', name: 'failure' }, async () => { throw business; }), error => error === business)`; `assert.equal(auditFailure(business), secondary)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('end audit failure preserves the exact business exception and attaches a separate safe diagnostic', async () => {
   const audit = new AuditLog(join(root, 'primary-failure'));
   const original = audit.record.bind(audit);
   const secondary = new AppError('private C:\\secrets\\audit.key', 503, 'AUDIT_UNAVAILABLE');
-  audit.record = async value => { if (value.phase === 'end') throw secondary; return original(value); };
+  audit.record = /**
+   * 中文功能：构造测试所需的数据、身份、协议帧或适配器，保持生成结果可被本组断言观察。
+   * English: Construct test data, identity, protocol frames or adapters with results observable by this suite.
+   * 输入 / Inputs: value。
+   * 结果：返回分支计算值（`original(value)`），以 Promise 交付。
+   * Result: Return the branch-computed value (`original(value)`) through a Promise.
+   * 验证场景 / Scenario: end audit failure preserves the exact business exception and attaches a separate safe diagnostic
+   * 失败 / Failure: `secondary`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `original`.
+   */
+  async value => { if (value.phase === 'end') throw secondary; return original(value); };
   const business = new AppError('private C:\\secrets\\business.key', 409, 'BUSINESS_CONFLICT');
   await assert.rejects(audit.span({ kind: 'request', name: 'failure' }, async () => { throw business; }),
     error => error === business);
@@ -142,6 +209,19 @@ test('end audit failure preserves the exact business exception and attaches a se
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: enabling accounts binds only the enabling receipt to the confirmed owner after an end audit failure
+ * 状态影响 / State effects: `audit.record`, `failure`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `access.init`, `results.start`, `randomUUID`.
+ * 检查边界 / Checked boundaries: `assert.equal(confirmed.outcome, 'succeeded')`; `assert.equal(confirmed.auditRecorded, false)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('enabling accounts binds only the enabling receipt to the confirmed owner after an end audit failure', async () => {
   const directory = join(root, 'enable-accounts'), results = new OperationResults(directory);
   const access = new AccessControl(join(root, 'enabled-access.json')); await access.init();
@@ -149,7 +229,16 @@ test('enabling accounts binds only the enabling receipt to the confirmed owner a
   await results.finish(historical, new Error('previous failure'), false);
   const receipt = await results.start(randomUUID(), 'core.access.enable', 'local-owner');
   const audit = new AuditLog(join(root, 'enable-audit'));
-  audit.record = async value => { if (value.phase === 'end') throw new AppError('private audit path', 503, 'AUDIT_UNAVAILABLE'); return {} as any; };
+  audit.record = /**
+   * 中文功能：构造测试所需的数据、身份、协议帧或适配器，保持生成结果可被本组断言观察。
+   * English: Construct test data, identity, protocol frames or adapters with results observable by this suite.
+   * 输入 / Inputs: value。
+   * 结果：返回分支计算值（`{} as any`），以 Promise 交付。
+   * Result: Return the branch-computed value (`{} as any`) through a Promise.
+   * 验证场景 / Scenario: enabling accounts binds only the enabling receipt to the confirmed owner after an end audit failure
+   * 失败 / Failure: `new AppError('private audit path', 503, 'AUDIT_UNAVAILABLE')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   */
+  async value => { if (value.phase === 'end') throw new AppError('private audit path', 503, 'AUDIT_UNAVAILABLE'); return {} as any; };
   let failure: unknown;
   try { await results.run(receipt, () => audit.span({ kind: 'request', name: 'core.access.enable' }, async () => {
     await results.begin(receipt); await access.enable({ password: 'owner-password-with-enough-characters' });
@@ -165,6 +254,16 @@ test('enabling accounts binds only the enabling receipt to the confirmed owner a
   await assert.rejects(restart.get(historical.correlationId, 'account', login.principal.id), { status: 403 });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: end audit keeps captured actor and target identity after the operation revokes its own authority
+ * 协作入口 / Collaborators: `join`, `randomUUID`, `withResourceContext`, `audit.read`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.valid, true)`; `assert.equal(result.records.length, 2)`.
+ */
 test('end audit keeps captured actor and target identity after the operation revokes its own authority', async () => {
   const audit = new AuditLog(join(root, 'revoked-authority'));
   const identity = { owner: 'core:application', actorId: randomUUID(), vmId: randomUUID(), projectId: 'default' };
@@ -181,6 +280,18 @@ test('end audit keeps captured actor and target identity after the operation rev
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a committed execution marker survives restart and anonymous outcomes never use a shared account key
+ * 协作入口 / Collaborators: `join`, `randomUUID`, `results.start`, `results.begin`.
+ * 检查边界 / Checked boundaries: `assert.equal(restarted.outcome, 'unknown')`; `assert.equal(restarted.executed, true)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('a committed execution marker survives restart and anonymous outcomes never use a shared account key', async () => {
   const directory = join(root, 'execution-marker'), results = new OperationResults(directory), actor = randomUUID();
   const receipt = await results.start(randomUUID(), 'test.mutate', 'account', actor);
@@ -207,12 +318,61 @@ test('a committed execution marker survives restart and anonymous outcomes never
   assert.equal((await results.get(staged.correlationId, 'account', actor)).delivery, 'sent');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: completed business remains queryable after response validation and finite responses cannot flush before audit
+ * 状态影响 / State effects: `failure`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `results.start`, `randomUUID`, `stageOperationResponse`.
+ * 检查边界 / Checked boundaries: `assert.equal((failure as AppError).code, 'INVALID_OPERATION_RESPONSE')`; `assert.equal(result.outcome, 'succeeded')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('completed business remains queryable after response validation and finite responses cannot flush before audit', async () => {
   const results = new OperationResults(join(root, 'invalid-response'));
   const receipt = await results.start(randomUUID(), 'test.response', 'local-owner');
   const emitted: unknown[] = [];
-  const res = { writeHead: (...args: unknown[]) => { emitted.push(args); }, end: (...args: unknown[]) => { emitted.push(args); },
-    write: () => { emitted.push('raw'); return true; }, flushHeaders: () => { emitted.push('flush'); } } as unknown as ServerResponse;
+  const res = { /**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: args: unknown[]。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: completed business remains queryable after response validation and finite responses cannot flush before audit
+   * 协作入口 / Collaborators: `emitted.push`.
+   */
+  writeHead: (...args: unknown[]) => { emitted.push(args); }, /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: args: unknown[]。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: completed business remains queryable after response validation and finite responses cannot flush before audit
+   * 协作入口 / Collaborators: `emitted.push`.
+   */
+  end: (...args: unknown[]) => { emitted.push(args); },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回布尔判定，供用例选择路径或核对受控条件。
+     * Result: Return a boolean decision for path selection or controlled-condition assertions.
+     * 验证场景 / Scenario: completed business remains queryable after response validation and finite responses cannot flush before audit
+     * 协作入口 / Collaborators: `emitted.push`.
+     */
+    write: () => { emitted.push('raw'); return true; }, /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: completed business remains queryable after response validation and finite responses cannot flush before audit
+     * 协作入口 / Collaborators: `emitted.push`.
+     */
+    flushHeaders: () => { emitted.push('flush'); } } as unknown as ServerResponse;
   const staged = stageOperationResponse(res);
   let failure: unknown;
   try { await results.run(receipt, async () => {
@@ -231,6 +391,18 @@ test('completed business remains queryable after response validation and finite 
   assert.throws(() => unfinished.publish(), { code: 'INVALID_OPERATION_RESPONSE' });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: receipt inventory bounds individual records and keeps corrupt records without blocking healthy mutations
+ * 协作入口 / Collaborators: `join`, `mkdir`, `randomUUID`, `writeFile`.
+ * 检查边界 / Checked boundaries: `assert.equal((await results.get(receipt.correlationId, 'local-owner')).outcome, 'succeeded')`; `assert.rejects(results.get(corrupt, 'local-owner'), { code: 'OPERATION_RESULT_UNAVAILABLE' })`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('receipt inventory bounds individual records and keeps corrupt records without blocking healthy mutations', async () => {
   const directory = join(root, 'bounded-receipts'); await mkdir(directory);
   const corrupt = randomUUID(), oversized = randomUUID();
@@ -245,6 +417,19 @@ test('receipt inventory bounds individual records and keeps corrupt records with
   assert.equal(await readFile(join(directory, corrupt + '.json'), 'utf8'), 'broken');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: full receipt capacity evicts confirmed terminal history while retaining unknown outcomes
+ * 状态影响 / State effects: `offset`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `mkdir`, `randomUUID`, `Promise.all`.
+ * 检查边界 / Checked boundaries: `assert.equal((await results.get(unknownId, 'local-owner')).outcome, 'unknown')`; `assert.equal((await readdir(directory)).length, 1001)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('full receipt capacity evicts confirmed terminal history while retaining unknown outcomes', async () => {
   const directory = join(root, 'receipt-retention'); await mkdir(directory);
   const unknownId = randomUUID();
@@ -261,11 +446,33 @@ test('full receipt capacity evicts confirmed terminal history while retaining un
   assert.equal((await readdir(directory)).length, 1001);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: durable outcome queries distinguish a completed mutation, uncertain side effects and audit start rejection
+ * 状态影响 / State effects: `audit.record`, `failure`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `randomUUID`, `results.start`, `results.run`.
+ * 检查边界 / Checked boundaries: `assert.equal(mutations, 1)`; `assert.equal(completed.outcome, 'succeeded')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('durable outcome queries distinguish a completed mutation, uncertain side effects and audit start rejection', async () => {
   const directory = join(root, 'outcomes'), results = new OperationResults(directory);
   const actor = randomUUID();
   const audit = new AuditLog(join(root, 'outcome-audit'));
-  audit.record = async value => { if (value.phase === 'end') throw new AppError('internal audit path', 503, 'AUDIT_UNAVAILABLE'); return {} as any; };
+  audit.record = /**
+   * 中文功能：构造测试所需的数据、身份、协议帧或适配器，保持生成结果可被本组断言观察。
+   * English: Construct test data, identity, protocol frames or adapters with results observable by this suite.
+   * 输入 / Inputs: value。
+   * 结果：返回分支计算值（`{} as any`），以 Promise 交付。
+   * Result: Return the branch-computed value (`{} as any`) through a Promise.
+   * 验证场景 / Scenario: durable outcome queries distinguish a completed mutation, uncertain side effects and audit start rejection
+   * 失败 / Failure: `new AppError('internal audit path', 503, 'AUDIT_UNAVAILABLE')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   */
+  async value => { if (value.phase === 'end') throw new AppError('internal audit path', 503, 'AUDIT_UNAVAILABLE'); return {} as any; };
   const receipt = await results.start(randomUUID(), 'test.mutate', 'account', actor);
   let mutations = 0;
   let failure: unknown;
@@ -290,6 +497,18 @@ test('durable outcome queries distinguish a completed mutation, uncertain side e
   assert.equal((await results.get(rejected.correlationId, 'account', actor)).outcome, 'failed');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: resource admission inherits audit span identity without changing the durable audit format
+ * 协作入口 / Collaborators: `join`, `withResourceContext`, `audit.read`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal(entries.valid, true)`; `assert.equal(entries.records[0].event.traceId, resourceTrace)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('resource admission inherits audit span identity without changing the durable audit format', async () => {
   const audit = new AuditLog(join(root, 'resources')), runtime = new HostRuntime();
   let resourceTrace = '', resourceSpan = '';
@@ -309,6 +528,18 @@ test('resource admission inherits audit span identity without changing the durab
   runtime.close(); await audit.close();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: audit serializes concurrent append, verifies restart and excludes arbitrary data fields
+ * 协作入口 / Collaborators: `join`, `Promise.all`, `Array.from`, `new AuditLog(folder).read`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.valid, true)`; `assert.equal(result.sequence, 20)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('audit serializes concurrent append, verifies restart and excludes arbitrary data fields', async () => {
   const folder = join(root, 'ordered'),
     audit = new AuditLog(folder);
@@ -328,6 +559,18 @@ test('audit serializes concurrent append, verifies restart and excludes arbitrar
   assert.ok(!JSON.stringify(result).includes('never log'));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: audit detects changed content, truncation and forged seals before permitting more writes
+ * 协作入口 / Collaborators: `join`, `audit.record`, `readFile`, `writeFile`.
+ * 检查边界 / Checked boundaries: `assert.equal(invalid.valid, false)`; `assert.equal(invalid.error, '审计日志校验失败，请检查本机审计存储')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('audit detects changed content, truncation and forged seals before permitting more writes', async () => {
   for (const mode of ['content', 'truncated', 'seal', 'syntax'] as const) {
     const folder = join(root, mode),
@@ -350,6 +593,16 @@ test('audit detects changed content, truncation and forged seals before permitti
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: traces retain request/task parentage and failure status without logging command output
+ * 协作入口 / Collaborators: `join`, `audit.span`, `audit.read`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.valid, true)`; `assert.equal(spans.length, 3)`.
+ */
 test('traces retain request/task parentage and failure status without logging command output', async () => {
   const audit = new AuditLog(join(root, 'spans'));
   await audit.span(

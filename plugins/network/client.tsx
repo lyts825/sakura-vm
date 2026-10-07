@@ -1,5 +1,8 @@
 /**
- * 模块职责：“网络管理”插件的端口、代理、网络配置档案与项目服务网络编辑界面，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“网络管理”插件的端口、代理、网络配置档案与项目服务网络编辑界面，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for ports, network profiles, ingress and certificates.
+ * 详细范围（中文）：公开入口包括 ServicesPanel, networkFields, NetworkPanel, tabs, developmentSections；职责覆盖端口、网络档案、入口与证书的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ServicesPanel, networkFields, NetworkPanel, tabs, developmentSections. The scope covers UI interaction and state presentation for ports, network profiles, ingress and certificates. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -18,13 +21,25 @@ import { stopped } from '../../src/guest-state';
 import { IngressPanel } from './IngressPanel';
 import { DependencyDownloadsEditor } from './DependencyDownloadsEditor';
 
+/**
+ * 中文：呈现端口、网络档案、入口与证书的界面交互与状态呈现中的 ServicesPanel 界面，订阅 /vms/{vm.id}/services，组合 Plus、Save、IngressPanel，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ServicesPanel surface for UI interaction and state presentation for ports, network profiles, ingress and certificates, subscribing to /vms/{vm.id}/services and composing Plus, Save, IngressPanel. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：props：签名所示 FeatureProps 业务值
+ * English: Inputs: props: the FeatureProps domain value in the signature
+ */
 export function ServicesPanel(props: FeatureProps) {
   const { vm, request, refresh } = props;
   const remote = useRemote<ServicesView>(request, `/vms/${vm.id}/services`);
   const [forwards, setForwards] = useState(vm.forwards);
   const forwardsVersion = JSON.stringify(vm.forwards);
-  useEffect(() => setForwards(JSON.parse(forwardsVersion)), [vm.id, forwardsVersion]);
+  useEffect(/** 中文：当依赖 [vm.id, forwardsVersion] 变化时按指定 Schema 校验并解码，forwards 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [vm.id, forwardsVersion] change, validate/decode with the specified schema, forwards state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership */ () => setForwards(JSON.parse(forwardsVersion)), [vm.id, forwardsVersion]);
   const action = useAction();
+  /**
+   * 中文：在端口、网络档案、入口与证书的界面交互与状态呈现流程中forwards 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In UI interaction and state presentation for ports, network profiles, ingress and certificates, forwards state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：i：签名所示 number 业务值；value：待校验、转换或保存的输入值
+   * English: Inputs: i: the number domain value in the signature; value: input value to validate/transform/save
+   */
   const patch = (i: number, value: Partial<VMConfig['forwards'][number]>) =>
     setForwards((list) => list.map((v, n) => (n === i ? { ...v, ...value } : v)));
   return (
@@ -103,7 +118,7 @@ export function ServicesPanel(props: FeatureProps) {
         className="primary compact"
         disabled={action.busy}
         onClick={() =>
-          void action.run(async () => {
+          void action.run(/** 中文：提交 PATCH /vms/{vm.id}/services，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform PATCH /vms/{vm.id}/services for UI interaction and state presentation for ports, network profiles, ingress and certificates. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
             await request(`/vms/${vm.id}/services`, 'PATCH', { forwards });
             await refresh();
             remote.reload();
@@ -133,10 +148,24 @@ export const networkFields: [Exclude<keyof NetworkProfile, 'dnsServers' | 'dnsDo
   ['aptSecurityMirror', '安全更新软件源', ''],
 ];
 
+/**
+ * 中文：呈现端口、网络档案、入口与证书的界面交互与状态呈现中的 NetworkPanel 界面，组合 NetworkEditor，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the NetworkPanel surface for UI interaction and state presentation for ports, network profiles, ingress and certificates and composing NetworkEditor. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：props：签名所示 FeatureProps 业务值
+ * English: Inputs: props: the FeatureProps domain value in the signature
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function NetworkPanel(props: FeatureProps) {
   return <NetworkEditor key={props.vm.id} {...props} />;
 }
 
+/**
+ * 中文：呈现端口、网络档案、入口与证书的界面交互与状态呈现中的 NetworkEditor 界面，订阅 /vms/{vm.id}/network、/network-profiles，组合 DependencyDownloadsEditor，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the NetworkEditor surface for UI interaction and state presentation for ports, network profiles, ingress and certificates, subscribing to /vms/{vm.id}/network, /network-profiles and composing DependencyDownloadsEditor. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request, refresh } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力）、refresh（refresh 状态） 上下文字段
+ * English: Inputs: { vm, request, refresh } provides context fields vm (vm state), request (transport capability bound to identity/authority scope), refresh (refresh state)
+ */
 function NetworkEditor({ vm, request, refresh }: FeatureProps) {
   const remote = useRemote<NetworkView>(request, `/vms/${vm.id}/network`),
     action = useAction();
@@ -147,7 +176,7 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
     [domainText, setDomainText] = useState('');
   const [config, setConfig] = useState<NetworkProfile | null>(null),
     [preview, setPreview] = useState<NetworkPreview | null>(null);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [config, remote.data, vm.forwards] 变化时config 状态，dnsText 状态，domainText 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [config, remote.data, vm.forwards] change, config state, dnsText state, domainText state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (!config && remote.data) {
       setConfig({
         ...remote.data.config,
@@ -159,13 +188,23 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
       setDomainText((remote.data.config.dnsDomains || []).join(', '));
     }
   }, [config, remote.data, vm.forwards]);
+  /**
+   * 中文：把 DNS 服务器和搜索域文本按逗号/空白拆成数组，合并当前网络草稿其他字段用于提交。
+   * English: Split DNS-server/search-domain text by comma/whitespace and merge other network-draft fields for submission.
+   */
   const edited = () => ({
     ...config!,
     dnsServers: dnsText.split(/[,\s]+/).filter(Boolean),
     dnsDomains: domainText.split(/[,\s]+/).filter(Boolean),
   });
+  /**
+   * 中文：提交 POST /vms/{vm.id}/network，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/network for UI interaction and state presentation for ports, network profiles, ingress and certificates. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：kind：签名所示 string 业务值
+   * English: Inputs: kind: the string domain value in the signature
+   */
   const run = (kind: string) =>
-    action.run(async (signal) => {
+    action.run(/** 中文：提交 POST /vms/{vm.id}/network，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互并更新preview 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/network for UI interaction and state presentation for ports, network profiles, ingress and certificates and update preview state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
       const value = await request<NonNullable<typeof preview>>(
         `/vms/${vm.id}/network`,
         'POST',
@@ -202,7 +241,14 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
             <select
               value={selected}
               disabled={applied || action.busy}
-              onChange={(event) => {
+              onChange={/**
+               * 中文功能：选中已保存的网络配置并同步名称、DNS 文本及域列表；补齐旧记录默认值，同时清空上一份变更预览。
+               * English: Select a saved network profile and synchronize its name/DNS/domain text, fill legacy defaults and discard the previous change preview.
+               * 输入 / Inputs: event.
+               * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+               * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+               */
+              (event) => {
                 const id = event.target.value,
                   saved = profiles.data?.find((item) => item.id === id);
                 setSelected(id);
@@ -242,7 +288,7 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
             className="secondary compact"
             disabled={action.busy || !config || !profileName.trim()}
             onClick={() =>
-              void action.run(async () => {
+              void action.run(/** 中文：提交 POST /network-profiles，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互并更新当前选择；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /network-profiles for UI interaction and state presentation for ports, network profiles, ingress and certificates and update current selection. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                 const saved = await request<SavedNetworkProfile>('/network-profiles', 'POST', {
                   ...(selected ? { id: selected } : {}),
                   name: profileName,
@@ -259,7 +305,7 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
             className="secondary compact"
             disabled={action.busy || !selected}
             onClick={() =>
-              void action.run(async () => {
+              void action.run(/** 中文：提交 DELETE /network-profiles，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互并更新当前选择、profileName 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform DELETE /network-profiles for UI interaction and state presentation for ports, network profiles, ingress and certificates and update current selection, profileName state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                 await request('/network-profiles', 'DELETE', { id: selected });
                 setSelected('');
                 setProfileName('');
@@ -364,7 +410,14 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
                       max={65535}
                       maxLength={40}
                       disabled={applied || action.busy}
-                      onChange={(event) => {
+                      onChange={/**
+                       * 中文功能：只更新指定端口转发行的字段，名称保持字符串，其它输入转为数字，并使原变更预览失效。
+                       * English: Update only the selected port-forward row, retain names as strings, convert other fields to numbers and invalidate the previous preview.
+                       * 输入 / Inputs: event.
+                       * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+                       * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+                       */
+                      (event) => {
                         setConfig({
                           ...config,
                           forwards: config.forwards!.map((row, n) =>

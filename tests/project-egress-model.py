@@ -1,3 +1,7 @@
+# 模块职责：生产出口策略的事务模型：分开记录持久票据、内核表和启动文件，注入丢失回执及中断。
+# Module: Transaction models for production egress policy: retain durable receipts, kernel tables and boot files separately and inject lost acknowledgements or interruptions.
+# 阅读方式：按初始化、具名辅助函数与测试情景阅读；便携模型与模拟接口不能证明真实 Linux 隔离。
+# Reading guide: Follow initialization, named helpers and cases; portable models and substituted interfaces do not attest real Linux isolation.
 # 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
 """Portable transaction tests of production egress definitions; no Linux proof."""
 import ast
@@ -20,6 +24,15 @@ tree = ast.parse(source)
 definitions = ast.Module(body=[node for node in tree.body if isinstance(node, (ast.Assign, ast.FunctionDef, ast.ClassDef))], type_ignores=[])
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: mode = 'private'。
+# 结果：返回分支计算值（`types.SimpleNamespace(ns=ns, value=value, current=current, records=records, tables=tables, flags=fla…`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`types.SimpleNamespace(ns=ns, value=value, current=current, records=records, tables=tables, flags=fla…`); its implementation and call sites define the actual type.
+# 状态影响 / State effects: `ns['egress_context']`, `ns['egress_nnp_check']`, `ns['egress_nnp_configuration']`, `ns['egress_systemd_nnp']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `dict`, `exec`, `compile`, `str`.
+# 设计思路：内核适配器独立解析固定 nft 创建语法，不从生产生成结果回显构造假内核；持久记录和表状态分开保存，以便模拟已生效但回执丢失的事务。
+# Design: The kernel adapter independently parses fixed nft creation syntax instead of echoing production output into a fake kernel. Persisted records and table state remain separate to model transactions that applied but lost their acknowledgements.
 def fixture(mode='private'):
     ns = dict(base64=base64, hashlib=hashlib, json=json, os=os, re=re, stat=stat, struct=struct, uuid=uuid)
     exec(compile(definitions, 'production-egress-definitions', 'exec'), ns)
@@ -34,6 +47,14 @@ def fixture(mode='private'):
     ns['egress_nnp_configuration'] = lambda: 'systemd'
     ns['egress_systemd_nnp'] = lambda _units: None
     ns['json_read'] = lambda path, *_args: copy.deepcopy(records.get(path))
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: path, record。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `records[path]`, `flags['lost_write']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 失败 / Failure: `OSError('owned durable write ACK lost')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `copy.deepcopy`, `events.append`, `OSError`.
     def write(path, record):
         records[path] = copy.deepcopy(record)
         events.append(('record', record['phase'], record['mode']))
@@ -42,6 +63,17 @@ def fixture(mode='private'):
             raise OSError('owned durable write ACK lost')
     ns['json_write'] = write
     ns['binding_read'] = lambda *_args: copy.deepcopy(current)
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: arguments, data = None, json_output = True。
+    # 结果：返回分支计算值（`json.dumps({'nftables': [{'metainfo': {'json_schema_version': 1}}] + [{'table': {'family': 'inet', '… / json.dumps({'nftables': tables[arguments[3]]}).encode()`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`json.dumps({'nftables': [{'metainfo': {'json_schema_version': 1}}] + [{'table': {'family': 'inet', '… / json.dumps({'nftables': tables[arguments[3]]}).encode()`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `flags['lost_delete']`, `flags['handle']`, `next(iter(item.values()))['handle']`, `tables[name]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 失败 / Failure: `OSError('owned delete ACK lost')`; `OSError('owned create ACK lost')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `json.dumps({'nftables': [{'metainfo': {'json_schema_version': 1}}] + [{'table': {'family': 'inet', '…`, `json.dumps`, `tables.items`, `json.dumps({'nftables': tables[arguments[3]]}).encode`.
+    # 检查边界 / Checked boundaries: `json_output is True and data is None`; `json_output is True and data is None`.
+    # 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+    # Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
     def kernel(arguments, data=None, *, json_output=True):
         if arguments == ['list', 'tables']:
             assert json_output is True and data is None
@@ -97,6 +129,14 @@ def fixture(mode='private'):
                                  tables=tables, flags=flags, events=events, context=context)
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: f, call, code。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 失败 / Failure: `AssertionError('expected ' + code)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `call`, `AssertionError`.
+# 检查边界 / Checked boundaries: `error.code == code`.
 def refused(f, call, code):
     try:
         call()
@@ -106,11 +146,25 @@ def refused(f, call, code):
         raise AssertionError('expected ' + code)
 
 
+# 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+# English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+# 输入 / Inputs: f。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 协作入口 / Collaborators: `f.ns['egress_prepare']`, `f.ns['egress_commit']`.
 def provision(f):
     f.ns['egress_prepare'](f.value)
     f.ns['egress_commit'](f.value)
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `shared.ns['egress_context']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `provision`, `f.ns['egress_spec']`, `len`.
+# 检查边界 / Checked boundaries: `len(f.tables) == 1 and name == 'skp_uid_20000'`; `objects[1]['chain']['hook'] == 'output' and objects[1]['chain']['family'] == 'inet'`.
 def private_and_host_rules():
     f = fixture()
     provision(f)
@@ -128,6 +182,15 @@ def private_and_host_rules():
     assert not shared.tables and not shared.records
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `f.flags[flag]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('lost ACK must remain failure')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `fixture`, `provision`, `AssertionError`, `refused`.
+# 检查边界 / Checked boundaries: `len(f.tables) == 1`.
 def create_ack_and_record_loss():
     for flag in ('lost_create', 'lost_write'):
         f = fixture()
@@ -144,6 +207,14 @@ def create_ack_and_record_loss():
         f.ns['egress_check'](f.value)
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `f.tables[name][0]['table']['handle']`, `f.tables[name][2]['rule']['expr'][0]['match']['right']`, `f.tables[name][2]['rule']['expr'][1]`, `f.tables[name][1]['chain']['prio']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `provision`, `f.ns['egress_spec']`, `f.tables[name].append`.
+# 检查边界 / Checked boundaries: `before == (f.tables, f.records)`; `not f.records`.
 def foreign_or_tampered_table():
     for damage in ('handle', 'uid', 'verdict', 'chain', 'extra', 'absent'):
         f = fixture()
@@ -167,6 +238,15 @@ def foreign_or_tampered_table():
     assert not f.records
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `f.flags['lost_delete']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('delete ACK loss must remain pending')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `fixture`, `provision`, `dict`, `f.ns['egress_prepare']`.
+# 检查边界 / Checked boundaries: `f.tables`; `not f.tables and next(iter(f.records.values()))['deleteIssued']`.
 def modes_and_exact_delete():
     f = fixture()
     provision(f)
@@ -193,6 +273,15 @@ def modes_and_exact_delete():
     assert len(f.tables) == 1
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `state[key]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('foreign owner must refuse')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `str`, `uuid.uuid4`, `fixture`, `provision`.
+# 检查边界 / Checked boundaries: `before == (f.tables, f.records)`.
 def owner_and_namespace_refusals():
     for key, changed in [('identityId', str(uuid.uuid4())), ('uid', 21000), ('projectId', '1234567890abcdef'),
                          ('networkInode', '9999'), ('handle', True), ('deleteIssued', 1)]:
@@ -207,6 +296,14 @@ def owner_and_namespace_refusals():
         assert before == (f.tables, f.records)
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `f.context['bootId']`, `f.context['networkInode']`, `f.current['phase']`, `f.value['phase']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `provision`, `str`, `uuid.uuid4`.
+# 检查边界 / Checked boundaries: `result == {'version': 1, 'privateAccounts': 1} and len(f.tables) == 1`; `next(iter(f.records.values()))['bootId'] == f.context['bootId']`.
 def reboot_restores_intents():
     f = fixture()
     provision(f)
@@ -222,6 +319,14 @@ def reboot_restores_intents():
     assert next(iter(f.records.values()))['bootId'] == f.context['bootId']
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `f.ns['os']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `f.ns['egress_boot_plan']`, `base64.b64encode`, `len`.
+# 检查边界 / Checked boundaries: `b'env -i' in restore and b'python3 -I -S' in restore`; `base64.b64encode(b'{"action":"restore-egress"}') in restore`.
 def boot_service_plans():
     f = fixture()
     files, links, _appends = f.ns['egress_boot_plan']('a' * 64, 'systemd')
@@ -241,6 +346,14 @@ def boot_service_plans():
     refused(f, lambda: f.ns['egress_boot_plan']('a' * 64, 'unknown'), 'EGRESS_INIT_UNSUPPORTED')
 
 
+# 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+# English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `f.ns['binding_write']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `provision`, `f.value.update`, `f.current.update`.
+# 检查边界 / Checked boundaries: `candidate['revision'] == 2 and (not f.tables)`; `next((i for i, event in enumerate(f.events) if event[0] == 'binding')) < next((i for i, event in enu…`.
 def rebind_commit_order():
     f = fixture()
     provision(f)
@@ -250,6 +363,13 @@ def rebind_commit_order():
                project_directory=lambda _: types.SimpleNamespace(st_dev=1, st_ino=100),
                probe=lambda *_: None, migration_retire_applied=lambda *_: None,
                durable_unlink=lambda *_: None)
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: candidate。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `next`, `iter`, `f.records.values`, `f.events.append`.
+    # 检查边界 / Checked boundaries: `f.tables and next(iter(f.records.values()))['phase'] == 'pending'`.
     def binding(candidate):
         assert f.tables and next(iter(f.records.values()))['phase'] == 'pending'
         f.events.append(('binding', candidate['networkIsolation']))
@@ -260,6 +380,17 @@ def rebind_commit_order():
     assert next(i for i, event in enumerate(f.events) if event[0] == 'binding') < next(i for i, event in enumerate(f.events) if event[0] == 'delete')
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: openrc = False, directory_sync_failures = False。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `files['/etc/conf.d/sshd']`, `modes['/etc/conf.d/sshd']`, `f.ns['egress_parent']`, `f.ns['egress_openrc_nnp']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('O_PATH must have the observed Linux fsync refusal')`; `AssertionError('failed parent sync must prevent reload and applied on both new and existing links')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `fixture`, `dict`, `set`, `types.SimpleNamespace`.
+# 检查边界 / Checked boundaries: `error.errno == errno.EBADF`; `error.errno == errno.EIO`.
+# 设计思路：分别模拟 systemd/OpenRC 与文件替换、服务重载、父目录同步的故障；O_PATH 与可读目录 FD 有不同 fsync 行为，避免模型抹平生产曾遇到的持久化边界。
+# Design: Model systemd/OpenRC separately from failures in replacement, service reload and parent-directory sync. O_PATH and readable directory descriptors have distinct fsync behavior so the model preserves the production persistence boundary.
 def boot_install_and_interrupted_upgrade(openrc=False, directory_sync_failures=False):
     f = fixture()
     files, links, modes, owner_records, events = {}, {}, {}, {}, []
@@ -277,10 +408,26 @@ def boot_install_and_interrupted_upgrade(openrc=False, directory_sync_failures=F
     f.ns['egress_openrc_nnp'] = lambda *_args: None
     f.ns['egress_boot_read'] = lambda path: files.get(path)
     f.ns['json_read'] = lambda path, *_args: copy.deepcopy(owner_records.get(path))
+    # 中文功能：构造本组边界验证所需的模型对象或输入材料。
+    # English: Construct model objects or input material required by this boundary-verification group.
+    # 输入 / Inputs: path, value。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `owner_records[path]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `copy.deepcopy`, `events.append`.
     def record(path, value):
         owner_records[path] = copy.deepcopy(value)
         events.append(('record', value['phase']))
     f.ns['json_write'] = record
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: path, data。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `flags['atomic_loss']`, `files[path]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 失败 / Failure: `OSError('owned interruption before file replacement')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `next`, `iter`, `owner_records.values`, `OSError`.
+    # 检查边界 / Checked boundaries: `next(iter(owner_records.values()))['phase'] == 'pending'`.
     def atomic(path, data):
         assert next(iter(owner_records.values()))['phase'] == 'pending'
         if flags['atomic_loss']:
@@ -288,8 +435,22 @@ def boot_install_and_interrupted_upgrade(openrc=False, directory_sync_failures=F
             raise OSError('owned interruption before file replacement')
         files[path] = data
     f.ns['atomic'] = atomic
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: path。
+    # 结果：返回分支计算值（`types.SimpleNamespace(st_mode=stat.S_IFLNK | 511 if path in links else stat.S_IFREG | modes.get(path…`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`types.SimpleNamespace(st_mode=stat.S_IFLNK | 511 if path in links else stat.S_IFREG | modes.get(path…`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `types.SimpleNamespace`, `modes.get`.
     def info(path):
         return types.SimpleNamespace(st_mode=stat.S_IFLNK | 0o777 if path in links else stat.S_IFREG | modes.get(path, 0o755), st_uid=0, st_nlink=1)
+    # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+    # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+    # 输入 / Inputs: path, permissions, **kwargs。
+    # 结果：返回分支计算值（`descriptor`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`descriptor`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `sequence['next']`, `descriptors[descriptor]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `dict`, `bool`.
+    # 检查边界 / Checked boundaries: `path == '.'`; `parent['directory']`.
     def descriptor_open(path, permissions, **kwargs):
         if 'dir_fd' in kwargs:
             assert path == '.'
@@ -300,10 +461,24 @@ def boot_install_and_interrupted_upgrade(openrc=False, directory_sync_failures=F
         descriptor = sequence['next']
         descriptors[descriptor] = dict(path=path, flags=permissions, directory=bool(permissions & linux_directory))
         return descriptor
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: descriptor。
+    # 结果：返回分支计算值（`types.SimpleNamespace(st_mode=stat.S_IFDIR | 493 if entry['directory'] else stat.S_IFREG | modes[ent…`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`types.SimpleNamespace(st_mode=stat.S_IFDIR | 493 if entry['directory'] else stat.S_IFREG | modes[ent…`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `types.SimpleNamespace`.
     def descriptor_info(descriptor):
         entry = descriptors[descriptor]
         return types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o755 if entry['directory'] else stat.S_IFREG | modes[entry['path']],
                                      st_uid=0, st_nlink=1)
+    # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+    # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+    # 输入 / Inputs: descriptor。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `flags['directory_loss']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 失败 / Failure: `OSError(errno.EBADF, 'O_PATH cannot fsync')`; `OSError(errno.EIO, 'owned parent sync failure after symlink publication')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `OSError`, `events.append`.
     def descriptor_sync(descriptor):
         entry = descriptors[descriptor]
         if entry['flags'] & linux_path:
@@ -313,6 +488,13 @@ def boot_install_and_interrupted_upgrade(openrc=False, directory_sync_failures=F
             if flags['directory_loss']:
                 flags['directory_loss'] = False
                 raise OSError(errno.EIO, 'owned parent sync failure after symlink publication')
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: destination, path。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `links[path]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `events.append`.
     def create_link(destination, path):
         events.append(('symlink', path))
         links[path] = destination
@@ -329,6 +511,15 @@ def boot_install_and_interrupted_upgrade(openrc=False, directory_sync_failures=F
         open=descriptor_open, fstat=descriptor_info, fsync=descriptor_sync, close=lambda descriptor: descriptors.pop(descriptor))
     f.ns['directory_fd'] = lambda path: descriptor_open(path, linux_path | linux_directory | linux_nofollow | linux_cloexec)
     f.ns['tool'] = lambda name: '/usr/bin/' + name
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: argv, **_kwargs。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `flags['reload_loss']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 失败 / Failure: `OSError('owned reload ACK lost')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `next`, `iter`, `owner_records.values`, `all`.
+    # 检查边界 / Checked boundaries: `argv == (['/usr/bin/rc-update', '-u'] if openrc else ['/usr/bin/systemctl', 'daemon-reload'])`; `owner['phase'] == 'pending'`.
     def reload(argv, **_kwargs):
         assert argv == (['/usr/bin/rc-update', '-u'] if openrc else ['/usr/bin/systemctl', 'daemon-reload'])
         owner = next(iter(owner_records.values()))
@@ -417,15 +608,34 @@ def boot_install_and_interrupted_upgrade(openrc=False, directory_sync_failures=F
     refused(f, lambda: f.ns['egress_bootstrap']('c' * 64), 'EGRESS_BOOT_CHANGED')
 
 
+# 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+# English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 协作入口 / Collaborators: `boot_install_and_interrupted_upgrade`.
 def openrc_dependencies_and_operator_settings():
     boot_install_and_interrupted_upgrade(True)
 
 
+# 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+# English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 协作入口 / Collaborators: `boot_install_and_interrupted_upgrade`.
 def boot_symlink_sync_and_pending_recovery():
     boot_install_and_interrupted_upgrade(False, True)
     boot_install_and_interrupted_upgrade(True, True)
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 协作入口 / Collaborators: `fixture`, `refused`, `f.ns['egress_json']`.
+# 检查边界 / Checked boundaries: `f.ns['egress_json'](b'{"nftables":[{"metainfo":{"json_schema_version":1}}]}') == []`.
 def bounded_kernel_json():
     f = fixture()
     for value in [[], {'nftables': {}}, {'nftables': [None]}, {'nftables': [{'table': {}, 'rule': {}}]},

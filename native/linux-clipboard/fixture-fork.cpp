@@ -1,4 +1,7 @@
-/** X11 fork 夹具，在已有连接和中继状态下创建子进程，验证继承传输被隔离且父进程仍可使用。 */
+/**
+ * 中文：复用真实 X11 协议夹具，在无 exec 的父子与嵌套 fork 进程中检查连接隔离。测试同时要求父连接继续完成请求，并验证子退出清理不会破坏共享 socket。
+ * English: Reuses real X11 protocol fixtures to test connection isolation across no-exec parent/child and nested forks. Tests also require continued parent transfers and child-exit cleanup that preserves shared sockets.
+ */
 // Test-only: reuse the actual Xlib/XCB/mixed protocol helpers, without exec in
 // any child. Returning from main exercises ordinary C++ local/static cleanup.
 #define main sakura_protocol_fixture_main
@@ -6,6 +9,11 @@
 #undef main
 #include <sys/wait.h>
 
+/**
+ * 中文：递归创建无 exec 子进程，等待每层退出并检查第 32 层新连接被策略以 126 拒绝。
+ * English: Recursively forks without exec and waits for each exit, checking that a new connection at the depth limit is rejected with status 126.
+ * 参数 / Parameters: `boundedForks(unsigned remaining)`.
+ */
 static bool boundedForks(unsigned remaining){
   const auto pid=fork();if(pid<0)return false;
   if(!pid){if(remaining==1){Connection overflow("xcb");return false;}std::exit(boundedForks(remaining-1)?0:22);}
@@ -15,14 +23,29 @@ static bool boundedForks(unsigned remaining){
 struct MultipleRequest {
   uint32_t parent=0;
   std::vector<uint32_t> pairs;
+  /**
+   * 中文：为指定数量的文本目标建立独立子属性对和一个父 MULTIPLE 属性。
+   * English: Builds separate child-property pairs for the requested text-target count and one parent MULTIPLE property.
+   * 参数 / Parameters: `MultipleRequest(Connection& connection,unsigned count=2)`.
+   */
   explicit MultipleRequest(Connection& connection,unsigned count=2){
     parent=connection.atom("SAKURA_FORK_PARENT");
     for(unsigned i=0;i<count;++i){pairs.push_back(connection.atom(i%2?"text/plain":"UTF8_STRING"));pairs.push_back(connection.atom(("SAKURA_FORK_DATA_"+std::to_string(i)).c_str()));}
   }
+  /**
+   * 中文：先写入目标/属性对，再发起指定选择的 MULTIPLE 转换请求。
+   * English: Writes the target/property pairs before requesting a MULTIPLE conversion for the supplied selection.
+   * 参数 / Parameters: `begin(Connection& connection,uint32_t selection)`.
+   */
   void begin(Connection& connection,uint32_t selection){
     connection.change(connection.window,parent,connection.atom("ATOM_PAIR"),32,pairs.data(),pairs.size());
     connection.convert(selection,connection.atom("MULTIPLE"),parent);
   }
+  /**
+   * 中文：在十五秒内等待唯一通知，核对完整父属性及各子属性均等于预期字节。
+   * English: Waits up to fifteen seconds for one notification and checks the complete parent property and every child against expected bytes.
+   * 参数 / Parameters: `finish(Connection& connection,const std::string& expected)`.
+   */
   bool finish(Connection& connection,const std::string& expected){
     Event event;bool notified=false;unsigned notifications=0;const auto until=Clock::now()+std::chrono::seconds(15);
     while(!notified&&Clock::now()<until){while(connection.event(event))if(event.type==SelectionNotify){notified=true;++notifications;break;}if(!notified)usleep(1000);}
@@ -34,12 +57,24 @@ struct MultipleRequest {
     while(connection.event(event))if(event.type==SelectionNotify)++notifications;
     return notifications==1;
   }
+  /**
+   * 中文：重读所有子属性，只有类型、长度、剩余字节和内容全部清空才视为拒绝。
+   * English: Re-reads every child property and accepts denial only when type, length, remaining bytes and content are all cleared.
+   * 参数 / Parameters: `denied(Connection& connection)`.
+   */
   bool denied(Connection& connection){
     for(unsigned i=0;i<pairs.size()/2;++i){auto body=connection.get(pairs[i*2+1],0,1048576,false,"poll64",connection.mixed);
       if(body.type||body.count||body.after||!body.bytes.empty())return false;}return true;
   }
 };
 
+/**
+ * 中文：协调父子进程和外部测试输入，验证继承连接拒绝、新连接可用、嵌套 fork 隔离及父连接继续完成传输。
+ * English: Coordinates parent/child processes and test input to verify inherited-connection refusal, fresh connections, nested-fork isolation and continued parent transfers.
+ * 参数 / Parameters: `main(int argc,char** argv)`.
+ * 设计 / Design: 子进程正常退出触发 C++ 清理；清理继承别名不得向父共享连接发送请求或 shutdown。
+ * Normal child exit exercises C++ cleanup, which must not send requests or shut down aliases of the parent's shared connection.
+ */
 int main(int argc,char** argv){
   XInitThreads();if(argc<7)return 1;
   const std::string toolkit=argv[1],action=argv[2],parentText=input(argv[4]),childText=input(argv[6]);

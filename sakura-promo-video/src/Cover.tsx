@@ -1,8 +1,11 @@
-/** 宣传视频静态封面构图，复用品牌色、字体和绘画资源输出 1080p 封面。 */
+/** 宣传视频静态封面构图，复用品牌色、字体和绘画资源输出 1080p 封面。
+ * Compose the static 1080p promotional cover from shared brand colors, fonts and painted assets. */
 import {CanvasImage, staticFile, useVideoConfig} from 'remotion';
 import {Paper} from './components';
 import {colors, font} from './theme';
 
+/** 组合静态品牌封面、樱枝和标语，关闭花瓣动画以保证导出的 Still 构图稳定，图像提前一秒加载。
+ * Compose the static brand cover, painted bough and tagline, disabling petal animation for a stable exported still and premounting imagery for one second. */
 export const Cover = () => {
   const {fps} = useVideoConfig();
   return <Paper petals={false}>

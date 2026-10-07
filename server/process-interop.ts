@@ -1,5 +1,6 @@
 /**
  * 模块职责：协调 Windows 与客户机命令互操作，校验 EXE 的实际路径及启动归属。
+ * Module purpose: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { hostProcess } from './host-process.ts';
@@ -38,9 +39,40 @@ const stateSchema = z.record(z.uuid(), z.object({
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict()),
 }).strict());
+/**
+ * 入口 / Entry: file.
+ * 功能：把本层请求转交 `join`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `join` and propagates the provider result or rejection.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `join(DATA, 'process-interop.json')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const file = () => join(DATA, 'process-interop.json');
+/**
+ * 入口 / Entry: digest.
+ * 功能：在协调 Windows 与客户机命令互操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(value).digest('hex')` 供上层消费（`process-interop.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `process-interop.ts`; this entry produces `createHash('sha256').update(value).digest('hex')` for its caller. Module context: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: Buffer | string
+ * 输出 / Returns: `createHash('sha256').update(value).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const digest = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
 
+/**
+ * 入口 / Entry: checkedExecutable.
+ * 功能：在协调 Windows 与客户机命令互操作中，核对调用资格、输入或资源归属；本入口产生 `hash.digest('hex')` 供上层消费（`process-interop.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `process-interop.ts`; this entry produces `hash.digest('hex')` for its caller. Module context: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
+ * 处理：通过 `executable.parse`, `lstat().catch`, `lstat`, `info.isFile` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `executable.parse`, `lstat().catch`, `lstat`, `info.isFile`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: path: string
+ * 输出 / Returns: `hash.digest('hex')`.
+ * 副作用 / Effects: `executable.parse`; `createHash`; `createReadStream`; `hash.update`.
+ * 拒绝 / Refusals: 条件 / conditions `!info?.isFile() || info.isSymbolicLink()`; `(await realpath(path)).toLowerCase() !== resolve(path).toLowerCase()`; 异常 / errors `new AppError('需要普通 Windows EXE 文件', 400)`; `new AppError('不允许经符号链接或联接指向可执行文件', 400)`.
+ */
 async function checkedExecutable(path: string) {
   executable.parse(path);
   const info = await lstat(path).catch(() => null);
@@ -52,12 +84,36 @@ async function checkedExecutable(path: string) {
   return hash.digest('hex');
 }
 
+/**
+ * 入口 / Entry: sameToken.
+ * 功能：在协调 Windows 与客户机命令互操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `false` / `timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(actual, 'hex'))` 供上层消费（`process-interop.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `process-interop.ts`; this entry produces `false` / `timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(actual, 'hex'))` for its caller. Module context: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
+ * 处理：通过 `inline.test`, `timingSafeEqual` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `inline.test`, `timingSafeEqual`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!expected || !actual || !/^[a-f0-9]{64}$/.test(expected) || !/^[a-f0-9]{64}$/.test(actual)`.
+ * 输入 / Inputs: expected: string | undefined; actual: string | undefined
+ * 输出 / Returns: `false`; `timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(actual, 'hex'))`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function sameToken(expected: string | undefined, actual: string | undefined) {
   if (!expected || !actual || !/^[a-f0-9]{64}$/.test(expected) || !/^[a-f0-9]{64}$/.test(actual))
     return false;
   return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(actual, 'hex'));
 }
 
+/**
+ * 入口 / Entry: runProgram.
+ * 功能：在协调 Windows 与客户机命令互操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ exitCode: result.code, stdout: result.stdout, stderr: result.stderr }` 供上层消费（`process-interop.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `process-interop.ts`; this entry produces `{ exitCode: result.code, stdout: result.stdout, stderr: result.stderr }` for its caller. Module context: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
+ * 处理：通过 `signal.throwIfAborted`, `captureOperationCheck`, `withOperationCheck` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `signal.throwIfAborted`, `captureOperationCheck`, `withOperationCheck`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `process.env[name] !== undefined`.
+ * 输入 / Inputs: program: Program; signal: AbortSignal optional
+ * 输出 / Returns: `{ exitCode: result.code, stdout: result.stdout, stderr: result.stderr }`.
+ * 副作用 / Effects: 更新 / updates `env[name]`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 async function runProgram(program: Program, signal?: AbortSignal) {
   signal?.throwIfAborted();
   const authority = captureOperationCheck();
@@ -81,15 +137,54 @@ export class ProcessInterop {
   private writes = Promise.resolve();
   private busy = new Set<string>();
 
+  /**
+   * 入口 / Entry: ProcessInterop.constructor.
+   * 功能：建立 ProcessInterop 的协调 Windows 与客户机命令互操作上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the ProcessInterop context for this module's responsibility: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; port: number; allowed: () => void default=() => {}; execute: typeof runProgram default=runProgram
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(private machines: Machines, private port: number,
     private allowed: () => void = () => {}, private execute: typeof runProgram = runProgram) {}
 
+  /**
+   * 入口 / Entry: ProcessInterop.state.
+   * 功能：在协调 Windows 与客户机命令互操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.stateValue ||= await (this.loading ||= readStore<State>(file(), () => ({})) .then((value) => stateSchema.parse(value)))` 供上层消费（`ProcessInterop`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProcessInterop`; this entry produces `this.stateValue ||= await (this.loading ||= readStore<State>(file(), () => ({})) .then((value) => stateSchema.parse(value)))` for its caller. Module context: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
+   * 处理：通过 `readStore().then`, `readStore`, `file` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `readStore().then`, `readStore`, `file`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.stateValue ||= await (this.loading ||= readStore<State>(file(), () => ({})) .then((value) => stateSchema.parse(value)))`.
+   * 副作用 / Effects: 更新 / updates `this.stateValue`, `this.loading`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async state() {
     return this.stateValue ||= await (this.loading ||= readStore<State>(file(), () => ({}))
       .then((value) => stateSchema.parse(value)));
   }
 
+  /**
+   * 入口 / Entry: ProcessInterop.mutate.
+   * 功能：在协调 Windows 与客户机命令互操作中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.writes`（`ProcessInterop`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProcessInterop`; the outcome is recorded in `this.writes`. Module context: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
+   * 处理：通过 `this.writes.catch().then`, `this.writes.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.writes.catch().then`, `this.writes.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: change: (state: State) => void
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.writes.catch().then`; `this.writes.catch`; 更新 / updates `this.writes`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async mutate(change: (state: State) => void) {
+    /**
+     * 入口 / Entry: ProcessInterop.mutate.callback@93.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.writes.catch().then）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.writes.catch().then).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `writeStore`; 更新 / updates `this.stateValue`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const write = this.writes.catch(() => {}).then(async () => {
       const next = structuredClone(await this.state());
       change(next);
@@ -100,12 +195,34 @@ export class ProcessInterop {
     await write;
   }
 
+  /**
+   * 入口 / Entry: ProcessInterop.guard.
+   * 功能：在协调 Windows 与客户机命令互操作中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`ProcessInterop`）。
+   * Purpose: Checks admission, input or resource ownership in `ProcessInterop`; the calls and state transitions below complete the operation. Module context: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
+   * 处理：通过 `this.allowed`, `this.machines.get`, `this.machines.requireUnlocked` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.allowed`, `this.machines.get`, `this.machines.requireUnlocked`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private guard(id: string) {
     this.allowed();
     this.machines.get(id);
     this.machines.requireUnlocked(id);
   }
 
+  /**
+   * 入口 / Entry: ProcessInterop.action.
+   * 功能：在允许列表与原配置约束下执行 Windows EXE 或管理其互操作授权。
+   * Purpose: Executes or manages Windows EXE interoperability under allowlists and captured configuration.
+   * 设计：实际路径、联接及映像摘要先检查，客户机请求不能通过任意环境扩大宿主权限；创建后失败仍收尾原参与者。
+   * Design: Physical paths/junctions/image digests are checked and guest environments cannot widen host grants; post-spawn failure cleans original participants.
+   * 输入 / Inputs: id: string; options: unknown; phase: 'check' | 'run'; signal: AbortSignal optional
+   * 输出 / Returns: `{ ready: process.platform === 'win32', executed: false, enabled: entry.enabled, installed: !!entry.tokenHash, programs, ...(p…`; `{ ready: true, executed: phase === 'run', programId: input.programId, sha256 }`; `{ ready: true, executed: phase === 'run', programId: input.programId }`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: `this.machines.exec`; `this.machines.writeGuestFile`.
+   * 拒绝 / Refusals: 条件 / conditions `process.platform !== 'win32'`; `input.mode === 'allow'`; `!input.programId || !input.executable`; 异常 / errors `new AppError('仅支持 Windows 宿主机', 409)`; `new AppError('需要 programId 和 executable', 400)`.
+   */
   async action(id: string, options: unknown, phase: 'check' | 'run', signal?: AbortSignal) {
     this.guard(id);
     const input = processInteropInput.parse(options);
@@ -182,6 +299,15 @@ export class ProcessInterop {
     const chmod = await this.machines.exec(id,
       'chmod 600 /etc/sakura/interop.curl && chmod 755 /usr/local/bin/sakura-win', 10000, signal);
     if (chmod.code !== 0) throw new AppError('设置客户机调用程序权限失败', 409);
+    /**
+     * 入口 / Entry: ProcessInterop.action.callback@185.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.mutate）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.mutate).
+     * 输入 / Inputs: state
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 更新 / updates `state[id]`, `target.enabled`, `target.tokenHash`.
+     * 拒绝 / Refusals: 条件 / conditions `!Object.keys(target.programs).length`; 异常 / errors `new AppError('请先登记 Windows 程序', 409)`.
+     */
     await this.mutate((state) => {
       const target = state[id] ||= { enabled: false, programs: {} };
       if (!Object.keys(target.programs).length) throw new AppError('请先登记 Windows 程序', 409);
@@ -192,6 +318,19 @@ export class ProcessInterop {
       command: 'sakura-win <programId>' };
   }
 
+  /**
+   * 入口 / Entry: ProcessInterop.guest.
+   * 功能：在协调 Windows 与客户机命令互操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ programId: name, ...await withResourceContext(identity, () => withOperationCheck(check, () => this.execute(program, executi…` 供上层消费（`ProcessInterop`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProcessInterop`; this entry produces `{ programId: name, ...await withResourceContext(identity, () => withOperationCheck(check, () => this.execute(program, executi…` for its caller. Module context: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
+   * 处理：通过 `guestInteropRequest.parse`, `this.guard`, `this.machines.live.get`, `vmLifetime` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `guestInteropRequest.parse`, `this.guard`, `this.machines.live.get`, `vmLifetime`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: request: unknown; token: string | undefined; signal: AbortSignal optional
+   * 输出 / Returns: `{ programId: name, ...await withResourceContext(identity, () => withOperationCheck(check, () => this.execute(program, executi…`.
+   * 副作用 / Effects: `AbortSignal.any`; `this.busy.add`; `this.busy.delete`.
+   * 拒绝 / Refusals: 条件 / conditions `!live`; `!entry?.enabled || !sameToken(entry.tokenHash, digest(token || ''))`; `this.machines.state(vmId) !== 'running'`; 异常 / errors `new AppError('实例未运行', 409)`; `new AppError('客户机调用未授权', 403)`.
+   * 收尾：退出 try 区域时始终执行 `this.busy.delete(vmId);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.busy.delete(vmId);`; these steps also apply to exceptional exits.
+   */
   async guest(request: unknown, token: string | undefined, signal?: AbortSignal) {
     const { vmId, programId: name } = guestInteropRequest.parse(request);
     this.guard(vmId);
@@ -206,6 +345,17 @@ export class ProcessInterop {
     if (!entry.programs[name]) throw new AppError('程序未获准调用', 403);
     const program = structuredClone(entry.programs[name]);
     const fingerprint = JSON.stringify(program);
+    /**
+     * 入口 / Entry: ProcessInterop.guest.check.
+     * 功能：在协调 Windows 与客户机命令互操作中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`ProcessInterop`）。
+     * Purpose: Checks admission, input or resource ownership in `ProcessInterop`; the calls and state transitions below complete the operation. Module context: Coordinates host/guest command interoperability, validating physical EXE paths and launch ownership.
+     * 处理：通过 `this.guard`, `sameToken`, `digest`, `this.machines.live.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.guard`, `sameToken`, `digest`, `this.machines.live.get`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `!current?.enabled || !sameToken(current.tokenHash, digest(token || '')) || JSON.stringify(current.programs[name]) !== fingerp…`; `this.machines.live.get(vmId) !== live || this.machines.state(vmId) !== 'running'`; 异常 / errors `new AppError('客户机程序授权已改变', 403, 'INTEROP_AUTHORITY_CHANGED')`; `new AppError('客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`.
+     */
     const check = async () => {
       this.guard(vmId);
       // stateValue is published only after writeStore confirms the atomic write. Never re-enter its writer queue.

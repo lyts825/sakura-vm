@@ -1,11 +1,18 @@
-/** 文件与同步章节示意，按场景时间展示文件操作、传输和同步方向。 */
+/** 文件与同步章节示意，按场景时间展示文件操作、传输和同步方向。
+ * Illustrate file operations/transfers/sync directions and conflict resolution from scene time. */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Button, Chapter, FlowArrow, ScenePaper, type SceneProps, StepStrip, Tag, useScene, Window} from '../stage';
 import {colors, font} from '../theme';
 
+/** 以标题和路径为文件列增加统一容器，并在分隔线下渲染 children，形成本地与来宾目录的并排对照。
+ * Wrap file rows with a title/path and render children below the divider for side-by-side host/guest directory comparison. */
 const Directory = ({title, path, children}: {title: string; path: string; children: React.ReactNode}) => <div style={{flex: 1, padding: '30px 26px', background: '#fcfafc'}}><div style={{fontSize: 32, fontFamily: font.serif}}>{title}</div><div style={{fontSize: 21, color: colors.muted, fontFamily: font.mono, marginTop: 15}}>{path}</div><div style={{height: 1, margin: '26px 0 14px', background: colors.line}}/>{children}</div>;
+/** 渲染文件名、补充说明和可选冲突高亮，帮助同步场景表达本地修改与解决状态。
+ * Render a filename, annotation and optional conflict highlight to illustrate local changes and their resolution in the sync scene. */
 const FileLine = ({name, active, note}: {name: string; active?: boolean; note: string}) => <div style={{display: 'flex', alignItems: 'center', gap: 14, padding: '16px 10px', fontSize: 23, color: active ? colors.accent : colors.ink, background: active ? colors.blush : 'transparent', borderRadius: 9}}><Icon type="folder" size={26}/><span>{name}</span><span style={{marginLeft: 'auto', color: colors.muted, fontSize: 18}}>{note}</span></div>;
+/** 按旁白时间推进同步预览、冲突出现、解决与执行状态，使用并排 Windows/Linux 目录解释同步取舍。
+ * Advance sync preview, conflict, resolution and execution from narration cues, comparing Windows/Linux directories side by side. */
 const FilesInner: React.FC<SceneProps> = ({style}) => {
   const {seconds, cue} = useScene('files');
   const preview = seconds > cue(0) + 2;

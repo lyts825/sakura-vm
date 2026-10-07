@@ -1,4 +1,5 @@
-/** 烟雾验收：验证当前编译版本的健康检查和首页读取，核对自更新启动入口。 */
+/** 烟雾验收：验证当前编译版本的健康检查和首页读取，核对自更新启动入口。
+ * Smoke acceptance for compiled-version health/homepage reads and the self-update launch entry. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';

@@ -1,4 +1,5 @@
-/** 烟雾验收：验证外部存储池分配、分层迁移及三次真实来宾启动。 */
+/** 烟雾验收：验证外部存储池分配、分层迁移及三次真实来宾启动。
+ * Smoke acceptance for external-pool allocation/tier migration and three actual guest boots. */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,6 +18,8 @@ const { StorageTiering } = await import('../server/storage-tiering.ts');
 const machines = new Machines(await createRuntime());
 const tiering = new StorageTiering(machines);
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 300_000;

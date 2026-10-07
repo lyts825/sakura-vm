@@ -1,4 +1,5 @@
-/** 烟雾验收：验证编译 HTTP 的 X11 原生剪贴板策略、输入和生命周期。 */
+/** 烟雾验收：验证编译 HTTP 的 X11 原生剪贴板策略、输入和生命周期。
+ * Smoke acceptance for compiled HTTP X11 policy/input and lifecycle. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile, realpath, writeFile, rm } from 'node:fs/promises';
@@ -53,6 +54,8 @@ const exited = new Promise((done, fail) => {
   server.once('error', fail);
 });
 let token = '';
+/** 发送二十秒期限的认证本机读取请求，HTTP 失败抛正文，成功解析 JSON。
+ * Send authenticated local reads under twenty seconds, throwing failed bodies and parsing successful JSON. */
 async function request(path) {
   const response = await fetch(origin + path, {
     headers: { 'x-sakura-token': token },
@@ -63,12 +66,18 @@ async function request(path) {
 }
 const path = { vmId: vm.id },
   operation = 'desktop.x11-clipboard-action';
+/** 通过生成 SDK 读取自有实例的 X11 剪贴板视图。
+ * Read the owned VM’s X11 clipboard view through generated SDK. */
 async function view() {
   return sdk.call('desktop.x11-clipboard-get', { path });
 }
+/** 通过 SDK 向 default 项目的指定剪贴板操作发送正文，契约验证由生成客户端/服务端执行。
+ * Submit clipboard operation bodies for the default project via SDK, retaining generated-client/server contract validation. */
 async function action(body) {
   return sdk.call(operation, { path, query: { project: 'default' }, body });
 }
+/** 使用 SDK 实例执行入口运行自有夹具命令，要求零退出并返回标准输出。
+ * Execute owned-fixture commands through SDK instance execution, require zero exit and return stdout. */
 async function guest(command) {
   const result = await sdk.call('core.vms.exec', { path, body: { scope: 'instance', command } });
   assert.equal(result.code, 0, result.stderr || result.stdout);

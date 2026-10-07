@@ -1,3 +1,7 @@
+# 模块职责：生产出口策略的便携兼容模型，覆盖 nft 元数据差异及部分创建后的归属恢复。
+# Module: Portable compatibility models for production egress policy, covering nft metadata differences and ownership recovery after partial creation.
+# 阅读方式：按初始化、具名辅助函数与测试情景阅读；便携模型与模拟接口不能证明真实 Linux 隔离。
+# Reading guide: Follow initialization, named helpers and cases; portable models and substituted interfaces do not attest real Linux isolation.
 # 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
 # 覆盖：test_modern_strict_fast_path_has_no_text_or_second_query
 # 覆盖：test_official_106_json_shape_requires_real_top_comment_and_unchanged_snapshot
@@ -37,6 +41,13 @@ VALUE = {'uid': 20000, 'registryId': '11111111-1111-1111-1111-111111111111',
 
 
 class KernelFixture:
+    # 中文功能：初始化测试夹具实例并保存构造输入，供后续方法复用其状态。
+    # English: Initialize a test-fixture instance and retain constructor inputs for subsequent stateful methods.
+    # 输入 / Inputs: self, legacy = False。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `self.objects`, `next(iter(entry.values()))['handle']`, `self.legacy`, `self.text`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `draft.egress_spec`, `copy.deepcopy`, `zip`, `next`.
     def __init__(self, legacy=False):
         self.name, self.expected = draft.egress_spec(VALUE)
         self.objects = copy.deepcopy(self.expected)
@@ -55,6 +66,14 @@ class KernelFixture:
         self.calls, self.json_reads, self.post = [], 0, None
         self.tables = [{'table': {'family': 'inet', 'name': self.name, 'handle': 51}}]
 
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: self, arguments, data = None, json_output = True。
+    # 结果：返回分支计算值（`self.text / json.dumps({'nftables': [{'metainfo': {'version': '1.0.6' if self.legacy else '1.1.3', 'release_name…`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.text / json.dumps({'nftables': [{'metainfo': {'version': '1.0.6' if self.legacy else '1.1.3', 'release_name…`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `self.json_reads`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `self.calls.append`, `json.dumps({'nftables': [{'metainfo': {'version': '1.0.6' if self.legacy else '1.1.3', 'release_name…`, `json.dumps`.
+    # 检查边界 / Checked boundaries: `arguments == ['-a', 'list', 'table', 'inet', self.name] and (not json_output) and (data is None)`.
     def nft(self, arguments, data=None, *, json_output=True):
         self.calls.append((arguments, data, json_output))
         if arguments == ['list', 'tables']:
@@ -70,24 +89,55 @@ class KernelFixture:
 
 
 class CompatibilityModels(unittest.TestCase):
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `draft.egress_nft`. Follow the actual model assignments / 以模型中的实际赋值为准。
     def tearDown(self):
         draft.egress_nft = ORIGINAL_NFT
 
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self, fixture。
+    # 结果：返回分支计算值（`draft.egress_table(VALUE)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`draft.egress_table(VALUE)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `draft.egress_nft`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `draft.egress_table`.
     def query(self, fixture):
         draft.egress_nft = fixture.nft
         return draft.egress_table(VALUE)
 
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self, fixture, code = 'EGRESS_TABLE_CHANGED'。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.assertRaises`, `self.query`, `self.assertEqual`.
     def refused(self, fixture, code='EGRESS_TABLE_CHANGED'):
         with self.assertRaises(draft.Refusal) as caught:
             self.query(fixture)
         self.assertEqual(caught.exception.code, code)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `KernelFixture`, `self.assertEqual`, `self.query`, `len`.
     def test_modern_strict_fast_path_has_no_text_or_second_query(self):
         fixture = KernelFixture()
         self.assertEqual(self.query(fixture), 51)
         self.assertEqual(len(fixture.calls), 2)
         self.assertTrue(all(call[2] for call in fixture.calls))
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `KernelFixture`, `self.assertNotIn`, `self.assertEqual`, `self.query`.
     def test_official_106_json_shape_requires_real_top_comment_and_unchanged_snapshot(self):
         fixture = KernelFixture(True)
         self.assertNotIn('comment', fixture.objects[0]['table'])
@@ -96,6 +146,13 @@ class CompatibilityModels(unittest.TestCase):
         self.assertEqual(fixture.calls[2], (['-a', 'list', 'table', 'inet', fixture.name], None, False))
         self.assertEqual(fixture.json_reads, 2)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `draft.egress_nft`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `base64.b64decode`, `self.assertEqual`, `hashlib.sha256(raw).hexdigest`, `hashlib.sha256`.
     def test_captured_debian_106_unmarked_pending_stays_refused(self):
         # Exact stdout bytes from the closed a71 owned COW diagnosis, whose
         # outer handoff SHA is 9905057bd525f69afe5aaa1399874362abae16a60b25e53a81ccd9de0c6cd9ae.
@@ -107,6 +164,12 @@ class CompatibilityModels(unittest.TestCase):
         value = dict(uid=20000, registryId='af6d669a-1aed-4c1e-b37e-f6243a274c25',
                      identityId='9e8b2574-cd13-4037-8a36-fbf73ec02568')
         calls = []
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: arguments, data = None, json_output = True。
+        # 结果：返回分支计算值（`tables / raw`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`tables / raw`); its implementation and call sites define the actual type.
+        # 协作入口 / Collaborators: `calls.append`, `self.assertIsNone`, `self.assertEqual`, `self.assertIs`.
         def query(arguments, data=None, *, json_output=True):
             calls.append(arguments)
             self.assertIsNone(data)
@@ -120,12 +183,26 @@ class CompatibilityModels(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'EGRESS_TABLE_CHANGED')
         self.assertEqual(len(calls), 3)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.tables`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `KernelFixture`, `self.assertIsNone`, `self.query`, `self.assertEqual`.
     def test_no_table_is_still_absent_and_never_queries_or_creates_it(self):
         fixture = KernelFixture(True)
         fixture.tables = []
         self.assertIsNone(self.query(fixture))
         self.assertEqual(len(fixture.calls), 1)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.records[fixture.ns['egress_path'](fixture.value)]`, `fixture.tables[name]`, `draft.egress_nft`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `base64.b64decode`, `self.assertEqual`, `hashlib.sha256(raw).hexdigest`, `hashlib.sha256`.
     def test_captured_debian_106_marked_table_only_pending_stays_refused(self):
         # Exact closed b9 COW stdout: the table has a real ownership marker,
         # but CMD_CREATE did not expand its nested chain/rule. A correct marker
@@ -147,6 +224,12 @@ class CompatibilityModels(unittest.TestCase):
                                                comment=expected[0]['table']['comment']))]
         before = copy.deepcopy(fixture.records), copy.deepcopy(fixture.tables), copy.deepcopy(fixture.events)
         calls = []
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: arguments, data = None, json_output = True。
+        # 结果：返回分支计算值（`raw`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`raw`); its implementation and call sites define the actual type.
+        # 协作入口 / Collaborators: `calls.append`, `self.assertIsNone`, `self.assertIs`, `self.assertIn`.
         def query(arguments, data=None, *, json_output=True):
             calls.append(arguments)
             self.assertIsNone(data)
@@ -165,6 +248,13 @@ class CompatibilityModels(unittest.TestCase):
         self.assertIsNone(pending['handle'])
         self.assertFalse(pending['deleteIssued'])
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.tables`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `KernelFixture`, `copy.deepcopy`, `self.refused`, `self.assertEqual`.
     def test_duplicate_named_table_refuses_without_modifying_objects(self):
         fixture = KernelFixture(True)
         fixture.tables += copy.deepcopy(fixture.tables)
@@ -172,6 +262,13 @@ class CompatibilityModels(unittest.TestCase):
         self.refused(fixture)
         self.assertEqual(fixture.objects, before)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.text`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `draft.egress_spec(VALUE)[1][0]['table']['comment'].encode`, `draft.egress_spec`, `KernelFixture`, `fixture.text.replace`.
     def test_missing_wrong_and_duplicate_top_comment_never_adopt_old_unmarked_pending(self):
         marker = draft.egress_spec(VALUE)[1][0]['table']['comment'].encode()
         for change in ['missing', 'wrong', 'duplicate']:
@@ -182,6 +279,13 @@ class CompatibilityModels(unittest.TestCase):
             with self.subTest(change=change): self.refused(fixture)
             self.assertEqual(fixture.json_reads, 1)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.text`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `draft.egress_spec(VALUE)[1][0]['table']['comment'].encode`, `draft.egress_spec`, `KernelFixture`, `fixture.text.replace`.
     def test_nested_or_rule_comment_cannot_prove_table_ownership(self):
         marker = draft.egress_spec(VALUE)[1][0]['table']['comment'].encode()
         for nested in [b'\t\tcomment "' + marker + b'"\n', b'']:
@@ -190,6 +294,13 @@ class CompatibilityModels(unittest.TestCase):
             fixture.text = fixture.text.replace(b'\tchain output { # handle 52\n', b'\tchain output { # handle 52\n' + nested)
             self.refused(fixture)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.text`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `draft.egress_spec(VALUE)[1][0]['table']['comment'].encode`, `draft.egress_spec`, `KernelFixture`, `fixture.text.replace`.
     def test_quotes_braces_escapes_and_line_breaks_cannot_spoof_depth_or_marker(self):
         marker = draft.egress_spec(VALUE)[1][0]['table']['comment'].encode()
         for injected in [marker + b'{}', marker + b'\\n', marker + b'\n', marker + b'\\"', marker + b'\r',
@@ -198,6 +309,13 @@ class CompatibilityModels(unittest.TestCase):
             fixture.text = fixture.text.replace(marker, injected, 1)
             with self.subTest(injected=injected): self.refused(fixture)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.text`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `KernelFixture`, `fixture.text.replace`, `fixture.expected[0]['table']['comment'].encode`, `self.subTest`.
     def test_duplicate_or_extra_outer_tables_trailing_data_and_unknown_top_fields_refuse(self):
         for change in ['second-table', 'trailing', 'top-flags', 'third-depth', 'comment-after-chain']:
             fixture = KernelFixture(True)
@@ -208,6 +326,13 @@ class CompatibilityModels(unittest.TestCase):
             else: fixture.text = fixture.text[:-2] + b'\tcomment "' + fixture.expected[0]['table']['comment'].encode() + b'"\n}\n'
             with self.subTest(change=change): self.refused(fixture)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.text`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `KernelFixture`, `fixture.text.replace`, `self.subTest`, `self.refused`.
     def test_header_family_name_and_handle_match_exact_initial_kernel_table(self):
         for old, new in [(b'inet', b'ip'), (b'skp_uid_20000', b'skp_uid_20001'), (b'handle 51', b'handle 52'),
                          (b'handle 51', b'handle 0'), (b'handle 51', b'handle -1'), (b'handle 51', b'handle True'),
@@ -217,6 +342,13 @@ class CompatibilityModels(unittest.TestCase):
             fixture.text = fixture.text.replace(old, new, 1)
             with self.subTest(new=new): self.refused(fixture)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fields['handle']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `range`, `KernelFixture`, `next`, `iter`.
     def test_missing_or_invalid_json_handles_refuse_before_text(self):
         for index in range(3):
             for invalid in [None, True, False, 0, -1, 51.0, '51', 2 ** 64]:
@@ -227,6 +359,13 @@ class CompatibilityModels(unittest.TestCase):
                 with self.subTest(index=index, handle=invalid): self.refused(fixture)
                 self.assertEqual(len(fixture.calls), 2)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.objects[0]['table']['flags']`, `fixture.objects[1]['chain']['counter']`, `fixture.objects[2]['rule']['index']`, `fixture.objects[1]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `KernelFixture`, `fixture.objects.append`, `copy.deepcopy`, `fixture.objects[2]['rule']['expr'].reverse`.
     def test_unknown_rules_fields_objects_order_uid_hook_priority_and_verdict_refuse(self):
         for damage in ['extra-rule', 'table-flags', 'chain-field', 'rule-field', 'unknown-object', 'object-order',
                        'uid', 'uid-string', 'hook', 'priority', 'float-priority', 'accept', 'in', 'expr-order', 'rule-marker']:
@@ -249,6 +388,13 @@ class CompatibilityModels(unittest.TestCase):
             with self.subTest(damage=damage): self.refused(fixture)
             self.assertEqual(len(fixture.calls), 2)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.objects[0]['table']['comment']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `KernelFixture`, `self.subTest`, `self.refused`, `self.assertEqual`.
     def test_present_wrong_null_or_non_string_table_marker_never_enters_legacy_branch(self):
         for marker in ['foreign', '', None, 1, True, []]:
             fixture = KernelFixture()
@@ -256,6 +402,13 @@ class CompatibilityModels(unittest.TestCase):
             with self.subTest(marker=marker): self.refused(fixture)
             self.assertEqual(len(fixture.calls), 2)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.post`, `next(iter(fixture.post[index].values()))['handle']`, `fixture.post[0]['table']['comment']`, `fixture.post[2]['rule']['expr'][0]['match']['right']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `KernelFixture`, `copy.deepcopy`, `drift.endswith`, `['table-handle', 'chain-handle', 'rule-handle'].index`.
     def test_every_json_object_and_handle_is_identical_after_text_read(self):
         for drift in ['table-handle', 'chain-handle', 'rule-handle', 'comment-added', 'rule', 'extra', 'missing', 'unknown-field']:
             fixture = KernelFixture(True)
@@ -271,6 +424,13 @@ class CompatibilityModels(unittest.TestCase):
             with self.subTest(drift=drift): self.refused(fixture)
             self.assertEqual(fixture.json_reads, 2)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.text`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `KernelFixture`, `len`, `fixture.text.replace`, `self.assertEqual`.
     def test_legacy_text_exact_64k_boundary_and_one_byte_over(self):
         for length in [65536, 65537]:
             fixture = KernelFixture(True)
@@ -281,6 +441,13 @@ class CompatibilityModels(unittest.TestCase):
                 if length == 65536: self.assertEqual(self.query(fixture), 51)
                 else: self.refused(fixture)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.objects[0]['table']['handle']`, `fixture.objects[1]['chain']['handle']`, `fixture.objects[2]['rule']['handle']`, `fixture.objects[1]['chain']['prio']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `KernelFixture`, `self.subTest`, `self.refused`, `self.assertEqual`.
     def test_modern_fast_path_rejects_boolean_float_and_coerced_numeric_fields(self):
         for damage in ['table-bool-handle', 'chain-float-handle', 'rule-float-handle', 'float-priority',
                        'bool-priority', 'float-uid', 'bool-uid', 'false-drop']:
@@ -296,6 +463,13 @@ class CompatibilityModels(unittest.TestCase):
             with self.subTest(damage=damage): self.refused(fixture)
             self.assertEqual(len(fixture.calls), 2)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `value[key]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `draft.egress_create_text`, `draft.egress_spec`, `expected[0]['table']['comment'].encode`, `self.assertEqual`.
     def test_fixed_atomic_text_creation_contains_only_validated_uid_and_uuid_markers(self):
         text = draft.egress_create_text(VALUE)
         name, expected = draft.egress_spec(VALUE)
@@ -316,6 +490,15 @@ class CompatibilityModels(unittest.TestCase):
             value = dict(VALUE); value[key] = invalid
             with self.subTest(key=key, value=invalid), self.assertRaises(draft.Refusal): draft.egress_create_text(value)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `draft.os`, `draft.ctypes`, `draft.tool`, `draft.directory_fd`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `getattr`, `SimpleNamespace`, `ORIGINAL_NFT`, `draft.egress_create_text`.
+    # 设计思路：将主体计算与 finally 收尾分开，使返回和异常路径经过相同收尾步骤。
+    # Design: Separate body computation from finally-based finalization so return and exception paths share the same finalization step.
     def test_pinned_wrapper_text_create_and_query_preserve_namespace_numeric_flags_and_fd_closure(self):
         original = {key: getattr(draft, key, None) for key in ['os', 'ctypes', 'tool', 'directory_fd', 'trusted', 'egress_realm', 'execute']}
         calls, closed, setns = [], [], []
@@ -328,6 +511,12 @@ class CompatibilityModels(unittest.TestCase):
         draft.directory_fd = lambda path: 11
         draft.trusted = lambda info: None
         draft.egress_realm = lambda: (12, {})
+        # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+        # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+        # 输入 / Inputs: argv, data, **kwargs。
+        # 结果：返回分支计算值（`b''`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`b''`); its implementation and call sites define the actual type.
+        # 协作入口 / Collaborators: `kwargs['preexec_fn']`, `calls.append`.
         def execute(argv, data, **kwargs):
             kwargs['preexec_fn']()
             calls.append((argv, data, kwargs['pass_fds']))
@@ -349,6 +538,15 @@ class CompatibilityModels(unittest.TestCase):
                 if value is None: delattr(draft, key)
                 else: setattr(draft, key, value)
 
+    # 中文功能：构造本组边界验证所需的模型对象或输入材料。
+    # English: Construct model objects or input material required by this boundary-verification group.
+    # 输入 / Inputs: self。
+    # 结果：返回分支计算值（`fixture`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`fixture`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `sys.argv`, `draft.egress_nft`, `fixture.ns['egress_nft']`, `fixture.ns['egress_table']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `Path(__file__).with_name`, `Path`, `ast.parse`, `source.read_text`.
+    # 设计思路：将主体计算与 finally 收尾分开，使返回和异常路径经过相同收尾步骤。
+    # Design: Separate body computation from finally-based finalization so return and exception paths share the same finalization step.
     def core_fixture(self):
         source = Path(__file__).with_name('project-egress-model.py')
         nodes = ast.parse(source.read_text(encoding='utf8')).body
@@ -362,6 +560,12 @@ class CompatibilityModels(unittest.TestCase):
             sys.argv = previous
         fixture = namespace['fixture']()
         kernel = fixture.ns['egress_nft']
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: arguments, data = None, json_output = True。
+        # 结果：返回分支计算值（`kernel(arguments, data, json_output=json_output) / raw`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`kernel(arguments, data, json_output=json_output) / raw`); its implementation and call sites define the actual type.
+        # 协作入口 / Collaborators: `kernel`, `json.loads`, `objects['nftables'][0]['table'].pop`, `json.dumps(objects).encode`.
         def query(arguments, data=None, *, json_output=True):
             if arguments == ['-f', '-']:
                 return kernel(arguments, data, json_output=json_output)
@@ -383,6 +587,13 @@ class CompatibilityModels(unittest.TestCase):
                     '\t}\n}\n').encode()
         draft.egress_nft = query
         fixture.ns['egress_nft'] = query
+        # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+        # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+        # 输入 / Inputs: value。
+        # 结果：返回分支计算值（`draft.egress_table(value)`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`draft.egress_table(value)`); its implementation and call sites define the actual type.
+        # 失败 / Failure: `fixture.ns['Refusal'](error.code, error.detail)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+        # 协作入口 / Collaborators: `draft.egress_table`, `fixture.ns['Refusal']`.
         def table(value):
             try: return draft.egress_table(value)
             except draft.Refusal as error: raise fixture.ns['Refusal'](error.code, error.detail)
@@ -390,6 +601,12 @@ class CompatibilityModels(unittest.TestCase):
         fixture.fixed_text_query = query
         return fixture
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.core_fixture`, `draft.egress_create_text`, `draft.egress_spec`, `f'create table inet {name} {{\n comment "{marker}";\n chain output {{\n type filter hook output prio…`.
     def test_transaction_fixture_rejects_arbitrary_text_or_changed_fixed_create_syntax(self):
         fixture = self.core_fixture()
         valid = draft.egress_create_text(fixture.value)
@@ -411,6 +628,12 @@ class CompatibilityModels(unittest.TestCase):
         self.assertFalse(fixture.events)
         self.assertFalse(fixture.tables)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.core_fixture`, `fixture.ns['egress_prepare']`, `copy.deepcopy`, `self.assertRaises`.
     def test_existing_exact_table_create_rejects_without_appending_chain_or_rule(self):
         fixture = self.core_fixture()
         fixture.ns['egress_prepare'](fixture.value)
@@ -419,6 +642,12 @@ class CompatibilityModels(unittest.TestCase):
             fixture.fixed_text_query(['-f', '-'], draft.egress_create_text(fixture.value), json_output=False)
         self.assertEqual(before, (fixture.tables, fixture.records, fixture.events))
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.core_fixture`, `draft.egress_create_text`, `self.assertEqual`, `len`.
     def test_error_in_third_fixed_statement_leaves_no_partial_table_or_chain(self):
         fixture = self.core_fixture()
         valid = draft.egress_create_text(fixture.value)
@@ -430,6 +659,13 @@ class CompatibilityModels(unittest.TestCase):
             self.assertFalse(fixture.events)
             self.assertFalse(fixture.tables)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `owner['handle']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `self.core_fixture`, `fixture.ns['egress_prepare']`, `fixture.ns['egress_commit']`, `next`.
     def test_production_saved_handle_and_absent_owner_checks_remain_authoritative(self):
         fixture = self.core_fixture()
         fixture.ns['egress_prepare'](fixture.value)
@@ -447,6 +683,13 @@ class CompatibilityModels(unittest.TestCase):
         self.assertFalse(fixture.records)
         self.assertEqual(before, (fixture.tables, fixture.events))
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `fixture.flags['lost_create']`, `fixture.tables[name][0]['table']['comment']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `self.core_fixture`, `self.assertRaises`, `fixture.ns['egress_prepare']`, `next`.
     def test_production_lost_create_ack_recovery_still_requires_real_table_marker(self):
         fixture = self.core_fixture()
         fixture.flags['lost_create'] = True

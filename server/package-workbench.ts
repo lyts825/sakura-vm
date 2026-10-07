@@ -1,5 +1,6 @@
 /**
  * 模块职责：查询和操作客户机软件包，校验包名并解析不同包管理器的列表结果。
+ * Module purpose: Queries/mutates guest packages, validating names and parsing the selected package-manager output.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -28,9 +29,41 @@ type Item = { name: string; version: string; description?: string;
   installedVersion?: string; availableVersion?: string };
 type Preview = { vmId: string; change: Change; name?: string; digest: string;
   boot: object; expiresAt: number };
+/**
+ * 签名 / Signature: Runner.Runner.
+ * 功能：为查询和操作客户机软件包声明 Runner 的输入与结果契约，所属容器为 Runner。
+ * Purpose: Declares the input/result contract for Runner in Runner. Module responsibility: Queries/mutates guest packages, validating names and parsing the selected package-manager output.
+ * 输入 / Inputs: id: string; operation: Change | 'update'; name: string optional
+ * 输出 / Returns: unknown.
+ * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+ * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+ */
 type Runner = (id: string, operation: Change | 'update', name?: string) => unknown;
+/**
+ * 入口 / Entry: hash.
+ * 功能：在查询和操作客户机软件包中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(value).digest('hex')` 供上层消费（`package-workbench.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `package-workbench.ts`; this entry produces `createHash('sha256').update(value).digest('hex')` for its caller. Module context: Queries/mutates guest packages, validating names and parsing the selected package-manager output.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: string
+ * 输出 / Returns: `createHash('sha256').update(value).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
+/**
+ * 入口 / Entry: parsePackageRows.
+ * 功能：在查询和操作客户机软件包中，转换协议或持久数据表示并保持调用边界；本入口产生 `items` 供上层消费（`package-workbench.ts`）。
+ * Purpose: Converts protocol or durable data representations at the call boundary in `package-workbench.ts`; this entry produces `items` for its caller. Module context: Queries/mutates guest packages, validating names and parsing the selected package-manager output.
+ * 处理：通过 `output.split`, `line.match`, `items.push`, `line.split` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `output.split`, `line.match`, `items.push`, `line.split`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `manager === 'apk' && mode === 'installed'`; `match`; `manager === 'apk' && mode === 'search'`.
+ * 输入 / Inputs: manager: 'apk' | 'apt'; mode: 'installed' | 'search' | 'updates'; output: string
+ * 输出 / Returns: Item[]；结果来自 / values from `items`.
+ * 副作用 / Effects: `items.push`; `status.startsWith`; 更新 / updates `match`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function parsePackageRows(manager: 'apk' | 'apt', mode: 'installed' | 'search' | 'updates',
   output: string): Item[] {
   const items: Item[] = [];
@@ -62,10 +95,30 @@ export function parsePackageRows(manager: 'apk' | 'apt', mode: 'installed' | 'se
   return items;
 }
 
+/**
+ * 入口 / Entry: managerFor.
+ * 功能：从当前输入或状态计算 `!distro || distro === 'alpine' ? 'apk' : 'apt'`，供调用方后续验证或使用。
+ * Purpose: Computes `!distro || distro === 'alpine' ? 'apk' : 'apt'` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: distro: string optional
+ * 输出 / Returns: 'apk' | 'apt'；结果来自 / values from `!distro || distro === 'alpine' ? 'apk' : 'apt'`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 function managerFor(distro?: string): 'apk' | 'apt' {
   return !distro || distro === 'alpine' ? 'apk' : 'apt';
 }
 
+/**
+ * 入口 / Entry: simulateCommand.
+ * 功能：在查询和操作客户机软件包中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ install: `apk add --simulate ${argument}`, remove: `apk del --simulate ${argument}`, upgrade: `apk upgrade --simulate ${arg…` / `{ install: `apt-get -s install ${argument}`, remove: `apt-get -s remove ${argument}`, upgrade: `apt-get -s --only-upgrade ins…` 供上层消费（`package-workbench.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `package-workbench.ts`; this entry produces `{ install: `apk add --simulate ${argument}`, remove: `apk del --simulate ${argument}`, upgrade: `apk upgrade --simulate ${arg…` / `{ install: `apt-get -s install ${argument}`, remove: `apt-get -s remove ${argument}`, upgrade: `apt-get -s --only-upgrade ins…` for its caller. Module context: Queries/mutates guest packages, validating names and parsing the selected package-manager output.
+ * 处理：通过 `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `quote`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `manager === 'apk'`.
+ * 输入 / Inputs: manager: 'apk' | 'apt'; change: Change; name: string optional
+ * 输出 / Returns: `{ install: `apk add --simulate ${argument}`, remove: `apk del --simulate ${argument}`, upgrade: `apk upgrade --simulate ${arg…`; `{ install: `apt-get -s install ${argument}`, remove: `apt-get -s remove ${argument}`, upgrade: `apt-get -s --only-upgrade ins…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function simulateCommand(manager: 'apk' | 'apt', change: Change, name?: string) {
   const argument = name ? quote(name) : '';
   if (manager === 'apk') return {
@@ -84,8 +137,27 @@ function simulateCommand(manager: 'apk' | 'apt', change: Change, name?: string) 
 
 export class PackageWorkbench {
   private previews = new Map<string, Preview>();
+  /**
+   * 入口 / Entry: PackageWorkbench.constructor.
+   * 功能：建立 PackageWorkbench 的查询和操作客户机软件包上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the PackageWorkbench context for this module's responsibility: Queries/mutates guest packages, validating names and parsing the selected package-manager output. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; run: Runner
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(private machines: Machines, private run: Runner) {}
 
+  /**
+   * 入口 / Entry: PackageWorkbench.query.
+   * 功能：在查询和操作客户机软件包中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ vmId: id, mode: input.mode, manager, query: input.query, page: input.page, total: all.length, items: all.slice(start, start…` 供上层消费（`PackageWorkbench`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `PackageWorkbench`; this entry produces `{ vmId: id, mode: input.mode, manager, query: input.query, page: input.page, total: all.length, items: all.slice(start, start…` for its caller. Module context: Queries/mutates guest packages, validating names and parsing the selected package-manager output.
+   * 处理：通过 `querySchema.parse`, `this.machines.get`, `this.machines.state`, `managerFor` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `querySchema.parse`, `this.machines.get`, `this.machines.state`, `managerFor`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; raw: unknown; signal: AbortSignal optional
+   * 输出 / Returns: `{ vmId: id, mode: input.mode, manager, query: input.query, page: input.page, total: all.length, items: all.slice(start, start…`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; `input.mode === 'search' && input.query.length < 2`; `result.code !== 0`; 异常 / errors `new AppError('请先启动发行版', 409)`; `new AppError('搜索至少需要 2 个字符')`.
+   */
   async query(id: string, raw: unknown, signal?: AbortSignal) {
     const input = querySchema.parse(raw);
     const vm = this.machines.get(id);
@@ -112,6 +184,18 @@ export class PackageWorkbench {
       warning: result.stderr.trim().slice(0, 1000) };
   }
 
+  /**
+   * 入口 / Entry: PackageWorkbench.simulate.
+   * 功能：在查询和操作客户机软件包中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ manager, plan: plan.slice(0, 32_768), digest: hash(plan) }` 供上层消费（`PackageWorkbench`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `PackageWorkbench`; this entry produces `{ manager, plan: plan.slice(0, 32_768), digest: hash(plan) }` for its caller. Module context: Queries/mutates guest packages, validating names and parsing the selected package-manager output.
+   * 处理：通过 `this.machines.get`, `this.machines.state`, `packageName.parse`, `managerFor` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.machines.state`, `packageName.parse`, `managerFor`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `name`.
+   * 输入 / Inputs: id: string; change: Change; name: string optional; signal: AbortSignal optional
+   * 输出 / Returns: `{ manager, plan: plan.slice(0, 32_768), digest: hash(plan) }`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; `change === 'upgrade-all' ? !!name : !name`; `result.code !== 0`; 异常 / errors `new AppError('请先启动发行版', 409)`; `new AppError('软件包操作参数无效')`.
+   */
   private async simulate(id: string, change: Change, name?: string, signal?: AbortSignal) {
     this.machines.get(id);
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
@@ -127,6 +211,18 @@ export class PackageWorkbench {
     return { manager, plan: plan.slice(0, 32_768), digest: hash(plan) };
   }
 
+  /**
+   * 入口 / Entry: PackageWorkbench.action.
+   * 功能：在查询和操作客户机软件包中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ job: this.run(id, 'update') }` / `{ token, expiresAt, manager: result.manager, plan: result.plan, change: input.change, name: input.name || null }` 供上层消费（`PackageWorkbench`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `PackageWorkbench`; this entry produces `{ job: this.run(id, 'update') }` / `{ token, expiresAt, manager: result.manager, plan: result.plan, change: input.change, name: input.name || null }` for its caller. Module context: Queries/mutates guest packages, validating names and parsing the selected package-manager output.
+   * 处理：通过 `packageWorkbenchRequest.parse`, `this.machines.get`, `this.machines.requireUnlocked`, `this.machines.state` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `packageWorkbenchRequest.parse`, `this.machines.get`, `this.machines.requireUnlocked`, `this.machines.state`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `input.operation === 'preview'`; `this.previews.size > 100`; `value.expiresAt < Date.now() || this.previews.size > 100`.
+   * 输入 / Inputs: id: string; raw: unknown; signal: AbortSignal optional
+   * 输出 / Returns: `{ job: this.run(id, 'update') }`; `{ token, expiresAt, manager: result.manager, plan: result.plan, change: input.change, name: input.name || null }`; `{ job: this.run(id, preview.change, preview.name) }`.
+   * 副作用 / Effects: `this.previews.set`; `this.previews.delete`.
+   * 拒绝 / Refusals: 条件 / conditions `input.operation === 'refresh-index'`; `this.machines.state(id) !== 'running'`; `!preview || preview.vmId !== id || preview.expiresAt < Date.now() || preview.boot !== this.machines.live.get(id)`; 异常 / errors `new AppError('请先启动发行版', 409)`; `new AppError('预览已过期，请重新检查软件包变更', 409)`.
+   */
   async action(id: string, raw: unknown, signal?: AbortSignal) {
     const input = packageWorkbenchRequest.parse(raw);
     this.machines.get(id);

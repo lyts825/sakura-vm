@@ -1,5 +1,8 @@
 /**
- * 模块职责：展示控制面任务列表、执行详情与日志，提供取消、重试和刷新入口。
+ * 模块职责（中文）：展示控制面任务列表、执行详情与日志，提供取消、重试和刷新入口。
+ * Module responsibility (English): Presenting job details and providing cancellation, retry and refresh actions.
+ * 详细范围（中文）：公开入口包括 TasksPanel；职责覆盖显示任务详情并提供取消、重试和刷新，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include TasksPanel. The scope covers Presenting job details and providing cancellation, retry and refresh actions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from './localization';
 import { ClipboardList, Inbox } from 'lucide-react';
@@ -12,6 +15,12 @@ import './features.css';
 import { jobPresentation, taskLabels } from './job-presentation';
 export { taskLabels } from './job-presentation';
 
+/**
+ * 中文：呈现显示任务详情并提供取消、重试和刷新中的 TasksPanel 界面，订阅 /jobs、/events，组合 ClipboardList、Inbox，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the TasksPanel surface for Presenting job details and providing cancellation, retry and refresh actions, subscribing to /jobs, /events and composing ClipboardList, Inbox. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request, vms } 提供 request（带身份和权限作用域的传输能力）、vms（vms 状态） 上下文字段
+ * English: Inputs: { request, vms } provides context fields request (transport capability bound to identity/authority scope), vms (vms state)
+ */
 export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }) {
   const remote = useRemote<{ jobs: JobView[]; warnings: string[] }>(request, '/jobs', true, 2000),
     events = useRemote<{ events: { title?: string; status: string; message?: string; at: string }[] }>(
@@ -137,7 +146,7 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
                 className="secondary compact"
                 disabled={action.busy}
                 onClick={() =>
-                  void action.run(async (signal) => {
+                  void action.run(/** 中文：提交 POST /jobs/{job.id}/cancel，完成显示任务详情并提供取消、重试和刷新的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /jobs/{job.id}/cancel for Presenting job details and providing cancellation, retry and refresh actions. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：取消边界：执行前或关键异步步骤检查已取消信号，取消后不继续提交下一步工作 | English: Cancellation boundary: check aborted signals before execution/key asynchronous steps; canceled work must not submit the next step */ async (signal) => {
                     await request(`/jobs/${job.id}/cancel`, 'POST', undefined, signal);
                     signal.throwIfAborted();
                     remote.reload();
@@ -152,7 +161,7 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
                 className="secondary compact"
                 disabled={action.busy}
                 onClick={() =>
-                  void action.run(async (signal) => {
+                  void action.run(/** 中文：提交 POST /jobs/{job.id}/retry，完成显示任务详情并提供取消、重试和刷新的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /jobs/{job.id}/retry for Presenting job details and providing cancellation, retry and refresh actions. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：取消边界：执行前或关键异步步骤检查已取消信号，取消后不继续提交下一步工作 | English: Cancellation boundary: check aborted signals before execution/key asynchronous steps; canceled work must not submit the next step */ async (signal) => {
                     const result = await request(`/jobs/${job.id}/retry`, 'POST', undefined, signal);
                     signal.throwIfAborted();
                     if (result && typeof result === 'object' && 'url' in result && typeof result.url === 'string' &&

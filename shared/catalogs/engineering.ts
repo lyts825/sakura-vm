@@ -1,5 +1,8 @@
 /**
- * 模块职责：工程扩展功能目录及状态类型，用于能力中心、API 和插件界面的统一描述。
+ * 模块职责（中文）：工程扩展功能目录及状态类型，用于能力中心、API 和插件界面的统一描述。
+ * Module responsibility (English): maintaining engineering capability identifiers, descriptions, implementation state and catalog projections.
+ * 详细范围（中文）：公开入口包括 extendedFeatureCatalog, ExtendedFeatureId, ExtendedFeatureState, ExtendedFeature；职责覆盖维护engineering能力的标识、描述、实现状态及目录投影，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include extendedFeatureCatalog, ExtendedFeatureId, ExtendedFeatureState, ExtendedFeature. The scope covers maintaining engineering capability identifiers, descriptions, implementation state and catalog projections. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 /**
  * Catalogue states describe implementation, not persisted configuration.

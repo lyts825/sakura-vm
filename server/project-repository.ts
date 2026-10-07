@@ -1,5 +1,6 @@
 /**
  * 模块职责：部署固定仓库下载代理并准备项目检出，核对对象回执和受控下载目录后交付。
+ * Module purpose: Deploys fixed repository brokers and prepares checkout, verifying object receipts and staging paths before handoff.
  */
 import { createHash, randomUUID, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -20,6 +21,17 @@ import { repositoryAuthorizationScope, repositoryUrl } from './repository-url.ts
 export { repositoryAuthorizationScope, repositoryUrl } from './repository-url.ts';
 
 let source: Promise<string> | undefined;
+/**
+ * 入口 / Entry: repositoryBrokerSource.
+ * 功能：在部署固定仓库下载代理并准备项目检出中，执行此领域的具体处理步骤并返回其结果；本入口产生 `(source ||= readFile(join(ROOT, 'server/project-repository-broker.py'), 'utf8').catch(error => { if (error.code !== 'ENOENT')…` 供上层消费（`project-repository.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-repository.ts`; this entry produces `(source ||= readFile(join(ROOT, 'server/project-repository-broker.py'), 'utf8').catch(error => { if (error.code !== 'ENOENT')…` for its caller. Module context: Deploys fixed repository brokers and prepares checkout, verifying object receipts and staging paths before handoff.
+ * 处理：通过 `readFile().catch`, `readFile`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `readFile().catch`, `readFile`, `join`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `(source ||= readFile(join(ROOT, 'server/project-repository-broker.py'), 'utf8').catch(error => { if (error.code !== 'ENOENT')…`.
+ * 副作用 / Effects: 更新 / updates `source`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function repositoryBrokerSource() {
   return (source ||= readFile(join(ROOT, 'server/project-repository-broker.py'), 'utf8').catch(error => {
     if (error.code !== 'ENOENT') throw error;
@@ -41,6 +53,17 @@ const ownerSchema = z.object({ version: z.literal(1), runId: z.uuid(), nonce: di
 const stateSchema = z.object({ version: z.literal(1), phase: z.enum(['pending', 'closed']), owner: ownerSchema,
   download: downloadSchema.nullable() }).strict();
 type DownloadState = z.infer<typeof stateSchema>;
+/**
+ * 入口 / Entry: stagePath.
+ * 功能：在部署固定仓库下载代理并准备项目检出中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'/run/sakura-repository-download.' + z.uuid().parse(runId).replaceAll('-', '')` 供上层消费（`project-repository.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-repository.ts`; this entry produces `'/run/sakura-repository-download.' + z.uuid().parse(runId).replaceAll('-', '')` for its caller. Module context: Deploys fixed repository brokers and prepares checkout, verifying object receipts and staging paths before handoff.
+ * 处理：通过 `z.uuid().parse().replaceAll`, `z.uuid().parse`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.uuid().parse().replaceAll`, `z.uuid().parse`, `z.uuid`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: runId: string
+ * 输出 / Returns: `'/run/sakura-repository-download.' + z.uuid().parse(runId).replaceAll('-', '')`.
+ * 副作用 / Effects: `z.uuid().parse().replaceAll`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const stagePath = (runId: string) => '/run/sakura-repository-download.' + z.uuid().parse(runId).replaceAll('-', '');
 const fixedEnvironment = '/usr/bin/env -i PATH=/usr/bin:/bin HOME=/ LANG=C LC_ALL=C';
 
@@ -119,6 +142,18 @@ try:
 finally: os.close(parent)
 `;
 
+/**
+ * 入口 / Entry: repositoryCheckoutCommand.
+ * 功能：在部署固定仓库下载代理并准备项目检出中，执行此领域的具体处理步骤并返回其结果；本入口产生 `command` 供上层消费（`project-repository.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-repository.ts`; this entry produces `command` for its caller. Module context: Deploys fixed repository brokers and prepares checkout, verifying object receipts and staging paths before handoff.
+ * 处理：通过 `repositoryUrl.parse`, `inline.test`, `downloadSchema.parse`, `projectIdentitySchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `repositoryUrl.parse`, `inline.test`, `downloadSchema.parse`, `projectIdentitySchema.parse`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `download.bundleSha256`.
+ * 输入 / Inputs: repository: string; stage: string; download: RepositoryDownload; identity: ProjectIdentity
+ * 输出 / Returns: `command`.
+ * 副作用 / Effects: `downloadSchema.parse`; `download.head.slice`; 更新 / updates `repository`, `download`, `identity`, `command`.
+ * 拒绝 / Refusals: 条件 / conditions `!/^\/run\/sakura-repository-download\.[a-f0-9]{32}$/.test(stage)`; 异常 / errors `new AppError('Git 下载目录无效', 409)`.
+ */
 export function repositoryCheckoutCommand(repository: string, stage: string, download: RepositoryDownload, identity: ProjectIdentity) {
   repository = new URL(repositoryUrl.parse(repository)).href;
   if (!/^\/run\/sakura-repository-download\.[a-f0-9]{32}$/.test(stage))
@@ -144,19 +179,65 @@ export function repositoryCheckoutCommand(repository: string, stage: string, dow
 const initialRepositoryCheck = `/usr/bin/env -i PATH=/usr/bin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ${quote(`import os,sys\nif os.path.lexists('.git'): print('existing')\nelif os.listdir('.'): print('nonempty')\nelse: print('empty')`)}`;
 
 /** Shared networking downloads fixed object data; all worktree code stays at the project UID. */
+/**
+ * 入口 / Entry: prepareProjectRepository.
+ * 功能：部署限定仓库下载器，在原项目范围预取 Git 对象并交付检出材料。
+ * Purpose: Deploys a scoped repository downloader, prefetches Git objects and hands off checkout material in the original project scope.
+ * 设计：仓库和凭证分别校验，客户机 boot 固定；下载对象回执和暂存身份一致后才交付，finally 按原归属清理。
+ * Design: Repository/credential validation pins guest boot; object receipts/staging identity precede handoff and finally cleans original ownership.
+ * 输入 / Inputs: machines: Machines; vmId: string; project: Project; configuration: () => Promise<{ authentication?: ResolvedDependencyAuthentication; environment: Recor…; signal: AbortSignal; log: (text: string) => void optional
+ * 输出 / Returns: `machines.locked(`project-repository:${vmId}:${id}`, async () => { signal.throwIfAborted(); const live = machines.live.get(vmI…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export async function prepareProjectRepository(machines: Machines, vmId: string, project: Project,
   configuration: () => Promise<{ authentication?: ResolvedDependencyAuthentication; environment: Record<string, string> }>,
   signal: AbortSignal, log?: (text: string) => void) {
   const repository = new URL(repositoryUrl.parse(project.repository)).href;
   const scopes = new ProjectRunScopes(machines), id = project._workspace || 'default';
+  /**
+   * 入口 / Entry: prepareProjectRepository.callback@152.
+   * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（machines.locked）。
+   * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (machines.locked).
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `machines.exec`; `createHash().update().digest`; `createHash().update`; `createHash`; `writeStore`; 更新 / updates `state`, `unresolvedTask`.
+   * 拒绝 / Refusals: 条件 / conditions `!live`; `previous !== null`; `parsed.owner.identity.projectId !== id`; 异常 / errors `new AppError('Git 预取需要运行中的客户机', 409)`; `new AppError('Git 下载资源项目不符', 409)`.
+   * 收尾：退出 try 区域时始终执行 `input.fill(0);`; `if (!unresolvedTask) await cleanup(state);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `input.fill(0);`; `if (!unresolvedTask) await cleanup(state);`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `unresolvedTask = error instanceof AppError && ['GUEST_TASK_CLEANUP_FAILED', 'PROJECT_IDENTITY_CLEANUP_FAILED'].includes(error…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `unresolvedTask = error instanceof AppError && ['GUEST_TASK_CLEANUP_FAILED', 'PROJECT_IDENTITY_CLEANUP_FAILED'].includes(error…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   return machines.locked(`project-repository:${vmId}:${id}`, async () => {
     signal.throwIfAborted();
     const live = machines.live.get(vmId);
     if (!live) throw new AppError('Git 预取需要运行中的客户机', 409);
     const stateFile = join(vmDir(vmId), 'project-repository-' + id + '.json');
+    /**
+     * 入口 / Entry: prepareProjectRepository.unchanged.
+     * 功能：在部署固定仓库下载代理并准备项目检出中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`project-repository.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-repository.ts`; the calls and state transitions below complete the operation. Module context: Deploys fixed repository brokers and prepares checkout, verifying object receipts and staging paths before handoff.
+     * 处理：通过 `machines.live.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `machines.live.get`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `machines.live.get(vmId) !== live`; 异常 / errors `new AppError('Git 下载所属客户机已变化，原记录保留', 503, 'PROJECT_REPOSITORY_CLEANUP_FAILED')`.
+     */
     const unchanged = () => {
       if (machines.live.get(vmId) !== live) throw new AppError('Git 下载所属客户机已变化，原记录保留', 503, 'PROJECT_REPOSITORY_CLEANUP_FAILED');
     };
+    /**
+     * 入口 / Entry: prepareProjectRepository.cleanup.
+     * 功能：在部署固定仓库下载代理并准备项目检出中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`project-repository.ts`）。
+     * Purpose: Ends, revokes or cleans resources owned by this domain action in `project-repository.ts`; the calls and state transitions below complete the operation. Module context: Deploys fixed repository brokers and prepares checkout, verifying object receipts and staging paths before handoff.
+     * 处理：通过 `unchanged`, `machines.exec`, `quote`, `inline.includes` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `unchanged`, `machines.exec`, `quote`, `inline.includes`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: state: DownloadState
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `machines.exec`; `writeStore`.
+     * 拒绝 / Refusals: 条件 / conditions `result.code !== 0 || !['closed', 'absent', 'retired-by-boot'].includes(result.stdout.trim())`; 异常 / errors `new AppError('Git 下载资源归属或全域停止未能确认，原记录保留', 503, 'PROJECT_REPOSITORY_CLEANUP_FAILED')`.
+     */
     const cleanup = async (state: DownloadState) => {
       unchanged();
       const result = await machines.exec(vmId,

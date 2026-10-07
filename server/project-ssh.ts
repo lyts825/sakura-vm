@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理独立项目 SSH 服务与账户绑定，按原启动身份、目录和守护进程票据回滚及停止。
+ * Module purpose: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -37,7 +38,27 @@ import { secureSshPaths } from './ssh-files.ts';
 import { ProjectSessionLifetime, type SessionReceipt } from './project-session-lifetime.ts';
 import { isDeepStrictEqual } from 'node:util';
 
+/**
+ * 入口 / Entry: digest.
+ * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(text).digest('hex')` 供上层消费（`project-ssh.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-ssh.ts`; this entry produces `createHash('sha256').update(text).digest('hex')` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: text: string
+ * 输出 / Returns: `createHash('sha256').update(text).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const digest = (text: string) => createHash('sha256').update(text).digest('hex');
+/**
+ * 入口 / Entry: projectSshPaths.
+ * 功能：从当前输入或状态计算 `{ key, config, home: `/var/lib/sakura/ssh/${key}`, unit: `sakura-ssh-${key}.service`, unitPath: `/etc/systemd/system/sakura-s…`，供调用方后续验证或使用。
+ * Purpose: Computes `{ key, config, home: `/var/lib/sakura/ssh/${key}`, unit: `sakura-ssh-${key}.service`, unitPath: `/etc/systemd/system/sakura-s…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: `{ key, config, home: `/var/lib/sakura/ssh/${key}`, unit: `sakura-ssh-${key}.service`, unitPath: `/etc/systemd/system/sakura-s…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function projectSshPaths(projectId: string) {
   const key = projectIdSchema.parse(projectId),
     config = `/etc/sakura/ssh/${key}`;
@@ -53,11 +74,28 @@ export function projectSshPaths(projectId: string) {
     openrcGroup: `/openrc.sakura-ssh-${key}`,
   };
 }
+/**
+ * 入口 / Entry: projectSshBinding.
+ * 功能：把本层请求转交 `digest`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `digest` and propagates the provider result or rejection.
+ * 输入 / Inputs: project: Project
+ * 输出 / Returns: `digest( JSON.stringify([project._workspace || 'default', project.directory, project.networkIsolation || 'host']), )`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const projectSshBinding = (project: Project) =>
   digest(
     JSON.stringify([project._workspace || 'default', project.directory, project.networkIsolation || 'host']),
   );
 
+/**
+ * 入口 / Entry: servicePresent.
+ * 功能：从当前输入或状态计算 `( `[ -d ${p.config} ] || [ -e ${p.unitPath} ] || [ -e ${p.openrcPath} ] || ` + `[ -d ${p.runtime} ] || [ -d /sys/fs/cgroup${p…`，供调用方后续验证或使用。
+ * Purpose: Computes `( `[ -d ${p.config} ] || [ -e ${p.unitPath} ] || [ -e ${p.openrcPath} ] || ` + `[ -d ${p.runtime} ] || [ -d /sys/fs/cgroup${p…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: p: ReturnType<typeof projectSshPaths>
+ * 输出 / Returns: `( `[ -d ${p.config} ] || [ -e ${p.unitPath} ] || [ -e ${p.openrcPath} ] || ` + `[ -d ${p.runtime} ] || [ -d /sys/fs/cgroup${p…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 function servicePresent(p: ReturnType<typeof projectSshPaths>) {
   return (
     `[ -d ${p.config} ] || [ -e ${p.unitPath} ] || [ -e ${p.openrcPath} ] || ` +
@@ -67,6 +105,14 @@ function servicePresent(p: ReturnType<typeof projectSshPaths>) {
 }
 
 /** Proc evidence is independent of a potentially damaged OpenRC receipt. */
+/**
+ * 入口 / Entry: projectSshMainScan.
+ * 功能：从当前输入或状态计算 `( `def project_mains():\n` + ` result=[]\n` + ` for entry in glob.glob('/proc/[0-9]* /stat'):\n` + ` directory=entry.rsplit('…`，供调用方后续验证或使用。
+ * Purpose: Computes `( `def project_mains():\n` + ` result=[]\n` + ` for entry in glob.glob('/proc/[0-9]* /stat'):\n` + ` directory=entry.rsplit('…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: p: ReturnType<typeof projectSshPaths>
+ * 输出 / Returns: `( `def project_mains():\n` + ` result=[]\n` + ` for entry in glob.glob('/proc/[0-9]* /stat'):\n` + ` directory=entry.rsplit('…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 function projectSshMainScan(p: ReturnType<typeof projectSshPaths>) {
   return (
     `def project_mains():\n` +
@@ -88,6 +134,17 @@ function projectSshMainScan(p: ReturnType<typeof projectSshPaths>) {
 }
 
 /** Includes detached children that retain the service cgroup after their SSH channel closes. */
+/**
+ * 入口 / Entry: projectSshBusyScript.
+ * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``if ${servicePresent(p)}; then python3 -I -S -c ${quote( `import glob,json,os\n` + projectSshMainScan(p) + `units=${JSON.stri…` 供上层消费（`project-ssh.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-ssh.ts`; this entry produces ``if ${servicePresent(p)}; then python3 -I -S -c ${quote( `import glob,json,os\n` + projectSshMainScan(p) + `units=${JSON.stri…` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+ * 处理：通过 `projectSshPaths`, `servicePresent`, `quote`, `projectSshMainScan` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectSshPaths`, `servicePresent`, `quote`, `projectSshMainScan`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: ``if ${servicePresent(p)}; then python3 -I -S -c ${quote( `import glob,json,os\n` + projectSshMainScan(p) + `units=${JSON.stri…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function projectSshBusyScript(projectId: string) {
   const p = projectSshPaths(projectId);
   return `if ${servicePresent(p)}; then python3 -I -S -c ${quote(
@@ -108,6 +165,15 @@ export function projectSshBusyScript(projectId: string) {
   )}; fi`;
 }
 
+/**
+ * 入口 / Entry: callback@133.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.object().strict().superRefine）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.object().strict().superRefine).
+ * 输入 / Inputs: record; context
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `context.addIssue`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const projectSshRecordSchema = z
   .object({
     version: z.literal(1),
@@ -162,6 +228,17 @@ type Record = z.infer<typeof projectSshRecordSchema>;
 type Manager = 'systemd' | 'openrc';
 type RollbackOwner = { instance: object; bootId: string; runId: string; run?: ProjectIdentityRun };
 
+/**
+ * 入口 / Entry: rollbackOwnerCommand.
+ * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( '# SAKURA_PROJECT_SSH_ROLLBACK_CHECK\npython3 -I -S -c ' + quote( `import glob,json,os,stat,sys\n` + projectSshMainScan(p) …` 供上层消费（`project-ssh.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-ssh.ts`; this entry produces `( '# SAKURA_PROJECT_SSH_ROLLBACK_CHECK\npython3 -I -S -c ' + quote( `import glob,json,os,stat,sys\n` + projectSshMainScan(p) …` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+ * 处理：通过 `projectSshPaths`, `quote`, `projectSshMainScan` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectSshPaths`, `quote`, `projectSshMainScan`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project; owner: RollbackOwner
+ * 输出 / Returns: `( '# SAKURA_PROJECT_SSH_ROLLBACK_CHECK\npython3 -I -S -c ' + quote( `import glob,json,os,stat,sys\n` + projectSshMainScan(p) …`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function rollbackOwnerCommand(project: Project, owner: RollbackOwner) {
   const p = projectSshPaths(project._workspace || 'default');
   return (
@@ -219,9 +296,29 @@ const statusSchema = z
   })
   .strict();
 type Status = z.infer<typeof statusSchema>;
+/**
+ * 入口 / Entry: environmentHash.
+ * 功能：把本层请求转交 `digest`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `digest` and propagates the provider result or rejection.
+ * 输入 / Inputs: project: Project
+ * 输出 / Returns: `digest(JSON.stringify(Object.entries(project.environment || {}).sort(([a], [b]) => a.localeCompare(b))))`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const environmentHash = (project: Project) =>
   digest(JSON.stringify(Object.entries(project.environment || {}).sort(([a], [b]) => a.localeCompare(b))));
 
+/**
+ * 入口 / Entry: trustedSshPaths.
+ * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'/usr/bin/python3 -I -S -c ' + quote(source) + '\n'` 供上层消费（`project-ssh.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-ssh.ts`; this entry produces `'/usr/bin/python3 -I -S -c ' + quote(source) + '\n'` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+ * 处理：通过 `projectSshPaths`, `inline.map`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectSshPaths`, `inline.map`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: projectId: string; distro: string
+ * 输出 / Returns: `'/usr/bin/python3 -I -S -c ' + quote(source) + '\n'`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function trustedSshPaths(projectId: string, distro: string) {
   const p = projectSshPaths(projectId);
   const source =
@@ -248,6 +345,14 @@ function trustedSshPaths(projectId: string, distro: string) {
   return '/usr/bin/python3 -I -S -c ' + quote(source) + '\n';
 }
 
+/**
+ * 入口 / Entry: openrcCgroupCheck.
+ * 功能：从当前输入或状态计算 `( `group=${JSON.stringify(p.openrcGroup)}; base='/sys/fs/cgroup'; path=base+group\n` + `def require_root():\n` + ` if os.path…`，供调用方后续验证或使用。
+ * Purpose: Computes `( `group=${JSON.stringify(p.openrcGroup)}; base='/sys/fs/cgroup'; path=base+group\n` + `def require_root():\n` + ` if os.path…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: p: ReturnType<typeof projectSshPaths>
+ * 输出 / Returns: `( `group=${JSON.stringify(p.openrcGroup)}; base='/sys/fs/cgroup'; path=base+group\n` + `def require_root():\n` + ` if os.path…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 function openrcCgroupCheck(p: ReturnType<typeof projectSshPaths>) {
   return (
     `group=${JSON.stringify(p.openrcGroup)}; base='/sys/fs/cgroup'; path=base+group\n` +
@@ -262,6 +367,17 @@ function openrcCgroupCheck(p: ReturnType<typeof projectSshPaths>) {
   );
 }
 
+/**
+ * 入口 / Entry: openrcStopScript.
+ * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( `import glob,json,os,time\n` + openrcCgroupCheck(p) + projectSshMainScan(p) + `def members():\n` + ` result=[]\n` + ` for p…` 供上层消费（`project-ssh.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-ssh.ts`; this entry produces `( `import glob,json,os,time\n` + openrcCgroupCheck(p) + projectSshMainScan(p) + `def members():\n` + ` result=[]\n` + ` for p…` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+ * 处理：通过 `openrcCgroupCheck`, `projectSshMainScan` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `openrcCgroupCheck`, `projectSshMainScan`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: p: ReturnType<typeof projectSshPaths>
+ * 输出 / Returns: `( `import glob,json,os,time\n` + openrcCgroupCheck(p) + projectSshMainScan(p) + `def members():\n` + ` result=[]\n` + ` for p…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function openrcStopScript(p: ReturnType<typeof projectSshPaths>) {
   return (
     `import glob,json,os,time\n` +
@@ -306,6 +422,17 @@ function openrcStopScript(p: ReturnType<typeof projectSshPaths>) {
   );
 }
 
+/**
+ * 入口 / Entry: openrcLauncher.
+ * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( `#!/usr/bin/python3\n` + `import json,os,stat,sys,tempfile\n` + `if sys.argv[1:]==['--stop']:\n` + openrcStopScript(p) .spl…` 供上层消费（`project-ssh.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-ssh.ts`; this entry produces `( `#!/usr/bin/python3\n` + `import json,os,stat,sys,tempfile\n` + `if sys.argv[1:]==['--stop']:\n` + openrcStopScript(p) .spl…` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+ * 处理：通过 `projectSshPaths`, `projectNetworkNamespace`, `openrcStopScript().split().filter().map().join`, `openrcStopScript().split().filter().map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectSshPaths`, `projectNetworkNamespace`, `openrcStopScript().split().filter().map().join`, `openrcStopScript().split().filter().map`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project; runId: string
+ * 输出 / Returns: `( `#!/usr/bin/python3\n` + `import json,os,stat,sys,tempfile\n` + `if sys.argv[1:]==['--stop']:\n` + openrcStopScript(p) .spl…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function openrcLauncher(project: Project, runId: string) {
   const p = projectSshPaths(project._workspace || 'default'),
     namespace = projectNetworkNamespace(project);
@@ -336,6 +463,15 @@ function openrcLauncher(project: Project, runId: string) {
   );
 }
 
+/**
+ * 入口 / Entry: openrcService.
+ * 功能：从当前输入或状态计算 `( `#!/sbin/openrc-run\ndescription="Sakura project SSH ${p.key}"\n` + `depend() { need cgroups; after net; }\n` + `start() {\…`，供调用方后续验证或使用。
+ * Purpose: Computes `( `#!/sbin/openrc-run\ndescription="Sakura project SSH ${p.key}"\n` + `depend() { need cgroups; after net; }\n` + `start() {\…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: project: Project
+ * 输出 / Returns: `( `#!/sbin/openrc-run\ndescription="Sakura project SSH ${p.key}"\n` + `depend() { need cgroups; after net; }\n` + `start() {\…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function openrcService(project: Project) {
   const p = projectSshPaths(project._workspace || 'default');
   return (
@@ -350,6 +486,17 @@ function openrcService(project: Project) {
   );
 }
 
+/**
+ * 入口 / Entry: statusCommand.
+ * 功能：构造项目 SSH 守护进程、账户、端口与 cgroup 身份核验脚本。
+ * Purpose: Builds verification for project SSH daemon/account/port/cgroup identity.
+ * 设计：只生成固定客户机脚本；原 boot、进程开始时间及绑定都参与核对，名称或端口相同不能证明归属。
+ * Design: Only fixed guest code is generated; boot/start ticks/binding prove identity, not matching names or ports alone.
+ * 输入 / Inputs: project: Project; record: Record | null; manager: Manager
+ * 输出 / Returns: `( `# SAKURA_PROJECT_SSH_STATUS\n` + `if ${servicePresent(p)}; then python3 -I -S -c ${quote(script)}; else printf '%s\\n' '${…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function statusCommand(project: Project, record: Record | null, manager: Manager) {
   const p = projectSshPaths(project._workspace || 'default'),
     namespace = projectNetworkNamespace(project);
@@ -466,6 +613,14 @@ export class ProjectSsh {
   private endpoints = new Map<string, { port: number; record: Record; project: Project }>();
   private pending = new Set<Promise<unknown>>();
   private controller = new AbortController();
+  /**
+   * 入口 / Entry: ProjectSsh.constructor.
+   * 功能：建立 ProjectSsh 的管理独立项目 SSH 服务与账户绑定上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the ProjectSsh context for this module's responsibility: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; options: { identities?: Pick<ProjectIdentities, 'publishSshSnapshot' | 'sshSessionCommand'>; s… default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.identities`, `this.scopes`, `this.bridges`.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
@@ -484,9 +639,33 @@ export class ProjectSsh {
       if (!status.valid) throw new AppError(status.reason || '项目 SSH 不可用', 409);
     });
   }
+  /**
+   * 入口 / Entry: ProjectSsh.folder.
+   * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `join(vmDir(id), 'project-ssh', projectIdSchema.parse(projectId))` 供上层消费（`ProjectSsh`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectSsh`; this entry produces `join(vmDir(id), 'project-ssh', projectIdSchema.parse(projectId))` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+   * 处理：通过 `join`, `vmDir`, `projectIdSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `join`, `vmDir`, `projectIdSchema.parse`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; projectId: string
+   * 输出 / Returns: `join(vmDir(id), 'project-ssh', projectIdSchema.parse(projectId))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private folder(id: string, projectId: string) {
     return join(vmDir(id), 'project-ssh', projectIdSchema.parse(projectId));
   }
+  /**
+   * 入口 / Entry: ProjectSsh.record.
+   * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value === null ? null : projectSshRecordSchema.parse(value)` / `null` 供上层消费（`ProjectSsh`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectSsh`; this entry produces `value === null ? null : projectSshRecordSchema.parse(value)` / `null` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+   * 处理：通过 `readStore`, `join`, `this.folder`, `projectSshRecordSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `readStore`, `join`, `this.folder`, `projectSshRecordSchema.parse`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; project: Project
+   * 输出 / Returns: `value === null ? null : projectSshRecordSchema.parse(value)`; `null`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `return null;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `return null;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async record(id: string, project: Project) {
     try {
       const value = await readStore(
@@ -498,6 +677,19 @@ export class ProjectSsh {
       return null;
     }
   }
+  /**
+   * 入口 / Entry: ProjectSsh.status.
+   * 功能：核对主机保存的项目 SSH 记录、密钥档案及客户机真实守护进程状态。
+   * Purpose: Checks host SSH records/key profiles against the guest's actual daemon state.
+   * 设计：读取原项目配置和环境摘要，旧 root/未知运行保持不可接管；观察不会重新签发账号运行票据。
+   * Design: Original configuration/environment digests are checked; legacy root/unknown runs remain unadoptable and observation does not issue execution tickets.
+   * 输入 / Inputs: id: string; project: Project; signal: AbortSignal optional
+   * 输出 / Returns: Promise<Status>；结果来自 / values from `{ present: !!record, running: false, valid: false, processes: 0, reason: '请先启动或恢复实例' }`; `status`.
+   * 副作用 / Effects: `this.machines.exec`; `error.code.startsWith`; 更新 / updates `project`, `record`, `environmentError`, `status.valid`.
+   * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; `status.valid && record`; `key instanceof Error || Array.isArray(key) || key.getPublicSSH().toString('base64') !== publicKey.trim().split(' ')[1] || dig…`; 异常 / errors `new AppError('无法读取项目 SSH 状态', 409)`; `new Error('changed SSH identity')`.
+   * 失败处理：catch 分支执行 `record = null;`; `environmentError = '无法解析项目 SSH 环境，请检查密钥服务';`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `record = null;`; `environmentError = '无法解析项目 SSH 环境，请检查密钥服务';`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async status(id: string, project: Project, signal?: AbortSignal): Promise<Status> {
     let record = await this.record(id, project),
       environmentError: string | undefined;
@@ -536,6 +728,15 @@ export class ProjectSsh {
       try {
         const folder = this.folder(id, record.projectId);
         await regularDirectory(folder);
+        /**
+         * 入口 / Entry: ProjectSsh.status.callback@540.
+         * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline.map）。
+         * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline.map).
+         * 输入 / Inputs: name
+         * 输出 / Returns: `readFile(path, 'utf8')`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 拒绝 / Refusals: 条件 / conditions `!info.isFile() || info.isSymbolicLink()`; 异常 / errors `new Error('invalid SSH file')`.
+         */
         const [privateKey, publicKey, knownHosts] = await Promise.all(
           ['id_rsa', 'id_rsa.pub', 'known_hosts'].map(async (name) => {
             const path = join(folder, name);
@@ -586,6 +787,18 @@ export class ProjectSsh {
     }
     return status;
   }
+  /**
+   * 入口 / Entry: ProjectSsh.endpoint.
+   * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `null` / `{ port, identity: join(this.folder(id, record.projectId), 'id_rsa'), knownHosts: join(this.folder(id, record.projectId), 'kno…` 供上层消费（`ProjectSsh`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectSsh`; this entry produces `null` / `{ port, identity: join(this.folder(id, record.projectId), 'id_rsa'), knownHosts: join(this.folder(id, record.projectId), 'kno…` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+   * 处理：通过 `this.record`, `this.status`, `this.bridges.stop`, `this.endpoints.delete` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.record`, `this.status`, `this.bridges.stop`, `this.endpoints.delete`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!record || !(await this.status(id, project, signal)).valid`; `prior && prior.record.runId !== record.runId`.
+   * 输入 / Inputs: id: string; project: Project; signal: AbortSignal optional
+   * 输出 / Returns: `null`; `{ port, identity: join(this.folder(id, record.projectId), 'id_rsa'), knownHosts: join(this.folder(id, record.projectId), 'kno…`.
+   * 副作用 / Effects: `this.bridges.stop`; `this.endpoints.delete`; `this.endpoints.set`; 更新 / updates `prior`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async endpoint(id: string, project: Project, signal?: AbortSignal) {
     const key = `${id}:${project._workspace || 'default'}`,
       record = await this.record(id, project);
@@ -611,6 +824,18 @@ export class ProjectSsh {
       hostPublicKey: record.hostPublicKey,
     };
   }
+  /**
+   * 入口 / Entry: ProjectSsh.entries.
+   * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result` 供上层消费（`ProjectSsh`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectSsh`; this entry produces `result` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+   * 处理：通过 `key.split`, `this.machines.state`, `this.machines.incidentLocked`, `this.status().catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `key.split`, `this.machines.state`, `this.machines.incidentLocked`, `this.status().catch`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.machines.state(id) !== 'running' || this.machines.incidentLocked(id)`; `!status?.valid`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `result`.
+   * 副作用 / Effects: `this.bridges.stop`; `this.endpoints.delete`; `result.push`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async entries() {
     const result: Array<{
       vmId: string;
@@ -640,6 +865,17 @@ export class ProjectSsh {
     }
     return result;
   }
+  /**
+   * 入口 / Entry: ProjectSsh.start.
+   * 功能：在管理独立项目 SSH 服务与账户绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 `operation` 供上层消费（`ProjectSsh`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectSsh`; this entry produces `operation` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+   * 处理：通过 `this.workspaces.projects.current`, `AbortSignal.any`, `this.workspaces.projects.inScope`, `this.pending.add` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.workspaces.projects.current`, `AbortSignal.any`, `this.workspaces.projects.inScope`, `this.pending.add`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; signal: AbortSignal optional
+   * 输出 / Returns: `operation`.
+   * 副作用 / Effects: `AbortSignal.any`; `this.pending.add`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   start(id: string, signal?: AbortSignal) {
     const projectId = this.workspaces.projects.current(id);
     const abort = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
@@ -650,6 +886,19 @@ export class ProjectSsh {
     void operation.finally(() => this.pending.delete(operation)).catch(() => {});
     return operation;
   }
+  /**
+   * 入口 / Entry: ProjectSsh.prepare.
+   * 功能：为项目账户准备独立 SSH 端点、受控密钥和固定守护进程配置。
+   * Purpose: Prepares independent SSH endpoints, controlled keys and fixed daemon configuration for project accounts.
+   * 设计：原配置、boot、端口和服务意图先固定；完整 daemon 回执核验后才发布档案，失败按原记录回滚。
+   * Design: Configuration/boot/port/service intent are pinned; complete daemon verification precedes profile publication and rollback uses original records.
+   * 输入 / Inputs: id: string; signal: AbortSignal
+   * 输出 / Returns: `this.endpoint(id, project, signal)`; `await session.perform(async signal => { await this.identities.publishSshSnapshot(id, admission.identity, admission.snapshot, …`.
+   * 副作用 / Effects: `this.scopes.closeAfterScopeStopped`; `mkdir`; `createSshKey`; `writeFile`; `this.machines.exec`; 更新 / updates `publicKey`, `privateKey`, `hashes[p.config + '/hostkey']`, `hashes[p.config + '/session.json']`.
+   * 拒绝 / Refusals: 条件 / conditions `!distro || !['alpine', 'debian', 'ubuntu'].includes(distro)`; `this.machines.state(id) !== 'running'`; `current.running`; 异常 / errors `new AppError('项目 SSH 接入支持 Alpine、Debian 与 Ubuntu', 409)`; `new AppError('请先启动或恢复实例', 409)`.
+   * 失败处理：catch 分支执行 `let failure: unknown;`; `for (let attempt = 0; attempt < 3; ++attempt) { if (!instance || this.machines.live.get(id) !== instance) { failure = new Err…`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `let failure: unknown;`; `for (let attempt = 0; attempt < 3; ++attempt) { if (!instance || this.machines.live.get(id) !== instance) { failure = new Err…`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async prepare(id: string, signal: AbortSignal) {
     const distro = this.machines.get(id).distro;
     if (!distro || !['alpine', 'debian', 'ubuntu'].includes(distro))
@@ -680,6 +929,17 @@ export class ProjectSsh {
     await regularDirectory(folder);
     await mkdir(folder, { recursive: true });
     await secureSshPaths([folder]);
+    /**
+     * 入口 / Entry: ProjectSsh.prepare.readKey.
+     * 功能：在管理独立项目 SSH 服务与账户绑定中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `readFile(join(folder, name), 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; thro…` 供上层消费（`ProjectSsh`）。
+     * Purpose: Reads/verifies domain state and constructs a caller-facing result in `ProjectSsh`; this entry produces `readFile(join(folder, name), 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; thro…` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+     * 处理：通过 `readFile().catch`, `readFile`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `readFile().catch`, `readFile`, `join`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: name: string
+     * 输出 / Returns: `readFile(join(folder, name), 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; thro…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const readKey = (name: string) =>
       readFile(join(folder, name), 'utf8').catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') return null;
@@ -842,7 +1102,20 @@ export class ProjectSsh {
         mode: 0o600,
       });
       session = await ProjectSessionLifetime.acquire<SessionReceipt>({ machines: this.machines, vmId: id, kind: 'ssh',
-        signal, live: instance, receipt: { ...record, bootId }, cleanup: async receipt => {
+        signal, live: instance, receipt: { ...record, bootId },
+        /**
+         * 入口 / Entry: ProjectSsh.prepare.cleanup.
+         * 功能：在管理独立项目 SSH 服务与账户绑定中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`ProjectSsh`）。
+         * Purpose: Ends, revokes or cleans resources owned by this domain action in `ProjectSsh`; the calls and state transitions below complete the operation. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+         * 处理：通过 `this.stopRuntimeNative`, `this.machines.exec`, `projectSshBusyScript`, `busy.stdout.includes` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `this.stopRuntimeNative`, `this.machines.exec`, `projectSshBusyScript`, `busy.stdout.includes`; the branches below determine continuation, return or refusal.
+         * 分支 / Branches: `serviceAttempted`.
+         * 输入 / Inputs: receipt
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: `this.stopRuntimeNative`; `this.machines.exec`; `this.scopes.closeAfterScopeStopped`.
+         * 拒绝 / Refusals: 条件 / conditions `busy.code !== 0 || busy.stdout.includes('SAKURA_PROJECT_SSH_BUSY')`; 异常 / errors `new Error('项目 SSH 仍有未核对的进程')`.
+         */
+        cleanup: async receipt => {
           if (serviceAttempted) await this.stopRuntimeNative(id, project, { instance, bootId, runId }, receipt);
           else {
             const busy = await this.machines.exec(id, projectSshBusyScript(projectId), 10000);
@@ -851,6 +1124,15 @@ export class ProjectSsh {
             await this.scopes.closeAfterScopeStopped(id, projectId, runId);
           }
         } });
+      /**
+       * 入口 / Entry: ProjectSsh.prepare.callback@854.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（session.perform）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (session.perform).
+       * 输入 / Inputs: signal
+       * 输出 / Returns: `this.endpoint(id, project, signal)`.
+       * 副作用 / Effects: `this.identities.publishSshSnapshot`; `this.machines.exec`; 更新 / updates `serviceAttempted`, `reason`.
+       * 拒绝 / Refusals: 条件 / conditions `published.code !== 0`; `started.code !== 0`; `result.code !== 0`; 异常 / errors `new AppError(published.stderr || '项目 SSH 配置发布失败', 409)`; `new AppError(started.stderr || '项目 SSH 启动失败', 409)`.
+       */
       return await session.perform(async signal => {
       await this.identities.publishSshSnapshot(id, admission.identity, admission.snapshot, signal);
       const published = await this.machines.exec(
@@ -931,12 +1213,35 @@ export class ProjectSsh {
       throw error;
     }
   }
+  /**
+   * 入口 / Entry: ProjectSsh.stopRuntime.
+   * 功能：在管理独立项目 SSH 服务与账户绑定中，结束、撤销或清理本次拥有的领域资源；本入口产生 `this.stopRuntimeNative(id, project, owner)` / `ProjectSessionLifetime.retire(this.machines, id, { ...record, bootId: record.execution.bootId }, receipt => this.stopRuntimeN…` 供上层消费（`ProjectSsh`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `ProjectSsh`; this entry produces `this.stopRuntimeNative(id, project, owner)` / `ProjectSessionLifetime.retire(this.machines, id, { ...record, bootId: record.execution.bootId }, receipt => this.stopRuntimeN…` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+   * 处理：通过 `this.record`, `this.stopRuntimeNative`, `ProjectSessionLifetime.retire` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.record`, `this.stopRuntimeNative`, `ProjectSessionLifetime.retire`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!record?.execution`.
+   * 输入 / Inputs: id: string; project: Project; owner: RollbackOwner optional
+   * 输出 / Returns: `this.stopRuntimeNative(id, project, owner)`; `ProjectSessionLifetime.retire(this.machines, id, { ...record, bootId: record.execution.bootId }, receipt => this.stopRuntimeN…`.
+   * 副作用 / Effects: `this.stopRuntimeNative`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async stopRuntime(id: string, project: Project, owner?: RollbackOwner) {
     const record = await this.record(id, project);
     if (!record?.execution) return this.stopRuntimeNative(id, project, owner);
     return ProjectSessionLifetime.retire(this.machines, id, { ...record, bootId: record.execution.bootId },
       receipt => this.stopRuntimeNative(id, project, owner, receipt));
   }
+  /**
+   * 入口 / Entry: ProjectSsh.stopRuntimeNative.
+   * 功能：按原完整 SSH 运行票据停止守护进程及后代并退休账户和网络资源。
+   * Purpose: Stops the daemon/descendants and retires account/network resources using the complete original SSH ticket.
+   * 设计：首先比对主机与客户机票据、boot 和 cgroup，重启退休需证明新启动；未知或复用进程不能按旧 ID 被终止。
+   * Design: Host/guest tickets, boot and cgroup are compared; reboot retirement needs new-boot proof and stale IDs cannot terminate unknown/reused processes.
+   * 输入 / Inputs: id: string; project: Project; owner: RollbackOwner optional; expected: SessionReceipt optional
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.machines.exec`; `this.scopes.closeAfterScopeStopped`; `this.bridges.stop`; `this.endpoints.delete`; `stopped.stdout.includes`; 更新 / updates `prior`, `runs`, `owner`.
+   * 拒绝 / Refusals: 条件 / conditions `expected && (!stored?.execution || !isDeepStrictEqual({ ...stored, bootId: stored.execution.bootId }, expected))`; `stored?.execution`; `runs.some((entry) => entry.runId !== stored.runId) || (prior && (JSON.stringify(prior.identity) !== JSON.stringify(stored.exe…`; 异常 / errors `new AppError('原项目 SSH 完整启动票据已改变，清理未确认', 503, 'PROJECT_SSH_CLEANUP_FAILED')`; `new AppError('项目 SSH 的主机登记已改变，原停止未确认', 503, 'PROJECT_SSH_CLEANUP_FAILED')`.
+   */
   private async stopRuntimeNative(id: string, project: Project, owner?: RollbackOwner, expected?: SessionReceipt) {
     const projectId = project._workspace || 'default',
       p = projectSshPaths(projectId),
@@ -1061,10 +1366,32 @@ export class ProjectSsh {
       );
     for (const run of runs) await this.scopes.closeAfterScopeStopped(id, projectId, run.runId);
   }
+  /**
+   * 入口 / Entry: ProjectSsh.stop.
+   * 功能：在管理独立项目 SSH 服务与账户绑定中，结束、撤销或清理本次拥有的领域资源；本入口产生 `this.machines.locked(id, () => this.stopRuntime(id, project))` 供上层消费（`ProjectSsh`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `ProjectSsh`; this entry produces `this.machines.locked(id, () => this.stopRuntime(id, project))` for its caller. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+   * 处理：通过 `this.workspaces.config`, `this.machines.locked` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.workspaces.config`, `this.machines.locked`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.machines.locked(id, () => this.stopRuntime(id, project))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async stop(id: string) {
     const project = await this.workspaces.config(id);
     return this.machines.locked(id, () => this.stopRuntime(id, project));
   }
+  /**
+   * 入口 / Entry: ProjectSsh.close.
+   * 功能：在管理独立项目 SSH 服务与账户绑定中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`ProjectSsh`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `ProjectSsh`; the calls and state transitions below complete the operation. Module context: Owns independent project SSH/account bindings, rolling back/stopping only original boot, directory and daemon tickets.
+   * 处理：通过 `this.controller.abort`, `Promise.allSettled`, `this.bridges.close`, `this.endpoints.clear` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.controller.abort`, `Promise.allSettled`, `this.bridges.close`, `this.endpoints.clear`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.controller.abort`; `this.bridges.close`; `this.endpoints.clear`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.controller.abort();
     await Promise.allSettled(this.pending);

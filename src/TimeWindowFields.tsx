@@ -1,14 +1,29 @@
 /**
- * 模块职责：编辑由星期和时段组成的时间窗口，复用到同步和调度策略表单。
+ * 模块职责（中文）：编辑由星期和时段组成的时间窗口，复用到同步和调度策略表单。
+ * Module responsibility (English): Editing policy windows composed of time zone, weekdays and time ranges.
+ * 详细范围（中文）：公开入口包括 TimeWindowFields；职责覆盖编辑时区、星期与时段构成的策略窗口，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include TimeWindowFields. The scope covers Editing policy windows composed of time zone, weekdays and time ranges. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import type { TimeWindow } from '../shared/time-windows';
 
+/**
+ * 中文：呈现编辑时区、星期与时段构成的策略窗口中的 TimeWindowFields 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the TimeWindowFields surface for Editing policy windows composed of time zone, weekdays and time ranges. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  value,
+  onChange,
+} 提供 value（待校验、转换或保存的输入值）、onChange（onChange 状态） 上下文字段
+ * English: Inputs: {
+  value,
+  onChange,
+} provides context fields value (input value to validate/transform/save), onChange (onChange state)
+ */
 export function TimeWindowFields({
   value,
   onChange,
 }: {
   value: TimeWindow;
-  onChange: (value: TimeWindow) => void;
+  onChange: /** 中文：把新表单值交给父级状态所有者；这是 TimeWindowFields 的调用契约 | English: Deliver newly edited form values to the parent state owner; this is the callable contract of TimeWindowFields | 中文：输入：value：待校验、转换或保存的输入值 | English: Inputs: value: input value to validate/transform/save | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (value: TimeWindow) => void;
 }) {
   return (
     <div className="feature-card">

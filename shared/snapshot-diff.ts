@@ -1,5 +1,8 @@
 /**
- * 模块职责：快照差异比较输入、文件条目和任务结果的公共 Schema，约束比较范围和输出。
+ * 模块职责（中文）：快照差异比较输入、文件条目和任务结果的公共 Schema，约束比较范围和输出。
+ * Module responsibility (English): Validating snapshot comparison scope and describing changed files and job results.
+ * 详细范围（中文）：公开入口包括 snapshotDiffInputSchema, SnapshotDiffInput, SnapshotDiffFile, snapshotDiffResultSchema, SnapshotDiffResult, snapshotDiffJobSchema, snapshotDiffViewSchema；职责覆盖校验快照比较范围并描述差异文件和任务结果，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include snapshotDiffInputSchema, SnapshotDiffInput, SnapshotDiffFile, snapshotDiffResultSchema, SnapshotDiffResult, snapshotDiffJobSchema, snapshotDiffViewSchema. The scope covers Validating snapshot comparison scope and describing changed files and job results. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 

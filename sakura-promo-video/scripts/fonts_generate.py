@@ -1,4 +1,5 @@
 # 生成宣传视频专用字体子集，验证固定字体和许可来源，并根据视频文案检查所需字符覆盖。
+# Generate dedicated video font subsets from pinned licensed sources and validate every required text codepoint against the current corpus.
 """Build video-specific Sakura WOFF2 subsets from pinned, licensed sources.
 
 From sakura-promo-video:
@@ -45,10 +46,14 @@ PUNCTUATION = "、。·：；？！「」『』（）【】《》〈〉—…〜
 COPY_RESERVE = "8 GiB uname -s Linux ~/demo-project 默认未启用 停机保存磁盘状态"
 
 
+# 计算文件 SHA-256，绑定字体资源与文案文件清单的实际字节。
+# Hash file bytes with SHA-256 to bind font assets and text inventory to their actual content.
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# 优先复用已核实源/许可缓存，缺失才取固定来源，并按 Git blob 身份校验后保存。
+# Prefer verified source/license caches, fetch pinned sources only when missing and validate Git blob identity before caching.
 def checked_blob(blob, *, source_url=None, license_path=None):
     """Read existing verified sources, or fetch a pinned font into local cache."""
     parent_path = CACHE / blob
@@ -80,6 +85,8 @@ def checked_blob(blob, *, source_url=None, license_path=None):
     return path
 
 
+# 收集视频 TS/TSX、旁白元数据和保留文案的全部字符及文件摘要，注释变更也会更新所需字集。
+# Collect all characters/file hashes from video TS/TSX, narration metadata and reserved copy; comment edits also change the required corpus.
 def corpus():
     paths = sorted(p for p in (VIDEO / "src").rglob("*")
                    if p.suffix in {".ts", ".tsx"})
@@ -92,11 +99,15 @@ def corpus():
     return points, files
 
 
+# 判断码点是否属于支持的汉字统一、兼容及扩展范围，用于明确缺字拒绝。
+# Identify supported unified/compatibility/extension Hanzi ranges for explicit missing-glyph refusal.
 def is_hanzi(point):
     return (0x3400 <= point <= 0x4DBF or 0x4E00 <= point <= 0x9FFF
             or 0xF900 <= point <= 0xFAFF or 0x20000 <= point <= 0x323AF)
 
 
+# 替换字体命名表中家庭、样式和 PostScript 名称，避免专用子集与上游完整字体混淆。
+# Replace family/style/PostScript names so the dedicated subset is distinct from the full upstream font.
 def rename(font, family):
     names = font["name"]
     values = {1: family, 2: "Regular", 3: family + " Video subset",
@@ -108,6 +119,8 @@ def rename(font, family):
     # Upstream copyright, license, designer, and version records are preserved.
 
 
+# 核对必需汉字覆盖、家庭名称和可变字重范围，返回字体实际码点与缺失信息。
+# Check required Hanzi coverage, family names and variable-weight range, returning actual coverage/missing information.
 def validate(path, family, required):
     with TTFont(path) as font:
         supported = set(font.getBestCmap())
@@ -123,6 +136,8 @@ def validate(path, family, required):
         return supported
 
 
+# 按现有固定源生成视频 WOFF2 并更新文案/资源摘要清单，--check 只核实当前资源与 corpus 同步。
+# Generate video WOFF2 from pinned sources and update corpus/asset hashes; --check only verifies current assets against the corpus.
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Validate current live copy only")

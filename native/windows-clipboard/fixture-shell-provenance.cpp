@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：使用真实公开属性列表 API 验证来源账本代次、容量、删除、认领和原子性，事件屏障证明认领不能穿过原初始化/更新；精确孩子清理还验证未运行 marker。
+ * Module responsibilities (English): Use real public attribute APIs to validate ledger generation/capacity/Delete/claim/atomicity, with event barriers proving claims cannot cross original initialization/update and exact-child cleanup confirming no marker ran.
+ */
 /** Shell 属性来源账本验证夹具，覆盖初始化、更新失败、删除及重用时的生命周期边界。 */
 #define _WIN32_WINNT 0x0A00
 #include "fixture-shell.h"
@@ -5,24 +9,30 @@
 #include <thread>
 #include <stdexcept>
 
+/** 中文：断言来源模型条件，失败抛错交给入口形成失败退出码，不能继续记录通过。 English: Assert provenance-model conditions, throwing on failure for the entry point to report failure rather than recording success. 参数声明 / Declared parameters: bool value. */
 static void require(bool value){if(!value)throw std::runtime_error("Shell attribute lifecycle assertion failed");}
 struct ModelTable {
   std::vector<unsigned char> storage;
   LPPROC_THREAD_ATTRIBUTE_LIST list=nullptr;
+  /** 中文：按真实 Windows 初始化所需容量分配属性列表，再执行原初始化，任何失败由 require 中止模型。 English: Allocate an attribute list using Windows' actual required capacity and initialize it, with require aborting on failure. 参数声明 / Declared parameters: DWORD capacity. */
   explicit ModelTable(DWORD capacity) {
     SIZE_T size=0;InitializeProcThreadAttributeList(nullptr,capacity,0,&size);require(size!=0);storage.resize(size);
     list=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());require(InitializeProcThreadAttributeList(list,capacity,0,&size)!=FALSE);
   }
+  /** 中文：只对仍有效的真实列表调用原 Delete，已测试手动删除的空值不重复释放。 English: Call original Delete only on a still-owned real list, skipping null after deliberate test deletion. */
   ~ModelTable(){if(list)DeleteProcThreadAttributeList(list);}
 };
+/** 中文：固定返回 ACCESS_DENIED/FALSE，验证公开追加失败时原错误与自有 Job 保留。 English: Return fixed ACCESS_DENIED/FALSE to test original-error/owned-Job retention after public append failure. 参数声明 / Declared parameters: LPPROC_THREAD_ATTRIBUTE_LIST,DWORD,DWORD_PTR,PVOID,SIZE_T,PVOID,PSIZE_T. */
 static BOOL WINAPI modelUpdateFailure(LPPROC_THREAD_ATTRIBUTE_LIST,DWORD,DWORD_PTR,PVOID,SIZE_T,PVOID,PSIZE_T){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
 static HANDLE* modelExpectedJob=nullptr;
 static bool modelJobLiveAtDelete=false;
+/** 中文：原 Delete 前确认账本稳定 Job 地址及句柄仍可查询，再释放真实列表。 English: Confirm stable ledger Job storage/handle remain queryable before original Delete, then free the real list. 参数声明 / Declared parameters: LPPROC_THREAD_ATTRIBUTE_LIST list. */
 static VOID WINAPI modelDeleteCheck(LPPROC_THREAD_ATTRIBUTE_LIST list) {
   JOBOBJECT_BASIC_ACCOUNTING_INFORMATION state{};
   modelJobLiveAtDelete=modelExpectedJob && *modelExpectedJob && QueryInformationJobObject(*modelExpectedJob,JobObjectBasicAccountingInformation,&state,sizeof(state),nullptr);
   DeleteProcThreadAttributeList(list);
 }
+/** 中文：在私有环境验证列表初始化、更新、认领、删除、地址代次和跨线程原子性模型，再核对精确孩子清理无应用 marker；仅全部通过才经管道报告成功。 English: In private environment verify initialization/update/claim/Delete/address-generation/cross-thread atomicity models and exact-child cleanup without an application marker; report success over the pipe only after all assertions pass. */
 int wmain() {
   try{
     const auto station=shellPrivateStation(),pipeName=shellArgument(L"--shell-pipe=");
@@ -32,6 +42,7 @@ int wmain() {
       Sleep(INFINITE);return 95;
     }
     std::string cases="[";unsigned total=0;const DWORD thread=GetCurrentThreadId();
+    /** 中文：把已确认模型案例名按顺序加入结果数组并增加数量，必须在断言通过后调用。 English: Append a confirmed model-case name in order/increment count, only after its assertions pass. 参数声明 / Declared parameters: const char* name. */
     const auto passed=[&](const char* name){if(total++)cases+=',';cases+='"'+std::string(name)+'"';};
     {
       ShellAttributeLedger ledger;ModelTable table(2);
@@ -111,7 +122,7 @@ int wmain() {
       ShellAttributeLedger ledger;ModelTable table(2);auto record=ledger.initialized(table.list,2,0,1,thread,true,true);require(bool(record));
       HANDLE entered=CreateEventW(nullptr,TRUE,FALSE,nullptr),release=CreateEventW(nullptr,TRUE,FALSE,nullptr),started=CreateEventW(nullptr,TRUE,FALSE,nullptr),done=CreateEventW(nullptr,TRUE,FALSE,nullptr);
       BOOL updated=FALSE;ShellAttributeLedger::Pointer claimed;DWORD policy=0;
-      std::thread updater([&]{updated=ledger.update(table.list,0,PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,nullptr,nullptr,1,thread,true,[&]{
+      std::thread updater(/** 中文：并发模型线程使用 event 阻塞原公开属性操作的完成，使竞争 claim 必须等待同一账本锁；join 后核对原结果和对应记录并释放事件。 English: Concurrent model threads use events to delay completion of original public attribute operations so competing claims must wait for the ledger lock; after joins verify results/records and free events. */ [&]{updated=ledger.update(table.list,0,PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,nullptr,nullptr,1,thread,true,/** 中文：并发模型线程使用 event 阻塞原公开属性操作的完成，使竞争 claim 必须等待同一账本锁；join 后核对原结果和对应记录并释放事件。 English: Concurrent model threads use events to delay completion of original public attribute operations so competing claims must wait for the ledger lock; after joins verify results/records and free events. */ [&]{
         const BOOL value=UpdateProcThreadAttribute(table.list,0,PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,&policy,sizeof(policy),nullptr,nullptr);
         SetEvent(entered);require(WaitForSingleObject(release,10000)==WAIT_OBJECT_0);return value;});});
       require(WaitForSingleObject(entered,10000)==WAIT_OBJECT_0);
@@ -127,7 +138,7 @@ int wmain() {
       auto list=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
       HANDLE entered=CreateEventW(nullptr,TRUE,FALSE,nullptr),release=CreateEventW(nullptr,TRUE,FALSE,nullptr),started=CreateEventW(nullptr,TRUE,FALSE,nullptr),done=CreateEventW(nullptr,TRUE,FALSE,nullptr);
       BOOL initialized=FALSE;ShellAttributeLedger::Pointer observed,claimed;
-      std::thread initializer([&]{initialized=ledger.initialize(list,2,0,1,thread,true,observed,[&]{const BOOL value=InitializeProcThreadAttributeList(list,2,0,&size);SetEvent(entered);require(WaitForSingleObject(release,10000)==WAIT_OBJECT_0);return value;});});
+      std::thread initializer(/** 中文：并发模型线程使用 event 阻塞原公开属性操作的完成，使竞争 claim 必须等待同一账本锁；join 后核对原结果和对应记录并释放事件。 English: Concurrent model threads use events to delay completion of original public attribute operations so competing claims must wait for the ledger lock; after joins verify results/records and free events. */ [&]{initialized=ledger.initialize(list,2,0,1,thread,true,observed,/** 中文：并发模型线程使用 event 阻塞原公开属性操作的完成，使竞争 claim 必须等待同一账本锁；join 后核对原结果和对应记录并释放事件。 English: Concurrent model threads use events to delay completion of original public attribute operations so competing claims must wait for the ledger lock; after joins verify results/records and free events. */ [&]{const BOOL value=InitializeProcThreadAttributeList(list,2,0,&size);SetEvent(entered);require(WaitForSingleObject(release,10000)==WAIT_OBJECT_0);return value;});});
       require(WaitForSingleObject(entered,10000)==WAIT_OBJECT_0);
       std::thread contender([&]{SetEvent(started);claimed=ledger.claim(list,1,thread);SetEvent(done);});
       require(WaitForSingleObject(started,10000)==WAIT_OBJECT_0 && WaitForSingleObject(done,100)==WAIT_TIMEOUT);

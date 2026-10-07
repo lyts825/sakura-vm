@@ -1,5 +1,8 @@
 /**
- * 模块职责：“资源采样”插件的CPU、内存、磁盘和进程资源监控标签，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“资源采样”插件的CPU、内存、磁盘和进程资源监控标签，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for guest resource and process sampling.
+ * 详细范围（中文）：公开入口包括 MetricsPanel, tabs；职责覆盖客户机资源与进程采样的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include MetricsPanel, tabs. The scope covers UI interaction and state presentation for guest resource and process sampling. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from '../../src/localization';
 import { useEffect, useState } from 'react';
@@ -8,10 +11,16 @@ import { useRemote, Feedback, formatBytes, type FeatureProps } from '../../src/f
 import '../../src/features.css';
 import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 type Metrics = OperationResponse<'metrics.sample'>;
+/**
+ * 中文：呈现客户机资源与进程采样的界面交互与状态呈现中的 MetricsPanel 界面，订阅 /vms/{vm.id}/metrics，组合 RefreshCw，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the MetricsPanel surface for UI interaction and state presentation for guest resource and process sampling, subscribing to /vms/{vm.id}/metrics and composing RefreshCw. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { vm, request } provides context fields vm (vm state), request (transport capability bound to identity/authority scope)
+ */
 export function MetricsPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<Metrics>(request, `/vms/${vm.id}/metrics`, vm.status === 'running');
   const [history, setHistory] = useState<number[]>([]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [remote.data] 变化时history 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data] change, history state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (remote.data) setHistory((h) => [...h.slice(-29), remote.data!.cpuPercent]);
   }, [remote.data]);
   const m = remote.data;

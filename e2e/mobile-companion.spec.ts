@@ -1,6 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - paired phone sees only authorized status and alerts over the HTTPS listener
+ * 模块职责：浏览器回归模块，围绕 `mobile-companion` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Browser regression for `mobile-companion`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: paired phone sees only authorized status and alerts over the HTTPS listener.
  */
 import { test, expect } from '@playwright/test';
 import { createServer } from 'node:net';
@@ -13,6 +16,15 @@ import type { AccessControl } from '../server/access-control.ts';
 
 test.use({ ignoreHTTPSErrors: true });
 
+/**
+ * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+ * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`address.port`），以 Promise 交付。
+ * Result: Return the branch-computed value (`address.port`) through a Promise.
+ * 失败 / Failure: `new Error('No port')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `createServer`, `probe.address`.
+ */
 async function freePort() {
   const probe = createServer();
   await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
@@ -22,10 +34,30 @@ async function freePort() {
   return address.port;
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: paired phone sees only authorized status and alerts over the HTTPS listener
+ * 失败 / Failure: `new Error('No code')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `freePort`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('paired phone sees only authorized status and alerts over the HTTPS listener', async ({ page }) => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-mobile-browser-'));
   const port = await freePort();
   const file = join(directory, 'host.json');
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`({ platform: 'win32', arch: 'x64', cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFr…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`({ platform: 'win32', arch: 'x64', cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFr…`) through a Promise.
+   * 验证场景 / Scenario: paired phone sees only authorized status and alerts over the HTTPS listener
+   */
   const source = async () => ({
     platform: 'win32',
     arch: 'x64',
@@ -48,14 +80,40 @@ test('paired phone sees only authorized status and alerts over the HTTPS listene
   });
   await configured.close();
   const host = new HostPeers(source, file, 'Sakura', undefined, undefined, undefined, () => ({
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: request; response。
+     * 结果：返回分支计算值（`mobile.handle(request, response)`）。
+     * Result: Return the branch-computed value (`mobile.handle(request, response)`).
+     * 验证场景 / Scenario: paired phone sees only authorized status and alerts over the HTTPS listener
+     * 协作入口 / Collaborators: `mobile.handle`.
+     */
     mobileHandler: (request, response) => mobile.handle(request, response),
   }));
   await host.init(true);
   const ownerId = '00000000-0000-4000-8000-000000000001';
   const vmId = '00000000-0000-4000-8000-000000000002';
-  const access = { enabled: true, users: () => [{ id: ownerId, role: 'owner' }] } as unknown as AccessControl;
+  const access = { enabled: true, /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回列表形式的受控数据，供调用者遍历或比较。
+   * Result: Return controlled data as a list for iteration or comparison.
+   * 验证场景 / Scenario: paired phone sees only authorized status and alerts over the HTTPS listener
+   */
+  users: () => [{ id: ownerId, role: 'owner' }] } as unknown as AccessControl;
   const mobile = new MobileCompanion(
     access,
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ vms: [ { id: vmId, name: '手机可见实例', status: 'running' }, { id: '00000000-0000-…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ vms: [ { id: vmId, name: '手机可见实例', status: 'running' }, { id: '00000000-0000-…`) through a Promise.
+     * 验证场景 / Scenario: paired phone sees only authorized status and alerts over the HTTPS listener
+     * 协作入口 / Collaborators: `new Date().toISOString`.
+     */
     async () => ({
       vms: [
         { id: vmId, name: '手机可见实例', status: 'running' },

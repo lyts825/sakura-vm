@@ -1,4 +1,5 @@
-/** 烟雾验收：验证对象存储备份上传、完整性核实及恢复启动。 */
+/** 烟雾验收：验证对象存储备份上传、完整性核实及恢复启动。
+ * Smoke acceptance for object-storage uploads, integrity verification and real restored boot. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -24,6 +25,8 @@ const object = new ObjectBackup(machines, () => ({ backups, bundles, secrets }))
 const s3 = await mockS3();
 const signal = new AbortController().signal;
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 300_000;

@@ -1,5 +1,8 @@
 /**
- * 模块职责：编辑和校验工作区快捷键，展示冲突并保存用户偏好。
+ * 模块职责（中文）：编辑和校验工作区快捷键，展示冲突并保存用户偏好。
+ * Module responsibility (English): Editing and saving shortcuts after conflict validation.
+ * 详细范围（中文）：公开入口包括 ShortcutSettings；职责覆盖编辑并保存通过冲突校验的快捷键，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ShortcutSettings. The scope covers Editing and saving shortcuts after conflict validation. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useLayoutEffect, useState } from 'react';
 import {
@@ -10,6 +13,20 @@ import {
   type ShortcutPreferences,
 } from './shortcuts';
 
+/**
+ * 中文：呈现编辑并保存通过冲突校验的快捷键中的 ShortcutSettings 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ShortcutSettings surface for Editing and saving shortcuts after conflict validation. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  preferences,
+  context,
+  projectName,
+} 提供 preferences（偏好草稿）、context（当前调用所属的应用或工作区上下文）、projectName（projectName 状态） 上下文字段
+ * English: Inputs: {
+  preferences,
+  context,
+  projectName,
+} provides context fields preferences (preference draft), context (application/workspace context for the call), projectName (projectName state)
+ */
 export function ShortcutSettings({
   preferences,
   context,
@@ -24,11 +41,19 @@ export function ShortcutSettings({
   const [draft, setDraft] = useState<ShortcutMap>({});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  useLayoutEffect(() => {
+  useLayoutEffect(/** 中文：当依赖 [preferences, project, context] 变化时编辑草稿，错误反馈；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [preferences, project, context] change, editing draft, error feedback. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setDraft({ ...(project ? preferences.projects[context!] || {} : effectiveShortcuts(preferences)) });
     setError('');
   }, [preferences, project, context]);
   const inherited = effectiveShortcuts(preferences);
+  /**
+   * 中文：在编辑并保存通过冲突校验的快捷键流程中错误反馈，完成提示；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Editing and saving shortcuts after conflict validation, error feedback, completion message. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：map：签名所示 ShortcutMap 业务值
+   * English: Inputs: map: the ShortcutMap domain value in the signature
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const persist = (map: ShortcutMap) => {
     try {
       const next = structuredClone(preferences);
@@ -65,7 +90,14 @@ export function ShortcutSettings({
         </select>
       </label>
       <div className="shortcut-fields">
-        {shortcutCommands.map((command) => {
+        {shortcutCommands.map(/**
+         * 中文功能：渲染每条快捷键的全局或项目覆盖值；项目未覆盖时显示继承值且禁用编辑，切换覆盖时复制继承值或删除覆盖键。
+         * English: Render each global/project-override shortcut; show inherited values with editing disabled when unoverridden, and copy inheritance or delete the override when toggled.
+         * 输入 / Inputs: command.
+         * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+         * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+         */
+        (command) => {
           const override = Object.hasOwn(draft, command.id);
           return (
             <div className="shortcut-field" key={command.id}>

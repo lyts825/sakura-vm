@@ -1,4 +1,5 @@
-/** 烟雾验收：验证受控 Certbot 工具下的来宾证书签发/续订编排及 dry-run 参数。 */
+/** 烟雾验收：验证受控 Certbot 工具下的来宾证书签发/续订编排及 dry-run 参数。
+ * Smoke acceptance for controlled Certbot guest certificate issuance/renewal orchestration and dry-run arguments. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,9 +18,14 @@ const { NextFeatures } = await import('../server/next-features.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const workspaces = {
-  projects: { current: () => 'default', key: (id: string) => id },
+  projects: { /** 为此单项目验收提供稳定的 default 项目上下文，不读取或切换用户项目。
+ * Provide the stable default project context for this single-project check without reading/switching user projects. */ current: () => 'default', /** 为单项目夹具返回原实例标识作为配置键；不增加生产多项目键空间。
+ * Use the original VM identifier as the configuration key for this single-project fixture without introducing production multi-project key space. */ key: (id: string) => id },
 } as unknown as Workspaces;
-const features = new NextFeatures(machines, workspaces, { optional: id => (id === 'capabilityChecks' ? { acmeAllowed: () => true, mutation: () => {} } : undefined) as never });
+const features = new NextFeatures(machines, workspaces, { /** 只向 ACME 验收提供 capabilityChecks 依赖，其他可选服务返回 undefined，维持最小夹具能力。
+ * Provide only capabilityChecks to the ACME check and return undefined for other optional services, keeping fixture authority minimal. */ optional: id => (id === 'capabilityChecks' ? { /** 本 ACME 成功路径夹具明确允许证书操作，返回 true，不执行真实权限变更。
+ * Explicitly allow certificate operations in this ACME success fixture by returning true without changing real permissions. */ acmeAllowed: () => true, /** 该夹具无需额外记录能力变更，保留无副作用回调以满足能力检查接口。
+ * Supply a side-effect-free mutation callback because this fixture needs no extra capability-mutation bookkeeping. */ mutation: () => {} } : undefined) as never });
 await features.init();
 
 try {

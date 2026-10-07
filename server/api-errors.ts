@@ -1,10 +1,22 @@
 /**
  * 模块职责：将内部错误转换为稳定的公开 API 错误分类，避免暴露内部异常细节。
+ * Module purpose: Maps internal failures to stable public API categories without exposing private exception details.
  */
 import { ZodError } from 'zod';
 import { AppError, type ApiErrorDto } from '../shared/errors.ts';
 import { auditFailure } from './audit.ts';
 
+/**
+ * 入口 / Entry: publicApiFailure.
+ * 功能：在将内部错误转换为稳定的公开 API 错误分类中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ status, dto }` 供上层消费（`api-errors.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `api-errors.ts`; this entry produces `{ status, dto }` for its caller. Module context: Maps internal failures to stable public API categories without exposing private exception details.
+ * 处理：通过 `inline.test`, `auditFailure` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `inline.test`, `auditFailure`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: error: unknown; correlationId: string; auditFailed: default=false
+ * 输出 / Returns: `{ status, dto }`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function publicApiFailure(error: unknown, correlationId: string, auditFailed = false) {
   const status = error instanceof ZodError ? 400 : error instanceof AppError ? error.status : 500;
   const codes: Record<number, string> = {

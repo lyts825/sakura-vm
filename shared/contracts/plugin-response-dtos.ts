@@ -1,5 +1,8 @@
 /**
- * 模块职责：文件、语言服务、容器和剪贴板等插件响应的共用 DTO Schema，减少跨路由结构漂移。
+ * 模块职责（中文）：文件、语言服务、容器和剪贴板等插件响应的共用 DTO Schema，减少跨路由结构漂移。
+ * Module responsibility (English): response DTOs reused across plugin HTTP routes.
+ * 详细范围（中文）：公开入口包括 capabilityResultSchema, featureSettingSchema, operationJsonSchema, filePreviewSchema, fileListingSchema, fileOperationSchema, debuggerVariablesSchema, languageResultSchema, dockerContainerSchema, dockerImageSchema, dockerVolumeSchema, clipboardSessionSchema, clipboardViewSchema, clipboardActionSchema, signedBundleViewSchema；职责覆盖跨插件 HTTP 路由复用的响应 DTO，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include capabilityResultSchema, featureSettingSchema, operationJsonSchema, filePreviewSchema, fileListingSchema, fileOperationSchema, debuggerVariablesSchema, languageResultSchema, dockerContainerSchema, dockerImageSchema, dockerVolumeSchema, clipboardSessionSchema, clipboardViewSchema, clipboardActionSchema, signedBundleViewSchema. The scope covers response DTOs reused across plugin HTTP routes. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 import { jsonValueSchema } from './json-values.ts';

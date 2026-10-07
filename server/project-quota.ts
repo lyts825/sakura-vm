@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理项目磁盘配额及目录保护，拒绝重叠目录和配额恢复期间的目录变更。
+ * Module purpose: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
@@ -27,22 +28,102 @@ const recordSchema = z.object({
 type Record = z.infer<typeof recordSchema>;
 
 const root = '/var/lib/sakura/project-quotas';
+/**
+ * 入口 / Entry: image.
+ * 功能：从当前输入或状态计算 ``${root}/${projectId}.img``，供调用方后续验证或使用。
+ * Purpose: Computes ``${root}/${projectId}.img`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: ``${root}/${projectId}.img``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const image = (projectId: string) => `${root}/${projectId}.img`;
+/**
+ * 入口 / Entry: stage.
+ * 功能：从当前输入或状态计算 ``${root}/${projectId}.stage``，供调用方后续验证或使用。
+ * Purpose: Computes ``${root}/${projectId}.stage`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: ``${root}/${projectId}.stage``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const stage = (projectId: string) => `${root}/${projectId}.stage`;
+/**
+ * 入口 / Entry: marker.
+ * 功能：从当前输入或状态计算 ``# sakura-project-quota-${projectId}``，供调用方后续验证或使用。
+ * Purpose: Computes ``# sakura-project-quota-${projectId}`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: ``# sakura-project-quota-${projectId}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const marker = (projectId: string) => `# sakura-project-quota-${projectId}`;
+/**
+ * 入口 / Entry: recordFile.
+ * 功能：在管理项目磁盘配额及目录保护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `join(vmDir(vmId), `project-quota-${projectId}.json`)` 供上层消费（`project-quota.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-quota.ts`; this entry produces `join(vmDir(vmId), `project-quota-${projectId}.json`)` for its caller. Module context: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
+ * 处理：通过 `join`, `vmDir` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `join`, `vmDir`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: vmId: string; projectId: string
+ * 输出 / Returns: `join(vmDir(vmId), `project-quota-${projectId}.json`)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const recordFile = (vmId: string, projectId: string) =>
   join(vmDir(vmId), `project-quota-${projectId}.json`);
 
+/**
+ * 入口 / Entry: store.
+ * 功能：在管理项目磁盘配额及目录保护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `metadataFile<Record | null>( recordFile(vmId, projectId), () => null, value => value === null ? null : recordSchema.parse(val…` 供上层消费（`project-quota.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-quota.ts`; this entry produces `metadataFile<Record | null>( recordFile(vmId, projectId), () => null, value => value === null ? null : recordSchema.parse(val…` for its caller. Module context: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
+ * 处理：通过 `metadataFile`, `recordFile` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `metadataFile`, `recordFile`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: vmId: string; projectId: string
+ * 输出 / Returns: `metadataFile<Record | null>( recordFile(vmId, projectId), () => null, value => value === null ? null : recordSchema.parse(val…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const store = (vmId: string, projectId: string) => metadataFile<Record | null>(
   recordFile(vmId, projectId), () => null, value => value === null ? null : recordSchema.parse(value),
 );
+/**
+ * 入口 / Entry: readProjectQuotaRecord.
+ * 功能：在管理项目磁盘配额及目录保护中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `(await store(vmId, projectId).read()).value` 供上层消费（`project-quota.ts`）。
+ * Purpose: Reads/verifies domain state and constructs a caller-facing result in `project-quota.ts`; this entry produces `(await store(vmId, projectId).read()).value` for its caller. Module context: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
+ * 处理：通过 `store().read`, `store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `store().read`, `store`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: vmId: string; projectId: string
+ * 输出 / Returns: Promise<Record | null>；结果来自 / values from `(await store(vmId, projectId).read()).value`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export async function readProjectQuotaRecord(vmId: string, projectId: string): Promise<Record | null> {
   return (await store(vmId, projectId).read()).value;
 }
+/**
+ * 入口 / Entry: saveRecord.
+ * 功能：在管理项目磁盘配额及目录保护中，校验并提交领域状态变更；完成下述调用及状态处理（`project-quota.ts`）。
+ * Purpose: Validates and commits a domain state change in `project-quota.ts`; the calls and state transitions below complete the operation. Module context: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
+ * 处理：通过 `store().replace`, `store` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `store().replace`, `store`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: vmId: string; projectId: string; record: Record
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `store().replace`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 async function saveRecord(vmId: string, projectId: string, record: Record) {
   await store(vmId, projectId).replace(record);
 }
 
+/**
+ * 入口 / Entry: guardProjectQuotaDirectory.
+ * 功能：在管理项目磁盘配额及目录保护中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`project-quota.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `project-quota.ts`; the calls and state transitions below complete the operation. Module context: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
+ * 处理：通过 `readProjectQuotaRecord`, `other.directory.startsWith`, `next.startsWith` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `readProjectQuotaRecord`, `other.directory.startsWith`, `next.startsWith`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `otherId === projectId`.
+ * 输入 / Inputs: vmId: string; projectId: string; next: string; otherProjectIds: string[] default=[]
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `other.directory.startsWith`; `next.startsWith`.
+ * 拒绝 / Refusals: 条件 / conditions `record && record.directory !== next`; `other && (other.directory === next || other.directory.startsWith(next + '/') || next.startsWith(other.directory + '/'))`; 异常 / errors `new AppError('项目配额生效或恢复中；请先在项目磁盘配额中清除配额，再修改目录', 409)`; `new AppError('项目目录与另一个受配额保护的项目重叠；请使用独立目录', 409)`.
+ */
 export async function guardProjectQuotaDirectory(
   vmId: string, projectId: string, next: string, otherProjectIds: string[] = [],
 ) {
@@ -57,12 +138,34 @@ export async function guardProjectQuotaDirectory(
   }
 }
 
+/**
+ * 入口 / Entry: directoryAllowed.
+ * 功能：在管理项目磁盘配额及目录保护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `(directory === '/workspace' || /^\/workspace\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(directory)) && posix.normalize(dir…` 供上层消费（`project-quota.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-quota.ts`; this entry produces `(directory === '/workspace' || /^\/workspace\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(directory)) && posix.normalize(dir…` for its caller. Module context: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
+ * 处理：通过 `inline.test`, `posix.normalize`, `directory.split().includes`, `directory.split` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `inline.test`, `posix.normalize`, `directory.split().includes`, `directory.split`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: directory: string
+ * 输出 / Returns: `(directory === '/workspace' || /^\/workspace\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(directory)) && posix.normalize(dir…`.
+ * 副作用 / Effects: `directory.startsWith`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function directoryAllowed(directory: string) {
   return (directory === '/workspace' || /^\/workspace\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(directory)) &&
     posix.normalize(directory) === directory && !directory.split('/').includes('..') &&
     !directory.startsWith('/workspace/.sakura-');
 }
 
+/**
+ * 入口 / Entry: projectQuota.
+ * 功能：读取、应用或清除项目配额并核验独立挂载和受保护目录。
+ * Purpose: Reads/applies/clears project quota after independent-mount/protected-directory verification.
+ * 设计：项目任务和常驻会话先排除冲突；持久记录固定原目录、挂载及修订，恢复未完成时阻止目录改变。
+ * Design: Jobs/sessions are checked for conflicts; durable records pin directories/mounts/revisions and unfinished recovery blocks directory changes.
+ * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; vmId: string; input: unknown; action: 'check' | 'run'; signal: AbortSignal optional
+ * 输出 / Returns: `{ ready: false, executed: false, active: false, persistent: false, projectId, directory, limitMiB: null, reason: '项目配额要求项目目录位…`; `{ ready: false, executed: false, active: false, persistent: false, projectId, directory, limitMiB: null, reason: '请先启动发行版。' }`; `{ ready: currentRecord ? currentRecord.phase === 'active' && current.active && current.persistent : !current.active && !curre…`；另有分支返回 / additional branch-specific returns.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export async function projectQuota(
   machines: Machines,
   workspaces: WorkspacesV1,
@@ -84,6 +187,18 @@ export async function projectQuota(
       reason: '请先启动发行版。' };
 
   const readOnly = action === 'check' || options.mode === 'status';
+  /**
+   * 入口 / Entry: projectQuota.exec.
+   * 功能：在管理项目磁盘配额及目录保护中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result` 供上层消费（`project-quota.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-quota.ts`; this entry produces `result` for its caller. Module context: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
+   * 处理：通过 `signal.throwIfAborted`, `machines.exec`, `result.stderr.trim`, `result.stdout.trim` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `signal.throwIfAborted`, `machines.exec`, `result.stderr.trim`, `result.stdout.trim`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `readOnly`.
+   * 输入 / Inputs: script: string; timeout: default=30000; tolerate: default=false
+   * 输出 / Returns: `result`.
+   * 副作用 / Effects: `machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `result.code !== 0 && !tolerate`; 异常 / errors `new AppError(result.stderr.trim() || result.stdout.trim() || '项目配额操作失败', 409)`.
+   */
   const exec = async (script: string, timeout = 30000, tolerate = false) => {
     if (readOnly) signal?.throwIfAborted();
     const result = await machines.exec(vmId, script, timeout, readOnly ? signal : undefined);
@@ -91,6 +206,17 @@ export async function projectQuota(
       throw new AppError(result.stderr.trim() || result.stdout.trim() || '项目配额操作失败', 409);
     return result;
   };
+  /**
+   * 入口 / Entry: projectQuota.inspect.
+   * 功能：在管理项目磁盘配额及目录保护中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ active: Boolean(mount && backing), persistent: fstab, fstabEntry, mount: mount || null, capacityMiB: fields ? Math.round(Nu…` 供上层消费（`project-quota.ts`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `project-quota.ts`; this entry produces `{ active: Boolean(mount && backing), persistent: fstab, fstabEntry, mount: mount || null, capacityMiB: fields ? Math.round(Nu…` for its caller. Module context: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
+   * 处理：通过 `exec`, `quote`, `marker`, `result.stdout.trim().split` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `exec`, `quote`, `marker`, `result.stdout.trim().split`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ active: Boolean(mount && backing), persistent: fstab, fstabEntry, mount: mount || null, capacityMiB: fields ? Math.round(Nu…`.
+   * 副作用 / Effects: `exec`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const inspect = async () => {
     const result = await exec(
       `awk -v p=${quote(directory)} '$2 == p {print $1 " " $3}' /proc/mounts; ` +
@@ -134,9 +260,31 @@ export async function projectQuota(
           : {}),
     };
 
+  /**
+   * 入口 / Entry: projectQuota.callback@137.
+   * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（machines.locked）。
+   * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (machines.locked).
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ ready: true, executed: true, projectId, directory, limitMiB: options.limitMiB, backup, ...after }`; `{ ready: true, executed: true, projectId, directory, limitMiB: options.limitMiB, ...await inspect() }`; `{ ready: true, executed: true, projectId, directory, limitMiB: null, active: false, persistent: false, reason: '已保留原始目录备份与配额镜…`.
+   * 副作用 / Effects: `otherDirectory.startsWith`; `directory.startsWith`; `exec`; `saveRecord`; `marker().replaceAll`.
+   * 拒绝 / Refusals: 条件 / conditions `options.mode === 'apply'`; `record || before.active || before.persistent`; `otherDirectory === directory || otherDirectory.startsWith(directory + '/') || directory.startsWith(otherDirectory + '/')`; 异常 / errors `new AppError('项目已有配额或遗留状态；请先检查或清除', 409)`; `new AppError(`项目“${other.name}”使用重叠目录；请先为项目设置独立目录`, 409)`.
+   * 失败处理：catch 分支执行 `const clean = await exec([ 'set -eu', `if awk -v p=${staged} '$2 == p {found=1} END {exit !found}' /proc/mounts; then umount …`; `if (clean.code === 0) await store(vmId, projectId).remove();`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `const clean = await exec([ 'set -eu', `if awk -v p=${staged} '$2 == p {found=1} END {exit !found}' /proc/mounts; then umount …`; `if (clean.code === 0) await store(vmId, projectId).remove();`; these statements determine whether a failure is absorbed or rejected again.
+   */
   return machines.locked(vmId, async () => {
     const record = await readProjectQuotaRecord(vmId, projectId);
     const before = await inspect();
+    /**
+     * 入口 / Entry: projectQuota.requireStoppedProject.
+     * 功能：在管理项目磁盘配额及目录保护中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`project-quota.ts`）。
+     * Purpose: Checks admission, input or resource ownership in `project-quota.ts`; the calls and state transitions below complete the operation. Module context: Owns project disk quotas and directory protection, refusing overlap and directory changes during quota recovery.
+     * 处理：通过 `workspaces.jobs.view`, `workspaces.projects.key`, `exec`, `sessions.stdout.split().some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `workspaces.jobs.view`, `workspaces.projects.key`, `exec`, `sessions.stdout.split().some`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `exec`.
+     * 拒绝 / Refusals: 条件 / conditions `workspaces.jobs.view(workspaces.projects.key(vmId))?.status === 'running'`; `sessions.stdout.split(/\r?\n/).some((name) => name === sessionPrefix || name.startsWith(servicePrefix))`; 异常 / errors `new AppError('请等待项目操作完成', 409)`; `new AppError('请先停止当前项目服务', 409)`.
+     */
     const requireStoppedProject = async () => {
       if (workspaces.jobs.view(workspaces.projects.key(vmId))?.status === 'running')
         throw new AppError('请等待项目操作完成', 409);

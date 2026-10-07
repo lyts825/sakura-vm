@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实来宾 Mesa GPU 工具与驱动状态。 */
+/** 烟雾验收：验证真实来宾 Mesa GPU 工具与驱动状态。
+ * Smoke acceptance for real guest Mesa GPU tools and driver state. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

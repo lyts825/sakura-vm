@@ -1,5 +1,6 @@
 /**
  * 模块职责：规划并应用项目目录账户迁移，按计划摘要及物理边界核对权限更改和恢复。
+ * Module purpose: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
@@ -38,6 +39,17 @@ const guestPath = z
         .slice(1)
         .every((part) => part && part !== '.' && part !== '..'),
   );
+/**
+ * 入口 / Entry: migrationDirectoryAllowed.
+ * 功能：在规划并应用项目目录账户迁移中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( guestPath.safeParse(directory).success && (directory === '/workspace' || directory.startsWith('/workspace/') || directory.s…` 供上层消费（`project-directory-migration.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-directory-migration.ts`; this entry produces `( guestPath.safeParse(directory).success && (directory === '/workspace' || directory.startsWith('/workspace/') || directory.s…` for its caller. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+ * 处理：通过 `guestPath.safeParse`, `directory.startsWith` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `guestPath.safeParse`, `directory.startsWith`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: directory: string
+ * 输出 / Returns: `( guestPath.safeParse(directory).success && (directory === '/workspace' || directory.startsWith('/workspace/') || directory.s…`.
+ * 副作用 / Effects: `directory.startsWith`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function migrationDirectoryAllowed(directory: string) {
   return (
     guestPath.safeParse(directory).success &&
@@ -47,6 +59,15 @@ export function migrationDirectoryAllowed(directory: string) {
       directory.startsWith('/opt/projects/'))
   );
 }
+/**
+ * 入口 / Entry: callback@69.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.object().strict().superRefine）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.object().strict().superRefine).
+ * 输入 / Inputs: entry; ctx
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `entry.path.startsWith`; `ctx.addIssue`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const entrySchema = z
   .object({
     path: z.string().max(1023),
@@ -79,6 +100,15 @@ const entrySchema = z
     )
       ctx.addIssue({ code: 'custom', message: '目录计划条目不完整' });
   });
+/**
+ * 入口 / Entry: callback@106.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.object().strict().superRefine）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.object().strict().superRefine).
+ * 输入 / Inputs: plan; ctx
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `ctx.addIssue`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const proposalSchema = z
   .object({
     version: z.literal(1),
@@ -132,6 +162,15 @@ const proposalSchema = z
     )
       ctx.addIssue({ code: 'custom', message: '目录 inode 不属于固定身份' });
   });
+/**
+ * 入口 / Entry: callback@150.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.object().strict().superRefine）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.object().strict().superRefine).
+ * 输入 / Inputs: plan; ctx
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `ctx.addIssue`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const directoryMigrationPlanSchema = z
   .object({
     version: z.literal(1),
@@ -172,6 +211,15 @@ export const directoryMigrationApplySchema = z
 export const directoryMigrationPreviewSchema = z
   .object({ action: z.literal('preview'), version: z.literal(1) })
   .strict();
+/**
+ * 入口 / Entry: canonical.
+ * 功能：从当前输入或状态计算 `Array.isArray(value) ? value.map(canonical) : value !== null && typeof value === 'object' ? Object.fromEntries( Object.entrie…`，供调用方后续验证或使用。
+ * Purpose: Computes `Array.isArray(value) ? value.map(canonical) : value !== null && typeof value === 'object' ? Object.fromEntries( Object.entrie…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: value: unknown
+ * 输出 / Returns: unknown；结果来自 / values from `Array.isArray(value) ? value.map(canonical) : value !== null && typeof value === 'object' ? Object.fromEntries( Object.entrie…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const canonical = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map(canonical)
@@ -182,6 +230,17 @@ const canonical = (value: unknown): unknown =>
             .map(([key, content]) => [key, canonical(content)]),
         )
       : value;
+/**
+ * 入口 / Entry: migrationPlanDigest.
+ * 功能：在规划并应用项目目录账户迁移中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256') .update(JSON.stringify(canonical(value))) .digest('hex')` 供上层消费（`project-directory-migration.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-directory-migration.ts`; this entry produces `createHash('sha256') .update(JSON.stringify(canonical(value))) .digest('hex')` for its caller. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash`, `canonical` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`, `canonical`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: unknown
+ * 输出 / Returns: `createHash('sha256') .update(JSON.stringify(canonical(value))) .digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function migrationPlanDigest(value: unknown) {
   return createHash('sha256')
     .update(JSON.stringify(canonical(value)))
@@ -557,6 +616,14 @@ const viewSchema = z
 export class ProjectDirectoryMigrations {
   private scopes: RunScopes;
   private identities: ProjectIdentities;
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.constructor.
+   * 功能：建立 ProjectDirectoryMigrations 的规划并应用项目目录账户迁移上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the ProjectDirectoryMigrations context for this module's responsibility: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; options: { scopes?: RunScopes; sourceDirectory?: string; rootDirectory?: string } default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.scopes`, `this.identities`.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
@@ -565,6 +632,17 @@ export class ProjectDirectoryMigrations {
     this.scopes = options.scopes || new ProjectRunScopes(machines);
     this.identities = new ProjectIdentities(machines, { sourceDirectory: options.sourceDirectory });
   }
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.file.
+   * 功能：在规划并应用项目目录账户迁移中，执行此领域的具体处理步骤并返回其结果；本入口产生 `join( this.options.rootDirectory || vmDir(vmId), 'project-directory-migrations', projectIdSchema.parse(id) + '.json', )` 供上层消费（`ProjectDirectoryMigrations`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectDirectoryMigrations`; this entry produces `join( this.options.rootDirectory || vmDir(vmId), 'project-directory-migrations', projectIdSchema.parse(id) + '.json', )` for its caller. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+   * 处理：通过 `join`, `vmDir`, `projectIdSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `join`, `vmDir`, `projectIdSchema.parse`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string; id: string
+   * 输出 / Returns: `join( this.options.rootDirectory || vmDir(vmId), 'project-directory-migrations', projectIdSchema.parse(id) + '.json', )`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private file(vmId: string, id: string) {
     return join(
       this.options.rootDirectory || vmDir(vmId),
@@ -572,6 +650,17 @@ export class ProjectDirectoryMigrations {
       projectIdSchema.parse(id) + '.json',
     );
   }
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.view.
+   * 功能：在规划并应用项目目录账户迁移中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `value` 供上层消费（`ProjectDirectoryMigrations`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `ProjectDirectoryMigrations`; this entry produces `value` for its caller. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+   * 处理：通过 `this.machines.get`, `this.workspaces.projects.current`, `viewSchema.parse`, `readStore` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.workspaces.projects.current`, `viewSchema.parse`, `readStore`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: Promise<DirectoryMigrationView>；结果来自 / values from `value`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `value.projectId !== id || (value.plan && (value.plan.proposal.vmId !== vmId || value.plan.proposal.projectId !== id))`; 异常 / errors `new AppError('目录迁移记录不属于当前项目', 409, 'PROJECT_DIRECTORY_PLAN_CHANGED')`.
+   */
   async view(vmId: string): Promise<DirectoryMigrationView> {
     this.machines.get(vmId);
     const id = this.workspaces.projects.current(vmId);
@@ -591,6 +680,19 @@ export class ProjectDirectoryMigrations {
       throw new AppError('目录迁移记录不属于当前项目', 409, 'PROJECT_DIRECTORY_PLAN_CHANGED');
     return value;
   }
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.saved.
+   * 功能：在规划并应用项目目录账户迁移中，校验并提交领域状态变更；本入口产生 `await this.workspaces.config(vmId)` 供上层消费（`ProjectDirectoryMigrations`）。
+   * Purpose: Validates and commits a domain state change in `ProjectDirectoryMigrations`; this entry produces `await this.workspaces.config(vmId)` for its caller. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+   * 处理：通过 `readFile`, `projectMetadataFile`, `this.workspaces.projects.current`, `this.workspaces.config` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `readFile`, `projectMetadataFile`, `this.workspaces.projects.current`, `this.workspaces.config`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: `await this.workspaces.config(vmId)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `(error as NodeJS.ErrnoException).code === 'ENOENT'`; 异常 / errors `new AppError('请先保存项目配置', 409, 'PROJECT_DIRECTORY_CONFIG_NOT_SAVED')`; `error`.
+   * 失败处理：catch 分支执行 `if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('请先保存项目配置', 409, 'PROJECT_DIRECTORY_CONFIG_NOT_SAV…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('请先保存项目配置', 409, 'PROJECT_DIRECTORY_CONFIG_NOT_SAV…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async saved(vmId: string) {
     // config() has defaults for unsaved projects. Migration requires an actual saved configuration.
     try {
@@ -602,6 +704,17 @@ export class ProjectDirectoryMigrations {
     }
     return await this.workspaces.config(vmId);
   }
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.stopped.
+   * 功能：在规划并应用项目目录账户迁移中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`ProjectDirectoryMigrations`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `ProjectDirectoryMigrations`; the calls and state transitions below complete the operation. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+   * 处理：通过 `assertProjectTerminalsStopped`, `this.workspaces.jobs.list().some`, `this.workspaces.jobs.list`, `main.hasReceipt` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `assertProjectTerminalsStopped`, `this.workspaces.jobs.list().some`, `this.workspaces.jobs.list`, `main.hasReceipt`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string; project: Project; signal: AbortSignal optional
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `this.workspaces.jobs.list().some((job) => job.vmId === vmId && job.status === 'running')`; `!['absent', 'stopped'].includes(mainStatus)`; `await services.hasReceipt(service.name)`; 异常 / errors `new AppError('请等待项目操作完成后迁移目录', 409, 'PROJECT_DIRECTORY_RUNS_MUST_STOP')`; `new AppError('请先核对并停止项目主命令及其全部后代', 409, 'PROJECT_DIRECTORY_RUNS_MUST_STOP')`.
+   */
   private async stopped(vmId: string, project: Project, signal?: AbortSignal) {
     assertProjectTerminalsStopped(this.machines, vmId, project._workspace || 'default');
     if (this.workspaces.jobs.list().some((job) => job.vmId === vmId && job.status === 'running'))
@@ -675,6 +788,17 @@ export class ProjectDirectoryMigrations {
     if (containers.code !== 0 || containers.stdout.trim())
       throw new AppError('共享 Docker 的旧项目容器尚未确认移除', 409, 'PROJECT_DIRECTORY_RUNS_MUST_STOP');
   }
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.projects.
+   * 功能：在规划并应用项目目录账户迁移中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result.sort((a, b) => (a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0))` 供上层消费（`ProjectDirectoryMigrations`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectDirectoryMigrations`; this entry produces `result.sort((a, b) => (a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0))` for its caller. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+   * 处理：通过 `this.workspaces.projects.list`, `this.workspaces.projects.inScope`, `result.push`, `result.sort` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.workspaces.projects.list`, `this.workspaces.projects.inScope`, `result.push`, `result.sort`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: `result.sort((a, b) => (a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0))`.
+   * 副作用 / Effects: `result.push`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async projects(vmId: string) {
     const result: { projectId: string; directory: string }[] = [];
     for (const project of (await this.workspaces.projects.list(vmId)).projects) {
@@ -685,6 +809,19 @@ export class ProjectDirectoryMigrations {
     }
     return result.sort((a, b) => (a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0));
   }
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.control.
+   * 功能：在规划并应用项目目录账户迁移中，执行此领域的具体处理步骤并返回其结果；本入口产生 `plan` 供上层消费（`ProjectDirectoryMigrations`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectDirectoryMigrations`; this entry produces `plan` for its caller. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+   * 处理：通过 `projectIdentitySources`, `this.identities.install`, `source.manifest.files.find`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `projectIdentitySources`, `this.identities.install`, `source.manifest.files.find`, `quote`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string; request: object; signal: AbortSignal optional
+   * 输出 / Returns: `plan`.
+   * 副作用 / Effects: `this.identities.install`; `this.machines.execInput`; 更新 / updates `reply`.
+   * 拒绝 / Refusals: 条件 / conditions `build !== source.manifest.build`; `payload.length > 128 * 1024`; `result.code !== 0 || !reply.ok`; 异常 / errors `new AppError('目录迁移身份控制器版本变化', 409)`; `new AppError('目录迁移请求超过边界', 413)`.
+   * 失败处理：catch 分支执行 `throw new AppError('目录迁移回执无法核对，保留原计划', 502, 'PROJECT_DIRECTORY_CONTROL_FAILED');`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `throw new AppError('目录迁移回执无法核对，保留原计划', 502, 'PROJECT_DIRECTORY_CONTROL_FAILED');`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async control(vmId: string, request: object, signal?: AbortSignal) {
     const source = await projectIdentitySources(this.options.sourceDirectory);
     const build = await this.identities.install(vmId, signal);
@@ -760,17 +897,57 @@ export class ProjectDirectoryMigrations {
       throw new AppError('目录迁移回执与固定账户或项目不符', 409, 'PROJECT_DIRECTORY_CONTROL_FAILED');
     return plan;
   }
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.preview.
+   * 功能：把本层请求转交 `this.operation`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.operation` and propagates the provider result or rejection.
+   * 输入 / Inputs: vmId: string; signal: AbortSignal optional
+   * 输出 / Returns: `this.operation(vmId, undefined, signal)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async preview(vmId: string, signal?: AbortSignal) {
     return this.operation(vmId, undefined, signal);
   }
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.apply.
+   * 功能：在规划并应用项目目录账户迁移中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.operation(vmId, directoryMigrationApplySchema.parse(input), signal)` 供上层消费（`ProjectDirectoryMigrations`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectDirectoryMigrations`; this entry produces `this.operation(vmId, directoryMigrationApplySchema.parse(input), signal)` for its caller. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+   * 处理：通过 `this.operation`, `directoryMigrationApplySchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.operation`, `directoryMigrationApplySchema.parse`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string; input: unknown; signal: AbortSignal optional
+   * 输出 / Returns: `this.operation(vmId, directoryMigrationApplySchema.parse(input), signal)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async apply(vmId: string, input: unknown, signal?: AbortSignal) {
     return this.operation(vmId, directoryMigrationApplySchema.parse(input), signal);
   }
+  /**
+   * 入口 / Entry: ProjectDirectoryMigrations.operation.
+   * 功能：核对目录计划、原账户及物理边界，执行预览或批准过的权限迁移。
+   * Purpose: Checks directory plans/accounts/physical boundaries and performs preview or approved permission migration.
+   * 设计：计划摘要、boot 和 inode 在应用前重查；先保存锁定意图，部分更改失败保留原计划与恢复证据并阻止新运行。
+   * Design: Plan digests/boot/inodes are rechecked; durable locks precede changes and partial failure retains recovery evidence while blocking new runs.
+   * 输入 / Inputs: vmId: string; apply: z.infer<typeof directoryMigrationApplySchema> optional; signal: AbortSignal optional
+   * 输出 / Returns: `this.machines.locked(vmId, async () => { signal?.throwIfAborted(); this.machines.get(vmId); if (this.machines.state(vmId) !==…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async operation(
     vmId: string,
     apply?: z.infer<typeof directoryMigrationApplySchema>,
     signal?: AbortSignal,
   ) {
+    /**
+     * 入口 / Entry: ProjectDirectoryMigrations.operation.callback@774.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.machines.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.machines.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.scopes.withLock(vmId, id, async (access) => { // Resume an explicit same-binding reservation before rejecting a durable …`.
+     * 副作用 / Effects: `this.saved`; `this.stopped`.
+     * 拒绝 / Refusals: 条件 / conditions `this.machines.state(vmId) !== 'running'`; `apply && (!previous.plan || previous.plan.proposal.planId !== apply.planId || previous.plan.sha256 !== apply.sha256 || previo…`; `!migrationDirectoryAllowed(project.directory)`; 异常 / errors `new AppError('请先启动或恢复实例', 409)`; `new AppError('计划或项目配置已变化，请重新生成预览', 409, 'PROJECT_DIRECTORY_PLAN_CHANGED')`.
+     */
     return this.machines.locked(vmId, async () => {
       signal?.throwIfAborted();
       this.machines.get(vmId);
@@ -794,6 +971,17 @@ export class ProjectDirectoryMigrations {
           'PROJECT_DIRECTORY_NOT_ALLOWED',
         );
       await this.stopped(vmId, project, signal);
+      /**
+       * 入口 / Entry: ProjectDirectoryMigrations.operation.callback@797.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.scopes.withLock）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.scopes.withLock).
+       * 输入 / Inputs: access
+       * 输出 / Returns: `previous`.
+       * 副作用 / Effects: `project.directory.startsWith`; `other.directory.startsWith`; `writeStore`; 更新 / updates `previous`, `plan`, `previous.plan`, `previous.lastFailure`.
+       * 拒绝 / Refusals: 条件 / conditions `other.projectId !== id && (project.directory === other.directory || project.directory.startsWith(other.directory + '/') || ot…`; `apply && (!previous.plan || previous.plan.proposal.planId !== apply.planId || previous.plan.sha256 !== apply.sha256 || previo…`; 异常 / errors `new AppError( `目录与项目 ${other.projectId} 重叠（${other.directory}）；请先停止其入口并把项目配置改到独立目录`, 409, 'PROJECT_DIRECTORY_OVERLAP', )`; `new AppError('计划或项目配置已变化，请重新生成预览', 409, 'PROJECT_DIRECTORY_PLAN_CHANGED')`.
+       * 失败处理：catch 分支执行 `const detail = ( error as { migrationDetail?: { code: string; path?: string; plan?: DirectoryMigrationPlan } } ).migrationDet…`; `if ( detail?.plan && detail.plan.proposal.vmId === vmId && detail.plan.proposal.projectId === id && (!previous.plan || detail…`，是否吞掉错误或重新拒绝由这些语句决定。
+       * Failure handling: Catch paths execute `const detail = ( error as { migrationDetail?: { code: string; path?: string; plan?: DirectoryMigrationPlan } } ).migrationDet…`; `if ( detail?.plan && detail.plan.proposal.vmId === vmId && detail.plan.proposal.projectId === id && (!previous.plan || detail…`; these statements determine whether a failure is absorbed or rejected again.
+       */
       return this.scopes.withLock(vmId, id, async (access) => {
         // Resume an explicit same-binding reservation before rejecting a durable pending ACK.
         const identity = await access.reserve(project, signal);
@@ -832,6 +1020,17 @@ export class ProjectDirectoryMigrations {
               previous.plan.proposal.projectsSha256 !== base.projectsSha256)
           )
             throw new AppError('计划或项目配置已变化，请重新生成预览', 409, 'PROJECT_DIRECTORY_PLAN_CHANGED');
+          /**
+           * 入口 / Entry: ProjectDirectoryMigrations.operation.unchanged.
+           * 功能：在规划并应用项目目录账户迁移中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`ProjectDirectoryMigrations`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `ProjectDirectoryMigrations`; the calls and state transitions below complete the operation. Module context: Plans/applies directory ownership migration, checking plan digests and physical boundaries before permissions/recovery.
+           * 处理：通过 `signal.throwIfAborted`, `this.machines.live.get`, `this.machines.state` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `signal.throwIfAborted`, `this.machines.live.get`, `this.machines.state`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+           * 拒绝 / Refusals: 条件 / conditions `this.machines.live.get(vmId) !== live || this.machines.state(vmId) !== 'running'`; 异常 / errors `new AppError('实例运行身份改变，目录迁移未确认', 409, 'PROJECT_DIRECTORY_CONTROL_FAILED')`.
+           */
           const unchanged = () => {
             signal?.throwIfAborted();
             if (this.machines.live.get(vmId) !== live || this.machines.state(vmId) !== 'running')

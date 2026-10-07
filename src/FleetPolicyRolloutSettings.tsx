@@ -1,5 +1,8 @@
 /**
- * 模块职责：配置跨主机策略批次和目标，执行灰度下发并展示各批次结果。
+ * 模块职责（中文）：配置跨主机策略批次和目标，执行灰度下发并展示各批次结果。
+ * Module responsibility (English): Editing multi-host targets and policy batches and presenting publication results.
+ * 详细范围（中文）：公开入口包括 FleetPolicyRolloutSettings；职责覆盖编辑跨主机目标与策略批次并显示发布结果，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include FleetPolicyRolloutSettings. The scope covers Editing multi-host targets and policy batches and presenting publication results. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
@@ -12,6 +15,14 @@ type Batch = { id: string; revision: number; policy: Policy; targets: Target[];
 type Peers = { outbound: { id: string; name: string; url: string }[] };
 type Plugins = { plugins: { id: string; name: string }[] };
 
+/**
+ * 中文：呈现编辑跨主机目标与策略批次并显示发布结果中的 FleetPolicyRolloutSettings 界面，订阅 /fleet-policy-rollouts、/host-peers、/feature-rollouts，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the FleetPolicyRolloutSettings surface for Editing multi-host targets and policy batches and presenting publication results, subscribing to /fleet-policy-rollouts, /host-peers, /feature-rollouts. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function FleetPolicyRolloutSettings({ request }: { request: Request }) {
   const batches = useRemote<{ batches: Batch[] }>(request, '/fleet-policy-rollouts', true, 5000);
   const peers = useRemote<Peers>(request, '/host-peers', true, 5000);
@@ -23,13 +34,23 @@ export function FleetPolicyRolloutSettings({ request }: { request: Request }) {
   const [review, setReview] = useState<Batch | null>(null);
   const available = plugins.data?.plugins || [];
   const draft = { ...policy, pluginId: policy.pluginId || available[0]?.id || '' };
-  const create = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /fleet-policy-rollouts，完成编辑跨主机目标与策略批次并显示发布结果的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /fleet-policy-rollouts for Editing multi-host targets and policy batches and presenting publication results. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const create = () => void action.run(/** 中文：提交 POST /fleet-policy-rollouts，完成编辑跨主机目标与策略批次并显示发布结果的数据交互并更新review 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /fleet-policy-rollouts for Editing multi-host targets and policy batches and presenting publication results and update review state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     const result = await request<Batch>('/fleet-policy-rollouts', 'POST',
       { operation: 'create', policy: draft, peers: selected }, signal);
     setReview(result);
     batches.reload();
   }, '批次已保存，请核对目标后发布');
-  const publish = (batch: Batch) => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /fleet-policy-rollouts，完成编辑跨主机目标与策略批次并显示发布结果的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /fleet-policy-rollouts for Editing multi-host targets and policy batches and presenting publication results. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：batch：签名所示 Batch 业务值
+   * English: Inputs: batch: the Batch domain value in the signature
+   */
+  const publish = (batch: Batch) => void action.run(/** 中文：提交 POST /fleet-policy-rollouts，完成编辑跨主机目标与策略批次并显示发布结果的数据交互并更新review 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /fleet-policy-rollouts for Editing multi-host targets and policy batches and presenting publication results and update review state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     const result = await request<Batch>('/fleet-policy-rollouts', 'POST',
       { operation: 'publish', id: batch.id, revision: batch.revision }, signal);
     setReview(result);

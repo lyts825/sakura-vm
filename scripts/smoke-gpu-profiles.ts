@@ -1,4 +1,5 @@
-/** 烟雾验收：验证Virtio GPU 2D/VirGL 能力检查及来宾 PCI 枚举。 */
+/** 烟雾验收：验证Virtio GPU 2D/VirGL 能力检查及来宾 PCI 枚举。
+ * Smoke acceptance for Virtio GPU 2D/VirGL capability checks and guest PCI enumeration. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - signed marketplace installs, runs, rejects tampering and unloads an isolated plugin
- * - isolated plugin validation requires bounded memory and no host imports
- * - event subscriptions trigger signed WASM once for new metadata-only events
+ * 模块职责：回归验证模块，围绕 `community-plugins` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `community-plugins`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: signed marketplace installs, runs, rejects tampering and unloads an isolated plugin; isolated plugin validation requires bounded memory and no host imports.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,6 +14,15 @@ import { join, resolve, sep } from 'node:path';
 import { CommunityPlugins, signedPluginPayload, validatePluginWasm } from '../server/community-plugins.ts';
 import { computeRuntime } from '../server/compute-runtime.ts';
 
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: number: number。
+ * 结果：返回分支计算值（`bytes`）。
+ * Result: Return the branch-computed value (`bytes`).
+ * 状态影响 / State effects: `number`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `bytes.push`.
+ */
 const leb = (number: number) => {
   const bytes: number[] = [];
   do {
@@ -22,11 +32,35 @@ const leb = (number: number) => {
   } while (number);
   return bytes;
 };
+/**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: id: number; bytes: number[]。
+ * 结果：返回列表形式的受控数据，供调用者遍历或比较。
+ * Result: Return controlled data as a list for iteration or comparison.
+ * 协作入口 / Collaborators: `leb`.
+ */
 const section = (id: number, bytes: number[]) => [id, ...leb(bytes.length), ...bytes];
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: value: string。
+ * 结果：返回列表形式的受控数据，供调用者遍历或比较。
+ * Result: Return controlled data as a list for iteration or comparison.
+ * 协作入口 / Collaborators: `Buffer.from`, `leb`.
+ */
 const name = (value: string) => {
   const bytes = [...Buffer.from(value)];
   return [...leb(bytes.length), ...bytes];
 };
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: maxPages = 1。
+ * 结果：返回分支计算值（`Buffer.from([ 0, 97, 115, 109, 1, 0, 0, 0, ...section(1, [2, 0x60, 1, 0x7f, 1, 0…`）。
+ * Result: Return the branch-computed value (`Buffer.from([ 0, 97, 115, 109, 1, 0, 0, 0, ...section(1, [2, 0x60, 1, 0x7f, 1, 0…`).
+ * 协作入口 / Collaborators: `Buffer.from`, `JSON.stringify`, `Buffer.alloc`, `output.writeUInt32LE`.
+ */
 function wasm(maxPages = 1) {
   const result = Buffer.from(JSON.stringify({ ok: true }));
   const output = Buffer.alloc(result.length + 4);
@@ -52,6 +86,19 @@ function wasm(maxPages = 1) {
   ]);
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: signed marketplace installs, runs, rejects tampering and unloads an isolated plugin
+ * 状态影响 / State effects: `listing`, `computeRuntime.recover`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep))`; `assert.deepEqual( await service.action({ operation: 'run', pluginId: base.id, input: { hello: 'world' } }), { pluginId: base.id, v…`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('signed marketplace installs, runs, rejects tampering and unloads an isolated plugin', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sakura-community-'));
   assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep));
@@ -157,7 +204,16 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
     assert.match(damaged.view().problems[base.id], /文件损坏/);
     await damaged.close();
     const recovery = computeRuntime.recover;
-    computeRuntime.recover = async () => {
+    computeRuntime.recover = /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: signed marketplace installs, runs, rejects tampering and unloads an isolated plugin
+     * 失败 / Failure: `new Error('original worker cleanup unconfirmed')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     */
+    async () => {
       throw new Error('original worker cleanup unconfirmed');
     };
     try {
@@ -187,12 +243,37 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: isolated plugin validation requires bounded memory and no host imports
+ * 协作入口 / Collaborators: `validatePluginWasm`, `wasm`, `assert.rejects`, `Buffer.from`.
+ * 检查边界 / Checked boundaries: `assert.rejects(validatePluginWasm(wasm(257)), /16 MiB/)`; `assert.rejects(validatePluginWasm(Buffer.from('not wasm')), /WebAssembly v1/)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('isolated plugin validation requires bounded memory and no host imports', async () => {
   await validatePluginWasm(wasm());
   await assert.rejects(validatePluginWasm(wasm(257)), /16 MiB/);
   await assert.rejects(validatePluginWasm(Buffer.from('not wasm')), /WebAssembly v1/);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: event subscriptions trigger signed WASM once for new metadata-only events
+ * 状态影响 / State effects: `now`, `persisted.observed[resumedId]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep))`; `assert.equal(service.view().deliveries.length, 0)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('event subscriptions trigger signed WASM once for new metadata-only events', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sakura-community-events-'));
   assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep));
@@ -226,7 +307,15 @@ test('event subscriptions trigger signed WASM once for new metadata-only events'
     async (url) => (url.endsWith('catalog.json') ? catalog : bytes),
     () => now,
     undefined,
-    { events: async () => events, schedule: false },
+    { /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`events`），以 Promise 交付。
+     * Result: Return the branch-computed value (`events`) through a Promise.
+     * 验证场景 / Scenario: event subscriptions trigger signed WASM once for new metadata-only events
+     */
+    events: async () => events, schedule: false },
   );
   const events: Array<{
     id: string;
@@ -314,6 +403,14 @@ test('event subscriptions trigger signed WASM once for new metadata-only events'
     persisted.observed[resumedId] = now;
     await writeFile(file, JSON.stringify(persisted));
     const restored = new CommunityPlugins(file, directory, undefined, () => now, undefined, {
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回分支计算值（`events`），以 Promise 交付。
+       * Result: Return the branch-computed value (`events`) through a Promise.
+       * 验证场景 / Scenario: event subscriptions trigger signed WASM once for new metadata-only events
+       */
       events: async () => events,
       schedule: false,
     });

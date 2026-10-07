@@ -1,4 +1,5 @@
-/** 对固定 PosixLoom 进程实现应用已声明补丁，核对原始与目标摘要并支持发行构建检查。 */
+/** 对固定 PosixLoom 进程实现应用已声明补丁，核对原始与目标摘要并支持发行构建检查。
+ * Apply the pinned PosixLoom process patch only to matching source/compiled identities and verify the resulting implementation. */
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -9,8 +10,14 @@ import { POSIXLOOM_COMMIT } from './versions.mjs';
 const patch = JSON.parse(
   await readFile(new URL('./patches/posixloom-process.json', import.meta.url), 'utf8'),
 );
+/** 统一 CRLF 为 LF，使经审核补丁的内容哈希不受检出平台换行影响。
+ * Normalize CRLF to LF so verified patch hashes are independent of checkout newline conventions. */
 const normalize = (text) => text.replaceAll('\r\n', '\n');
+/** 对规范化源码计算 SHA-256 十六进制摘要，绑定补丁前后经过审核的精确内容。
+ * Hash normalized source as hexadecimal SHA-256 to bind the exact reviewed pre/post-patch content. */
 const digest = (text) => createHash('sha256').update(normalize(text)).digest('hex');
+/** 按 ES2022 模块/目标编译补丁源码，使用调用方提供的 TypeScript 实例返回生成文本。
+ * Transpile patched source as ES2022 target/modules using the supplied TypeScript instance and return generated text. */
 const compile = (text, ts) =>
   ts.transpileModule(text, {
     compilerOptions: {
@@ -18,9 +25,13 @@ const compile = (text, ts) =>
       module: ts.ModuleKind.ES2022,
     },
   }).outputText;
+/** 规范化文本并去除 sourceMappingURL 注释，比较分发 JS 时忽略独立映射引用。
+ * Normalize text and remove sourceMappingURL comments so distribution comparison ignores external map references. */
 const withoutMap = (text) => normalize(text).replace(/^\/\/# sourceMappingURL=.*\n?/gm, '');
 
 /** Exact source/build verification, safe to rerun; never patches an unknown vendor revision. */
+/** 校验版本、提交和原始/已打补丁哈希，反向还原后再次校验，再应用精确行替换；同步分发 JS 并验证结果，未知上游内容拒绝写入。
+ * Verify patch version/commit/original-or-patched hashes, reverse to the original and verify again before exact line replacement; synchronize/verify distribution JS and refuse unknown upstream content. */
 export async function patchPosixLoomProcess(directory, { distribution = true } = {}) {
   if (patch.version !== 1 || patch.commit !== POSIXLOOM_COMMIT)
     throw new Error('PosixLoom process patch does not match scripts/versions.mjs');

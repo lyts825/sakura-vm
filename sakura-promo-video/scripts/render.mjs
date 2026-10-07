@@ -1,4 +1,5 @@
-/** 最终视频与封面渲染入口，预检音频/Manim 资源并核对场景连续帧时间线，将渲染日志保存在本地缓存。 */
+/** 最终视频与封面渲染入口，预检音频/Manim 资源并核对场景连续帧时间线，将渲染日志保存在本地缓存。
+ * Preflight audio/Manim assets and continuous frame timing before final film/cover renders, retaining local-cache logs. */
 import {spawn} from 'node:child_process';
 import {access, mkdir, readFile} from 'node:fs/promises';
 import {createWriteStream} from 'node:fs';
@@ -16,6 +17,8 @@ if (!coverOnly) {
     await access(join(root, 'public', asset));
   }
 }
+/** 启动 Remotion CLI，把输出追加到同一渲染日志并等待进程关闭；启动失败或非零退出抛错，后者附最后 35 行供诊断。
+ * Launch the Remotion CLI, append both output streams to the render log and await process closure; spawn failures and nonzero exits throw, with the latter including the last 35 log lines. */
 const run = async (args) => {
   const log = createWriteStream(logPath, {flags: 'a'});
   const child = spawn(process.execPath, [cli, ...args], {cwd: root, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true});

@@ -1,4 +1,5 @@
-/** 只读监控页的响应式样式，定义连接/缓存提示、摘要卡片及实例与任务列表。 */
+/** 只读监控页的响应式样式，定义连接/缓存提示、摘要卡片及实例与任务列表。
+ * Responsive monitor styles for connection/cache feedback, summary cards and VM/job lists. */
 :root {
   font-family: system-ui, 'Microsoft YaHei', sans-serif;
   color: #3b303f;

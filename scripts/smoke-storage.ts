@@ -1,4 +1,5 @@
-/** 烟雾验收：验证NUMA/网卡/IPv6 配置、磁盘恢复与无引用块回收。 */
+/** 烟雾验收：验证NUMA/网卡/IPv6 配置、磁盘恢复与无引用块回收。
+ * Smoke acceptance for NUMA/NIC/IPv6 configuration, disk recovery and unreferenced-block reclamation. */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -19,6 +20,8 @@ const { backupBlocks } = await import('../server/backup-blocks.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const features = await Features.create(machines, ['backups', 'maintenance']);
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const until = Date.now() + 300000;
@@ -28,6 +31,8 @@ async function boot(id: string) {
     await delay(300);
   }
 }
+/** 等待指定任务收敛并读取最终记录，必须为 done 才返回；失败状态附任务错误和日志，避免把排队成功误作执行成功。
+ * Await the requested job and read its final record, returning only for done; failures include job errors/logs so acceptance into the queue is not mistaken for execution success. */
 async function done(id: string) {
   await features.backups.jobs.wait(id);
   const job = features.backups.jobs.view(id)!;
@@ -107,6 +112,8 @@ try {
   let size = 0;
   await source.write(
     new Writable({
+      /** 流式累计接收数据的哈希和长度，再调用完成回调；避免为导出验证保留整个大文件。
+       * Accumulate received-data hash/length incrementally and invoke completion without retaining the entire large export. */
       write(chunk, _encoding, cb) {
         hash.update(chunk);
         size += chunk.length;

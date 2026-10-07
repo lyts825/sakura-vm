@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实数据库服务在私有项目网络中的启动、连接和隔离。 */
+/** 烟雾验收：验证真实数据库服务在私有项目网络中的启动、连接和隔离。
+ * Smoke acceptance for real private-project database startup/connections and isolation. */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
@@ -34,18 +35,27 @@ let vmId = '',
   features: InstanceType<typeof FeatureSuite> | undefined;
 const password = 'database-' + randomUUID();
 const table = 'sakura_check_' + randomUUID().replaceAll('-', '');
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function command(script: string, timeout = 30_000) {
   const result = await machines.exec(vmId, script, timeout);
   assert.equal(result.code, 0, result.stderr || result.stdout);
   return result.stdout.trim();
 }
-const within = <T>(project: string, work: () => Promise<T>) => workspaces!.projects.with(vmId, project, work);
+/** 在指定项目的正式上下文执行异步工作并返回结果，保证容器/数据库配置按项目隔离读取。
+ * Execute/return async work within the specified production project context so container/database configuration stays project-scoped. */
+const within = <T>(project: string, work: /** 在明确项目作用域内执行私有资源异步工作并返回 T；作用域绑定资源归属，成功与失败都恢复调用方上下文。
+ * Execute asynchronous private-resource work in an explicit project scope and return T; scope binds resource ownership and restores caller context on success/failure. */ () => Promise<T>) => workspaces!.projects.with(vmId, project, work);
+/** 在目标项目执行容器操作并等待 done，保留日志/错误作为数据库准备阶段诊断。
+ * Execute the container action in its target project and await done, retaining errors/logs as database-preparation diagnostics. */
 async function containerAction(project: string, input: unknown) {
   await within(project, () => containers!.run(vmId, input));
   await containers!.jobs.wait(vmId);
   const job = containers!.jobs.view(vmId)!;
   assert.equal(job.status, 'done', job.error + '\n' + job.log);
 }
+/** 按数据库种类构造本项目 Docker 客户端 exec，密码通过对应环境传递，查询文本作字面参数；返回真实数据库输出。
+ * Build project Docker-client exec for the database type, passing passwords in corresponding environment variables and queries as literal arguments; return actual database output. */
 async function query(project: string, database: 'postgres' | 'mysql' | 'redis', port: number, text: string) {
   const name = 'private-' + database,
     p = privateDockerPaths(project);
@@ -123,6 +133,8 @@ try {
   workspaces = new Workspaces(machines);
   containers = new Containers(machines, workspaces);
   features = new FeatureSuite(machines, workspaces, {
+    /** 原样转发容器服务的私有数据库依赖，保留生产私有 socket 和认证配置。
+     * Forward the container service private-database dependency unchanged, retaining production private-socket/authentication settings. */
     privateDatabase: (...args) => containers!.privateDatabase(...args),
   });
   console.log(`${distro}: preparing Docker for real database tests`);

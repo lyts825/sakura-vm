@@ -1,8 +1,13 @@
+/**
+ * 模块职责（中文）：私有 station 的 ShellExecute 父夹具驱动 W/A/Ex、STA/MTA、同步/并发与故障场景，汇报真实系统创建调用和精确返回句柄身份。
+ * Module responsibilities (English): A private-station ShellExecute parent drives W/A/Ex/STA/MTA/synchronous/concurrent/fault scenarios and reports actual system creation/exact returned-handle identity.
+ */
 /** ShellExecute 父进程夹具，通过私有控制通道发起普通 Shell 创建并报告后代句柄和结果。 */
 #include "fixture-shell.h"
 #include <shellapi.h>
 #include "fixture-shell-call.h"
 
+/** 中文：在私有 station 初始化指定 COM apartment 并报告入口，驱动 W/A/Ex 和故障/并发场景；只按已固定句柄 track/wait，退出平衡 COM 和标准句柄。 English: Initialize the requested COM apartment in a private station/report entry, drive W/A/Ex fault/concurrent scenarios, track/wait only pinned handles and balance COM/standard handles on exit. */
 int wmain(){
   const auto entry=shellPhase(3);const auto station=shellPrivateStation(),pipeName=shellArgument(L"--shell-pipe="),com=shellArgument(L"--shell-com=");
   const auto standards=shellSetOwnedStandardHandles();
@@ -27,7 +32,7 @@ int wmain(){
     if(fields.size()==8 && fields[0]=="parallel"){
       shellCallInstall();const auto stationName=shellArgument(L"--shell-station=");
       std::string results[2];HANDLE processes[2]{};std::thread workers[2];
-      for(size_t index=0;index<2;++index)workers[index]=std::thread([&,index]{
+      for(size_t index=0;index<2;++index)workers[index]=std::thread(/** 中文：各并发工作线程建立私有 desktop 与 STA，按独立参数同步 ExW 创建并记录本线程身份；join 后父线程接管成功进程句柄，工作线程清理 COM/desktop/station。 English: Each concurrent worker creates a private desktop/STA, runs synchronous ExW with separate arguments and records thread identity; after join the parent owns successful handles while workers clean COM/desktop/station. */ [&,index]{
         HWINSTA window=OpenWindowStationW(stationName.c_str(),FALSE,WINSTA_ALL_ACCESS);HDESK desktop=OpenDesktopW(L"default",0,FALSE,GENERIC_ALL);
         if(!window || !desktop || !SetThreadDesktop(desktop))ExitProcess(98);
         const HRESULT comResult=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED|COINIT_DISABLE_OLE1DDE);if(FAILED(comResult))ExitProcess(99);

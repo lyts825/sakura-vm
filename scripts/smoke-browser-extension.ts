@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实 Chromium 扩展配对、只读清单和撤销后的拒绝。 */
+/** 烟雾验收：验证真实 Chromium 扩展配对、只读清单和撤销后的拒绝。
+ * Smoke acceptance for real Chromium extension pairing, read-only inventory and refusal after revocation. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -22,6 +23,8 @@ const origin = `http://127.0.0.1:${port}`;
 const password = 'a long administrator password';
 let server: ReturnType<typeof spawn> | undefined;
 let output = '';
+/** 在专用目录启动编译服务并等待账户状态入口，三十秒内失败或退出附输出诊断。
+ * Launch the compiled service in dedicated state and wait for account status, reporting output on failure/exit within thirty seconds. */
 const start = async () => {
   server = spawn(process.execPath, ['.sakura-server/index.js'], {
     cwd: resolve('.'), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
@@ -41,6 +44,8 @@ const start = async () => {
   }
   throw new Error('扩展测试服务未启动：' + output);
 };
+/** 对自有服务先 SIGTERM，十秒后必要时 SIGKILL，等待 exit 后释放引用。
+ * Send SIGTERM to the owned service, SIGKILL after ten seconds if needed, and release its reference after exit. */
 const stop = async () => {
   if (!server || server.exitCode !== null) return;
   const exited = new Promise<void>((done) => server!.once('exit', () => done()));
@@ -50,6 +55,8 @@ const stop = async () => {
   await exited;
   server = undefined;
 };
+/** 向夹具本机入口发送可选令牌/JSON/附加头并限定二十秒；返回状态、头和正文，204 不尝试解析 JSON。
+ * Send optional token/JSON/extra headers to the local fixture within twenty seconds; return status/headers/body and skip JSON parsing for 204. */
 const request = async (path: string, method = 'GET', token?: string, body?: unknown,
   extraHeaders: Record<string, string> = {}) => {
   const response = await fetch(origin + path, {

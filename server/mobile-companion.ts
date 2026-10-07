@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理移动伴侣配对和状态页面，统一处理设备授权、请求与撤销生命周期。
+ * Module purpose: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
  */
 import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -33,11 +34,48 @@ export const mobileAction = z.discriminatedUnion('operation', [
 ]);
 type Policy = z.infer<typeof policy>;
 type Device = z.infer<typeof device>;
+/**
+ * 签名 / Signature: FeedSource.FeedSource.
+ * 功能：为管理移动伴侣配对和状态页面声明 FeedSource 的输入与结果契约，所属容器为 FeedSource。
+ * Purpose: Declares the input/result contract for FeedSource in FeedSource. Module responsibility: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: Promise<{ vms: Array<{ id: string; name: string; status: string }>; alerts: AlertEvent[] }>.
+ * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+ * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+ */
 type FeedSource = () => Promise<{ vms: Array<{ id: string; name: string; status: string }>;
   alerts: AlertEvent[] }>;
+/**
+ * 入口 / Entry: hash.
+ * 功能：在管理移动伴侣配对和状态页面中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(text).digest('hex')` 供上层消费（`mobile-companion.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `mobile-companion.ts`; this entry produces `createHash('sha256').update(text).digest('hex')` for its caller. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: text: string
+ * 输出 / Returns: `createHash('sha256').update(text).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
+/**
+ * 入口 / Entry: sameHash.
+ * 功能：把本层请求转交 `timingSafeEqual`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `timingSafeEqual` and propagates the provider result or rejection.
+ * 输入 / Inputs: left: string; right: string
+ * 输出 / Returns: `timingSafeEqual( Buffer.from(left, 'hex'), Buffer.from(right, 'hex'))`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const sameHash = (left: string, right: string) => timingSafeEqual(
   Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
+/**
+ * 入口 / Entry: defaults.
+ * 功能：从当前输入或状态计算 `({ version: 1 as const, devices: [] as Device[] })`，供调用方后续验证或使用。
+ * Purpose: Computes `({ version: 1 as const, devices: [] as Device[] })` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `({ version: 1 as const, devices: [] as Device[] })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const defaults = () => ({ version: 1 as const, devices: [] as Device[] });
 const cookieName = '__Host-sakura-mobile';
 
@@ -70,11 +108,30 @@ export class MobileCompanion {
   private writes = Promise.resolve();
   private closed = false;
 
+  /**
+   * 入口 / Entry: MobileCompanion.constructor.
+   * 功能：建立 MobileCompanion 的管理移动伴侣配对和状态页面上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the MobileCompanion context for this module's responsibility: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: access: AccessControlV1; feedSource: FeedSource; allowed: () => void default=() => {}; file: default=join(DATA, 'mobile-companion.json'); now: default=Date.now; mutation: (delta: number) => void default=() => {}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(private access: AccessControlV1, private feedSource: FeedSource,
     private allowed: () => void = () => {},
     private file = join(DATA, 'mobile-companion.json'), private now = Date.now,
     private mutation: (delta: number) => void = () => {}) {}
 
+  /**
+   * 入口 / Entry: MobileCompanion.init.
+   * 功能：在管理移动伴侣配对和状态页面中，初始化并核对当前领域状态；处理结果记录到 `this.devices`（`MobileCompanion`）。
+   * Purpose: Initializes and verifies current domain state in `MobileCompanion`; the outcome is recorded in `this.devices`. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 处理：通过 `stat().catch`, `stat`, `info.isFile`, `stateSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `stat().catch`, `stat`, `info.isFile`, `stateSchema.parse`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.devices`.
+   * 拒绝 / Refusals: 条件 / conditions `info && (!info.isFile() || info.size > 1024 * 1024)`; `new Set(this.devices.map((item) => item.id)).size !== this.devices.length || new Set(this.devices.map((item) => item.tokenHas…`; 异常 / errors `new AppError('移动伴侣存储类型或大小无效', 503)`; `new AppError('移动伴侣记录重复', 503)`.
+   */
   async init() {
     const info = await stat(this.file).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error;
@@ -88,7 +145,29 @@ export class MobileCompanion {
       throw new AppError('移动伴侣记录重复', 503);
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.serial.
+   * 功能：在管理移动伴侣配对和状态页面中，执行此领域的具体处理步骤并返回其结果；本入口产生 `task` 供上层消费（`MobileCompanion`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `MobileCompanion`; this entry produces `task` for its caller. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 处理：通过 `this.writes.catch().then`, `this.writes.catch`, `task.then` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.writes.catch().then`, `this.writes.catch`, `task.then`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: work: () => Promise<T>
+   * 输出 / Returns: `task`.
+   * 副作用 / Effects: `this.writes.catch().then`; `this.writes.catch`; 更新 / updates `this.writes`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private serial<T>(work: () => Promise<T>) {
+    /**
+     * 入口 / Entry: MobileCompanion.serial.callback@92.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.writes.catch().then）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.writes.catch().then).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `await work()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `this.closed`; 异常 / errors `new AppError('移动伴侣服务正在关闭', 503)`.
+     * 收尾：退出 try 区域时始终执行 `this.mutation(-1);`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `this.mutation(-1);`; these steps also apply to exceptional exits.
+     */
     const task = this.writes.catch(() => {}).then(async () => {
       if (this.closed) throw new AppError('移动伴侣服务正在关闭', 503);
       this.allowed();
@@ -100,17 +179,50 @@ export class MobileCompanion {
     return task;
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.save.
+   * 功能：在管理移动伴侣配对和状态页面中，校验并提交领域状态变更；处理结果记录到 `this.devices`（`MobileCompanion`）。
+   * Purpose: Validates and commits a domain state change in `MobileCompanion`; the outcome is recorded in `this.devices`. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 处理：通过 `writeStore` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `writeStore`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: devices: Device[]
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `writeStore`; 更新 / updates `this.devices`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async save(devices: Device[]) {
     await writeStore(this.file, { version: 1, devices });
     this.devices = devices;
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.liveOwner.
+   * 功能：在管理移动伴侣配对和状态页面中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`MobileCompanion`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `MobileCompanion`; the calls and state transitions below complete the operation. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 处理：通过 `this.access.users().some`, `this.access.users` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.access.users().some`, `this.access.users`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!this.access.enabled || !this.access.users().some((item) => item.id === id && item.role === 'owner')`; 异常 / errors `new AppError('管理员账户已失效', 403)`.
+   */
   private liveOwner(id: string) {
     if (!this.access.enabled || !this.access.users().some((item) =>
       item.id === id && item.role === 'owner'))
       throw new AppError('管理员账户已失效', 403);
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.view.
+   * 功能：在管理移动伴侣配对和状态页面中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ devices: this.devices.filter((item) => item.ownerId === ownerId) .map(({ tokenHash: _, ...item }) => ({ ...item, expired: i…` 供上层消费（`MobileCompanion`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `MobileCompanion`; this entry produces `{ devices: this.devices.filter((item) => item.ownerId === ownerId) .map(({ tokenHash: _, ...item }) => ({ ...item, expired: i…` for its caller. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 处理：通过 `this.liveOwner`, `this.devices.filter().map`, `this.devices.filter` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.liveOwner`, `this.devices.filter().map`, `this.devices.filter`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: ownerId: string
+   * 输出 / Returns: `{ devices: this.devices.filter((item) => item.ownerId === ownerId) .map(({ tokenHash: _, ...item }) => ({ ...item, expired: i…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   view(ownerId: string) {
     this.liveOwner(ownerId);
     return { devices: this.devices.filter((item) => item.ownerId === ownerId)
@@ -119,8 +231,28 @@ export class MobileCompanion {
           item.lastSeenAt > this.now() - 120_000 })) };
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.action.
+   * 功能：在管理移动伴侣配对和状态页面中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.serial(async () => { this.liveOwner(ownerId); if (value.operation !== 'revoke') { const available = new Set((await this.…` 供上层消费（`MobileCompanion`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `MobileCompanion`; this entry produces `this.serial(async () => { this.liveOwner(ownerId); if (value.operation !== 'revoke') { const available = new Set((await this.…` for its caller. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 处理：通过 `mobileAction.parse`, `this.serial` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `mobileAction.parse`, `this.serial`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: ownerId: string; input: unknown
+   * 输出 / Returns: `this.serial(async () => { this.liveOwner(ownerId); if (value.operation !== 'revoke') { const available = new Set((await this.…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async action(ownerId: string, input: unknown) {
     const value = mobileAction.parse(input);
+    /**
+     * 入口 / Entry: MobileCompanion.action.callback@124.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ code, expiresAt: this.pairing.expiresAt }`; `this.view(ownerId)`.
+     * 副作用 / Effects: `this.save`; 更新 / updates `this.pairing`.
+     * 拒绝 / Refusals: 条件 / conditions `value.operation !== 'revoke'`; `value.policy.vmIds.some((id) => !available.has(id))`; `!item`; 异常 / errors `new AppError('只读策略包含不存在的实例', 400)`; `new AppError('移动设备不存在', 404)`.
+     */
     return this.serial(async () => {
       this.liveOwner(ownerId);
       if (value.operation !== 'revoke') {
@@ -144,6 +276,17 @@ export class MobileCompanion {
     });
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.tokenFrom.
+   * 功能：在管理移动伴侣配对和状态页面中，执行此领域的具体处理步骤并返回其结果；本入口产生 `item` 供上层消费（`MobileCompanion`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `MobileCompanion`; this entry produces `item` for its caller. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 处理：通过 `cookie.slice`, `inline.test`, `hash`, `this.devices.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `cookie.slice`, `inline.test`, `hash`, `this.devices.find`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: request: IncomingMessage
+   * 输出 / Returns: `item`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!token || !/^[a-f0-9]{64}$/.test(token)`; `!item || item.expiresAt <= this.now()`; 异常 / errors `new AppError('设备尚未配对', 401)`; `new AppError('设备配对已过期或撤销', 401)`.
+   */
   private tokenFrom(request: IncomingMessage) {
     const cookie = String(request.headers.cookie || '').split(';').map((part) => part.trim())
       .find((part) => part.startsWith(cookieName + '='));
@@ -156,6 +299,18 @@ export class MobileCompanion {
     return item;
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.checkOrigin.
+   * 功能：在管理移动伴侣配对和状态页面中，核对调用资格、输入或资源归属；本入口产生 `void` 供上层消费（`MobileCompanion`）。
+   * Purpose: Checks admission, input or resource ownership in `MobileCompanion`; this entry produces `void` for its caller. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 分支 / Branches: `origin.protocol === 'https:' && origin.host === request.headers.host && origin.pathname === '/' && !…`.
+   * 输入 / Inputs: request: IncomingMessage
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 异常 / errors `new AppError('只接受当前页面发起的请求', 403)`.
+   * 失败处理：catch 分支执行 ，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute ; these statements determine whether a failure is absorbed or rejected again.
+   */
   private checkOrigin(request: IncomingMessage) {
     try {
       const origin = new URL(String(request.headers.origin || ''));
@@ -165,12 +320,36 @@ export class MobileCompanion {
     throw new AppError('只接受当前页面发起的请求', 403);
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.send.
+   * 功能：在管理移动伴侣配对和状态页面中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`MobileCompanion`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `MobileCompanion`; the calls and state transitions below complete the operation. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 处理：通过 `response.writeHead`, `response.end` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `response.writeHead`, `response.end`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: response: ServerResponse; data: unknown; status: default=200
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `response.writeHead`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private send(response: ServerResponse, data: unknown, status = 200) {
     response.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     response.end(JSON.stringify(data));
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.handle.
+   * 功能：处理移动配对页面、连接和状态请求，检查来源、限流和设备凭证。
+   * Purpose: Handles mobile pairing/connection/status requests with origin, rate and device credential checks.
+   * 设计：正文和失败次数有界，授权撤销后原设备请求失效；页面输出只包含该入口允许的状态。
+   * Design: Bodies/attempts are bounded, revocation invalidates original device requests and pages expose only permitted state.
+   * 输入 / Inputs: request: IncomingMessage; response: ServerResponse
+   * 输出 / Returns: `void`; `await this.serial(async () => { const pairing = this.pairing; const valid = pairing && pairing.expiresAt > this.now() && same…`; `this.send(response, { connected: false })`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: `response.writeHead`; `this.failures.delete`; `connectInput.parse`; `response.setHeader`; `this.send`; 更新 / updates `item`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `request.method === 'POST' && path === '/mobile/connect'`; `!attempt && this.failures.size >= 1024`; 异常 / errors `new AppError('服务正在关闭', 503)`; `new AppError('配对尝试容量已满', 429)`.
+   * 失败处理：catch 分支执行 `const status = error instanceof AppError ? error.status : 400;`; `if (!response.destroyed && !response.headersSent) this.send(response, { error: status >= 500 ? '移动伴侣请求失败' : (error as Error).…`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `const status = error instanceof AppError ? error.status : 400;`; `if (!response.destroyed && !response.headersSent) this.send(response, { error: status >= 500 ? '移动伴侣请求失败' : (error as Error).…`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async handle(request: IncomingMessage, response: ServerResponse) {
     try {
       if (this.closed) throw new AppError('服务正在关闭', 503);
@@ -200,6 +379,15 @@ export class MobileCompanion {
         if (attempt && attempt.blockedUntil > this.now() && attempt.count >= 5)
           throw new AppError('配对尝试过多，请稍后重试', 429);
         const input = connectInput.parse(await readJsonBody(request, 4096));
+        /**
+         * 入口 / Entry: MobileCompanion.handle.callback@203.
+         * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+         * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `this.send(response, { connected: true, expiresAt: item.expiresAt }, 201)`.
+         * 副作用 / Effects: `this.failures.set`; `this.save`; `this.failures.delete`; `response.setHeader`; `this.send`; 更新 / updates `this.pairing`.
+         * 拒绝 / Refusals: 条件 / conditions `!valid`; `this.devices.filter((item) => item.expiresAt > this.now()).length >= 16`; 异常 / errors `new AppError('配对码无效或已过期', 403)`; `new AppError('最多配对 16 台移动设备', 409)`.
+         */
         return await this.serial(async () => {
           const pairing = this.pairing;
           const valid = pairing && pairing.expiresAt > this.now() &&
@@ -264,9 +452,28 @@ export class MobileCompanion {
     }
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.revokeAll.
+   * 功能：在管理移动伴侣配对和状态页面中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`MobileCompanion`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `MobileCompanion`; the calls and state transitions below complete the operation. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 处理：通过 `this.serial` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.serial`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async revokeAll() {
     await this.serial(async () => { await this.save([]); this.pairing = undefined; });
   }
 
+  /**
+   * 入口 / Entry: MobileCompanion.close.
+   * 功能：在管理移动伴侣配对和状态页面中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`MobileCompanion`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `MobileCompanion`; the outcome is recorded in `this.closed`. Module context: Owns mobile pairing and status pages, coordinating device authorization, request handling and revocation.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.closed`.
+   */
   async close() { this.closed = true; await this.writes; }
 }

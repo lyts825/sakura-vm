@@ -1,9 +1,21 @@
 /**
  * 模块职责：依据操作目录生成客户端 SDK，保留请求体要求及公开错误关联信息。
+ * Module purpose: Generates client SDKs from operation declarations with request-body requirements and public failure correlation.
  */
 import type { ApiDocument } from '../shared/api-document.ts';
 import { encodeOperationBody, resolveOperationBody } from '../shared/http-transport.ts';
 
+/**
+ * 入口 / Entry: generateSdk.
+ * 功能：从 OpenAPI 和操作目录生成浏览器/Node 客户端及输入、响应处理辅助代码。
+ * Purpose: Generates browser/Node clients and input/response helpers from OpenAPI and the operation catalogue.
+ * 设计：生成内容沿用线路契约与公开错误关联，二进制响应保持流式；生成函数不发送业务请求。
+ * Design: Generated clients follow wire contracts/public correlation and stream binary responses; generation itself sends no business requests.
+ * 输入 / Inputs: document: ApiDocument
+ * 输出 / Returns: `( `const encodeOperationBody = ${encodeOperationBody.toString()};\n` + `const resolveOperationBody = ${resolveOperationBody.t…`.
+ * 副作用 / Effects: `inline.replace`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function generateSdk(document: ApiDocument) {
   const operations = Object.fromEntries(
     Object.entries(document.paths).flatMap(([path, methods]) =>

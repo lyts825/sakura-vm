@@ -1,5 +1,6 @@
 /**
  * 模块职责：接收工作线程中的文件预览任务并返回结果，将解析计算移出主服务线程。
+ * Module purpose: Accepts file-preview work inside a worker and returns bounded results, moving parsing off the main server thread.
  */
 import { parentPort, workerData } from 'node:worker_threads';
 import { previewFile } from './file-preview.ts';

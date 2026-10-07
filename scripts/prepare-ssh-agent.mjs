@@ -1,4 +1,5 @@
-/** 将来宾 SSH agent 辅助源码封装到服务器资源，记录逐文件身份供安装与执行校验。 */
+/** 将来宾 SSH agent 辅助源码封装到服务器资源，记录逐文件身份供安装与执行校验。
+ * Package verified guest SSH agent forwarding assets for identity-bound relay startup. */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

@@ -1,15 +1,22 @@
-/** CLI 可恢复文件下载，按清单逐块核对 SHA-256 并复用有效块，完整校验后原子发布且拒绝覆盖已有目标。 */
+/** CLI 可恢复文件下载，按清单逐块核对 SHA-256 并复用有效块，完整校验后原子发布且拒绝覆盖已有目标。
+ * Resume manifest-bound chunks with per-chunk/whole-file hashes, fsync partial data and publish the completed file atomically without overwriting. */
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { open, lstat, readFile, writeFile, link, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+/** 返回字节的 SHA-256，用于逐块与整文件完整性核对。
+ * Return SHA-256 for chunk/whole-file integrity verification. */
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
+/** lstat 观察目标对象，只有 ENOENT 代表缺失，其他错误继续抛出，避免将权限问题当可创建路径。
+ * Observe targets with lstat; only ENOENT means absence while other errors propagate rather than authorizing creation. */
 const existing = (path) =>
   lstat(path).catch((error) => {
     if (error.code !== 'ENOENT') throw error;
     return null;
   });
+/** 把 VM/路径与块清单绑定到续传元数据，重验已有块后仅补缺块并同步；核对整文件摘要后用同目录 link 原子不覆盖发布，失败保留可验证续传证据。
+ * Bind VM/path/chunk manifest to resume metadata, revalidate existing chunks and fetch/fsync missing ones; after whole-file hashing, publish via atomic no-overwrite same-directory link and retain verifiable resume evidence on failure. */
 export async function resumableDownload(api, vmId, path, destination) {
   const output = resolve(destination),
     partial = output + '.sakura-part',

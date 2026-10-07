@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目执行 UID/GID、补充组、目录、HOME 与私有网络。 */
+/** 烟雾验收：验证项目执行 UID/GID、补充组、目录、HOME 与私有网络。
+ * Smoke acceptance for actual project UID/GID/groups/directory/HOME and private-network execution. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -35,6 +36,8 @@ const { ProjectIdentities, projectIdentitySources } = await import('../server/pr
 const { ServiceHealth } = await import('../server/service-health.ts');
 const { Secrets } = await import('../server/secrets.ts');
 const { vmDir } = await import('../server/model.ts');
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const sha = (data: Buffer) => createHash('sha256').update(data).digest('hex');
 const files = ['server/project-execution.ts', 'server/project-run-scope.ts', 'server/guest-task.ts',
   'server/project-identity.ts', 'server/project-directory-migration.ts', 'server/workspaces.ts',
@@ -61,12 +64,15 @@ const secretName = 'owned-execution-' + randomUUID().slice(0, 8);
 let initialized = false, loseStop = false, lostReplies = 0, lostRunReplies = 0, transportChecks = 0;
 const stoppedReplyRunIds = new Set<string>();
 let health: InstanceType<typeof ServiceHealth> | undefined;
+/** 断言 root argv 不包含项目正文和秘密标记，累计保护输入分离的证据。
+ * Assert root argv excludes project bodies/secret markers and count evidence of separated protected input. */
 const checkTransport = (command: string) => {
   assert.ok(!command.includes(secret), 'A root command argv contains a secret body.');
   assert.ok(!command.includes(marker), 'A root command argv contains the project command body.');
   transportChecks++;
 };
-machines.exec = async (...args) => {
+machines.exec = /** 检查控制 argv 传输后真实执行，只对成功 stop 或其精确 closed-ticket 查询丢失回应；记录 runId 防止故障误落别的运行，验证重试保持原票据。
+ * Check control-argv transport and execute for real, losing replies only for successful stop or that exact closed-ticket lookup; track runIds to avoid faulting unrelated runs and verify receipt-preserving retries. */ async (...args) => {
   checkTransport(args[1]);
   const result = await originalExec(...args);
   const request = args[1].match(/\/controller\.py'\s+'([A-Za-z0-9+/=]+)'$/);
@@ -84,23 +90,36 @@ machines.exec = async (...args) => {
   }
   return result;
 };
-machines.execInput = async (...args) => { checkTransport(args[1]); return originalInput(...args); };
+machines.execInput = /** 检查受保护正文不进入 root 命令后原样转发 execInput，验证传输边界而不改正文或返回值。
+ * Check protected body does not enter root argv before forwarding execInput unchanged, verifying the transport boundary without altering body/results. */ async (...args) => { checkTransport(args[1]); return originalInput(...args); };
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const guest = async (command: string) => {
   const result = await machines.exec(vmId, command, 15000);
   assert.equal(result.code, 0, result.stderr + result.stdout); return result.stdout.trim();
 };
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const python = (source: string) => '/usr/bin/python3 -I -S -c ' + quote(source);
+/** 读取本夹具指定项目的落盘身份日志并解析 JSON，供精确运行票据和关闭阶段核对；缺失或损坏直接失败。
+ * Read/parse the fixture project’s persisted identity journal for exact-run receipts/closure-phase comparison; missing/corrupt records fail directly. */
 const journal = async () => JSON.parse(await readFile(join(vmDir(vmId), 'project-identities', 'default.json'), 'utf8'));
+/** 要求实例从 stopped 启动，在有限轮询后必须 running，拒绝把遗留运行当作本次启动。
+ * Require startup from stopped and reach running after bounded polling rather than count a leftover run as a new boot. */
 async function start() {
   assert.equal(machines.state(vmId), 'stopped'); await machines.start(vmId);
   for (let n = 0; machines.state(vmId) === 'starting' && n < 600; n++) await delay(250);
   assert.equal(machines.state(vmId), 'running');
 }
+/** 同步来宾文件后停止实例，并等待原 live.done，最终必须 stopped。
+ * Sync guest files/stop the VM and await original live.done, requiring final stopped state. */
 async function stop() {
   await guest('/bin/sync'); const done = machines.live.get(vmId)?.done;
   await machines.stop(vmId, true); if (done) await done;
   assert.equal(machines.state(vmId), 'stopped');
 }
+/** 预览并确认 reviewed 的精确目录迁移计划，要求 applied 后返回激活身份。
+ * Preview/confirm the exact reviewed directory-migration plan, require applied and return activated identity. */
 async function migrate() {
   const preview = await migrations.preview(vmId); assert.ok(preview.plan);
   const plan = preview.plan!;
@@ -211,6 +230,8 @@ try {
     `with open(${JSON.stringify(healthMarker)},'w') as f:json.dump({'uid':os.getuid(),'gid':os.getgid(),` +
     `'cgroup':open('/proc/self/cgroup').read().strip(),'net':os.readlink('/proc/self/ns/net'),` +
     `'secretSha256':hashlib.sha256(os.environ['TOKEN'].encode()).hexdigest()},f)\n`);
+  /** 在 default 项目执行主工作区 start/stop，等待对应任务且要求 done，保持原项目归属。
+   * Run workspace start/stop in default-project context, await its keyed job and require done while preserving ownership. */
   const action = async (operation: 'start' | 'stop') => workspaces.projects.with(vmId, 'default', async () => {
     const key = workspaces.projects.key(vmId);
     await workspaces.run(vmId, operation); await workspaces.jobs.wait(key);

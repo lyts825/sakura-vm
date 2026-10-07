@@ -1,4 +1,5 @@
-/** 通过独立 Neovim 配置连接项目 SSH，运行远程探针并记录项目身份、环境和作用域证据。 */
+/** 通过独立 Neovim 配置连接项目 SSH，运行远程探针并记录项目身份、环境和作用域证据。
+ * Drive a real Neovim remote client against an owned project and verify execution identity and cleanup. */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -10,6 +11,8 @@ const run = promisify(execFile);
 type Project = { id: string; name: string; path: string; alias: string };
 
 /** Edits remote files with the real Neovim netrw client and the fixture's pinned SSH config. */
+/** 按显式提供的真实 Neovim 使用项目 SSH/SCP 配置编辑远端文件；专用临时配置收集保存结果和客户端版本，验证真实编辑路径后保留记录。
+ * Use an explicitly supplied real Neovim with project SSH/SCP settings to edit remote files; dedicated temporary configuration captures saves/client version, verifying real editing paths and retaining records. */
 export async function projectNeovimClientSmoke(
   root: string,
   sshConfig: string,
@@ -39,6 +42,8 @@ export async function projectNeovimClientSmoke(
       : 'scp';
   // netrw invokes the platform shell. These are fixture-owned local paths, not an EX command
   // assembled from a project name; reject shell metacharacters before quoting on Windows.
+  /** Unix 使用 POSIX 字面引号；Windows 拒绝 shell 元字符并规范分隔符后包引号，防止 netrw 拼接命令时路径注入。
+   * Use POSIX literal quoting on Unix; on Windows reject shell metacharacters/normalize separators before quoting to prevent netrw command-path injection. */
   const shellArgument = (value: string) => {
     if (process.platform !== 'win32') return quote(value);
     assert.ok(!/[\0\r\n"%!^&|<>]/.test(value), 'Unsupported shell character in owned client path');

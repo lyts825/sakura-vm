@@ -1,5 +1,8 @@
 /**
- * 模块职责：“文件工作台”插件清单：文件浏览、上传下载、文本编辑、历史版本与回收站。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ * 模块职责（中文）：“文件工作台”插件清单：文件浏览、上传下载、文本编辑、历史版本与回收站。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ * Module responsibility (English): declarations of dependencies, services, admission policy and UI contributions for files, editing, history and uploads/downloads.
+ * 详细范围（中文）：公开入口包括 manifest；职责覆盖声明文件、编辑、历史和上传下载的依赖、服务、准入策略和界面贡献，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include manifest. The scope covers declarations of dependencies, services, admission policy and UI contributions for files, editing, history and uploads/downloads. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 

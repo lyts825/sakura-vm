@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - clipboard rules inherit per application and explicit instance overrides stay isolated
- * - clipboard directions, binary items and byte limits enforce independent policies including terminal transport bounds
- * - invalid or unbounded clipboard policies are rejected instead of weakening constraints
+ * 模块职责：回归验证模块，围绕 `clipboard-policy` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `clipboard-policy`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: clipboard rules inherit per application and explicit instance overrides stay isolated; clipboard directions, binary items and byte limits enforce independent policies including terminal transport bounds.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,6 +14,17 @@ import {
   parseClipboardPolicies,
 } from '../shared/clipboard-policy.ts';
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: clipboard rules inherit per application and explicit instance overrides stay isolated
+ * 状态影响 / State effects: `state.defaults.terminal.paste`, `state.instances[id]`, `state.instances[id].terminal!.copy`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `defaultClipboardPolicies`, `parseClipboardPolicies`, `assert.equal`, `effectiveClipboardRule`.
+ * 检查边界 / Checked boundaries: `assert.equal(effectiveClipboardRule(parsed, { app: 'terminal' }).paste, false)`; `assert.equal(effectiveClipboardRule(parsed, { app: 'terminal', vmId: id }).paste, true)`.
+ */
 test('clipboard rules inherit per application and explicit instance overrides stay isolated', () => {
   const state = defaultClipboardPolicies(),
     id = '11111111-1111-4111-8111-111111111111';
@@ -30,6 +42,17 @@ test('clipboard rules inherit per application and explicit instance overrides st
   assert.equal(parsed.instances[id].terminal!.copy, true, 'stored snapshots are independent copies');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: clipboard directions, binary items and byte limits enforce independent policies including terminal transport bounds
+ * 状态影响 / State effects: `rule.copy`, `rule.files`, `rule.maxTextBytes`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `defaultClipboardPolicies`, `assert.equal`, `clipboardPolicyReason`, `assert.match`.
+ * 检查边界 / Checked boundaries: `assert.equal(clipboardPolicyReason(rule, 'paste', 1, true, 'files'), null)`; `assert.match(clipboardPolicyReason(rule, 'copy', 1, false, 'files')!, /禁止.*复制/)`.
+ */
 test('clipboard directions, binary items and byte limits enforce independent policies including terminal transport bounds', () => {
   const rule = defaultClipboardPolicies().defaults.files;
   assert.equal(clipboardPolicyReason(rule, 'paste', 1, true, 'files'), null);
@@ -46,6 +69,16 @@ test('clipboard directions, binary items and byte limits enforce independent pol
   assert.equal(clipboardPolicyReason(rule, 'paste', 16385, false, 'files'), null);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: invalid or unbounded clipboard policies are rejected instead of weakening constraints
+ * 协作入口 / Collaborators: `defaultClipboardPolicies`, `assert.throws`.
+ * 检查边界 / Checked boundaries: `assert.throws(() => parseClipboardPolicies(input))`; `assert.throws(() => parseClipboardPolicies({ ...valid, defaults: { ...valid.defaults, files: { ...valid.defaults.files, maxTextByt…`.
+ */
 test('invalid or unbounded clipboard policies are rejected instead of weakening constraints', () => {
   const valid = defaultClipboardPolicies();
   for (const input of [

@@ -1,4 +1,5 @@
-/** 烟雾验收：验证来宾嵌套虚拟化能力检查及实际工具执行结果。 */
+/** 烟雾验收：验证来宾嵌套虚拟化能力检查及实际工具执行结果。
+ * Smoke acceptance for guest nested-virtualization capabilities and actual tool execution. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,7 +19,9 @@ const { NextFeatures } = await import('../server/next-features.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const workspaces = {
-  projects: { current: () => 'default', key: (id: string) => id },
+  projects: { /** 为此单项目验收提供稳定的 default 项目上下文，不读取或切换用户项目。
+ * Provide the stable default project context for this single-project check without reading/switching user projects. */ current: () => 'default', /** 为单项目夹具返回原实例标识作为配置键；不增加生产多项目键空间。
+ * Use the original VM identifier as the configuration key for this single-project fixture without introducing production multi-project key space. */ key: (id: string) => id },
 } as unknown as Workspaces;
 const features = new NextFeatures(machines, workspaces);
 const observation = z

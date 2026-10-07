@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - release hash validation, isolated canary, activation, rollback and failed-start recovery
- * - witness launcher follows activation and rollback, preserves CLI arguments and refuses tampering
- * - witness changes, missing entry and additional files fail release verification and staging
+ * 模块职责：回归验证模块，围绕 `self-update` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `self-update`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: release hash validation, isolated canary, activation, rollback and failed-start recovery; witness launcher follows activation and rollback, preserves CLI arguments and refuses tampering.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,6 +31,17 @@ server.listen(Number(process.env.SAKURA_PORT), '127.0.0.1');
 process.on('SIGTERM', () => server.close());
 `;
 
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回受控对象，公开字段包括 `temporary, installation, source`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `temporary, installation, source`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.ok(resolve(temporary).startsWith(resolve(tmpdir()) + sep))`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function fixture() {
   const temporary = await mkdtemp(join(tmpdir(), 'sakura-update-test-'));
   assert.ok(resolve(temporary).startsWith(resolve(tmpdir()) + sep));
@@ -56,6 +68,18 @@ async function fixture() {
   return { temporary, installation, source };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: release hash validation, isolated canary, activation, rollback and failed-start recovery
+ * 协作入口 / Collaborators: `fixture`, `verifyReleaseManifest`, `assert.equal`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.equal(manifest.version, '0.1.1')`; `assert.equal(manifest.schemaVersion, 2)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('release hash validation, isolated canary, activation, rollback and failed-start recovery', async () => {
   const { temporary, installation, source } = await fixture();
   try {
@@ -105,8 +129,28 @@ test('release hash validation, isolated canary, activation, rollback and failed-
   } finally { await rm(temporary, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: witness launcher follows activation and rollback, preserves CLI arguments and refuses tampering
+ * 协作入口 / Collaborators: `fixture`, `writeFile`, `join`, `writeReleaseManifestReplacement`.
+ * 检查边界 / Checked boundaries: `assert.match((await launch()).output, /original-witness/)`; `assert.equal(active.code, 0, active.output)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('witness launcher follows activation and rollback, preserves CLI arguments and refuses tampering', async () => {
   const { temporary, installation, source } = await fixture();
+  /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`new Promise<{ code: number | null; output: string }>((done, fail) => { const chi…`）。
+   * Result: Return the branch-computed value (`new Promise<{ code: number | null; output: string }>((done, fail) => { const chi…`).
+   * 验证场景 / Scenario: witness launcher follows activation and rollback, preserves CLI arguments and refuses tampering
+   */
   const launch = () => new Promise<{ code: number | null; output: string }>((done, fail) => {
     const child = spawn(process.execPath, [join(installation, 'scripts', 'launch-witness.mjs'),
       '--preflight', 'relative config.json'], { cwd: temporary, windowsHide: true });
@@ -134,6 +178,18 @@ test('witness launcher follows activation and rollback, preserves CLI arguments 
   } finally { await rm(temporary, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: witness changes, missing entry and additional files fail release verification and staging
+ * 协作入口 / Collaborators: `fixture`, `join`, `writeFile`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.rejects(stageUpdate(source, installation, { skipInstall: true, skipCanary: true }), /SHA-256/)`; `assert.rejects(verifyReleaseManifest(source), /见证程序入口/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('witness changes, missing entry and additional files fail release verification and staging', async () => {
   const { temporary, installation, source } = await fixture();
   const witness = join(source, '.sakura-witness', 'ha-witness.js');
@@ -151,6 +207,18 @@ test('witness changes, missing entry and additional files fail release verificat
   } finally { await rm(temporary, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: legacy releases without a witness remain verifiable, stageable and activatable
+ * 协作入口 / Collaborators: `fixture`, `rm`, `join`, `releaseFiles`.
+ * 检查边界 / Checked boundaries: `assert.equal((await verifyReleaseManifest(source)).schemaVersion, 1)`; `assert.equal((await verifyReleaseManifest(join(installation, staged.path))).schemaVersion, 1)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('legacy releases without a witness remain verifiable, stageable and activatable', async () => {
   const { temporary, installation, source } = await fixture();
   try {
@@ -169,6 +237,18 @@ test('legacy releases without a witness remain verifiable, stageable and activat
   } finally { await rm(temporary, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: tampered package and changed runtime pin fail before activation
+ * 协作入口 / Collaborators: `fixture`, `writeFile`, `join`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.rejects(stageUpdate(source, installation, { skipInstall: true, skipCanary: true }), /SHA-256/)`; `assert.equal((await pointer(installation)).active, '.')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('tampered package and changed runtime pin fail before activation', async () => {
   const { temporary, installation, source } = await fixture();
   try {
@@ -185,6 +265,16 @@ test('tampered package and changed runtime pin fail before activation', async ()
   } finally { await rm(temporary, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }); }
 });
 
+/**
+ * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+ * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+ * 输入 / Inputs: source: string。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `import`, `unlink`, `join`, `writeReleaseManifest`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function writeReleaseManifestReplacement(source: string) {
   const { unlink } = await import('node:fs/promises');
   await unlink(join(source, 'sakura-release.json'));

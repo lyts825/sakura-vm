@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - ordinary service admission restarts only loaded real fragments and skips only explicit not-found
- * - post-restart admission bounds only waiting for the original typed refusal and preserves public call timeouts
- * - fixed native observer selects only current Root install ensure inspect and excludes environments and other builds
+ * 模块职责：共享测试夹具模块，围绕 `linux-desktop-owned-fixture` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Shared test fixture for `linux-desktop-owned-fixture`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: ordinary service admission restarts only loaded real fragments and skips only explicit not-found; post-restart admission bounds only waiting for the original typed refusal and preserves public call timeouts.
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -18,6 +19,15 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { closeOwnedDesktopSshClient, desktopFixtureLogPath, desktopFixtureParent, LinuxDesktopOwnedFixture, ownedDesktopQemuArguments, ownedDesktopBootstrapTimeout, parseOwnedDesktopBootstrapReply, sha256 } from '../scripts/linux-desktop-owned-fixture.ts';
 import { probeOwnedDesktopRfb } from '../scripts/linux-desktop-rfb-probe.ts';
 
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`new Function('assert', 'Buffer', 'sha256', program + '\nreturn { parseOwnedAdmis…`）。
+ * Result: Return the branch-computed value (`new Function('assert', 'Buffer', 'sha256', program + '\nreturn { parseOwnedAdmis…`).
+ * 协作入口 / Collaborators: `readFileSync`, `source.indexOf`, `assert.ok`, `ts.transpileModule`.
+ * 检查边界 / Checked boundaries: `assert.ok(start >= 0 && end > start)`.
+ */
 function admissionParsers() {
   const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');
   const start = source.indexOf('function parseOwnedAdmissionServiceReply('), end = source.indexOf('const singleAppFdClassifier =', start);
@@ -26,6 +36,16 @@ function admissionParsers() {
   return new Function('assert', 'Buffer', 'sha256', program + '\nreturn { parseOwnedAdmissionServiceReply, ownedAdmissionRetryRemaining, ownedAdmissionControlAction, parseOwnedBootstrapCloudReply };')(assert, Buffer, sha256);
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: ordinary service admission restarts only loaded real fragments and skips only explicit not-found
+ * 协作入口 / Collaborators: `admissionParsers`, `assert.equal`, `parse`, `loaded.replace`.
+ * 检查边界 / Checked boundaries: `assert.equal(parse(loaded, 'ssh.service').restart, true)`; `assert.equal(parse(absent, 'cron.service').restart, false)`.
+ */
 test('ordinary service admission restarts only loaded real fragments and skips only explicit not-found', () => {
   const { parseOwnedAdmissionServiceReply: parse } = admissionParsers();
   const loaded = 'LoadState=loaded\nFragmentPath=/lib/systemd/system/ssh.service\nId=ssh.service\nActiveState=active\nNoNewPrivileges=yes\nMainPID=354\n';
@@ -41,6 +61,16 @@ test('ordinary service admission restarts only loaded real fragments and skips o
   assert.throws(() => parse(loaded, 'foreign.service')); assert.throws(() => parse(' '.repeat(8193), 'ssh.service'));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: post-restart admission bounds only waiting for the original typed refusal and preserves public call timeouts
+ * 协作入口 / Collaborators: `admissionParsers`, `Object.assign`, `assert.equal`, `remaining`.
+ * 检查边界 / Checked boundaries: `assert.equal(remaining(refusal, 30000, 0), 500)`; `assert.equal(remaining(refusal, 30000, 29999), 1)`.
+ */
 test('post-restart admission bounds only waiting for the original typed refusal and preserves public call timeouts', () => {
   const { ownedAdmissionRetryRemaining: remaining } = admissionParsers();
   const refusal = Object.assign(new Error('original service session still alive'), { code: 'PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED' });
@@ -57,8 +87,27 @@ test('post-restart admission bounds only waiting for the original typed refusal 
   assert.ok(retry.includes('ownedAdmissionRetryRemaining(retryError, deadline, Date.now())'));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: fixed native observer selects only current Root install ensure inspect and excludes environments and other builds
+ * 协作入口 / Collaborators: `admissionParsers`, `'1'.repeat`, `assert.equal`, `action`.
+ * 检查边界 / Checked boundaries: `assert.equal(action(command({ action: 'install' }), build), 'install')`; `assert.equal(action(command({ action: 'inspect', projectId: ensure.projectId }), build), 'inspect')`.
+ */
 test('fixed native observer selects only current Root install ensure inspect and excludes environments and other builds', () => {
   const { ownedAdmissionControlAction: action } = admissionParsers(), build = '1'.repeat(64);
+  /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: request: unknown; selectedBuild = build。
+   * 结果：返回分支计算值（`"env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/pytho…`）。
+   * Result: Return the branch-computed value (`"env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/pytho…`).
+   * 验证场景 / Scenario: fixed native observer selects only current Root install ensure inspect and excludes environments and other builds
+   * 协作入口 / Collaborators: `Buffer.from(JSON.stringify(request)).toString`, `Buffer.from`, `JSON.stringify`.
+   */
   const command = (request: unknown, selectedBuild = build) => "env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S '/usr/local/lib/sakura-project-identity/" + selectedBuild + "/controller.py' '" + Buffer.from(JSON.stringify(request)).toString('base64') + "'";
   const ensure = { action: 'ensure', projectId: '0123456789abcdef', directory: '/srv/projects/owned', networkIsolation: 'private' };
   assert.equal(action(command({ action: 'install' }), build), 'install');
@@ -71,6 +120,16 @@ test('fixed native observer selects only current Root install ensure inspect and
   assert.throws(() => action(command(ensure), 'invalid'));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: pending bootstrap readiness still pins the new DMI and boot and refuses malformed or changed guest replies
+ * 协作入口 / Collaborators: `randomUUID`, `vmId.toUpperCase`, `assert.equal`, `parseOwnedDesktopBootstrapReply`.
+ * 检查边界 / Checked boundaries: `assert.equal(parseOwnedDesktopBootstrapReply(JSON.stringify(pending), vmId).cloudInitReady, false)`; `assert.equal(ready.cloudInitReady, true)`.
+ */
 test('pending bootstrap readiness still pins the new DMI and boot and refuses malformed or changed guest replies', () => {
   const vmId = randomUUID(), bootId = randomUUID();
   const pending = { version: 1, kind: 'owned-desktop-bootstrap', dmi: vmId.toUpperCase(), bootId, cloudInitReady: false };
@@ -101,6 +160,16 @@ test('pending bootstrap readiness still pins the new DMI and boot and refuses ma
   assert.ok(source.indexOf('assert.equal(proof.bootstrapReadiness.ready, true,') < rekeyStart);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: bootstrap cloud snapshot binds the observed guest and bounded original ranges without asserting later or full-log stability
+ * 协作入口 / Collaborators: `admissionParsers`, `Buffer.from`, `sha256`, `bytes.toString`.
+ * 检查边界 / Checked boundaries: `assert.equal(parse(JSON.stringify(value), vmId, bootId).files[0].heldMetadataChanged, true)`; `assert.equal(parse(JSON.stringify(replaced), vmId, bootId).files[0].pathIdentityChanged, true)`.
+ */
 test('bootstrap cloud snapshot binds the observed guest and bounded original ranges without asserting later or full-log stability', () => {
   const { parseOwnedBootstrapCloudReply: parse } = admissionParsers();
   const vmId = '00000000-0000-4000-8000-000000000001', bootId = '00000000-0000-4000-8000-000000000002';
@@ -129,6 +198,16 @@ test('bootstrap cloud snapshot binds the observed guest and bounded original ran
   assert.ok(source.includes('serialWireBytesCaptured: false, completeSerialLog: false'));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: fixed nft atomic fixture refuses occupied accounts, incomplete objects, changed handles and non-refusal exits
+ * 协作入口 / Collaborators: `readFileSync`, `source.indexOf`, `assert.ok`, `source.slice`.
+ * 检查边界 / Checked boundaries: `assert.ok(start >= 0 && end > start)`; `assert.ok(!program.includes('${'))`.
+ */
 test('fixed nft atomic fixture refuses occupied accounts, incomplete objects, changed handles and non-refusal exits', () => {
   const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');
   const prefix = 'const nftAtomicFixture = String.raw`', start = source.indexOf(prefix), end = source.indexOf('`;', start + prefix.length);
@@ -190,6 +269,16 @@ assert checks==14;print('fixed nft fixture pure refusals passed:14; no nft trans
     'fixed nft fixture pure refusals passed:14; no nft transaction executed');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: fixed guest FD classifier distinguishes original management objects from legitimate mapped and GUI descriptors
+ * 协作入口 / Collaborators: `readFileSync`, `source.indexOf`, `assert.ok`, `source.slice`.
+ * 检查边界 / Checked boundaries: `assert.ok(start >= 0 && end > start)`; `assert.ok(!classifier.includes('${'))`.
+ */
 test('fixed guest FD classifier distinguishes original management objects from legitimate mapped and GUI descriptors', () => {
   const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');
   const prefix = 'const singleAppFdClassifier = String.raw`', start = source.indexOf(prefix), end = source.indexOf('`;', start + prefix.length);
@@ -228,13 +317,39 @@ print('fixed FD model passed:8')
   assert.equal(execFileSync(python, ['-I', '-S', '-c', classifier + model], { encoding: 'utf8', timeout: 10000, windowsHide: true }).trim(), 'fixed FD model passed:8');
 });
 
-async function ownedRfbPeer(mode: 'vnc' | 'none' | 'text', action: (url: string, errors: Error[]) => Promise<void>) {
+/**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: mode: 'vnc' | 'none' | 'text'; action: (url: string, errors: Error[]) => Promise<void>。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `server.once`, `server.on`, `server.address`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.ok(address && typeof address !== 'string')`; `assert.equal(serverClosed, true)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
+async function ownedRfbPeer(mode: 'vnc' | 'none' | 'text', action: /**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: url: string; errors: Error[]。
+ * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+ * Result: The declared return type defines the result; its test provider supplies the implementation.
+ */
+(url: string, errors: Error[]) => Promise<void>) {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   const peers = new Set<WebSocket>(), peerClosures: Promise<void>[] = [], errors: Error[] = [];
   let serverClosed = false;
   server.once('close', () => { serverClosed = true; });
   server.on('error', error => errors.push(error));
-  server.on('connection', socket => {
+  server.on('connection', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: socket。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `peers.add`, `peerClosures.push`, `socket.on`, `socket.send`.
+   */
+  socket => {
     peers.add(socket); peerClosures.push(new Promise<void>(done => socket.once('close', () => { peers.delete(socket); done(); })));
     socket.on('error', error => errors.push(error));
     if (mode === 'text') { socket.send('RFB 003.008\n'); return; }
@@ -248,7 +363,20 @@ async function ownedRfbPeer(mode: 'vnc' | 'none' | 'text', action: (url: string,
     const cipher = createCipheriv('des-ede3', Buffer.concat([key, key, key]), null); cipher.setAutoPadding(false);
     const response = Buffer.concat([cipher.update(challenge), cipher.final()]);
     socket.send(Buffer.from('RFB 003.')); socket.send(Buffer.from('008\n'));
-    socket.on('message', (raw, binary) => {
+    socket.on('message', /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: raw; binary。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `step`, `init[4]`, `init[5]`, `init[7]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 失败 / Failure: `new Error('Unexpected owned RFB client packet')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `assert.equal`, `Buffer.from`, `value.toString`, `socket.send`.
+     * 检查边界 / Checked boundaries: `assert.equal(binary, true)`; `assert.equal(value.toString(), 'RFB 003.008\n')`.
+     * 设计思路：根据受控条件分别注入拒绝或结果，保持分支证据可观察，供调用者失败恢复用例复用。
+     * Design: Inject rejection or results under controlled conditions while keeping branch evidence observable for caller recovery tests.
+     */
+    (raw, binary) => {
       try {
         assert.equal(binary, true); const value = Buffer.from(raw as Buffer);
         if (step === 0) {
@@ -286,9 +414,39 @@ async function ownedRfbPeer(mode: 'vnc' | 'none' | 'text', action: (url: string,
   }
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: owned RFB client authenticates fragmented binary frames and physically closes success and refusal
+ * 协作入口 / Collaborators: `ownedRfbPeer`.
+ */
 test('owned RFB client authenticates fragmented binary frames and physically closes success and refusal', { timeout: 15000 }, async () => {
-  await ownedRfbPeer('vnc', async (url, errors) => {
+  await ownedRfbPeer('vnc', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: url; errors。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: owned RFB client authenticates fragmented binary frames and physically closes success and refusal
+   * 协作入口 / Collaborators: `probeOwnedDesktopRfb`, `assert.equal`, `assert.ok`, `Promise.all`.
+   * 检查边界 / Checked boundaries: `assert.equal(refused.authenticationAccepted, false)`; `assert.equal(refused.authenticationResult, 1)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
+  async (url, errors) => {
     const closures: Promise<void>[] = [], states: boolean[] = [];
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: socket: WebSocket。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: owned RFB client authenticates fragmented binary frames and physically closes success and refusal
+     * 协作入口 / Collaborators: `states.push`, `closures.push`.
+     */
     const observe = (socket: WebSocket) => {
       const index = states.push(false) - 1; closures.push(new Promise<void>(done => socket.once('close', () => { states[index] = true; done(); })));
     };
@@ -302,6 +460,15 @@ test('owned RFB client authenticates fragmented binary frames and physically clo
   });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: owned RFB client refuses unauthenticated and text transports and physically closes both
+ * 协作入口 / Collaborators: `ownedRfbPeer`.
+ */
 test('owned RFB client refuses unauthenticated and text transports and physically closes both', { timeout: 15000 }, async () => {
   for (const mode of ['none', 'text'] as const) await ownedRfbPeer(mode, async (url, errors) => {
     let physicallyClosed = false;
@@ -310,6 +477,16 @@ test('owned RFB client refuses unauthenticated and text transports and physicall
   });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: test-only DMI UUID preserves production argv and rejects a supplied or invalid UUID
+ * 协作入口 / Collaborators: `assert.deepEqual`, `ownedDesktopQemuArguments`, `assert.throws`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(ownedDesktopQemuArguments(original, id), [...original, '-uuid', id])`; `assert.deepEqual(original, ['-name', 'sakura-owned', '-machine', 'q35', '-accel', 'tcg,thread=single'])`.
+ */
 test('test-only DMI UUID preserves production argv and rejects a supplied or invalid UUID', () => {
   const original = ['-name', 'sakura-owned', '-machine', 'q35', '-accel', 'tcg,thread=single'];
   const id = '71d1b307-c853-4795-ae3b-8882b41d7f38';
@@ -319,6 +496,16 @@ test('test-only DMI UUID preserves production argv and rejects a supplied or inv
   assert.throws(() => ownedDesktopQemuArguments(original, 'other'));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: real SSH2 client with no socket records non-creation without fabricating close
+ * 协作入口 / Collaborators: `client.on`, `closeOwnedDesktopSshClient`, `assert.equal`, `Reflect.get`.
+ * 检查边界 / Checked boundaries: `assert.equal(result, 'not-created')`; `assert.equal(state.notCreated, true)`.
+ */
 test('real SSH2 client with no socket records non-creation without fabricating close', async () => {
   const client = new ssh2.Client(), state = { ready: false, closed: false, notCreated: false };
   client.on('close', () => { state.closed = true; });
@@ -327,9 +514,28 @@ test('real SSH2 client with no socket records non-creation without fabricating c
   assert.equal(state.closed, false); assert.equal(Reflect.get(client, '_sock'), undefined);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: real SSH2 pre-admission TCP connection waits for physical client and socket closure
+ * 协作入口 / Collaborators: `createServer`, `client.once`, `client.on`, `client.connect`.
+ * 检查边界 / Checked boundaries: `assert.ok(Reflect.get(client, '_sock'))`; `assert.equal(await closeOwnedDesktopSshClient(client, state, physicalClose, 2000), 'closed')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('real SSH2 pre-admission TCP connection waits for physical client and socket closure', { timeout: 10000 }, async () => {
   const peers = new Set<Socket>();
-  let accepted!: () => void;
+  let accepted!: /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void;
   const connection = new Promise<void>((done) => { accepted = done; });
   const server = createServer((socket) => {
     peers.add(socket); socket.on('error', () => {}); socket.once('close', () => peers.delete(socket));
@@ -352,6 +558,16 @@ test('real SSH2 pre-admission TCP connection waits for physical client and socke
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: guard process keeps stdin open until its actual admission request and physically closes
+ * 协作入口 / Collaborators: `process.cwd`, `fixture.raw`, `assert.equal`, `child.child.stdin!.end`.
+ * 检查边界 / Checked boundaries: `assert.equal(child.child.stdin!.writableEnded, false)`; `assert.equal(result.stdout.toString(), 'EXACT_ADMISSION_REQUEST')`.
+ */
 test('guard process keeps stdin open until its actual admission request and physically closes', { skip: process.platform !== 'win32' }, async () => {
   const fixture = new LinuxDesktopOwnedFixture(process.cwd());
   const child = fixture.raw(process.execPath, ['-e', "process.stdin.once('data',bytes=>{process.stdout.write(bytes);process.stdin.destroy();})"], 'delayed-guard-model');
@@ -365,6 +581,16 @@ test('guard process keeps stdin open until its actual admission request and phys
   assert.equal(fixture.children.size, 0);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: owned Linux desktop receipt uses an exact log role and rejects path escapes
+ * 协作入口 / Collaborators: `assert.equal`, `desktopFixtureLogPath`, `assert.throws`, `id.toUpperCase`.
+ * 检查边界 / Checked boundaries: `assert.equal(desktopFixtureLogPath(root, id, 'stdout'), root + '\\logs\\' + id + '.stdout.bin')`; `assert.equal(desktopFixtureLogPath(root, id, 'stderr'), root + '\\logs\\' + id + '.stderr.bin')`.
+ */
 test('owned Linux desktop receipt uses an exact log role and rejects path escapes', () => {
   const root = 'E:\\OwnedFixture\\linux-desktop-identity-cow-aabbccdd';
   const id = '71d1b307-c853-4795-ae3b-8882b41d7f38';
@@ -377,6 +603,16 @@ test('owned Linux desktop receipt uses an exact log role and rejects path escape
   assert.throws(() => desktopFixtureLogPath(root, id, 'other' as 'stdout'));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: actual PowerShell guard inventory refuses an unheld initial entry, disappearance and role change
+ * 协作入口 / Collaborators: `readFileSync`, `source.indexOf`, `assert.ok`, `source.slice`.
+ * 检查边界 / Checked boundaries: `assert.ok(start > 0 && end > start)`; `assert.equal(result, 'LOCKED_INVENTORY_MODEL_PASS:6')`.
+ */
 test('actual PowerShell guard inventory refuses an unheld initial entry, disappearance and role change', { skip: process.platform !== 'win32' }, () => {
   const source = readFileSync(new URL('../scripts/linux-desktop-owned-fixture.ps1', import.meta.url), 'utf8');
   const start = source.indexOf("Add-Type -TypeDefinition @'"), end = source.indexOf("'@", start);
@@ -411,6 +647,16 @@ if($rejected -ne 6){throw 'MODEL_REJECTION_COUNT'}
   assert.equal(result, 'LOCKED_INVENTORY_MODEL_PASS:6');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: held owned root permits product atomic replacement, while source content and root renaming remain denied
+ * 协作入口 / Collaborators: `readFileSync`, `source.indexOf`, `existsSync`, `tmpdir`.
+ * 检查边界 / Checked boundaries: `assert.equal(result, 'OWNED_CAS_SOURCE_READONLY_ROOT_PIN_PASS')`.
+ */
 test('held owned root permits product atomic replacement, while source content and root renaming remain denied', { skip: process.platform !== 'win32' }, () => {
   const source = readFileSync(new URL('../scripts/linux-desktop-owned-fixture.ps1', import.meta.url), 'utf8');
   const start = source.indexOf("Add-Type -TypeDefinition @'"), end = source.indexOf("'@", start);

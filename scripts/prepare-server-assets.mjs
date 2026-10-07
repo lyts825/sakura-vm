@@ -1,4 +1,5 @@
-/** 组装服务器运行资源、动态入口和原生辅助清单，协调各 prepare 步骤以形成完整安装布局。 */
+/** 组装服务器运行资源、动态入口和原生辅助清单，协调各 prepare 步骤以形成完整安装布局。
+ * Coordinate native/guest/static asset preparation and describe packaged resources for installed service startup. */
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -28,6 +29,8 @@ const networkSources = [
   'server/network/worker.mjs',
   'server/network/parent-exec.py',
 ];
+/** 读取指定资源并返回相对文件名、字节长度和 SHA-256，供打包来源清单校验。
+ * Read the resource and return relative name/byte length/SHA-256 for packaged-source manifests. */
 const describe = async (base, file) => {
   const bytes = await readFile(join(base, file));
   return { file, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };

@@ -1,4 +1,9 @@
-/** 烟雾验收：验证私有 window station 上 Windows 原生剪贴板方向、内容和格式策略。 */
+/**
+ * 模块职责：在自有私有 window station 核对真实 Windows 剪贴板方向、格式、敏感扫描与启动取消。
+ * Module: Verify real Windows clipboard directions, formats, sensitive scanning and launch cancellation on an owned private window station.
+ * 设计思路：编译并驱动自有夹具，在私有 station、独立状态文件与精确出生身份范围内检查实际回执；本脚本会产生临时进程/资产，执行平台及编译器要求由入口校验定义。
+ * Design: Compile/drive owned fixtures and check actual receipts within private stations, separate state files and exact process-birth identities. This script creates temporary processes/assets; entry checks define platform/compiler requirements.
+ */
 import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -24,6 +29,14 @@ const compiler =
     : process.env.SAKURA_NATIVE_CLIPBOARD_CXX || 'g++.exe';
 const fixture = join(folder, 'fixture.exe'),
   other = join(folder, 'other.exe');
+/**
+ * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+ * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+ * 输入 / Inputs: target。
+ * 结果：返回列表形式的受控数据，供调用者遍历或比较。
+ * Result: Return controlled data as a list for iteration or comparison.
+ * 协作入口 / Collaborators: `resolve`.
+ */
 const fixtureArguments = (target) => [
   '-std=c++17',
   '-O2',
@@ -49,6 +62,17 @@ const assets = resolve(process.env.SAKURA_NATIVE_CLIPBOARD_ASSETS || '.tools/nat
 const controller = join(assets, `sakura-clipboard-controller${bits === 32 ? '-x86' : ''}.exe`);
 const library = join(assets, `SakuraClipboardPolicy${bits === 32 ? '-x86' : ''}.dll`);
 const owner = randomUUID();
+/**
+ * 中文功能：启动直接夹具或准备受控启动管道，统一提供 ready、命令请求和关闭接口。
+ * English: Start a direct fixture or prepare a controlled-launch pipe, exposing one ready/request/close interface.
+ * 输入 / Inputs: path; station; controlled。
+ * 结果：返回受控对象，公开字段包括 `child, path, ready, committed, request, close`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `child, path, ready, committed, request, close`; the actual branch determines its shape.
+ * 状态影响 / State effects: `pipe`, `server`, `args`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `randomUUID`, `createServer`, `spawn`, `receive`.
+ * 设计思路：将管道准备与控制面提交分开，ready 的拒绝先登记观察以避免未处理拒绝；等待者各自有超时，退出拒绝尚未完成的请求，close 回收本入口创建的流与服务。
+ * Design: Separate pipe preparation from control-plane commitment and observe ready rejection immediately. Waiters have individual deadlines, exits reject pending requests, and close releases streams/servers created by this entry.
+ */
 async function launch(path, station, controlled) {
   let server, socket, lines, pipe;
   const queued = [],
@@ -56,6 +80,15 @@ async function launch(path, station, controlled) {
   let error = '',
     closed = false,
     phase = 'startup';
+  /**
+   * 中文功能：把给定流连接到逐行 JSON 读取器，按等待者或排队状态分发夹具消息。
+   * English: Attach the given stream to a line-delimited JSON reader and dispatch fixture messages to waiters or the queue.
+   * 输入 / Inputs: input。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `lines`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `createInterface`, `lines.on`.
+   */
   const receive = (input) => {
     lines = createInterface({ input });
     lines.on('line', (line) => {
@@ -98,17 +131,49 @@ async function launch(path, station, controlled) {
   child?.on('error', (error) => {
     for (const wait of waiting.splice(0)) wait.reject(error);
   });
+  /**
+   * 中文功能：优先取已排队回执，否则登记等待者；关闭或超时通过本分支的拒绝路径结束等待。
+   * English: Consume a queued receipt first or register a waiter; the implemented closure/timeout rejection path ends pending waits.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`queued.length ? Promise.resolve(queued.shift()) : closed ? Promise.reject(new Er…`）。
+   * Result: Return the branch-computed value (`queued.length ? Promise.resolve(queued.shift()) : closed ? Promise.reject(new Er…`).
+   * 协作入口 / Collaborators: `Promise.resolve`, `queued.shift`, `Promise.reject`.
+   */
   const next = () =>
     queued.length
       ? Promise.resolve(queued.shift())
       : closed
         ? Promise.reject(new Error('fixture closed'))
-        : new Promise((resolve, reject) => {
+        : new Promise(/**
+         * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+         * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+         * 输入 / Inputs: resolve; reject。
+         * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+         * Result: No explicit result value; callers observe completion, state changes or an exception.
+         * 协作入口 / Collaborators: `setTimeout`, `waiting.push`.
+         */
+        (resolve, reject) => {
             const waiter = {
+              /**
+               * 中文功能：清除本等待者的超时定时器并完成其成功结果。
+               * English: Clear this waiter's timeout and settle its successful result.
+               * 输入 / Inputs: result。
+               * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+               * Result: No explicit result value; callers observe completion, state changes or an exception.
+               * 协作入口 / Collaborators: `clearTimeout`, `resolve`.
+               */
               resolve: (result) => {
                 clearTimeout(timer);
                 resolve(result);
               },
+              /**
+               * 中文功能：清除本等待者的超时定时器并交付失败原因。
+               * English: Clear this waiter's timeout and deliver its rejection reason.
+               * 输入 / Inputs: reason。
+               * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+               * Result: No explicit result value; callers observe completion, state changes or an exception.
+               * 协作入口 / Collaborators: `clearTimeout`, `reject`.
+               */
               reject: (reason) => {
                 clearTimeout(timer);
                 reject(reason);
@@ -128,11 +193,28 @@ async function launch(path, station, controlled) {
     path,
     ready,
     committed: controlled?.(pipe),
+    /**
+     * 中文功能：向夹具发送操作与可选正文，再等待与本命令对应的下一条回执。
+     * English: Send an operation and optional body to the fixture, then await the next receipt for this command.
+     * 输入 / Inputs: action; text。
+     * 结果：返回分支计算值（`next()`），以 Promise 交付。
+     * Result: Return the branch-computed value (`next()`) through a Promise.
+     * 状态影响 / State effects: `phase`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `(socket || child.stdin).write`, `next`.
+     */
     request: async (action, text) => {
       phase = action;
       (socket || child.stdin).write(action + (text === undefined ? '' : '\t' + text) + '\n');
       return next();
     },
+    /**
+     * 中文功能：关闭本夹具拥有的进程、流或管道；具体等待期限和强制终止条件以本函数分支为准。
+     * English: Close processes, streams or pipes owned by this fixture; its branches define wait deadlines and forced-termination conditions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `(socket || child?.stdin)?.end`, `lines?.close`, `socket?.destroy`.
+     */
     close: async () => {
       (socket || child?.stdin)?.end();
       if (child && !closed)
@@ -151,6 +233,15 @@ async function launch(path, station, controlled) {
 }
 const a = await launch(fixture, '--create');
 let identity, b, c, started, service;
+/**
+ * 中文功能：执行固定原生控制器命令，收集其输出并解析 JSON 状态供断言使用。
+ * English: Execute a fixed native-controller command, collect output and parse JSON state for assertions.
+ * 输入 / Inputs: args。
+ * 结果：返回分支计算值（`JSON.parse(stdout)`），以 Promise 交付。
+ * Result: Return the branch-computed value (`JSON.parse(stdout)`) through a Promise.
+ * 失败 / Failure: `new Error(JSON.parse(error.stdout).error)`; `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `execute`, `JSON.parse`.
+ */
 async function agent(args) {
   try {
     const { stdout } = await execute(controller, args, { windowsHide: true, timeout: 70000 });
@@ -160,6 +251,15 @@ async function agent(args) {
     throw error;
   }
 }
+/**
+ * 中文功能：向指定原进程应用本用例的方向、大小和启用策略，核对操作回执与实际状态。
+ * English: Apply this case's direction, size and enablement policy to the specified original process and check receipts/state.
+ * 输入 / Inputs: flags; maximum = 1048576; active = true。
+ * 结果：返回分支计算值（`state`），以 Promise 交付。
+ * Result: Return the branch-computed value (`state`) through a Promise.
+ * 协作入口 / Collaborators: `agent`, `String`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal(state.ready, true)`; `assert.equal(state.active, active)`.
+ */
 async function apply(flags, maximum = 1048576, active = true) {
   const state = await agent([
     'apply',
@@ -176,6 +276,18 @@ async function apply(flags, maximum = 1048576, active = true) {
   assert.equal(state.active, active);
   return state;
 }
+/**
+ * 中文功能：在 prepared 或 attached 边界注入输入 EOF、强制退出或提交回复丢失，验证新 Job 的清理与邻居保护。
+ * English: Inject input EOF, forced exit or lost commit output at prepared/attached boundaries to verify fresh-Job cleanup and neighbor protection.
+ * 输入 / Inputs: binding; stage; mode。
+ * 结果：返回受控对象，公开字段包括 `stage, mode, process, stopped, primaryNeverEntered, replyLostAfterResume, mappingGone, existingFixtureRetained`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `stage, mode, process, stopped, primaryNeverEntered, replyLostAfterResume, mappingGone, existingFixtureRetained`; the actual branch determines its shape.
+ * 状态影响 / State effects: `pipeServer`, `prepared`, `present`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `randomUUID`, `join`, `createServer`, `spawn`.
+ * 检查边界 / Checked boundaries: `assert.equal(prepared.stage, 'prepared')`; `assert.equal(prepared.launchId, nonce)`.
+ * 设计思路：记录新进程完整身份再破坏握手，仅在 stdout-loss 情景允许主线程可能已恢复；用原生清单检查该进程消失，并在 finally 回收本测试的管道和控制器，不用邻居消失推断清理成功。
+ * Design: Capture the complete new process identity before breaking the handshake; only stdout-loss permits a possibly resumed primary thread. Check disappearance through native inventory, then finalize this case's pipes/controller without inferring success from a neighbor's fate.
+ */
 async function failedControlledLaunch(binding, stage, mode) {
   const failureOwner = randomUUID(),
     nonce = randomUUID();
@@ -226,6 +338,14 @@ async function failedControlledLaunch(binding, stage, mode) {
     child.once('close', (code, signal) => resolve({ code, signal }));
   });
   const timer = setTimeout(() => child.kill(), 40000);
+  /**
+   * 中文功能：优先取已排队回执，否则登记等待者；关闭或超时通过本分支的拒绝路径结束等待。
+   * English: Consume a queued receipt first or register a waiter; the implemented closure/timeout rejection path ends pending waits.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`messages.length ? Promise.resolve(messages.shift()) : new Promise((resolve, reje…`）。
+   * Result: Return the branch-computed value (`messages.length ? Promise.resolve(messages.shift()) : new Promise((resolve, reje…`).
+   * 协作入口 / Collaborators: `Promise.resolve`, `messages.shift`.
+   */
   const next = () =>
     messages.length
       ? Promise.resolve(messages.shift())
@@ -309,6 +429,18 @@ async function failedControlledLaunch(binding, stage, mode) {
     if (pipeServer) await new Promise((resolve) => pipeServer.close(resolve));
   }
 }
+/**
+ * 中文功能：在新启动记录出现或策略附着后关闭服务，验证取消保留持久归属且原生新进程被终止。
+ * English: Close the service after a new launch record appears or policy attaches, verifying retained durable ownership and termination of the new native process.
+ * 输入 / Inputs: binding; file; stage。
+ * 结果：返回受控对象，公开字段包括 `stage, process, primaryNeverEntered, ownershipRetained, otherPolicyRetained`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `stage, process, primaryNeverEntered, ownershipRetained, otherPolicyRetained`; the actual branch determines its shape.
+ * 状态影响 / State effects: `cancelled`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `JSON.parse`, `readFile`, `saved.managed.map`, `join`.
+ * 检查边界 / Checked boundaries: `assert.rejects( cancelled.action({ action: 'launch', version: cancelled.view().version, image: binding.image, sha256: binding.sha2…`; `assert.ok(owned)`.
+ * 设计思路：从原记录集合区分新运行，guard 只触发一次 close；启动拒绝、关闭完成和入口标记分别观察，取消后的持久回执保留供重建核对，其他受限夹具仍必须存活。
+ * Design: Distinguish the new run from the original record set and let guard trigger close once. Observe launch rejection, close completion and entry markers separately; retain post-cancel durable receipts for reconciliation while other restricted fixtures remain alive.
+ */
 async function closedServiceLaunch(binding, file, stage) {
   const saved = JSON.parse(await readFile(file, 'utf8'));
   const previous = new Set(saved.managed.map((process) => `${process.pid}:${process.created}`));
@@ -324,6 +456,16 @@ async function closedServiceLaunch(binding, file, stage) {
     file: cancelFile,
     assets,
     interval: 0,
+    /**
+     * 中文功能：检查本轮真实原生回执和状态，以下断言摘录给出本函数具体核对的边界。
+     * English: Check real native receipts/state from this run; assertion excerpts below identify the boundaries checked by this function.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `owned`, `closeTask`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `JSON.parse`, `readFileSync`, `state.managed.find`, `spawnSync`.
+     * 检查边界 / Checked boundaries: `assert.equal(checked.status, 0)`.
+     */
     guard: () => {
       const state = JSON.parse(readFileSync(cancelFile, 'utf8'));
       const pending = state.managed.find((process) => !previous.has(`${process.pid}:${process.created}`));
@@ -538,6 +680,14 @@ try {
     file,
     assets,
     interval: 150,
+    /**
+     * 中文功能：计算本轮原生验收的辅助值；输入与分支结果如下，供相邻创建或断言步骤使用。
+     * English: Compute a helper value for this native smoke; inputs and branch results below serve adjacent creation/assertion steps.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 失败 / Failure: `new Error('session locked')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     */
     guard: () => {
       if (locked) throw new Error('session locked');
     },

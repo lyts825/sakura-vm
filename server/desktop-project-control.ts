@@ -1,5 +1,6 @@
 /**
  * 模块职责：定义桌面适配器票据与控制命令，按原 UID、运行目录及 inode 核对和退休资源。
+ * Module purpose: Defines adapter tickets and control commands; verifies and retires resources by original UID, runtime directory and inode.
  */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -315,6 +316,17 @@ except Exception as error:
  sys.exit(73)
 `;
 
+/**
+ * 入口 / Entry: desktopProjectCommand.
+ * 功能：在定义桌面适配器票据与控制命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``# SAKURA_PROJECT_DESKTOP_REQUEST=${metadata}\n${fixedEnvironment} /usr/bin/python3 -I -S -c ${quote(desktopAdapterSource)} $…` 供上层消费（`desktop-project-control.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-project-control.ts`; this entry produces ``# SAKURA_PROJECT_DESKTOP_REQUEST=${metadata}\n${fixedEnvironment} /usr/bin/python3 -I -S -c ${quote(desktopAdapterSource)} $…` for its caller. Module context: Defines adapter tickets and control commands; verifies and retires resources by original UID, runtime directory and inode.
+ * 处理：通过 `desktopControlProofSchema.parse`, `inline.includes`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `desktopControlProofSchema.parse`, `inline.includes`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: op: 'probe' | 'stream' | 'guard' | 'guard-probe' | 'unguard'; proof: DesktopControlProof
+ * 输出 / Returns: ``# SAKURA_PROJECT_DESKTOP_REQUEST=${metadata}\n${fixedEnvironment} /usr/bin/python3 -I -S -c ${quote(desktopAdapterSource)} $…`.
+ * 副作用 / Effects: 更新 / updates `proof`.
+ * 拒绝 / Refusals: 条件 / conditions `['probe', 'stream'].includes(op) && !proof.run`; 异常 / errors `new AppError('Desktop 尚无原完整 native ticket', 409, 'DESKTOP_SCOPE_CHANGED')`.
+ */
 export function desktopProjectCommand(op: 'probe' | 'stream' | 'guard' | 'guard-probe' | 'unguard', proof: DesktopControlProof) {
   proof = desktopControlProofSchema.parse(proof);
   if (['probe', 'stream'].includes(op) && !proof.run)
@@ -322,6 +334,19 @@ export function desktopProjectCommand(op: 'probe' | 'stream' | 'guard' | 'guard-
   const metadata = Buffer.from(JSON.stringify({ op, proof })).toString('base64');
   return `# SAKURA_PROJECT_DESKTOP_REQUEST=${metadata}\n${fixedEnvironment} /usr/bin/python3 -I -S -c ${quote(desktopAdapterSource)} ${quote(metadata)}`;
 }
+/**
+ * 入口 / Entry: desktopProjectControl.
+ * 功能：在定义桌面适配器票据与控制命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `op === 'probe' ? z.object({ endpoint: desktopEndpointSchema }).strict().parse(reply.result) : z.object({ guarded: z.boolean()…` 供上层消费（`desktop-project-control.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-project-control.ts`; this entry produces `op === 'probe' ? z.object({ endpoint: desktopEndpointSchema }).strict().parse(reply.result) : z.object({ guarded: z.boolean()…` for its caller. Module context: Defines adapter tickets and control commands; verifies and retires resources by original UID, runtime directory and inode.
+ * 处理：通过 `machines.exec`, `desktopProjectCommand`, `adapterRefusalSchema.safeParse`, `inline.includes` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `machines.exec`, `desktopProjectCommand`, `adapterRefusalSchema.safeParse`, `inline.includes`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: machines: Machines; id: string; op: 'probe' | 'guard' | 'guard-probe' | 'unguard'; proof: DesktopControlProof; signal: AbortSignal optional
+ * 输出 / Returns: `op === 'probe' ? z.object({ endpoint: desktopEndpointSchema }).strict().parse(reply.result) : z.object({ guarded: z.boolean()…`.
+ * 副作用 / Effects: `machines.exec`; 更新 / updates `reply`.
+ * 拒绝 / Refusals: 条件 / conditions `result.code !== 0 || !reply || typeof reply !== 'object' || reply.ok !== true`; `op === 'probe' && proof.endpoint === null && refusal.success && refusal.data.code === 'DESKTOP_NOT_READY' && waiting`; 异常 / errors `new AppError('Desktop 固定 adapter 没有可核对回执', 503, 'DESKTOP_CONTROL_FAILED')`; `new AppError('Desktop 原会话正在准备图形端点', 409, 'DESKTOP_NOT_READY')`.
+ * 失败处理：catch 分支执行 `throw new AppError('Desktop 固定 adapter 没有可核对回执', 503, 'DESKTOP_CONTROL_FAILED');`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `throw new AppError('Desktop 固定 adapter 没有可核对回执', 503, 'DESKTOP_CONTROL_FAILED');`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function desktopProjectControl(machines: Machines, id: string, op: 'probe' | 'guard' | 'guard-probe' | 'unguard',
   proof: DesktopControlProof, signal?: AbortSignal) {
   const result = await machines.exec(id, desktopProjectCommand(op, proof), 40000, signal);

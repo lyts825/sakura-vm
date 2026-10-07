@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：实现控制器后代代理和接管协议。绑定管道客户端、父/孩子/代理创建时间、令牌身份及精确传递句柄；暂停孩子经过服务授权才附加与提交，拒绝/断连只清理请求自有 Job。
+ * Module responsibilities (English): Implement controller descendant brokering/adoption. Bind pipe client, parent/child/broker creation times, token identities and exact transferred handles; attach/commit suspended children only after service authorization and clean request-owned Jobs on refusal/disconnect.
+ */
 /** 后代启动代理与收养流程：复制精确句柄，核实父子、令牌及 Job 身份，再等待服务持久授权后装载策略与恢复线程。 */
 #pragma once
 #include "descendant.h"
@@ -14,16 +18,19 @@ struct DescendantPending {
   HANDLE job;
   bool complete=false,success=false;
   std::condition_variable changed;
+  /** 中文：持有本请求精确 Job 引用和条件变量状态，等待服务对同一请求 ID 给出完成/成功结论。 English: Retain this request's exact Job reference/condition-variable state while awaiting service completion/success for the same request ID. 参数声明 / Declared parameters: HANDLE value. */
   explicit DescendantPending(HANDLE value):job(value){}
 };
 static std::mutex descendantPendingLock,descendantOutputLock;
 static std::map<std::string,std::shared_ptr<DescendantPending>> descendantPending;
+/** 中文：从已固定源进程复制指定数字句柄的同一内核对象和访问权限，拒绝零或超指针宽度 token。 English: Duplicate the same kernel object/access mask from a pinned source process, rejecting zero/out-of-pointer-range handle tokens. 参数声明 / Declared parameters: HANDLE source,uint64_t token. */
 static HANDLE descendantAcquire(HANDLE source,uint64_t token) {
   HANDLE result=nullptr;
   if(!token || token>UINTPTR_MAX || !DuplicateHandle(source,reinterpret_cast<HANDLE>(uintptr_t(token)),GetCurrentProcess(),&result,0,FALSE,DUPLICATE_SAME_ACCESS))
     throw std::runtime_error("descendant exact handle copy unavailable");
   return result;
 }
+/** 中文：生成规范小写 GUID 请求 ID，绑定一次代理握手而非以 PID 代替授权。 English: Generate a lowercase GUID request ID for one broker handshake rather than substituting PID for authority. */
 static std::wstring descendantNonce() {
   GUID value{};if(FAILED(CoCreateGuid(&value)))throw std::runtime_error("descendant request id unavailable");
   wchar_t text[40]{};if(!StringFromGUID2(value,text,40))throw std::runtime_error("descendant request id unavailable");
@@ -32,6 +39,7 @@ static std::wstring descendantNonce() {
   return result;
 }
 // 对端 PID 只用于取得句柄；创建时间、会话、父子关系、令牌与精确 Job 成员必须全部吻合。
+/** 中文：从命名管道核实精确父进程，再复制并验证子进程/主线程/独占 Job/映像文件及原父策略；发布请求后保留句柄直到服务确认。父结束或超时先终止本 Job但仍等请求 settle，防止数字句柄被回收后让迟到 helper 复制新对象。 English: Verify the exact pipe parent, duplicate/check child/primary/exclusive Job/image file/original parent policy and retain handles until service settlement. Parent loss/timeout terminates this Job but still awaits settlement so recycled handle numbers cannot let late helpers duplicate new objects. 参数声明 / Declared parameters: HANDLE input,std::wstring owner. */
 static void descendantClient(HANDLE input,std::wstring owner) {
   Handle pipe(input),parent(nullptr),process(nullptr),thread(nullptr),job(nullptr),file(nullptr),reservation(nullptr);
   SakuraDescendantReply reply{SakuraDescendantMagic,SakuraDescendantVersion,ERROR_ACCESS_DENIED,0};
@@ -129,6 +137,7 @@ static void descendantClient(HANDLE input,std::wstring owner) {
   if(!reply.error)descendantTransfer(pipe.value,&acknowledged,sizeof(acknowledged),false,5000);
   DisconnectNamedPipe(pipe.value);
 }
+/** 中文：建立只允许同用户和 System 的本地管道与唯一端点映射，监听服务 ok/fail 并分派客户端线程；stdin EOF 终止所有未提交精确 Job后退出。 English: Create a local user/System-only pipe/unique endpoint mapping, read service ok/fail and dispatch clients. On stdin EOF terminate all uncommitted exact Jobs before exit. 参数声明 / Declared parameters: const std::wstring& owner. */
 static void descendantBroker(const std::wstring& owner) {
   mapping(owner.c_str(),1,1);
   const auto token=user(GetCurrentProcess());wchar_t* sid=nullptr;
@@ -138,6 +147,7 @@ static void descendantBroker(const std::wstring& owner) {
   if(!ConvertStringSecurityDescriptorToSecurityDescriptorW(text.c_str(),SDDL_REVISION_1,&security,nullptr))throw std::runtime_error("descendant broker ACL unavailable");
   SECURITY_ATTRIBUTES acl{sizeof(acl),security,FALSE};
   const auto pipeName=L"\\\\.\\pipe\\SakuraClipboard.Descendants."+owner+L"."+descendantNonce();
+  /** 中文：以固定 ACL 创建重叠消息管道，首实例要求唯一并拒绝远端客户端，供代理逐连接补位。 English: Create an overlapped message pipe with fixed ACL, first-instance uniqueness and remote-client rejection for replenishing broker connections. 参数声明 / Declared parameters: bool first. */
   const auto create=[&](bool first){return CreateNamedPipeW(pipeName.c_str(),PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED|(first?FILE_FLAG_FIRST_PIPE_INSTANCE:0),
     PIPE_TYPE_MESSAGE|PIPE_READMODE_MESSAGE|PIPE_WAIT|PIPE_REJECT_REMOTE_CLIENTS,64,4096,4096,15000,&acl);};
   Handle pipe(create(true));
@@ -152,7 +162,7 @@ static void descendantBroker(const std::wstring& owner) {
   config.pid=GetCurrentProcessId();config.creationTime=processCreation(GetCurrentProcess());std::memcpy(config.build,SAKURA_CLIPBOARD_BUILD,65);
   std::copy(pipeName.begin(),pipeName.end(),config.pipe);std::memcpy(data,&config,sizeof(config));UnmapViewOfFile(data);
   std::cout<<"{\"stage\":\"ready\",\"pid\":"<<config.pid<<",\"created\":\""<<config.creationTime<<"\"}"<<std::endl;published();
-  std::thread([]{
+  std::thread(/** 中文：控制输入线程只接受完整 nonce 的 ok/fail 确认并通知对应等待者；EOF 清理所有未提交 Job 后退出，避免无人控制的暂停孩子残留。 English: The control-input thread accepts only ok/fail confirmations with complete nonces and notifies matching waiters; EOF cleans uncommitted Jobs and exits so suspended children cannot remain uncontrolled. */ []{
     std::string line;
     while(std::getline(std::cin,line)){
       std::istringstream fields(line);std::string action,id,extra;fields>>action>>id;
@@ -177,10 +187,12 @@ static void descendantBroker(const std::wstring& owner) {
     std::thread(descendantClient,accepted,owner).detach();
   }
 }
+/** 中文：先严格解析字符串句柄 token，再从已固定代理复制同一对象，沿用句柄身份边界。 English: Strictly parse the string handle token before duplicating the same object from the pinned broker, retaining exact-handle identity boundaries. 参数声明 / Declared parameters: HANDLE source,const wchar_t* value. */
 static HANDLE descendantDuplicate(HANDLE source,const wchar_t* value) {
   return descendantAcquire(source,number(value));
 }
 // 从已固定代理复制句柄并反复核实代次；旧数字句柄不能跨代理重启复用为新进程授权。
+/** 中文：从精确代理复制已挂起子进程和原 Job/文件句柄，反复核对代理代次、原父进程、子令牌及文件摘要；attach/resume 授权后装载早期策略，按原 caller 的 suspended 意图恢复，失败只终止这个 Job。 English: Copy the suspended child/original Job/file from the exact broker, repeatedly verify broker generation/original parent/child token/digest, install early policy after attach-resume authorization and preserve the caller's suspended intention. Failure terminates only this Job. 参数声明 / Declared parameters: const wchar_t* owner,const std::wstring& expected,const std::wstring& digest,const std::wstring& library, uint32_t flags,uint32_t maximum,const std::wstring& nonce,DWORD brokerPid,uint64_t brokerCreated, const wchar_t* processToken,const wchar_t* threadToken,const wchar_t* jobToken,const wchar_t* fileToken,bool suspended,DWORD parentPid,uint64_t parentCreated. */
 static void descendantAdopt(const wchar_t* owner,const std::wstring& expected,const std::wstring& digest,const std::wstring& library,
     uint32_t flags,uint32_t maximum,const std::wstring& nonce,DWORD brokerPid,uint64_t brokerCreated,
     const wchar_t* processToken,const wchar_t* threadToken,const wchar_t* jobToken,const wchar_t* fileToken,bool suspended,DWORD parentPid,uint64_t parentCreated) {
@@ -195,6 +207,7 @@ static void descendantAdopt(const wchar_t* owner,const std::wstring& expected,co
   const DWORD pid=GetProcessId(process.value);const uint64_t creation=processCreation(process.value);const unsigned architecture=bits(process.value);
   try {
     const auto token=descendantProcessToken(process.value);
+    /** 中文：同时复核端点构建与代理创建时间、原父存活、子身份/令牌/精确 Job及独占挂起，防止代理重启或父终止后提交。 English: Reverify endpoint build/broker creation/original parent liveness/child identity-token-exact Job-exclusive suspension, preventing commit after broker restart/parent termination. */
     const auto check=[&]{BOOL inJob=FALSE;DWORD targetSession=0,ownSession=0;
       const auto actualToken=descendantProcessToken(process.value);
       Handle endpoint(OpenFileMappingW(FILE_MAP_READ,FALSE,descendantEndpointName(owner).c_str()));
@@ -213,6 +226,7 @@ static void descendantAdopt(const wchar_t* owner,const std::wstring& expected,co
           GetProcessIdOfThread(thread.value)!=pid || !IsProcessInJob(process.value,job.value,&inJob) || !inJob || WaitForSingleObject(process.value,0)!=WAIT_TIMEOUT)
         throw std::runtime_error("descendant process identity changed");primarySuspended(thread.value);};
     check();selectedFile(file.value,expected,digest);selectedExecutable(file.value);
+    /** 中文：声明 GetPackageFullName 动态契约，以确切无包状态决定是否允许普通 EXE 启动。 English: Declare dynamic GetPackageFullName to require the exact unpackaged state for an ordinary EXE launch. 参数声明 / Declared parameters: HANDLE,UINT32*,PWSTR. */
     using InspectPackage=LONG(WINAPI*)(HANDLE,UINT32*,PWSTR);
     const auto inspectPackage=reinterpret_cast<InspectPackage>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"GetPackageFullName"));UINT32 length=0;
     if(!inspectPackage || inspectPackage(process.value,&length,nullptr)!=APPMODEL_ERROR_NO_PACKAGE)throw std::runtime_error("descendant requires an unpackaged executable");

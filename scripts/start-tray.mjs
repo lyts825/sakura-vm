@@ -1,4 +1,5 @@
-/** Windows 托盘启动入口，启动 PowerShell 托盘脚本并将参数传到隐藏的本机辅助进程。 */
+/** Windows 托盘启动入口，启动 PowerShell 托盘脚本并将参数传到隐藏的本机辅助进程。
+ * Launch the PowerShell tray entry as a hidden Windows helper while forwarding the requested arguments. */
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';

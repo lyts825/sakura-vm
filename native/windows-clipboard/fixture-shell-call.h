@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：仅供自有夹具观察系统 Shell 的真实 CreateProcessW IAT 调用和参数，故障注入保持公开属性调用的真实返回地址来源，不替换属性列表实现。
+ * Module responsibilities (English): For owned fixtures observe system Shell's actual CreateProcessW IAT call/arguments; fault injection preserves real return-address provenance of public attribute calls without replacing attribute-list implementation.
+ */
 /** Shell 夹具的 CreateProcess 调用探针，记录普通创建路径及属性列表，供来源链验证使用。 */
 #pragma once
 #include "fixture-shell.h"
@@ -10,6 +14,7 @@ static decltype(&CreateProcessW) shellCallOriginal=nullptr;
 static thread_local HANDLE shellCallControl=nullptr;
 static thread_local std::string shellCallFault;
 static thread_local std::string shellCallEvidence="[]";
+/** 中文：观察 Shell 真实 CreateProcess 参数和暂停状态，可注入策略变化/重入/普通 startup/跨线程故障；保留原结构及 LastError 并输出系统创建证据。 English: Observe Shell's actual CreateProcess arguments/suspension and optionally inject policy-change/reentry/plain-startup/cross-thread faults; retain original structure/LastError and record system-creation evidence. 参数声明 / Declared parameters: LPCWSTR image,LPWSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity, BOOL inherit,DWORD flags,LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output. */
 static BOOL WINAPI shellCallCreate(LPCWSTR image,LPWSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity,
     BOOL inherit,DWORD flags,LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output) {
   const DWORD incoming=GetLastError();const DWORD thread=GetCurrentThreadId();
@@ -30,7 +35,7 @@ static BOOL WINAPI shellCallCreate(LPCWSTR image,LPWSTR command,LPSECURITY_ATTRI
     STARTUPINFOW ordinary=*startup;ordinary.cb=sizeof(ordinary);
     result=shellCallOriginal(image,command,processSecurity,threadSecurity,inherit,flags&~EXTENDED_STARTUPINFO_PRESENT,environment,directory,&ordinary,output);
   }else if(shellCallFault=="cross-thread"){
-    std::thread worker([&]{result=shellCallOriginal(image,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);reentry=GetLastError();});
+    std::thread worker(/** 中文：跨线程故障场景在新线程调用同一原 CreateProcess 并捕获其 LastError，join 后把结果还给请求线程，以验证线程来源拒绝。 English: In a cross-thread fault call the same original CreateProcess on a new thread/capture LastError, then join and return results to the requester to test thread-provenance refusal. */ [&]{result=shellCallOriginal(image,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);reentry=GetLastError();});
     worker.join();SetLastError(reentry);
   }else result=shellCallOriginal(image,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
   const DWORD error=GetLastError();DWORD suspension=DWORD(-1);
@@ -39,6 +44,7 @@ static BOOL WINAPI shellCallCreate(LPCWSTR image,LPWSTR command,LPSECURITY_ATTRI
   shellCallEvidence="[{\"thread\":"+std::to_string(thread)+",\"flags\":"+std::to_string(flags)+",\"inherit\":"+(inherit?"true":"false")+",\"startupCb\":"+std::to_string(startup?startup->cb:0)+",\"startupFlags\":"+std::to_string(startup?startup->dwFlags:0)+",\"startupPreserved\":"+(preserved?"true":"false")+",\"stdin\":\""+std::to_string(uintptr_t(startup?startup->hStdInput:nullptr))+"\",\"stdout\":\""+std::to_string(uintptr_t(startup?startup->hStdOutput:nullptr))+"\",\"stderr\":\""+std::to_string(uintptr_t(startup?startup->hStdError:nullptr))+"\",\"suspendedBeforeShellResume\":"+std::to_string(suspension)+",\"reentryError\":"+std::to_string(reentry)+",\"started\":"+(result?"true":"false")+",\"error\":"+std::to_string(error)+"}]";
   SetLastError(error);return result;
 }
+/** 中文：仅在自有夹具中定位系统 Shell 两模块的公开 CreateProcessW IAT 槽，保存原入口并原子替换探针，保持属性调用者来源和保护位。 English: Only in owned fixtures locate public CreateProcessW IAT slots in the two system Shell modules, save original entry/atomically install the probe while retaining attribute-call provenance/protection flags. */
 static void shellCallInstall() {
   const DWORD incoming=GetLastError();
   LoadLibraryExW(L"windows.storage.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);

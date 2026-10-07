@@ -1,5 +1,6 @@
 /**
  * 模块职责：构造固定 LSP/DAP 工具安装与探测命令，限制协议工具种类和安装位置。
+ * Module purpose: Builds fixed LSP/DAP installation/probe commands, restricting tool kinds and installation locations.
  */
 import { quote } from './shell.ts';
 import { AppError } from '../shared/errors.ts';
@@ -9,6 +10,15 @@ export const projectDapPython = '/opt/sakura-debugger/bin/python';
 const environment = '/usr/bin/env -i HOME=/ USER=root LOGNAME=root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C ' +
   'PIP_CONFIG_FILE=/dev/null NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_GLOBALCONFIG=/dev/null';
 const versions = { lsp: { typescript: '5.9.3', 'typescript-language-server': '4.3.4', pyright: '1.1.414' }, dap: { debugpy: '1.8.16' } };
+/**
+ * 入口 / Entry: kind.
+ * 功能：在构造固定 LSP/DAP 工具安装与探测命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value` 供上层消费（`project-protocol-assets.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-protocol-assets.ts`; this entry produces `value` for its caller. Module context: Builds fixed LSP/DAP installation/probe commands, restricting tool kinds and installation locations.
+ * 输入 / Inputs: value: 'lsp' | 'dap'
+ * 输出 / Returns: `value`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `value !== 'lsp' && value !== 'dap'`; 异常 / errors `new AppError('协议工具种类不符', 400)`.
+ */
 function kind(value: 'lsp' | 'dap') { if (value !== 'lsp' && value !== 'dap') throw new AppError('协议工具种类不符', 400); return value; }
 const rootGuard = `import json,os,stat
 def trusted(path,directory=False):
@@ -31,6 +41,17 @@ def asset(path,base):
  else:info=trusted(path)
  return bool(info.st_mode&0o111)
 `;
+/**
+ * 入口 / Entry: projectProtocolInstalledCommand.
+ * 功能：在构造固定 LSP/DAP 工具安装与探测命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'# SAKURA_PROTOCOL_ASSETS_' + provider.toUpperCase() + '\n' + environment + ' /usr/bin/python3 -I -S -c ' + quote(source)` 供上层消费（`project-protocol-assets.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-protocol-assets.ts`; this entry produces `'# SAKURA_PROTOCOL_ASSETS_' + provider.toUpperCase() + '\n' + environment + ' /usr/bin/python3 -I -S -c ' + quote(source)` for its caller. Module context: Builds fixed LSP/DAP installation/probe commands, restricting tool kinds and installation locations.
+ * 处理：通过 `kind`, `provider.toUpperCase`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `kind`, `provider.toUpperCase`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: provider: 'lsp' | 'dap'
+ * 输出 / Returns: `'# SAKURA_PROTOCOL_ASSETS_' + provider.toUpperCase() + '\n' + environment + ' /usr/bin/python3 -I -S -c ' + quote(source)`.
+ * 副作用 / Effects: 更新 / updates `provider`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function projectProtocolInstalledCommand(provider: 'lsp' | 'dap') {
   provider = kind(provider); const base = provider === 'lsp' ? projectLspPrefix : '/opt/sakura-debugger';
   const source = rootGuard + `
@@ -49,6 +70,17 @@ print(json.dumps({'installed':ready}))
   return '# SAKURA_PROTOCOL_ASSETS_' + provider.toUpperCase() + '\n' + environment + ' /usr/bin/python3 -I -S -c ' + quote(source);
 }
 /** Explicit shared installation accepts no project field, environment or hook. */
+/**
+ * 入口 / Entry: projectProtocolInstallScript.
+ * 功能：在构造固定 LSP/DAP 工具安装与探测命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'exec ' + environment + ' /bin/sh -ec ' + quote(body)` 供上层消费（`project-protocol-assets.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-protocol-assets.ts`; this entry produces `'exec ' + environment + ' /bin/sh -ec ' + quote(body)` for its caller. Module context: Builds fixed LSP/DAP installation/probe commands, restricting tool kinds and installation locations.
+ * 处理：通过 `kind`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `kind`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: provider: 'lsp' | 'dap'; distro: string
+ * 输出 / Returns: `'exec ' + environment + ' /bin/sh -ec ' + quote(body)`.
+ * 副作用 / Effects: 更新 / updates `provider`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function projectProtocolInstallScript(provider: 'lsp' | 'dap', distro: string) {
   provider = kind(provider); const base = provider === 'lsp' ? projectLspPrefix : '/opt/sakura-debugger';
   const guard = rootGuard + `

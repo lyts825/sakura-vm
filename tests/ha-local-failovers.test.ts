@@ -1,9 +1,18 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - process-only takeover fences source before promotion and retires target before rejoin
- * - a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+ * 模块职责：回归验证模块，围绕 `ha-local-failovers` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `ha-local-failovers`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: process-only takeover fences source before promotion and retires target before rejoin; a witness-enrolled source needs serialized disarm before local fencing and every pending retry.
  */
-const witnessGuards: { disarmWitness?: (id: string, failureThreshold: number) => Promise<void> } = {};
+const witnessGuards: { disarmWitness?: /**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: id: string; failureThreshold: number。
+ * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+ * Result: The declared return type defines the result; its test provider supplies the implementation.
+ */
+(id: string, failureThreshold: number) => Promise<void> } = {};
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,8 +37,29 @@ after(async () => {
   await rm(path, { recursive: true, force: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+ * 状态影响 / State effects: `targetStatus`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `machines.init`, `randomUUID`, `'a'.repeat`, `new Date().toISOString`.
+ * 检查边界 / Checked boundaries: `assert.rejects(machines.start(targetId), { code: 'HA_REPLICA_STANDBY' })`; `assert.rejects( machines.startHaReplica(targetId, { sourceHostId, transferId, sourceVmId: sourceId, snapshotId, sha256: 'b'.repeat…`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('process-only takeover fences source before promotion and retires target before rejoin', async () => {
-  const engine = { runtime: { close: async () => {} } } as Engine;
+  const engine = { runtime: { /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+   */
+  close: async () => {} } } as Engine;
   const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const sourceId = randomUUID(),
@@ -79,12 +109,38 @@ test('process-only takeover fences source before promotion and retires target be
     failStartOnce = true;
   let targetStatus: 'stopped' | 'starting' | 'running' = 'stopped';
   const monitor = {
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ suspected })`）。
+     * Result: Return the branch-computed value (`({ suspected })`).
+     * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+     */
     view: () => ({ suspected }),
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+     * 状态影响 / State effects: `suspected`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     reconfigure: async () => {
       suspected = false;
     },
   } as unknown as HaFailureMonitor;
   const peers = {
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ candidates: [ { id: sourceHostId, source: 'local', status: { platform: 'win32…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ candidates: [ { id: sourceHostId, source: 'local', status: { platform: 'win32…`) through a Promise.
+     * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+     * 协作入口 / Collaborators: `Date.now`.
+     */
     score: async () => ({
       candidates: [
         { id: sourceHostId, source: 'local', status: { platform: 'win32', arch: 'x64' } },
@@ -99,9 +155,45 @@ test('process-only takeover fences source before promotion and retires target be
         },
       ],
     }),
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ outbound: [{ id: peerId, remoteId: targetHostId }] })`）。
+     * Result: Return the branch-computed value (`({ outbound: [{ id: peerId, remoteId: targetHostId }] })`).
+     * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+     */
     view: () => ({ outbound: [{ id: peerId, remoteId: targetHostId }] }),
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ id: targetId, sha256, sourceVmId: sourceId, snapshotId })`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ id: targetId, sha256, sourceVmId: sourceId, snapshotId })`) through a Promise.
+     * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+     */
     importStatus: async () => ({ id: targetId, sha256, sourceVmId: sourceId, snapshotId }),
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ ready: true, id: targetId, status: targetStatus })`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ ready: true, id: targetId, status: targetStatus })`) through a Promise.
+     * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+     */
     checkReplicaActivation: async () => ({ ready: true, id: targetId, status: targetStatus }),
+    /**
+     * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+     * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回受控对象，公开字段包括 `id, status`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `id, status`; the actual branch determines its shape.
+     * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+     * 状态影响 / State effects: `failStartOnce`, `targetStatus`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 失败 / Failure: `new Error('standby unavailable')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `JSON.parse`, `readFile`, `join`, `assert.equal`.
+     * 检查边界 / Checked boundaries: `assert.equal(saved.find((vm: { id: string }) => vm.id === sourceId).haPromotion.transferId, transferId)`.
+     */
     activateReplica: async () => {
       const saved = JSON.parse(await readFile(join(root, 'machines.json'), 'utf8'));
       assert.equal(saved.find((vm: { id: string }) => vm.id === sourceId).haPromotion.transferId, transferId);
@@ -113,6 +205,15 @@ test('process-only takeover fences source before promotion and retires target be
       targetStatus = 'starting';
       return { id: targetId, status: targetStatus };
     },
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回受控对象，公开字段包括 `id, retired`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `id, retired`; the actual branch determines its shape.
+     * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+     * 协作入口 / Collaborators: `machines.retireHaReplica`.
+     */
     retireReplica: async () => {
       retires++;
       await machines.retireHaReplica(targetId, {
@@ -126,6 +227,14 @@ test('process-only takeover fences source before promotion and retires target be
     },
   } as unknown as HostPeers;
   const replications = {
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ entries: [ { vmId: sourceId, peerId, snapshotId, transferId, remoteVmId: targ…`）。
+     * Result: Return the branch-computed value (`({ entries: [ { vmId: sourceId, peerId, snapshotId, transferId, remoteVmId: targ…`).
+     * 验证场景 / Scenario: process-only takeover fences source before promotion and retires target before rejoin
+     */
     view: () => ({
       entries: [
         {
@@ -213,8 +322,29 @@ test('process-only takeover fences source before promotion and retires target be
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+ * 状态影响 / State effects: `witnessGuards.disarmWitness`, `policy.enabled`, `calls.length`, `checkGate`, `targetStatus`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `machines.init`, `randomUUID`, `'c'.repeat`, `new Date().toISOString`.
+ * 检查边界 / Checked boundaries: `assert.match(failover.view(sourceId).error || '', /见证撤防校验不可用/)`; `assert.equal(machines.get(sourceId).haPromotion, undefined)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('a witness-enrolled source needs serialized disarm before local fencing and every pending retry', async () => {
-  const machines = new Machines({ runtime: { close: async () => {} } } as Engine, fakeVmNetwork);
+  const machines = new Machines({ runtime: { /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+   */
+  close: async () => {} } } as Engine, fakeVmNetwork);
   await machines.init();
   const sourceId = randomUUID(),
     targetId = randomUUID(),
@@ -236,8 +366,25 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
   const calls: string[] = [];
   let targetStatus: 'stopped' | 'starting' | 'running' = 'stopped';
   let checkGate: Promise<void> | null = null,
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     */
     checkEntered = () => {};
   const peers = {
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ candidates: [ { id: sourceHostId, source: 'local', status: { platform: 'win32…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ candidates: [ { id: sourceHostId, source: 'local', status: { platform: 'win32…`) through a Promise.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 协作入口 / Collaborators: `Date.now`.
+     */
     score: async () => ({
       candidates: [
         { id: sourceHostId, source: 'local', status: { platform: 'win32', arch: 'x64' } },
@@ -252,8 +399,33 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
         },
       ],
     }),
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ outbound: [{ id: peerId, remoteId: targetHostId }] })`）。
+     * Result: Return the branch-computed value (`({ outbound: [{ id: peerId, remoteId: targetHostId }] })`).
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     */
     view: () => ({ outbound: [{ id: peerId, remoteId: targetHostId }] }),
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ id: targetId, sha256, sourceVmId: sourceId, snapshotId })`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ id: targetId, sha256, sourceVmId: sourceId, snapshotId })`) through a Promise.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     */
     importStatus: async () => ({ id: targetId, sha256, sourceVmId: sourceId, snapshotId }),
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回受控对象，公开字段包括 `ready, id, status`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `ready, id, status`; the actual branch determines its shape.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 协作入口 / Collaborators: `calls.push`, `machines.get`, `checkEntered`.
+     */
     checkReplicaActivation: async () => {
       calls.push('target-check');
       if (checkGate && machines.get(sourceId).haPromotion) {
@@ -262,6 +434,17 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
       }
       return { ready: true, id: targetId, status: targetStatus };
     },
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回受控对象，公开字段包括 `id, status`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `id, status`; the actual branch determines its shape.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 状态影响 / State effects: `targetStatus`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `JSON.parse`, `readFile`, `join`, `assert.equal`.
+     * 检查边界 / Checked boundaries: `assert.equal(saved.find((vm: { id: string }) => vm.id === sourceId).haPromotion.transferId, transferId)`.
+     */
     activateReplica: async () => {
       const saved = JSON.parse(await readFile(join(root, 'machines.json'), 'utf8'));
       assert.equal(saved.find((vm: { id: string }) => vm.id === sourceId).haPromotion.transferId, transferId);
@@ -270,8 +453,24 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
       return { id: targetId, status: targetStatus };
     },
   } as unknown as HostPeers;
-  const monitor = { view: () => ({ suspected: true }) } as unknown as HaFailureMonitor;
+  const monitor = { /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`({ suspected: true })`）。
+   * Result: Return the branch-computed value (`({ suspected: true })`).
+   * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+   */
+  view: () => ({ suspected: true }) } as unknown as HaFailureMonitor;
   const replications = {
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ entries: [ { vmId: sourceId, peerId, snapshotId, transferId, remoteVmId: targ…`）。
+     * Result: Return the branch-computed value (`({ entries: [ { vmId: sourceId, peerId, snapshotId, transferId, remoteVmId: targ…`).
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     */
     view: () => ({
       entries: [
         {
@@ -310,14 +509,39 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
     assert.match(failover.view(sourceId).error || '', /见证撤防校验不可用/);
     assert.equal(machines.get(sourceId).haPromotion, undefined);
     assert.equal(calls.includes('activate'), false);
-    witnessGuards.disarmWitness = async () => {
+    witnessGuards.disarmWitness = /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 失败 / Failure: `new Error('witness already fencing')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     */
+    async () => {
       throw new Error('witness already fencing');
     };
     await failover.sample();
     assert.match(failover.view(sourceId).error || '', /already fencing/);
     assert.equal(machines.get(sourceId).haPromotion, undefined);
     assert.equal(calls.includes('activate'), false);
-    let releaseDisarm = () => {},
+    let /**
+     * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+     * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     */
+    releaseDisarm = () => {},
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+       */
       disarmEntered = () => {};
     let disarmGate = new Promise<void>((done) => {
       releaseDisarm = done;
@@ -325,7 +549,16 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
     let entered = new Promise<void>((done) => {
       disarmEntered = done;
     });
-    witnessGuards.disarmWitness = async () => {
+    witnessGuards.disarmWitness = /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 协作入口 / Collaborators: `disarmEntered`.
+     */
+    async () => {
       disarmEntered();
       await disarmGate;
     };
@@ -342,7 +575,17 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
     );
     assert.equal(calls.includes('activate'), false);
     policy.enabled = true;
-    witnessGuards.disarmWitness = async (id, threshold) => {
+    witnessGuards.disarmWitness = /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: id; threshold。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 协作入口 / Collaborators: `assert.equal`, `machines.get`, `calls.push`.
+     * 检查边界 / Checked boundaries: `assert.equal(id, sourceId)`; `assert.equal(threshold, 3)`.
+     */
+    async (id, threshold) => {
       assert.equal(id, sourceId);
       assert.equal(threshold, 3);
       assert.equal(machines.get(sourceId).haPromotion, undefined);
@@ -354,6 +597,14 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
     assert.ok(calls.indexOf('disarm') < calls.indexOf('activate'));
     assert.equal(machines.get(sourceId).haPromotion?.status, 'fenced');
     assert.equal(calls.filter((call) => call === 'activate').length, 1);
+    /**
+     * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+     * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     */
     let releaseCheck = () => {};
     checkGate = new Promise<void>((done) => {
       releaseCheck = done;
@@ -361,7 +612,16 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
     const checked = new Promise<void>((done) => {
       checkEntered = done;
     });
-    witnessGuards.disarmWitness = async () => {
+    witnessGuards.disarmWitness = /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 协作入口 / Collaborators: `calls.push`.
+     */
+    async () => {
       calls.push('check-disarm');
     };
     targetStatus = 'stopped';
@@ -381,7 +641,16 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
     policy.options.autoProcessFailover = true;
     checkGate = null;
     targetStatus = 'starting';
-    witnessGuards.disarmWitness = async () => {
+    witnessGuards.disarmWitness = /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 失败 / Failure: `new Error('witness unavailable during retry')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     */
+    async () => {
       throw new Error('witness unavailable during retry');
     };
     calls.length = 0;
@@ -399,7 +668,16 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
     entered = new Promise<void>((done) => {
       disarmEntered = done;
     });
-    witnessGuards.disarmWitness = async () => {
+    witnessGuards.disarmWitness = /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 协作入口 / Collaborators: `disarmEntered`.
+     */
+    async () => {
       disarmEntered();
       await disarmGate;
     };
@@ -441,7 +719,16 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
       undefined,
       witnessGuards,
     );
-    witnessGuards.disarmWitness = async () => {
+    witnessGuards.disarmWitness = /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+     * 协作入口 / Collaborators: `calls.push`.
+     */
+    async () => {
       calls.push('retry-disarm');
     };
     targetStatus = 'running';

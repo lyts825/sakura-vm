@@ -1,5 +1,8 @@
 /**
- * 模块职责：“环境配方”插件清单：导入、导出及应用 sakura.json 项目环境配方。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ * 模块职责（中文）：“环境配方”插件清单：导入、导出及应用 sakura.json 项目环境配方。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ * Module responsibility (English): declarations of dependencies, services, admission policy and UI contributions for project environment recipe import/export.
+ * 详细范围（中文）：公开入口包括 manifest；职责覆盖声明项目环境配方的导入导出的依赖、服务、准入策略和界面贡献，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include manifest. The scope covers declarations of dependencies, services, admission policy and UI contributions for project environment recipe import/export. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 

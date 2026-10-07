@@ -1,5 +1,8 @@
 /**
- * 模块职责：实例配置、持久化记录和公开视图契约，同时校验创建、组织和高可用/迁移身份数据。
+ * 模块职责（中文）：实例配置、持久化记录和公开视图契约，同时校验创建、组织和高可用/迁移身份数据。
+ * Module responsibility (English): VM configuration, persistent records and HA/migration identities.
+ * 详细范围（中文）：公开入口包括 DiskEncryptionConfig, BOOT_TIMEOUT_MS, MigrationFingerprint, createSchema, VMConfig, VMStatus, DesktopView, Snapshot, organizationSchema, VMRecord, haPromotionSchema, HaPromotion, haWitnessEnrollmentSchema, HaWitnessEnrollment, haRetirementSchema, HaRetirement；职责覆盖实例配置、持久记录及高可用迁移身份，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include DiskEncryptionConfig, BOOT_TIMEOUT_MS, MigrationFingerprint, createSchema, VMConfig, VMStatus, DesktopView, Snapshot, organizationSchema, VMRecord, haPromotionSchema, HaPromotion, haWitnessEnrollmentSchema, HaWitnessEnrollment, haRetirementSchema, HaRetirement. The scope covers VM configuration, persistent records and HA/migration identities. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 import type { DesktopPreferences } from '../desktop-preferences.ts';
@@ -43,7 +46,15 @@ export const createSchema = z
       .default([]),
   })
   .strict()
-  .superRefine((v, ctx) => {
+  .superRefine(/**
+   * 中文功能：在字段校验后汇总硬件组合、ARM64 平台组合及重复主机转发端口的问题。
+   * English: After field validation, collect hardware-combination, ARM64-platform and duplicate host-forwarding-port issues.
+   * 输入 / Inputs: v 为已经字段解析的 VM 配置 / the field-parsed VM configuration; ctx 为本次 Zod 问题收集上下文 / this parse's Zod issue context.
+   * 结果与影响：无返回值；通过 ctx.addIssue 把错误关联到 hardware、distro、firmware、accelerator 或 forwards 字段，不创建 VM 或探测宿主。
+   * Result and effects: Return no value; add field-associated issues through ctx.addIssue without creating a VM or probing the host.
+   * 设计思路：单字段类型不能表达这些跨字段关系，故在 superRefine 一次收集；ARM64 当前声明要求 Debian、UEFI、非 WHPX，转发通过 Set 检查 host 唯一性。
+   * Design: Individual field types cannot express these relationships, so superRefine collects them together. The current ARM64 declaration requires Debian, UEFI and a non-WHPX accelerator; a Set checks host-port uniqueness.
+   */ (v, ctx) => {
     for (const message of hardwareIssues(v)) ctx.addIssue({ code: 'custom', message, path: ['hardware'] });
     if (v.architecture === 'aarch64') {
       if (v.distro !== 'debian')

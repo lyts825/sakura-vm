@@ -1,4 +1,5 @@
-/** 烟雾验收：验证生产接收器和编译见证的故障转移、持久 fencing 与目标恢复；BMC 在本机模拟。 */
+/** 烟雾验收：验证生产接收器和编译见证的故障转移、持久 fencing 与目标恢复；BMC 在本机模拟。
+ * Smoke acceptance for production receivers/compiled witnesses, durable fencing and target recovery; BMC is modeled locally. */
 import assert from 'node:assert/strict';
 import { fork, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';
@@ -38,7 +39,9 @@ const { freePort } = await import('../server/qmp.ts');
 type Reply = { id?: number; type?: 'ready' | 'error'; ok?: boolean; error?: string;
   port?: number; fingerprint?: string; hostId?: string; code?: string;
   applicationUrl?: string; applicationFingerprint?: string; result?: unknown };
-const pending = new Map<number, { resolve: (reply: Reply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+const pending = new Map<number, { resolve: /** 以请求 ID 匹配的目标 worker 成功回复兑现等待者；Promise 不接纳其他请求或未完成启动的状态。
+ * Resolve a waiter with the target worker’s successful reply matched by request ID; unrelated replies or incomplete startup cannot fulfill it. */ (reply: Reply) => void; reject: /** 以目标 worker 错误、退出或截止失败拒绝当前请求，调用方同时移除 pending 槽与计时资源。
+ * Reject the current request on target-worker error, exit or deadline, with the caller removing its pending slot/timer resources. */ (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
 let worker: ChildProcess | undefined, witness: ChildProcess | undefined, observer: ChildProcess | undefined;
 let engine: Awaited<ReturnType<typeof createRuntime>> | undefined;
 let machines: InstanceType<typeof Machines> | undefined, peers: InstanceType<typeof HostPeers> | undefined;
@@ -49,6 +52,8 @@ const appToken = randomBytes(32).toString('hex'), sourceToken = randomBytes(32).
   trafficToken = randomBytes(32).toString('hex'), systemUuid = randomUUID();
 let reportedSystemUuid = systemUuid, forceOffCount = 0, activeVmId = '', allowTraffic = false, trafficAttempts = 0;
 
+/** 在给定总期限内轮询异步条件，成功返回；失败附标签、目标与见证进程日志帮助定位故障阶段。
+ * Poll the async predicate within one total deadline, returning on success or failing with label/target/witness logs for phase diagnosis. */
 async function waitUntil(label: string, check: () => Promise<boolean>, timeout = 300_000) {
   const deadline = Date.now() + timeout;
   while (true) {
@@ -57,6 +62,8 @@ async function waitUntil(label: string, check: () => Promise<boolean>, timeout =
     await delay(500);
   }
 }
+/** 分配单调请求 ID 并登记 IPC 等待者，九十秒无回包失败；发送错误和期限都移除等待项及计时器。
+ * Assign a monotonic request ID/register an IPC waiter with a ninety-second deadline; send errors/expiry remove waiter/timer state. */
 function request(action: string, payload: Record<string, unknown> = {}) {
   const id = ++sequence;
   return new Promise<Reply>((done, fail) => {
@@ -67,6 +74,8 @@ function request(action: string, payload: Record<string, unknown> = {}) {
     });
   });
 }
+/** 限制 HTTPS 夹具 JSON 请求体至 4096 字节，完整读取后解析，超限拒绝而不累积无限输入。
+ * Bound fixture HTTPS JSON bodies to 4096 bytes, parse after full read and reject overflow without unbounded accumulation. */
 async function input(req: IncomingMessage) {
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of req) {
@@ -74,12 +83,16 @@ async function input(req: IncomingMessage) {
   }
   return JSON.parse(Buffer.concat(chunks).toString());
 }
+/** 登记本次 HTTPS 监听器后绑定回环随机端口，返回实际 URL；绑定错误拒绝，登记表供 finally 统一关闭。
+ * Register this HTTPS listener/bind a random loopback port and return its actual URL; reject bind errors and retain it for finally teardown. */
 async function listen(server: Server) {
   servers.push(server);
   await new Promise<void>((done, fail) => server.listen(0, '127.0.0.1', done).once('error', fail));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   return `https://127.0.0.1:${address.port}/`;
 }
+/** 只停止传入的自有 child，等待三十秒后升级 SIGKILL，并等待 exit 证明物理退出。
+ * Stop only the supplied owned child, escalate to SIGKILL after thirty seconds and await exit as physical-termination evidence. */
 async function stopProcess(child: ChildProcess | undefined) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise<void>((done) => child.once('exit', () => done()));
@@ -89,6 +102,8 @@ async function stopProcess(child: ChildProcess | undefined) {
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   await exited;
 }
+/** 在独立 witness-runtime 启动一次见证 CLI 并合并两路输出，要求退出零再返回日志。
+ * Run one witness CLI in separate witness-runtime state, merge both streams and require zero exit before returning output. */
 async function runWitness(args: string[]) {
   const child = spawn(process.execPath, [witnessEntry, ...args], {
     cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
@@ -101,6 +116,8 @@ async function runWitness(args: string[]) {
   assert.equal(code, 0, output);
   return output;
 }
+/** 以给定配置启动持续见证进程，保留六千字符日志尾与启动错误，关闭由外层管理。
+ * Start the continuous witness with its configuration, retaining a six-thousand-character diagnostic tail/spawn errors while outer teardown owns closure. */
 function startWitness(configPath: string) {
   witnessOutput = '';
   witness = spawn(process.execPath, [witnessEntry, configPath], {
@@ -119,7 +136,8 @@ try {
   for (const stream of [worker.stdout, worker.stderr]) stream!.on('data', (chunk: Buffer) => {
     workerOutput = (workerOutput + chunk.toString()).slice(-6000);
   });
-  const ready = await new Promise<Reply>((done, fail) => {
+  const ready = await new Promise<Reply>(/** 在 60 秒启动截止内分流 ready/error 和按 ID 的业务回复；worker 退出时拒绝并清空全部 pending，逐个清理计时器，避免等待者永久悬挂。
+ * Within a sixty-second startup deadline route ready/error and ID-matched work replies; worker exit rejects/clears every pending waiter and timer so none remains suspended. */ (done, fail) => {
     const timer = setTimeout(() => fail(new Error(`Target startup timed out: ${workerOutput}`)), 60_000);
     worker!.on('error', (error) => { clearTimeout(timer); fail(error); });
     worker!.on('message', (reply: Reply) => {
@@ -139,6 +157,8 @@ try {
   });
   assert.ok(ready.port && ready.fingerprint && ready.hostId && ready.code && ready.applicationUrl && ready.applicationFingerprint);
   engine = await createRuntime(); machines = new Machines(engine); await machines.init();
+  /** 报告真实主机资源和本夹具实例数，作为 HA 对等状态采样输入。
+   * Report real host resources/fixture VM counts as HA peer-status sample input. */
   const status = async () => ({ platform: process.platform, arch: process.arch, cpus: cpus().length,
     memoryTotal: totalmem(), memoryFree: freemem(), load: [0, 0, 0],
     vmCount: machines!.records.size, runningVms: machines!.live.size });
@@ -213,7 +233,8 @@ WantedBy=multi-user.target
     keyType: 'ec', curve: 'P-256', algorithm: 'sha256',
     notBeforeDate: new Date(Date.now() - 60_000), notAfterDate: new Date(Date.now() + 3600_000) });
   const tls = { cert: cert.cert, key: cert.private }, fingerprint = new X509Certificate(cert.cert).fingerprint256;
-  const bmcUrl = await listen(createServer(tls, (req, res) => void (async () => {
+  const bmcUrl = await listen(createServer(tls, (req, res) => void (/** 模拟受 Basic 认证的 Redfish BMC，仅允许精确系统 UUID 的 ForceOff 并真实停止源 VM；响应电源状态取实际 live，错误统一 503。
+ * Model a Basic-authenticated Redfish BMC allowing ForceOff only for the exact system UUID and actually stopping the source VM; derive power state from live state and return 503 on errors. */ async () => {
     try {
       if (req.headers.authorization !== `Basic ${Buffer.from('test-bmc:test-password').toString('base64')}`)
         throw new Error('Unauthorized BMC request');
@@ -227,7 +248,8 @@ WantedBy=multi-user.target
       res.end(JSON.stringify({ UUID: reportedSystemUuid, PowerState: machines!.live.has(vmId) ? 'On' : 'Off' }));
     } catch (error) { res.writeHead(503); res.end(JSON.stringify({ error: (error as Error).message })); }
   })()));
-  const trafficUrl = await listen(createServer(tls, (req, res) => void (async () => {
+  const trafficUrl = await listen(createServer(tls, (req, res) => void (/** 模拟流量控制器的拒绝/接纳边界：令牌和源/目标匹配后，还须源 VM 已停且目标应用已就绪才切换 activeVmId；应用路径读取真实目标 worker。
+ * Model traffic-controller refusal/admission: after token/source/target checks require stopped source VM and ready target application before switching activeVmId; the application path reads the real target worker. */ async () => {
     try {
       const url = new URL(req.url!, 'https://localhost');
       res.setHeader('content-type', 'application/json');
@@ -269,6 +291,8 @@ WantedBy=multi-user.target
   const client = new HaWitnessClient({ version: 1, url: `https://127.0.0.1:${config.listen.port}/`, fingerprint, token: sourceToken });
   const identity = { sourceHostId: peers.view().hostId, sourceVmId: vmId };
   await waitUntil('witness startup', async () => client.status(identity).then(() => true, () => false), 60_000);
+  /** 只为本次实例提供明确目标主机的自动故障转移策略，门槛为两次失败且副本最多六十分钟。
+   * Provide automatic failover policy only for this VM/explicit target, with two failures and at most a sixty-minute replica age. */
   const policies = async () => ({ [vmId]: { enabled: true, options: {
     targetHostId: ready.hostId, failureThreshold: 2, maxReplicaAgeMinutes: 60, autoHostFailover: true } } });
   hostHa = new HaHostFailover(machines, peers, replications, policies, client);

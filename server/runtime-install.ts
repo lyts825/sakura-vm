@@ -1,5 +1,6 @@
 /**
  * 模块职责：构造固定运行时安装流程并解析安装/恢复回执，核对原账户与暂存目录归属。
+ * Module purpose: Builds fixed runtime installation and parses install/recovery receipts against original accounts/staging identities.
  */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
@@ -18,6 +19,19 @@ const installReplySchema = z.discriminatedUnion('ok', [
   z.object({ version: z.literal(1), ok: z.literal(true), result: runtimeInstallReceiptSchema.nullable() }).strict(),
   z.object({ version: z.literal(1), ok: z.literal(false), code: z.string().regex(/^[A-Z_]{1,64}$/) }).strict(),
 ]);
+/**
+ * 入口 / Entry: installReply.
+ * 功能：在构造固定运行时安装流程并解析安装/恢复回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value.result` 供上层消费（`runtime-install.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `runtime-install.ts`; this entry produces `value.result` for its caller. Module context: Builds fixed runtime installation and parses install/recovery receipts against original accounts/staging identities.
+ * 处理：通过 `installReplySchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `installReplySchema.parse`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: result: { code: number; stdout: string; stderr: string }
+ * 输出 / Returns: `value.result`.
+ * 副作用 / Effects: `installReplySchema.parse`; 更新 / updates `value`.
+ * 拒绝 / Refusals: 条件 / conditions `Buffer.byteLength(result.stdout) > 4096`; `!value.ok`; `result.code !== 0`; 异常 / errors `new Error()`; `new AppError('运行时安装未返回可核对回执', 502, 'RUNTIME_INSTALL_REPLY')`.
+ * 失败处理：catch 分支执行 `throw new AppError('运行时安装未返回可核对回执', 502, 'RUNTIME_INSTALL_REPLY');`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `throw new AppError('运行时安装未返回可核对回执', 502, 'RUNTIME_INSTALL_REPLY');`; these statements determine whether a failure is absorbed or rejected again.
+ */
 function installReply(result: { code: number; stdout: string; stderr: string }) {
   let value: z.infer<typeof installReplySchema>;
   try {
@@ -28,6 +42,17 @@ function installReply(result: { code: number; stdout: string; stderr: string }) 
   if (result.code !== 0) throw new AppError('运行时安装控制请求未完整结束', 502, 'RUNTIME_INSTALL_REPLY');
   return value.result;
 }
+/**
+ * 入口 / Entry: parseRuntimeInstall.
+ * 功能：在构造固定运行时安装流程并解析安装/恢复回执中，转换协议或持久数据表示并保持调用边界；本入口产生 `receipt` 供上层消费（`runtime-install.ts`）。
+ * Purpose: Converts protocol or durable data representations at the call boundary in `runtime-install.ts`; this entry produces `receipt` for its caller. Module context: Builds fixed runtime installation and parses install/recovery receipts against original accounts/staging identities.
+ * 处理：通过 `installReply` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `installReply`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: result: { code: number; stdout: string; stderr: string }; expected: { tool: 'node' | 'python'; version: string; phase: 'prepared' | 'ready'; installId?: …
+ * 输出 / Returns: `receipt`.
+ * 副作用 / Effects: `installReply`.
+ * 拒绝 / Refusals: 条件 / conditions `!receipt || receipt.tool !== expected.tool || receipt.requestedVersion !== expected.version || receipt.phase !== expected.pha…`; 异常 / errors `new AppError('运行时安装回执身份不完整', 502, 'RUNTIME_INSTALL_REPLY')`.
+ */
 export function parseRuntimeInstall(result: { code: number; stdout: string; stderr: string },
   expected: { tool: 'node' | 'python'; version: string; phase: 'prepared' | 'ready'; installId?: string;
     architecture?: 'x86_64' | 'aarch64' }) {
@@ -39,6 +64,17 @@ export function parseRuntimeInstall(result: { code: number; stdout: string; stde
     throw new AppError('运行时安装回执身份不完整', 502, 'RUNTIME_INSTALL_REPLY');
   return receipt;
 }
+/**
+ * 入口 / Entry: parseRuntimeInstallRecovery.
+ * 功能：在构造固定运行时安装流程并解析安装/恢复回执中，转换协议或持久数据表示并保持调用边界；本入口产生 `value` 供上层消费（`runtime-install.ts`）。
+ * Purpose: Converts protocol or durable data representations at the call boundary in `runtime-install.ts`; this entry produces `value` for its caller. Module context: Builds fixed runtime installation and parses install/recovery receipts against original accounts/staging identities.
+ * 处理：通过 `installReply` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `installReply`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: result: { code: number; stdout: string; stderr: string }; expected: { tool: 'node' | 'python'; version: string; architecture: 'x86_64' | 'aarch64' }
+ * 输出 / Returns: `value`.
+ * 副作用 / Effects: `installReply`.
+ * 拒绝 / Refusals: 条件 / conditions `value !== null && (value.tool !== expected.tool || value.requestedVersion !== expected.version || value.architecture !== expe…`; 异常 / errors `new AppError('运行时安装清理回执身份不完整', 502, 'RUNTIME_INSTALL_REPLY')`.
+ */
 export function parseRuntimeInstallRecovery(result: { code: number; stdout: string; stderr: string },
   expected: { tool: 'node' | 'python'; version: string; architecture: 'x86_64' | 'aarch64' }) {
   const value = installReply(result);
@@ -438,6 +474,18 @@ print(json.dumps(response,separators=(',',':'),ensure_ascii=True))
 sys.exit(0 if response['ok'] else 73)
 `;
 
+/**
+ * 入口 / Entry: runtimeInstallCommand.
+ * 功能：在构造固定运行时安装流程并解析安装/恢复回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``${fixedEnvironment} /usr/bin/python3 -I -S - <<'SAKURA_RUNTIME_INSTALL'\nimport json\nREQUEST=json.loads(${JSON.stringify(JS…` 供上层消费（`runtime-install.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `runtime-install.ts`; this entry produces ``${fixedEnvironment} /usr/bin/python3 -I -S - <<'SAKURA_RUNTIME_INSTALL'\nimport json\nREQUEST=json.loads(${JSON.stringify(JS…` for its caller. Module context: Builds fixed runtime installation and parses install/recovery receipts against original accounts/staging identities.
+ * 处理：通过 `tool.parse`, `version.parse`, `z.uuid().parse`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `tool.parse`, `version.parse`, `z.uuid().parse`, `z.uuid`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `input.installId !== undefined`; `input.runId !== undefined`; `input.bootId !== undefined`.
+ * 输入 / Inputs: input: { operation: 'verify' | 'prepare' | 'confirm' | 'recover'; tool: 'node' | 'python'; v…
+ * 输出 / Returns: ``${fixedEnvironment} /usr/bin/python3 -I -S - <<'SAKURA_RUNTIME_INSTALL'\nimport json\nREQUEST=json.loads(${JSON.stringify(JS…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `input.operation === 'prepare' && (!input.installId || !input.runId)`; `input.operation === 'confirm' && !input.installId`; `['prepare', 'confirm'].includes(input.operation) && !input.bootId`; 异常 / errors `new AppError('安装请求缺少固定身份')`; `new AppError('安装确认缺少固定身份')`.
+ */
 export function runtimeInstallCommand(input: { operation: 'verify' | 'prepare' | 'confirm' | 'recover';
   tool: 'node' | 'python'; version: string; installId?: string; runId?: string;
   bootId?: string; architecture?: 'x86_64' | 'aarch64'; network?: Record<string, string> }) {
@@ -452,6 +500,19 @@ export function runtimeInstallCommand(input: { operation: 'verify' | 'prepare' |
   const data = { ...input, architecture: z.enum(['x86_64', 'aarch64']).parse(input.architecture || 'x86_64'), network: input.network || {} };
   return `${fixedEnvironment} /usr/bin/python3 -I -S - <<'SAKURA_RUNTIME_INSTALL'\nimport json\nREQUEST=json.loads(${JSON.stringify(JSON.stringify(data))})\n${controller}SAKURA_RUNTIME_INSTALL`;
 }
+/**
+ * 入口 / Entry: validateNetwork.
+ * 功能：在构造固定运行时安装流程并解析安装/恢复回执中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`runtime-install.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `runtime-install.ts`; the calls and state transitions below complete the operation. Module context: Builds fixed runtime installation and parses install/recovery receipts against original accounts/staging identities.
+ * 处理：通过 `allowedNetwork.has`, `inline.test`, `inline.includes` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `allowedNetwork.has`, `inline.test`, `inline.includes`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: network: Record<string, string>
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: 更新 / updates `url`.
+ * 拒绝 / Refusals: 条件 / conditions `!allowedNetwork.has(key) || typeof content !== 'string' || content.length > 2048 || /[\x00-\x1f\x7f]/.test(content)`; `!['NO_PROXY', 'no_proxy'].includes(key)`; `!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || /\s/.test(content)`; 异常 / errors `new AppError('安装网络环境不符合固定白名单', 409, 'RUNTIME_INSTALL_ENVIRONMENT')`; `new AppError('安装网络地址无效', 409, 'RUNTIME_INSTALL_ENVIRONMENT')`.
+ * 失败处理：catch 分支执行 `throw new AppError('安装网络地址无效', 409, 'RUNTIME_INSTALL_ENVIRONMENT');`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `throw new AppError('安装网络地址无效', 409, 'RUNTIME_INSTALL_ENVIRONMENT');`; these statements determine whether a failure is absorbed or rejected again.
+ */
 function validateNetwork(network: Record<string, string>) {
   for (const [key, content] of Object.entries(network))
     if (!allowedNetwork.has(key) || typeof content !== 'string' || content.length > 2048 || /[\x00-\x1f\x7f]/.test(content))
@@ -463,6 +524,17 @@ function validateNetwork(network: Record<string, string>) {
       throw new AppError('安装网络地址不能包含凭证或查询参数', 409, 'RUNTIME_INSTALL_ENVIRONMENT');
   }
 }
+/**
+ * 入口 / Entry: runtimeInstallSetup.
+ * 功能：在构造固定运行时安装流程并解析安装/恢复回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``${fixedEnvironment} ${environment} DEBIAN_FRONTEND=noninteractive /bin/sh -eu -c ${quote('cd /\n' + script)}`` 供上层消费（`runtime-install.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `runtime-install.ts`; this entry produces ``${fixedEnvironment} ${environment} DEBIAN_FRONTEND=noninteractive /bin/sh -eu -c ${quote('cd /\n' + script)}`` for its caller. Module context: Builds fixed runtime installation and parses install/recovery receipts against original accounts/staging identities.
+ * 处理：通过 `validateNetwork`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `validateNetwork`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: distro: string optional; network: Record<string, string> default={}
+ * 输出 / Returns: ``${fixedEnvironment} ${environment} DEBIAN_FRONTEND=noninteractive /bin/sh -eu -c ${quote('cd /\n' + script)}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function runtimeInstallSetup(distro?: string, network: Record<string, string> = {}) {
   validateNetwork(network);
   const script = !distro || distro === 'alpine'

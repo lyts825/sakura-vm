@@ -1,5 +1,8 @@
 /**
- * 模块职责：读取历史资源采样，将累计计数转换为速率并绘制可选择的指标序列。
+ * 模块职责（中文）：读取历史资源采样，将累计计数转换为速率并绘制可选择的指标序列。
+ * Module responsibility (English): Computing rates from historical counters and plotting and exporting metric series.
+ * 详细范围（中文）：公开入口包括 MetricHistory；职责覆盖从历史计数计算指标速率并绘制和导出序列，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include MetricHistory. The scope covers Computing rates from historical counters and plotting and exporting metric series. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
@@ -9,31 +12,67 @@ import { formatBytes } from './feature-shared';
 import { saveBlob, saveText } from './export-file';
 
 const series = {
-  cpu: { name: 'CPU 使用率', value: (p: MetricPoint) => p.cpuPercent, percent: true },
+  cpu: { name: 'CPU 使用率', /** 中文：从本序列的采样点提取 CPU 百分比、内存/磁盘占比或收发速率；总量或速率缺失时保留 null，由图表表达缺样而非零值。 | English: Extract this series' CPU percentage, memory/disk ratio or receive/transmit rate from a sample. Preserve null for absent totals/rates so charts represent missing samples rather than zero. | 中文：输入：p：签名所示 MetricPoint 业务值 | English: Inputs: p: the MetricPoint domain value in the signature */ value: (p: MetricPoint) => p.cpuPercent, percent: true },
   memory: {
     name: '内存使用率',
+    /**
+     * 中文：从本序列的采样点提取 CPU 百分比、内存/磁盘占比或收发速率；总量或速率缺失时保留 null，由图表表达缺样而非零值。
+     * English: Extract this series' CPU percentage, memory/disk ratio or receive/transmit rate from a sample. Preserve null for absent totals/rates so charts represent missing samples rather than zero.
+     * 中文：输入：p：签名所示 MetricPoint 业务值
+     * English: Inputs: p: the MetricPoint domain value in the signature
+     */
     value: (p: MetricPoint) => (p.memoryTotal ? (p.memoryUsed / p.memoryTotal) * 100 : null),
     percent: true,
   },
   disk: {
     name: '磁盘使用率',
+    /**
+     * 中文：从本序列的采样点提取 CPU 百分比、内存/磁盘占比或收发速率；总量或速率缺失时保留 null，由图表表达缺样而非零值。
+     * English: Extract this series' CPU percentage, memory/disk ratio or receive/transmit rate from a sample. Preserve null for absent totals/rates so charts represent missing samples rather than zero.
+     * 中文：输入：p：签名所示 MetricPoint 业务值
+     * English: Inputs: p: the MetricPoint domain value in the signature
+     */
     value: (p: MetricPoint) => (p.diskTotal ? (p.diskUsed / p.diskTotal) * 100 : null),
     percent: true,
   },
   receive: {
     name: '网络接收速率',
+    /**
+     * 中文：从本序列的采样点提取 CPU 百分比、内存/磁盘占比或收发速率；总量或速率缺失时保留 null，由图表表达缺样而非零值。
+     * English: Extract this series' CPU percentage, memory/disk ratio or receive/transmit rate from a sample. Preserve null for absent totals/rates so charts represent missing samples rather than zero.
+     * 中文：输入：p：签名所示 MetricPoint 业务值
+     * English: Inputs: p: the MetricPoint domain value in the signature
+     */
     value: (p: MetricPoint) => p.networkReceiveBytesPerSecond ?? null,
     percent: false,
   },
   transmit: {
     name: '网络发送速率',
+    /**
+     * 中文：从本序列的采样点提取 CPU 百分比、内存/磁盘占比或收发速率；总量或速率缺失时保留 null，由图表表达缺样而非零值。
+     * English: Extract this series' CPU percentage, memory/disk ratio or receive/transmit rate from a sample. Preserve null for absent totals/rates so charts represent missing samples rather than zero.
+     * 中文：输入：p：签名所示 MetricPoint 业务值
+     * English: Inputs: p: the MetricPoint domain value in the signature
+     */
     value: (p: MetricPoint) => p.networkTransmitBytesPerSecond ?? null,
     percent: false,
   },
 };
+/**
+ * 中文：未取得连续速率样本时显示等待提示，有样本时使用资源单位附每秒后缀。
+ * English: Show a waiting message until consecutive rate samples exist; otherwise display resource units with a per-second suffix.
+ * 中文：输入：value：待校验、转换或保存的输入值
+ * English: Inputs: value: input value to validate/transform/save
+ */
 const rate = (value?: number | null) =>
   value === null || value === undefined ? '等待连续采样' : formatBytes(value) + '/s';
 
+/**
+ * 中文：呈现从历史计数计算指标速率并绘制和导出序列中的 MetricHistory 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the MetricHistory surface for Computing rates from historical counters and plotting and exporting metric series. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ history } 提供 history（history 状态） 上下文字段
+ * English: Inputs: { history } provides context fields history (history state)
+ */
 export function MetricHistory({ history }: { history: MetricPoint[] }) {
   const [kind, setKind] = useState<keyof typeof series>('cpu');
   const selected = series[kind],
@@ -42,7 +81,16 @@ export function MetricHistory({ history }: { history: MetricPoint[] }) {
     paths: string[][] = [],
     start = Date.parse(history[0]?.sampledAt || ''),
     duration = Date.parse(history.at(-1)?.sampledAt || '') - start;
-  values.forEach((value, index) => {
+  values.forEach(/**
+   * 中文功能：将有限采样值转换为图形坐标；空值、非有限值或超过两分钟的采样间隙切断折线，数值夹在展示范围内。
+   * English: Convert finite samples to plot coordinates; null/nonfinite samples or gaps above two minutes split the line, and values are clamped to the display range.
+   * 输入 / Inputs: value; index.
+   * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+   * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+   * 设计思路：通过插入空路径分隔段，避免把缺失观测画成连续变化；时间轴按 duration 归一，零时长使用固定 x。
+   * Design: Insert empty paths to separate segments instead of drawing continuous change through missing observations; normalize time by duration and use fixed x for zero duration.
+   */
+  (value, index) => {
     if (value === null || !Number.isFinite(value)) {
       paths.push([]);
       return;
@@ -68,6 +116,10 @@ export function MetricHistory({ history }: { history: MetricPoint[] }) {
     'networkReceiveBytesPerSecond',
     'networkTransmitBytesPerSecond',
   ];
+  /**
+   * 中文：在从历史计数计算指标速率并绘制和导出序列流程中把二进制内容导出为下载；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Computing rates from historical counters and plotting and exporting metric series, export binary content through a download. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   */
   const csv = () =>
     saveBlob(
       'sakura-metrics.csv',

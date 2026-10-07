@@ -1,11 +1,16 @@
-/** 沙箱 CLI 子命令，将配置、生命周期、执行及产物下载请求转为服务 API 调用。 */
+/** 沙箱 CLI 子命令，将配置、生命周期、执行及产物下载请求转为服务 API 调用。
+ * Dispatch sandbox configuration/lifecycle/execution/artifact commands as validated service API requests. */
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 
 export const sandboxHelp =
   '\nSandbox workbench (sandbox plugin):\n  sandboxes\n  sandbox create <name> [config.json]\n  sandbox <start|stop|destroy|logs> <name>\n  sandbox run <name> -- <command> [args...]\n  sandbox run-config <name> <run.json>\n  sandbox artifact <run-id> <artifact-id> <output-file>';
+/** 将字面 shell 参数单引号转义，保持沙箱命令数据边界。
+ * Single-quote literal shell arguments to preserve sandbox command boundaries. */
 const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
 
+/** 路由沙箱配置、启动/停止、执行及产物下载，校验参数并返回是否处理及 API 结果。
+ * Route sandbox configuration/lifecycle/execution/artifact download, validating arguments and returning handled/API results. */
 export async function sandboxCommand(action, verb, args, api) {
   if (action === 'sandboxes') {
     if (verb || args.length) throw new Error('Usage: sandboxes');

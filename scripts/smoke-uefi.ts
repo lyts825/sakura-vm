@@ -1,4 +1,5 @@
-/** 烟雾验收：验证UEFI 来宾启动、状态和相关引导操作。 */
+/** 烟雾验收：验证UEFI 来宾启动、状态和相关引导操作。
+ * Smoke acceptance for actual UEFI guest startup/state and related boot actions. */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -22,8 +23,12 @@ const engine = await createRuntime();
 const machines = new Machines(engine);
 await machines.init();
 const log: string[] = [];
+/** 同时输出并保存本次验收结论，供最终报告按原顺序汇总；记录本身不替代此前的断言。
+ * Print and retain this verification result for ordered final reporting; recording does not replace the preceding assertions. */
 const record = (line: string) => { console.log(line); log.push(line); };
 
+/** 启动并验证发行版与 EFI 来宾，要求普通 UEFI 没有 Secure Boot/TPM 且 trusted ready=false，最后停止自有实例。
+ * Boot/verify distribution and EFI guest, require ordinary UEFI without Secure Boot/TPM and trusted ready=false, then stop the owned VM. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 300000;

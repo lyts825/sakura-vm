@@ -1,5 +1,6 @@
 /**
  * 模块职责：配置客户机访问自身宿主转发的 NAT 回流，目标必须属于实例当前 TCP 转发。
+ * Module purpose: Configures guest access to its own host forwarding, requiring the target to match a current VM TCP forward.
  */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -14,6 +15,18 @@ export const natHairpinSchema = z.object(natHairpinShape).strict();
 /** QEMU user networking configures 10.0.2.2 as the guest-visible host gateway. */
 export const guestHostGateway = '10.0.2.2';
 
+/**
+ * 入口 / Entry: natHairpin.
+ * 功能：在配置客户机访问自身宿主转发的 NAT 回流中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: false, executed: false, preview, reason: '请先启动发行版。' }` / `{ ready: false, executed: false, preview, reason: '请先配置实例 TCP 端口转发。' }` 供上层消费（`nat-hairpin.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `nat-hairpin.ts`; this entry produces `{ ready: false, executed: false, preview, reason: '请先启动发行版。' }` / `{ ready: false, executed: false, preview, reason: '请先配置实例 TCP 端口转发。' }` for its caller. Module context: Configures guest access to its own host forwarding, requiring the target to match a current VM TCP forward.
+ * 处理：通过 `natHairpinSchema.parse`, `machines.get().forwards.map`, `machines.get`, `forwards.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `natHairpinSchema.parse`, `machines.get().forwards.map`, `machines.get`, `forwards.find`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `machines.state(id) !== 'running'`; `action === 'check' || options.mode === 'status'`; `!forwards.length`.
+ * 输入 / Inputs: machines: Machines; id: string; input: unknown; action: 'check' | 'run'; signal: AbortSignal optional
+ * 输出 / Returns: `{ ready: false, executed: false, preview, reason: '请先启动发行版。' }`; `{ ready: false, executed: false, preview, reason: '请先配置实例 TCP 端口转发。' }`; `{ ready: tool.code === 0, executed: false, preview, reason: tool.code === 0 ? '选择一个现有 TCP 转发并执行回流验证。' : '客户机需要安装 Python 3 才能验…`；另有分支返回 / additional branch-specific returns.
+ * 副作用 / Effects: `machines.exec`.
+ * 拒绝 / Refusals: 条件 / conditions `options.hostPort !== undefined && !selected`; `!selected`; 异常 / errors `new AppError('该宿主端口不属于此实例当前的 TCP 转发', 409)`; `new AppError('请指定要验证的宿主端口', 400)`.
+ */
 export async function natHairpin(
   machines: Machines,
   id: string,

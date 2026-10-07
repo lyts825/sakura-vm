@@ -1,5 +1,8 @@
 /**
- * 模块职责：“磁盘与诊断”插件的存储、磁盘维护策略与实例诊断标签，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“磁盘与诊断”插件的存储、磁盘维护策略与实例诊断标签，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for VM diagnostics, disk growth and maintenance.
+ * 详细范围（中文）：公开入口包括 StoragePanel, MaintenancePanel, tabs；职责覆盖实例诊断、磁盘扩容与整理的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include StoragePanel, MaintenancePanel, tabs. The scope covers UI interaction and state presentation for VM diagnostics, disk growth and maintenance. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from '../../src/localization';
 import { Download } from 'lucide-react';
@@ -10,6 +13,12 @@ import type { FeatureProps, Request } from '../../src/feature-shared';
 import { Feedback, formatBytes, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
 
+/**
+ * 中文：呈现实例诊断、磁盘扩容与整理的界面交互与状态呈现中的 StoragePanel 界面，订阅 /storage，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the StoragePanel surface for UI interaction and state presentation for VM diagnostics, disk growth and maintenance, subscribing to /storage. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ */
 export function StoragePanel({ request }: { request: Request }) {
   const remote = useRemote<StorageView>(request, '/storage');
   return (
@@ -59,6 +68,12 @@ export function StoragePanel({ request }: { request: Request }) {
   );
 }
 
+/**
+ * 中文：呈现实例诊断、磁盘扩容与整理的界面交互与状态呈现中的 MaintenancePanel 界面，订阅 /vms/{vm.id}/diagnostics、/vms/{vm.id}/disk-maintenance，组合 Download、StoragePanel，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the MaintenancePanel surface for UI interaction and state presentation for VM diagnostics, disk growth and maintenance, subscribing to /vms/{vm.id}/diagnostics, /vms/{vm.id}/disk-maintenance and composing Download, StoragePanel. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request, refresh } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力）、refresh（refresh 状态） 上下文字段
+ * English: Inputs: { vm, request, refresh } provides context fields vm (vm state), request (transport capability bound to identity/authority scope), refresh (refresh state)
+ */
 export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
   const remote = useRemote<DiagnosticView>(request, `/vms/${vm.id}/diagnostics`, true, 2500);
   const disk = useRemote<DiskMaintenanceView>(
@@ -68,10 +83,10 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
     2500,
   );
   const [policy, setPolicy] = useState<DiskMaintenancePolicy | null>(null);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [vm.id] 变化时策略草稿；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [vm.id] change, policy draft. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setPolicy(null);
   }, [vm.id]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [policy, disk.data] 变化时策略草稿；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [policy, disk.data] change, policy draft. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (!policy && disk.data) setPolicy(disk.data.policy);
   }, [policy, disk.data]);
   const [size, setSize] = useState(Math.min(128, vm.diskGiB * 2)),
@@ -87,7 +102,7 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
             className="primary compact"
             disabled={busy}
             onClick={() =>
-              void action.run(async () => {
+              void action.run(/** 中文：提交 POST /vms/{vm.id}/diagnostics，完成实例诊断、磁盘扩容与整理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/diagnostics for UI interaction and state presentation for VM diagnostics, disk growth and maintenance. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                 await request(`/vms/${vm.id}/diagnostics`, 'POST');
                 remote.reload();
               })
@@ -134,7 +149,7 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
           className="secondary compact"
           disabled={busy || vm.poweredOn || size <= vm.diskGiB || size > 128}
           onClick={() =>
-            void action.run(async () => {
+            void action.run(/** 中文：提交 POST /vms/{vm.id}/resize，完成实例诊断、磁盘扩容与整理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/resize for UI interaction and state presentation for VM diagnostics, disk growth and maintenance. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
               await request(`/vms/${vm.id}/resize`, 'POST', { diskGiB: size });
               remote.reload();
               await refresh();
@@ -151,7 +166,7 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
               className="secondary compact"
               disabled={busy || vm.status !== 'running'}
               onClick={() =>
-                void action.run(async () => {
+                void action.run(/** 中文：提交 POST /vms/{vm.id}/resize，完成实例诊断、磁盘扩容与整理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/resize for UI interaction and state presentation for VM diagnostics, disk growth and maintenance. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                   await request(`/vms/${vm.id}/resize`, 'POST', { finish: true });
                   remote.reload();
                 })
@@ -214,7 +229,7 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
               className="secondary compact"
               disabled={busy}
               onClick={() =>
-                void action.run(async () => {
+                void action.run(/** 中文：提交 PUT /vms/{vm.id}/disk-maintenance，完成实例诊断、磁盘扩容与整理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform PUT /vms/{vm.id}/disk-maintenance for UI interaction and state presentation for VM diagnostics, disk growth and maintenance. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                   await request(`/vms/${vm.id}/disk-maintenance`, 'PUT', policy);
                   disk.reload();
                 }, '磁盘维护策略已保存')
@@ -245,7 +260,7 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
             className="secondary compact"
             disabled={busy || vm.status !== 'running'}
             onClick={() =>
-              void action.run(async () => {
+              void action.run(/** 中文：提交 POST /vms/{vm.id}/disk-maintenance，完成实例诊断、磁盘扩容与整理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/disk-maintenance for UI interaction and state presentation for VM diagnostics, disk growth and maintenance. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                 await request(`/vms/${vm.id}/disk-maintenance`, 'POST', { mode: 'trim' });
                 remote.reload();
                 disk.reload();
@@ -258,7 +273,7 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
             className="secondary compact"
             disabled={busy || vm.poweredOn || vm.snapshots.length > 0 || vm.pendingResize}
             onClick={() =>
-              void action.run(async () => {
+              void action.run(/** 中文：提交 POST /vms/{vm.id}/compact，完成实例诊断、磁盘扩容与整理的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/compact for UI interaction and state presentation for VM diagnostics, disk growth and maintenance. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                 await request(`/vms/${vm.id}/compact`, 'POST');
                 remote.reload();
                 await refresh();

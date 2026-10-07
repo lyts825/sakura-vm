@@ -1,5 +1,8 @@
 /**
- * 模块职责：编辑并发起只读快照救援命令，展示救援任务和输出制品。
+ * 模块职责（中文）：编辑并发起只读快照救援命令，展示救援任务和输出制品。
+ * Module responsibility (English): UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles.
+ * 详细范围（中文）：公开入口包括 RescuePanel；职责覆盖快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include RescuePanel. The scope covers UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
@@ -10,6 +13,12 @@ import type { SandboxArtifact } from '../../shared/sandbox';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import { saveBlob, saveText } from '../../src/export-file';
 
+/**
+ * 中文：呈现快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现中的 RescuePanel 界面，订阅 /vms/{vm.id}/rescue，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the RescuePanel surface for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles, subscribing to /vms/{vm.id}/rescue. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request, refresh } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力）、refresh（refresh 状态） 上下文字段
+ * English: Inputs: { vm, request, refresh } provides context fields vm (vm state), request (transport capability bound to identity/authority scope), refresh (refresh state)
+ */
 export function RescuePanel({ vm, request, refresh }: FeatureProps) {
   const remote = useRemote<RescueView>(request, `/vms/${vm.id}/rescue`, !vm.sandbox, 2000);
   const action = useAction(),
@@ -34,9 +43,16 @@ export function RescuePanel({ vm, request, refresh }: FeatureProps) {
         message={action.message}
       />
       <form
-        onSubmit={(event) => {
+        onSubmit={/**
+         * 中文功能：拦截救援表单，按挂载选择提交分区、命令、超时与产物路径，通过动作反馈管理取消和失败并刷新任务视图。
+         * English: Intercept rescue submission and send partition/command/timeout/artifact paths according to mount choice, using action feedback for cancellation/failure and refreshing job views.
+         * 输入 / Inputs: event.
+         * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+         * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+         */
+        (event) => {
           event.preventDefault();
-          void action.run(async (signal) => {
+          void action.run(/** 中文：提交 POST /vms/{vm.id}/rescue，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/rescue for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
             await request(
               `/vms/${vm.id}/rescue`,
               'POST',
@@ -98,7 +114,7 @@ export function RescuePanel({ vm, request, refresh }: FeatureProps) {
               max={1800}
               required
               value={timeout}
-              onChange={(event) => setTimeout(Number(event.target.value))}
+              onChange={/** 中文：在快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现流程中timeout 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles, timeout state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：输入：event：触发本处理器的事件及其数据 | English: Inputs: event: triggering event and its data */ (event) => setTimeout(Number(event.target.value))}
             />
           </label>
           <label>
@@ -128,7 +144,7 @@ export function RescuePanel({ vm, request, refresh }: FeatureProps) {
             className="secondary compact"
             disabled={cancellation.busy}
             onClick={() =>
-              void cancellation.run(async (signal) => {
+              void cancellation.run(/** 中文：提交 POST /jobs/{running.id}/cancel，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /jobs/{running.id}/cancel for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 await request(`/jobs/${running.id}/cancel`, 'POST', undefined, signal);
                 remote.reload();
                 await refresh();
@@ -158,7 +174,7 @@ export function RescuePanel({ vm, request, refresh }: FeatureProps) {
                 className="secondary compact"
                 disabled={action.busy}
                 onClick={() =>
-                  void action.run(async (signal) => {
+                  void action.run(/** 中文：读取 GET /vms/{vm.id}/rescue/artifact?run={job.id}&artifact={artifact.id}，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vm.id}/rescue/artifact?run={job.id}&artifact={artifact.id} for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                     const value = await request<SandboxArtifact & { base64: string }>(
                       `/vms/${vm.id}/rescue/artifact?run=${job.id}&artifact=${artifact.id}`,
                       'GET',

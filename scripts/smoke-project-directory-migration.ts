@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目目录迁移的预览、所有权变化、持久 latch、失败和恢复。 */
+/** 烟雾验收：验证项目目录迁移的预览、所有权变化、持久 latch、失败和恢复。
+ * Smoke acceptance for directory-migration preview/ownership/durable latch/failure and recovery. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
@@ -68,6 +69,8 @@ if (reuse) assert.equal(dirname(await realpath(attempt)), root);
 const alphaId = reuse ? randomUUID().replaceAll('-', '').slice(0, 16) : 'default';
 const betaId = reuse ? randomUUID().replaceAll('-', '').slice(0, 16) : 'b'.repeat(16);
 const projectRoot = reuse ? '/srv/projects/sakura-owned-migration-' + randomUUID() : '/srv/projects';
+/** 把统一 /srv/projects 样本前缀映射到当前自有根目录，保持跨场景相对结构。
+ * Map the shared /srv/projects sample prefix to this owned root while preserving relative scenario layout. */
 const mappedDirectory = (value: string) => value.replaceAll('/srv/projects', projectRoot);
 process.env.TEMP = process.env.TMP = parent;
 process.env.SAKURA_DATA_DIR = root;
@@ -76,6 +79,8 @@ process.env.SAKURA_IMAGE_PATH = join(workspace, '.data', 'images', 'debian-12.qc
 const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
 const { Workspaces, projectSchema } = await import('../server/workspaces.ts');
+/** 用生产 schema 解析项目，并为非 default 项目增加非枚举 _workspace 上下文，避免内部标记进入落盘配置。
+ * Parse production project schema and attach nonenumerable _workspace for nondefault projects so internal context does not enter persisted settings. */
 const ownProject = (value: unknown) => {
   const project = projectSchema.parse(value);
   if (alphaId !== 'default')
@@ -148,20 +153,30 @@ let id = '',
   originalInput = machines.execInput;
 let originalIndex: Buffer | undefined;
 let priorGuest: object | undefined;
+/** 按 default/其他项目选择本实例专属项目配置文件，不混用活动项目配置。
+ * Select this VM’s default or named project configuration file without mixing active-project settings. */
 const projectFile = () =>
   join(vmDir(id), alphaId === 'default' ? 'project.json' : 'project-' + alphaId + '.json');
+/** 保存已完成断言的场景名称与证据并输出通过，供最终报告汇总；调用方负责实际核验。
+ * Retain the asserted case name/evidence and print acceptance for final reporting; callers perform the actual checks. */
 const checkpoint = (name: string, detail: object = {}) => {
   proof.cases.push({ name, ...detail, passed: true });
   console.log('PASS ' + name);
 };
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string, timeout = 15000) => {
   const result = await machines.exec(id, command, timeout);
   assert.equal(result.code, 0, result.stderr + result.stdout);
   return result.stdout.trim();
 };
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const py = (source: string) =>
   'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' +
   quote(source);
+/** 以隔离 Python 读取自有路径的物理元数据和普通文件摘要，返回 JSON 供迁移前后比较；只观测，不修改所有权。
+ * Read owned-path physical metadata/regular-file hashes with isolated Python, returning JSON for pre/post-migration comparison without changing ownership. */
 const inspect = async (path: string) =>
   JSON.parse(
     await run(
@@ -170,6 +185,8 @@ const inspect = async (path: string) =>
       ),
     ),
   );
+/** 启动自有实例，在四分半内只允许 starting → running，其他状态或期限失败。
+ * Start the owned VM and allow only starting-to-running within four-and-a-half minutes, failing other states/expiry. */
 const start = async () => {
   await machines.start(id);
   const deadline = Date.now() + 270000;
@@ -179,6 +196,8 @@ const start = async () => {
     await delay(300);
   }
 };
+/** 从已审核计划复制 planId/sha256 构造 apply 请求，明确 reviewed=true，绑定用户确认的精确计划。
+ * Copy planId/sha256 from the reviewed plan into apply input with reviewed=true, binding confirmation to that exact plan. */
 const inputFor = (plan: any) => ({
   action: 'apply',
   version: 1,
@@ -186,10 +205,13 @@ const inputFor = (plan: any) => ({
   sha256: plan.sha256,
   reviewed: true,
 });
+/** 暂时记录真实 exec 命令，要求普通及只读终端都被迁移门阻断；核对没有安装/建域/开 tmux 副作用后恢复原入口。
+ * Temporarily record real exec commands, require both ordinary/read-only terminals blocked by migration and verify no install/domain/tmux side effects before restoring the entry. */
 const expectTerminalGate = async (phase: string) => {
   const originalExec = machines.exec,
     commands: string[] = [];
-  machines.exec = async function (vmId, command, ...args) {
+  machines.exec = /** 约束迁移用例全部 exec 到本次 VM，保存命令观测后按原调用约定执行，避免夹具触及用户实例。
+ * Constrain every migration-test exec to this VM, record commands and execute with original calling convention so the fixture cannot touch user instances. */ async function (vmId, command, ...args) {
     assert.equal(vmId, id);
     commands.push(command);
     return originalExec.call(machines, vmId, command, ...args);
@@ -263,7 +285,8 @@ try {
     { id: betaId, name: 'Owned Beta ' + betaId },
   );
   await writeFile(join(vmDir(id), 'projects.json'), JSON.stringify(index));
-  await spaces.projects.inScope(id, alphaId, async () => {
+  await spaces.projects.inScope(id, alphaId, /** 按冻结计划哈希验证目录迁移从预览到 UID 激活与重绑：拒绝链接、物理重叠、目录变化及活动租约，保留邻项目原证据。故障窗口分别位于真实 fchown、账户确认、重绑 ACK 和最终 latch 释放，验证重启后只恢复同一计划/下一修订且未确认时持续阻止入场。
+ * Verify directory migration by frozen plan digest from preview through UID activation/rebinding: reject links, physical overlap, tree changes and active leases while retaining neighbor evidence. Inject faults after real fchown, account confirmation, rebind ACK and final latch release to prove reboot recovery accepts only the same plan/exact next revision and blocks admission until confirmed. */ async () => {
     if (reuse) assert.equal(await core.inspect(id, alphaId), null);
     assert.equal((await migration.view(id)).plan, null);
     if (reuse) assert.equal(await core.inspect(id, alphaId), null);
@@ -312,7 +335,8 @@ try {
       betaBefore = await inspect(mappedDirectory('/srv/projects/beta/marker.txt'));
     const originalEnsure = core.ensure;
     let dropEnsure = true;
-    core.ensure = async function (...args) {
+    core.ensure = /** 沿用真实 ensure，一次性丢失其确认以测试固定账户意图恢复；无论真实调用成功或当次失败都消费该故障，后续原结果/错误透明返回。
+ * Call real ensure and lose one acknowledgement to test recovery of the fixed account intent; consume the fault on that attempt’s success/failure and otherwise preserve original results/errors. */ async function (...args) {
       try {
         const result = await originalEnsure.apply(core, args);
         if (dropEnsure) {
@@ -594,7 +618,8 @@ try {
       fixtureHelperSha256: createHash('sha256').update(injected).digest('hex'),
     };
     let injectedOnce = false;
-    machines.execInput = async function (vmId, command, data, ...rest) {
+    machines.execInput = /** 只将精确 apply planId 的一次 helper 替换成 fchown 后暂停版本，正文和其它参数原样转发，为真实半迁移恢复制造可核验窗口。
+ * Replace the helper only once for the exact apply planId with a post-fchown pause, forwarding body/other arguments unchanged to create a verifiable real partial-migration recovery window. */ async function (vmId, command, data, ...rest) {
       const request = JSON.parse(data.toString());
       if (!injectedOnce && request.action === 'apply' && request.planId === fault.proposal.planId) {
         assert.equal(vmId, id);
@@ -667,7 +692,8 @@ try {
       boundary: 'explicit retry after real fchown and before fchmod; durable failed latch',
     };
     let failRetry = true;
-    machines.execInput = async function (vmId, command, bytes, ...args) {
+    machines.execInput = /** 仅对同计划的首次显式 apply 重试注入 fchown 后失败，保留真实 owner 修改并验证 durable failed latch 阻止新入场。
+ * Inject post-fchown failure only into the same plan’s first explicit apply retry, preserving real ownership changes to test durable failed-latch admission blocking. */ async function (vmId, command, bytes, ...args) {
       const request = JSON.parse(bytes.toString());
       if (failRetry && request.action === 'apply' && request.planId === fault.proposal.planId) {
         failRetry = false;
@@ -743,7 +769,8 @@ try {
     assert.equal(rebound.proposal.identity.directory, mappedDirectory('/srv/projects/alpha'));
     const originalRebind = core.rebind;
     let dropRebind = true;
-    core.rebind = async function (...args) {
+    core.rebind = /** 先真实完成 rebind 再丢一次 ACK，验证相同计划重试只能确认已经产生的精确下一修订，不能再递增身份。
+ * Complete real rebind before losing one ACK, proving same-plan retry confirms the exact already-created next revision rather than incrementing identity again. */ async function (...args) {
       const result = await originalRebind.apply(core, args);
       if (dropRebind) {
         dropRebind = false;
@@ -802,7 +829,8 @@ try {
       boundary: 'after real applied receipt fsync, before final latch release',
     };
     let interruptConfirm = true;
-    machines.execInput = async function (vmId, command, bytes, timeout, signal) {
+    machines.execInput = /** 只替换精确 confirm planId 的 helper，在 applied receipt fsync 后、最终 latch 释放前失败；保留原正文与取消参数用于复验不确定状态。
+ * Replace only the exact confirm planId’s helper to fail after applied-receipt fsync but before final latch release, preserving body/abort arguments for uncertainty-state verification. */ async function (vmId, command, bytes, timeout, signal) {
       const request = JSON.parse(Buffer.from(bytes).toString());
       if (interruptConfirm && request.action === 'confirm' && request.planId === finalWrite.proposal.planId) {
         interruptConfirm = false;

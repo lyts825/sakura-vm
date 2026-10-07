@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实 QMP 热插拔及工程工具在独立 VM 中的集成。 */
+/** 烟雾验收：验证真实 QMP 热插拔及工程工具在独立 VM 中的集成。
+ * Smoke acceptance for real QMP hotplug and engineering-tool integration in an independent VM. */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -123,6 +124,8 @@ try {
   );
   await machines.writeGuestFile(id, '/workspace/app/file.txt', 'hello', false);
   await authorizeOwnedProjectFixture(machines, features.workspaces, id);
+  /** 提交指定工程操作并等待任务，与预期 done/error 比较；返回 JSON 日志结果，失败附操作名和完整诊断。
+   * Submit the engineering operation/await its job and compare expected done/error; return JSON log results with operation/full diagnostics on mismatch. */
   const operate = async (
     operation: string,
     parameters: Record<string, unknown>,
@@ -174,6 +177,8 @@ try {
   assert.equal(npmLock.code, 0, npmLock.stderr);
   await features.workspaces.save(id, { directory: fixture, environment: {} });
   await authorizeOwnedProjectFixture(machines, features.workspaces, id);
+  /** 通过 next 功能提交 dependency-bot 任务，等待 done 并取正式结果；保留错误与日志判断执行成功。
+   * Submit dependency-bot through next capabilities, await done and fetch its production result using errors/logs to assess execution success. */
   const botRun = async (options: Record<string, unknown>) => {
     const job: any = await features.next.action(id!, {
       action: 'run',

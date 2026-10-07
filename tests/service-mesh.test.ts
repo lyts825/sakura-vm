@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - mesh saves legacy-compatible policies and binds persistent sidecars to a private project
- * - private projects reuse ports while shared policy saves and network edits cannot race reservations
- * - mesh refuses stale process bindings, preserves other projects on cancellation and cleans orphans
+ * 模块职责：回归验证模块，围绕 `service-mesh` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `service-mesh`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: mesh saves legacy-compatible policies and binds persistent sidecars to a private project; private projects reuse ports while shared policy saves and network edits cannot race reservations.
  */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,18 +32,100 @@ after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回受控对象，公开字段包括 `model, mesh, state, envoy, python, enabled, usable, launch`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `model, mesh, state, envoy, python, enabled, usable, launch`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `meshIdentityFixture`.
+ */
 async function fixture() {
   const model = await meshIdentityFixture();
-  return { ...model, model, get mesh() { return model.mesh; },
+  return { ...model, model, /**
+   * 中文功能：读取夹具当前状态或暴露受控句柄，供断言观察。
+   * English: Read current fixture state or expose a controlled handle for assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`model.mesh`）。
+   * Result: Return the branch-computed value (`model.mesh`).
+   */
+  get mesh() { return model.mesh; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: string。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `model.state.guest`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     state: (value: string) => { model.state.guest = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `model.state.envoy`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     envoy: (value: boolean) => { model.state.envoy = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `model.state.python`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     python: (value: boolean) => { model.state.python = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `model.state.enabled`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     enabled: (value: boolean) => { model.state.enabled = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: boolean。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `model.state.usable`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     usable: (value: boolean) => { model.state.usable = value; },
-    launch: (value: () => void) => { model.state.launchHook = value; },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: () => void。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `model.state.launchHook`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
+    launch: (value: /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+     * Result: The declared return type defines the result; its test provider supplies the implementation.
+     */
+    () => void) => { model.state.launchHook = value; },
   };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: mesh saves legacy-compatible policies and binds persistent sidecars to a private project
+ * 协作入口 / Collaborators: `fixture`, `f.workspaces.save`, `assert.equal`, `f.mesh.action`.
+ * 检查边界 / Checked boundaries: `assert.equal((await f.mesh.action(f.id, { mode: 'save', policy }, 'check')).ready, true)`; `assert.equal((await f.mesh.status(f.id)).policy, null, 'preview must not persist')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('mesh saves legacy-compatible policies and binds persistent sidecars to a private project', async () => {
   const f = await fixture();
   try {
@@ -109,6 +192,18 @@ test('mesh saves legacy-compatible policies and binds persistent sidecars to a p
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: private projects reuse ports while shared policy saves and network edits cannot race reservations
+ * 协作入口 / Collaborators: `fixture`, `f.mesh.action`, `f.workspaces.projects.create`, `f.workspaces.projects.with`.
+ * 检查边界 / Checked boundaries: `assert.ok(f.running.has(beta))`; `assert.equal(f.running.has(alpha), false)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('private projects reuse ports while shared policy saves and network edits cannot race reservations', async () => {
   const f = await fixture();
   try {
@@ -158,6 +253,19 @@ test('private projects reuse ports while shared policy saves and network edits c
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: mesh refuses stale process bindings, preserves other projects on cancellation and cleans orphans
+ * 状态影响 / State effects: `f.running.get('default')!.valid`, `f.running.get('default')!.orphan`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `f.mesh.action`, `f.running.get`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal((await f.mesh.status(f.id)).ready, false)`; `assert.rejects(f.mesh.action(f.id, { mode: 'start' }, 'run'), /先停止/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('mesh refuses stale process bindings, preserves other projects on cancellation and cleans orphans', async () => {
   const f = await fixture();
   try {
@@ -194,6 +302,18 @@ test('mesh refuses stale process bindings, preserves other projects on cancellat
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: paused guests and serialized disabled settings cannot allow unsafe edits or a late start
+ * 协作入口 / Collaborators: `fixture`, `f.mesh.action`, `f.state`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal((await f.mesh.status(f.id)).sidecarStateKnown, false)`; `assert.rejects(f.mesh.action(f.id, { mode: 'save', policy }, 'run'), /恢复实例/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('paused guests and serialized disabled settings cannot allow unsafe edits or a late start', async () => {
   const f = await fixture();
   try {
@@ -219,6 +339,18 @@ test('paused guests and serialized disabled settings cannot allow unsafe edits o
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: an installed but unusable Envoy is reported unready and cannot leave a running sidecar
+ * 协作入口 / Collaborators: `fixture`, `f.mesh.action`, `f.usable`, `f.mesh.status`.
+ * 检查边界 / Checked boundaries: `assert.equal(unprobed.envoyUsable, null)`; `assert.equal(current.envoyInstalled, true)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('an installed but unusable Envoy is reported unready and cannot leave a running sidecar', async () => {
   const f = await fixture();
   try {
@@ -241,6 +373,18 @@ test('an installed but unusable Envoy is reported unready and cannot leave a run
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: public capability settings persist and the real enabled callback rejects stale sidecar starts
+ * 协作入口 / Collaborators: `fixture`, `Object.assign`, `next.init`, `next.serviceMesh.action`.
+ * 检查边界 / Checked boundaries: `assert.equal((await next.view(f.id)).settings['service-mesh'].enabled, false)`; `assert.rejects(next.serviceMesh.action(f.id, { mode: 'start' }, 'run'), /已禁用/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('public capability settings persist and the real enabled callback rejects stale sidecar starts', async () => {
   const f = await fixture(),
     next = new NextFeatures(f.machines, f.workspaces);
@@ -267,6 +411,16 @@ test('public capability settings persist and the real enabled callback rejects s
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sidecar schema accepts only fixed loopback TCP policies
+ * 协作入口 / Collaborators: `assert.equal`, `serviceMeshInput.safeParse`, `envoySidecarConfig`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.equal( serviceMeshInput.safeParse({ mode: 'save', policy: { ...policy, upstreamPort: 15001 } }).success, false, )`; `assert.equal( serviceMeshInput.safeParse({ mode: 'save', policy: { ...policy, name: 'api;rm' } }).success, false, )`.
+ */
 test('sidecar schema accepts only fixed loopback TCP policies', () => {
   assert.equal(
     serviceMeshInput.safeParse({ mode: 'save', policy: { ...policy, upstreamPort: 15001 } }).success,

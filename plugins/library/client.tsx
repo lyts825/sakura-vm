@@ -1,5 +1,8 @@
 /**
- * 模块职责：“实例整理”插件的实例分组、标签、收藏和批量操作页面，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“实例整理”插件的实例分组、标签、收藏和批量操作页面，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for VM grouping, tags and batch operations.
+ * 详细范围（中文）：公开入口包括 OrganizationCard, LibraryPanel, pages；职责覆盖实例分组、标签与批量操作的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include OrganizationCard, LibraryPanel, pages. The scope covers UI interaction and state presentation for VM grouping, tags and batch operations. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { embeddedPluginComponent } from '../../src/plugin-client';
 import { Boxes, Inbox, Play, Save, Square, Star } from 'lucide-react';
@@ -10,9 +13,31 @@ import { Feedback, formatBytes, useAction } from '../../src/feature-shared';
 import '../../src/features.css';
 import { PluginGate } from '../../src/plugin-context';
 import { PluginBoundary } from '../../src/plugin-boundary';
+/**
+ * 中文：懒加载 ../recipes/client 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码
+ * English: Lazily load ../recipes/client and adapt its selected export as the default React component, deferring this feature's UI code download
+ */
 const loadRecipeImporter = () =>
   import('../recipes/client').then((module) => ({ default: module.RecipeImporter }));
 
+/**
+ * 中文：呈现实例分组、标签与批量操作的界面交互与状态呈现中的 OrganizationCard 界面，组合 Star、Save，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the OrganizationCard surface for UI interaction and state presentation for VM grouping, tags and batch operations and composing Star, Save. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  vm,
+  request,
+  refresh,
+  selected,
+  toggle,
+} 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力）、refresh（refresh 状态）、selected（当前选择）、toggle（toggle 状态） 上下文字段
+ * English: Inputs: {
+  vm,
+  request,
+  refresh,
+  selected,
+  toggle,
+} provides context fields vm (vm state), request (transport capability bound to identity/authority scope), refresh (refresh state), selected (current selection), toggle (toggle state)
+ */
 export function OrganizationCard({
   vm,
   request,
@@ -22,15 +47,21 @@ export function OrganizationCard({
 }: {
   vm: VMView;
   request: Request;
-  refresh: () => Promise<unknown>;
+  refresh: /** 中文：请求父级重新核对远端视图；完成异步刷新后才兑现返回值；这是 OrganizationCard 的调用契约 | English: Ask the parent to reconcile remote state and fulfill only after asynchronous refresh; this is the callable contract of OrganizationCard | 中文：结果：Promise<unknown>；调用者依赖此类型约定，Promise 拒绝表示异步失败 | English: Result: Promise<unknown>; callers depend on this type contract, with promise rejection representing asynchronous failure */ () => Promise<unknown>;
   selected: boolean;
-  toggle: () => void;
+  toggle: /** 中文：通知父级切换分组展开状态，不直接修改实例资源；这是 OrganizationCard 的调用契约 | English: Notify the parent to toggle group expansion without directly modifying VM resources; this is the callable contract of OrganizationCard | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ () => void;
 }) {
   const [group, setGroup] = useState(vm.organization?.group || ''),
     [tags, setTags] = useState(vm.organization?.tags.join(', ') || '');
   const action = useAction();
+  /**
+   * 中文：提交 PUT /vms/{vm.id}/organization，完成实例分组、标签与批量操作的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform PUT /vms/{vm.id}/organization for UI interaction and state presentation for VM grouping, tags and batch operations. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：favorite：此处理器的调用值（缺省 !!vm.organization?.favorite）
+   * English: Inputs: favorite: the invocation value for this handler (default !!vm.organization?.favorite)
+   */
   const save = (favorite = !!vm.organization?.favorite) =>
-    action.run(async () => {
+    action.run(/** 中文：提交 PUT /vms/{vm.id}/organization，完成实例分组、标签与批量操作的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform PUT /vms/{vm.id}/organization for UI interaction and state presentation for VM grouping, tags and batch operations. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${vm.id}/organization`, 'PUT', {
         group,
         tags: tags
@@ -88,6 +119,20 @@ export function OrganizationCard({
   );
 }
 
+/**
+ * 中文：呈现实例分组、标签与批量操作的界面交互与状态呈现中的 LibraryPanel 界面，组合 Boxes、Play、Square、Inbox，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the LibraryPanel surface for UI interaction and state presentation for VM grouping, tags and batch operations and composing Boxes, Play, Square, Inbox. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  request,
+  vms,
+  refresh,
+} 提供 request（带身份和权限作用域的传输能力）、vms（vms 状态）、refresh（refresh 状态） 上下文字段
+ * English: Inputs: {
+  request,
+  vms,
+  refresh,
+} provides context fields request (transport capability bound to identity/authority scope), vms (vms state), refresh (refresh state)
+ */
 export function LibraryPanel({
   request,
   vms,
@@ -95,7 +140,7 @@ export function LibraryPanel({
 }: {
   request: Request;
   vms: VMView[];
-  refresh: () => Promise<unknown>;
+  refresh: /** 中文：请求父级重新核对远端视图；完成异步刷新后才兑现返回值；这是 LibraryPanel 的调用契约 | English: Ask the parent to reconcile remote state and fulfill only after asynchronous refresh; this is the callable contract of LibraryPanel | 中文：结果：Promise<unknown>；调用者依赖此类型约定，Promise 拒绝表示异步失败 | English: Result: Promise<unknown>; callers depend on this type contract, with promise rejection representing asynchronous failure */ () => Promise<unknown>;
 }) {
   const [selected, setSelected] = useState<string[]>([]),
     [group, setGroup] = useState('all'),
@@ -112,8 +157,14 @@ export function LibraryPanel({
     )
     .sort((a, b) => Number(!!b.organization?.favorite) - Number(!!a.organization?.favorite));
   const chosen = vms.filter((v) => selected.includes(v.id));
+  /**
+   * 中文：提交 POST /vms/batch，完成实例分组、标签与批量操作的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/batch for UI interaction and state presentation for VM grouping, tags and batch operations. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：kind：签名所示 'start' | 'stop' 业务值
+   * English: Inputs: kind: the 'start' | 'stop' domain value in the signature
+   */
   const batch = (kind: 'start' | 'stop') =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/batch，完成实例分组、标签与批量操作的界面交互与状态呈现的数据交互并更新results 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/batch for UI interaction and state presentation for VM grouping, tags and batch operations and update results state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       const result = await request<{ results: { id: string; ok: boolean; error?: string }[] }>('/vms/batch', 'POST', { ids: chosen.map((v) => v.id), action: kind });
       setResults(result.results);
       await refresh();

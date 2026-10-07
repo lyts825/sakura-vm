@@ -1,4 +1,5 @@
-/** 烟雾验收：验证两个独立 Sakura 服务在重启和丢失回复后以原传输继续迁移。 */
+/** 烟雾验收：验证两个独立 Sakura 服务在重启和丢失回复后以原传输继续迁移。
+ * Smoke acceptance for migration continuation across two separate service restarts and lost replies using the original transfer. */
 import assert from 'node:assert/strict';
 import { fork, type ChildProcess } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -33,9 +34,13 @@ let machines: InstanceType<typeof Machines> | undefined;
 let peers: InstanceType<typeof HostPeers> | undefined;
 let vmId: string | undefined;
 let workerOutput = '';
-const pending = new Map<number, { resolve: (value: Reply) => void; reject: (error: Error) => void }>();
+const pending = new Map<number, { resolve: /** 以请求 ID 匹配的目标 worker 成功回复兑现等待者；Promise 不接纳其他请求或未完成启动的状态。
+ * Resolve a waiter with the target worker’s successful reply matched by request ID; unrelated replies or incomplete startup cannot fulfill it. */ (value: Reply) => void; reject: /** 以目标 worker 错误、退出或截止失败拒绝当前请求，调用方同时移除 pending 槽与计时资源。
+ * Reject the current request on target-worker error, exit or deadline, with the caller removing its pending slot/timer resources. */ (error: Error) => void }>();
 let sequence = 0;
 
+/** 给 IPC 操作分配请求 ID 并登记 Promise 等待者，回包按 ID 关联；发送失败删除等待项并拒绝。
+ * Allocate an IPC request ID/register its promise waiter and correlate replies by ID; send failure removes the waiter and rejects. */
 function request(action: 'grant' | 'inspect' | 'restart', payload: Record<string, unknown>) {
   const id = ++sequence;
   return new Promise<Reply>((resolve, reject) => {
@@ -58,9 +63,12 @@ try {
   worker.stderr?.on('data', (chunk: Buffer) => {
     workerOutput = (workerOutput + chunk.toString()).slice(-6000);
   });
-  const ready = await new Promise<Reply>((resolve, reject) => {
+  const ready = await new Promise<Reply>(/** 把目标子进程 ready/error、ID 回复与退出转换成 Promise；启动最多 60 秒，退出拒绝所有请求并清空 pending，不把日志作为 ready。
+ * Bridge target-child ready/error, ID replies and exit into promises; bound startup to sixty seconds and reject/clear all pending work on exit without treating logs as readiness. */ (resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Target worker timeout: ${workerOutput}`)),
       60_000);
+    /** 处理 ready/error 启动消息并清理启动计时器，按 ID 消费任务等待者；未知或过期 ID 忽略，业务拒绝转换为 Error。
+     * Handle ready/error startup messages and clear the boot timer; consume job waiters by ID, ignoring unknown/expired IDs and converting denials into errors. */
     const onMessage = (message: Reply) => {
       if (message.type === 'ready') { clearTimeout(timer); resolve(message); }
       else if (message.type === 'error') {
@@ -84,6 +92,8 @@ try {
   engine = await createRuntime();
   machines = new Machines(engine);
   await machines.init();
+  /** 提供源夹具固定资源和实际实例数，支持真实对等迁移采样。
+   * Provide fixed source resources/actual VM counts for real peer migration sampling. */
   const status = async () => ({ platform: process.platform, arch: process.arch,
     cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFree: 4 * 1024 ** 3,
     load: [0, 0, 0], vmCount: machines!.records.size,
@@ -119,7 +129,8 @@ try {
   const prepare = peers.prepareLiveTarget.bind(peers), complete = peers.completeLiveTarget.bind(peers);
   let preparedTransfer: string | undefined, preparedSession: string | undefined;
   let losePrepare = true;
-  peers.prepareLiveTarget = async (peerId, input) => {
+  peers.prepareLiveTarget = /** 真实 prepare 已完成后仅丢一次回应，重试必须使用相同 transfer/session 票据，验证接收事务的幂等性。
+ * Lose one reply only after real prepare completes; retry must retain the same transfer/session receipts, testing receiver-transaction idempotence. */ async (peerId, input) => {
     const transferId = (input as { transferId: string }).transferId;
     if (preparedTransfer) assert.equal(transferId, preparedTransfer);
     preparedTransfer = transferId;
@@ -129,7 +140,8 @@ try {
     if (losePrepare) { losePrepare = false; throw new Error('injected prepare response loss'); }
     return receipt;
   };
-  peers.completeLiveTarget = async (peerId, input) => {
+  peers.completeLiveTarget = /** 真实 complete 后限时等待目标运行且 origin ready，再故意丢回应；验证源端在未知切换结果时通过精确目标查询恢复而不盲目双开。
+ * After real complete, wait boundedly for running target/ready origin before deliberately losing the reply, testing source recovery via exact-target inspection rather than blindly starting both sides. */ async (peerId, input) => {
     let receipt = await complete(peerId, input);
     const deadline = Date.now() + 120_000;
     while (receipt.status !== 'running' || receipt.originStatus !== 'ready') {

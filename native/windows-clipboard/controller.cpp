@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：提供本用户/会话的策略配置、状态和受控启动命令。把授权阶段、精确进程创建时间、固定文件摘要和 Job 归属反复核对，只有早期策略已就绪才恢复主线程；失败清理自身持有的孩子。
+ * Module responsibilities (English): Provide current-user/session policy configuration/status/controlled launch commands. Revalidate authorization phases, exact process creation time, pinned file digest and Job membership, resume only after early policy readiness and clean owned children on failure.
+ */
 /** Windows 剪贴板控制器：核实精确进程与文件身份，装载策略并按 prepared、attached、committed 握手控制挂起启动。 */
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0a00
@@ -24,10 +28,14 @@
 #endif
 struct Handle {
   HANDLE value;
+  /** 中文：取得传入内核句柄的独占关闭责任，复制被删除以避免重复 CloseHandle。 English: Take exclusive closing responsibility for the supplied kernel handle, with copying deleted to prevent double CloseHandle. 参数声明 / Declared parameters: HANDLE h. */
   explicit Handle(HANDLE h):value(h) {}
+  /** 中文：关闭仍有效的自有内核句柄，空值或 INVALID_HANDLE_VALUE 不关闭。 English: Close a still-valid owned kernel handle, skipping null/INVALID_HANDLE_VALUE. */
   ~Handle() { if (value && value!=INVALID_HANDLE_VALUE) CloseHandle(value); }
+  /** 中文：删除此类型的复制构造，避免裸句柄或自有缓冲区被多个对象重复释放；传入对象不能通过此声明复制。 English: Delete this type's copy constructor to prevent multiple objects releasing the same raw handle/owned buffer; the supplied object cannot be copied through this declaration. 参数声明 / Declared parameters: const Handle&. */
   Handle(const Handle&)=delete;
 };
+/** 中文：严格将宽文本编码为 UTF-8，拒绝无效 Unicode，供 JSON 输出和摘要比较使用。 English: Strictly encode wide text as UTF-8, rejecting invalid Unicode for JSON output and digest comparison. 参数声明 / Declared parameters: const std::wstring& value. */
 static std::string utf8(const std::wstring& value) {
   const int count=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,value.data(),int(value.size()),nullptr,0,nullptr,nullptr);
   if (!count && !value.empty()) throw std::runtime_error("invalid Unicode path");
@@ -35,6 +43,7 @@ static std::string utf8(const std::wstring& value) {
   if (count) WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,value.data(),int(value.size()),result.data(),count,nullptr,nullptr);
   return result;
 }
+/** 中文：先转 UTF-8，再转义引号、反斜杠和控制字符，返回完整 JSON 字符串字面量。 English: Encode UTF-8 and escape quotes/backslashes/control bytes, returning a complete JSON string literal. 参数声明 / Declared parameters: const std::wstring& value. */
 static std::string json(const std::wstring& value) {
   const auto encoded=utf8(value);
   std::string result="\"";
@@ -47,9 +56,11 @@ static std::string json(const std::wstring& value) {
   }
   return result+'"';
 }
+/** 中文：按 Windows 序数且忽略大小写比较完整宽字符串，不依赖当前语言区域。 English: Compare complete wide strings ordinally/case-insensitively without depending on locale. 参数声明 / Declared parameters: const std::wstring& a,const std::wstring& b. */
 static bool same(const std::wstring& a,const std::wstring& b) {
   return CompareStringOrdinal(a.data(),int(a.size()),b.data(),int(b.size()),TRUE)==CSTR_EQUAL;
 }
+/** 中文：读取进程 TokenUser 数据，限制缓冲到 64 KiB，并用 RAII 关闭临时令牌；失败抛错而非返回空 SID。 English: Read process TokenUser data with a sixty-four-KiB bound and RAII token closure; throw on failure rather than returning an empty SID. 参数声明 / Declared parameters: HANDLE process. */
 static std::vector<unsigned char> user(HANDLE process) {
   HANDLE tokenRaw=nullptr;
   if (!OpenProcessToken(process,TOKEN_QUERY,&tokenRaw)) throw std::runtime_error("process token unavailable");
@@ -60,16 +71,19 @@ static std::vector<unsigned char> user(HANDLE process) {
   if (!GetTokenInformation(token.value,TokenUser,bytes.data(),length,&length)) throw std::runtime_error("process token unavailable");
   return bytes;
 }
+/** 中文：将目标进程与控制器 TokenUser SID 比较，仅同一 Windows 用户可进入后续附加流程。 English: Compare target/controller TokenUser SIDs so only the same Windows user enters attachment checks. 参数声明 / Declared parameters: HANDLE process. */
 static bool ownUser(HANDLE process) {
   const auto actual=user(process), expected=user(GetCurrentProcess());
   return EqualSid(reinterpret_cast<const TOKEN_USER*>(actual.data())->User.Sid,
     reinterpret_cast<const TOKEN_USER*>(expected.data())->User.Sid)!=FALSE;
 }
+/** 中文：从已持有进程句柄读取完整映像路径，失败明确拒绝身份判断。 English: Read the complete image path from a held process handle and explicitly reject failed identity inspection. 参数声明 / Declared parameters: HANDLE process. */
 static std::wstring image(HANDLE process) {
   std::wstring result(32768,L'\0'); DWORD length=DWORD(result.size());
   if (!QueryFullProcessImageNameW(process,0,result.data(),&length)) throw std::runtime_error("process image unavailable");
   result.resize(length); return result;
 }
+/** 中文：仅接受非空十进制数字串，检查转换溢出和尾部字符，返回 uint64 整数。 English: Accept nonempty decimal digits only, check overflow/trailing characters and return a uint64 integer. 参数声明 / Declared parameters: const wchar_t* value. */
 static uint64_t number(const wchar_t* value) {
   if (!value || !*value || !std::all_of(value,value+wcslen(value),[](wchar_t c){return c>=L'0' && c<=L'9';}))
     throw std::runtime_error("invalid integer");
@@ -78,20 +92,24 @@ static uint64_t number(const wchar_t* value) {
   if (errno || !last || *last) throw std::runtime_error("invalid integer");
   return result;
 }
+/** 中文：验证 owner 的 36 字符身份形状并组合 owner、PID、创建时间为策略映射名，防止 PID 重用复用旧映射。 English: Validate the owner's thirty-six-character identity shape and combine owner/PID/creation time into a mapping name, preventing PID reuse from selecting old mappings. 参数声明 / Declared parameters: const wchar_t* owner,DWORD pid,uint64_t created. */
 static std::wstring mapping(const wchar_t* owner,DWORD pid,uint64_t created) {
   const std::wstring name(owner);
   if (name.size()!=36 || !std::all_of(name.begin(),name.end(),[](wchar_t c){return (c>=L'a'&&c<=L'f') || (c>=L'0'&&c<=L'9') || c==L'-';}))
     throw std::runtime_error("invalid policy owner");
   return L"Local\\SakuraClipboard."+name+L"."+std::to_wstring(pid)+L"."+std::to_wstring(created);
 }
+/** 中文：用 IsWow64Process2 判断仅支持的 x86/x64 位数，检查不可用或其他架构返回零。 English: Use IsWow64Process2 for supported x86/x64 width, returning zero on unavailable inspection/other architectures. 参数声明 / Declared parameters: HANDLE process. */
 static unsigned bits(HANDLE process) {
   USHORT wow=0,native=0;
+  /** 中文：声明 IsWow64Process2 动态调用契约，输出进程和宿主机器类型以判断目标位宽。 English: Declare the dynamic IsWow64Process2 contract reporting process/host machine types for target bitness. 参数声明 / Declared parameters: HANDLE,USHORT*,USHORT*. */
   using Inspect=BOOL (WINAPI *)(HANDLE,USHORT*,USHORT*);
   const auto inspect=reinterpret_cast<Inspect>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"IsWow64Process2"));
   if (!inspect || !inspect(process,&wow,&native)) return 0;
   if (wow==IMAGE_FILE_MACHINE_I386) return 32;
   return wow==IMAGE_FILE_MACHINE_UNKNOWN && native==IMAGE_FILE_MACHINE_AMD64 ? 64 : 0;
 }
+/** 中文：枚举精确进程模块，支持完整路径或明确 basename 比较；只对加载表变化的 ERROR_BAD_LENGTH 有界重试，权限/身份错误直接拒绝。 English: Enumerate exact-process modules by full path or explicitly selected basename. Retry only loader-table ERROR_BAD_LENGTH within a bound; reject authority/identity errors immediately. 参数声明 / Declared parameters: DWORD pid,const std::wstring& wanted,bool basename=false. */
 static uintptr_t module(DWORD pid,const std::wstring& wanted,bool basename=false) {
   Handle snapshot(nullptr);
   for(unsigned attempt=0;attempt<32;++attempt) {
@@ -111,6 +129,7 @@ static uintptr_t module(DWORD pid,const std::wstring& wanted,bool basename=false
   } while (Module32NextW(snapshot.value,&entry));
   return 0;
 }
+/** 中文：为远端函数分配并写入参数，等待线程结束后释放；30 秒未结束时保留目标仍拥有的内存以免初始化读取已释放地址，并报告 pending。 English: Allocate/write remote-call arguments and free them after thread completion. If still running after thirty seconds, retain target-owned memory to avoid initialization use-after-free and report pending. 参数声明 / Declared parameters: HANDLE process,uintptr_t function,const void* contents,size_t length. */
 static DWORD remote(HANDLE process,uintptr_t function,const void* contents,size_t length) {
   void* memory=VirtualAllocEx(process,nullptr,length,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
   if (!memory) throw std::runtime_error("remote argument allocation failed");
@@ -132,6 +151,7 @@ static DWORD remote(HANDLE process,uintptr_t function,const void* contents,size_
   if (!read) throw std::runtime_error("native attachment result unavailable");
   return result;
 }
+/** 中文：若精确 DLL 已在目标加载则复用，否则按目标系统加载器模块基址计算 LoadLibraryW 地址并调用；事后必须找到预期完整路径。 English: Reuse an already loaded exact DLL, otherwise derive target LoadLibraryW from its system-loader module base and invoke it; require the expected full path afterward. 参数声明 / Declared parameters: HANDLE process,DWORD pid,const std::wstring& library. */
 static void loaded(HANDLE process,DWORD pid,const std::wstring& library) {
   if (library.size()>=MAX_PATH || library.empty()) throw std::runtime_error("native library path too long");
   if (module(pid,library)) return;
@@ -148,6 +168,7 @@ static void loaded(HANDLE process,DWORD pid,const std::wstring& library) {
   remote(process,address,library.c_str(),(library.size()+1)*sizeof(wchar_t));
   if (!module(pid,library)) throw std::runtime_error("native library did not load");
 }
+/** 中文：只映射 DLL 元数据取得配置导出偏移，不执行本地初始化；构造固定 ABI 请求后调用目标模块配置入口。 English: Map DLL metadata without local initialization to obtain the configuration-export offset, then call the target entry with the fixed-ABI request. 参数声明 / Declared parameters: HANDLE process,DWORD pid,const std::wstring& library,const std::wstring& name. */
 static DWORD configure(HANDLE process,DWORD pid,const std::wstring& library,const std::wstring& name) {
   HMODULE local=LoadLibraryExW(library.c_str(),nullptr,DONT_RESOLVE_DLL_REFERENCES|LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
   if (!local) throw std::runtime_error("native library metadata unavailable");
@@ -160,6 +181,7 @@ static DWORD configure(HANDLE process,DWORD pid,const std::wstring& library,cons
   std::copy(name.begin(),name.end(),request.section);
   return remote(process,module(pid,library)+offset,&request,sizeof(request));
 }
+/** 中文：列举同会话、同用户且身份可读的进程，输出 PID、创建时间、映像和位数；无法核实的条目跳过。 English: List inspectable same-session/same-user processes with PID/creation/image/width, skipping unverifiable entries. */
 static void list() {
   Handle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0));
   if (snapshot.value==INVALID_HANDLE_VALUE) throw std::runtime_error("process list unavailable");
@@ -184,6 +206,7 @@ static void list() {
   } while (Process32NextW(snapshot.value,&entry));
   std::cout<<"]}"<<std::endl;
 }
+/** 中文：读取创建预留与策略映射，用偶数 sequence 前后核对稳定快照，校验 magic/version/进程身份后输出就绪、兼容和阻止计数。 English: Read creation reservations/policy mapping, bracket stable snapshots with equal even sequences and validate magic/version/process identity before reporting readiness/compatibility/block counts. 参数声明 / Declared parameters: const wchar_t* owner,DWORD pid,uint64_t created,bool newline=true. */
 static void state(const wchar_t* owner,DWORD pid,uint64_t created,bool newline=true) {
   const bool reserved=descendantCreationPending(owner,pid,created);
   const auto name=mapping(owner,pid,created);
@@ -209,6 +232,7 @@ static void state(const wchar_t* owner,DWORD pid,uint64_t created,bool newline=t
     <<",\"reserved\":"<<(reserved?"true":"false")<<'}'<<(newline?"\n":"");
   UnmapViewOfFile(data);
 }
+/** 中文：反复核对同用户同会话及精确 PID/创建时间/映像，拒绝仍在受控创建中的子进程；持 writer 锁按奇偶 sequence 原子发布规则，复用已就绪同构建 DLL，失败释放映射和锁。 English: Verify same user/session and exact PID/creation/image, refusing children still in controlled creation. Publish rules under writer lock/odd-even sequence, reuse ready same-build DLLs and release mapping/lock on failure. 参数声明 / Declared parameters: const wchar_t* owner,DWORD pid,uint64_t created,const std::wstring& expected,const std::wstring& library,uint32_t flags,uint32_t maximum,bool active,bool report=true. */
 static void apply(const wchar_t* owner,DWORD pid,uint64_t created,const std::wstring& expected,const std::wstring& library,uint32_t flags,uint32_t maximum,bool active,bool report=true) {
   if (flags>15 || maximum<1024 || maximum>1048576) throw std::runtime_error("invalid clipboard rule");
   Handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION|PROCESS_CREATE_THREAD|PROCESS_VM_OPERATION|PROCESS_VM_WRITE|PROCESS_VM_READ|SYNCHRONIZE,FALSE,pid));
@@ -262,6 +286,7 @@ static void apply(const wchar_t* owner,DWORD pid,uint64_t created,const std::wst
   UnmapViewOfFile(data); ReleaseMutex(writer.value);
   if (report) { state(owner,pid,created); std::cout.flush(); }
 }
+/** 中文：从精确文件句柄重置偏移并流式计算 SHA-256，限制有效文件至 512 MiB，始终释放加密上下文，失败不返回部分摘要。 English: Reset the held file offset and stream SHA-256 for valid files up to 512 MiB, always releasing crypto contexts and never returning partial digests on failure. 参数声明 / Declared parameters: HANDLE file. */
 static std::string fileDigest(HANDLE file) {
   LARGE_INTEGER size{}, start{};
   if (!GetFileSizeEx(file,&size) || size.QuadPart<=0 || size.QuadPart>512ll*1024*1024 ||
@@ -285,6 +310,7 @@ static std::string fileDigest(HANDLE file) {
   for (const unsigned char byte:digest) {value+=hex[byte>>4];value+=hex[byte&15];}
   return value;
 }
+/** 中文：核对普通非重解析文件、规范最终路径和完整 SHA-256，确保被固定文件仍是预选映像，而非同名替代。 English: Verify a regular nonreparse file, normalized final path and full SHA-256 so the pinned file remains the selected image rather than a same-name replacement. 参数声明 / Declared parameters: HANDLE file,const std::wstring& expected,const std::wstring& wantedDigest. */
 static void selectedFile(HANDLE file,const std::wstring& expected,const std::wstring& wantedDigest) {
   if (wantedDigest.size()!=64 || !std::all_of(wantedDigest.begin(),wantedDigest.end(),[](wchar_t c){
       return (c>=L'0'&&c<=L'9') || (c>=L'a'&&c<=L'f');})) throw std::runtime_error("invalid application digest");
@@ -300,15 +326,18 @@ static void selectedFile(HANDLE file,const std::wstring& expected,const std::wst
   if (!same(actual,expected) || fileDigest(file)!=utf8(wantedDigest))
     throw std::runtime_error("application file identity changed");
 }
+/** 中文：临时增加再恢复挂起计数，要求原计数恰为一且恢复结果恰为二；既确认主线程仍独占挂起又不改变最终计数。 English: Temporarily increment/restore suspension count, requiring prior one/restored two to prove exclusive primary-thread suspension without changing its final count. 参数声明 / Declared parameters: HANDLE thread. */
 static void primarySuspended(HANDLE thread) {
   const DWORD previous=SuspendThread(thread);
   if (previous==DWORD(-1)) throw std::runtime_error("primary thread suspension unavailable");
   const DWORD restored=ResumeThread(thread);
   if (previous!=1 || restored!=2) throw std::runtime_error("primary thread is no longer exclusively suspended");
 }
+/** 中文：只读校验 PE、架构、子系统和可选 CLR 头；纯 IL/AnyCPU 按实际主机位数判断，拒绝混合原生 CLR、歧义 RVA 和不支持架构，创建前不执行映像。 English: Read-only validate PE/architecture/subsystem/optional CLR headers. Resolve pure-IL/AnyCPU width against the host, rejecting mixed-native CLR, ambiguous RVAs/unsupported architectures without executing the image before creation. 参数声明 / Declared parameters: HANDLE file. */
 static void selectedExecutable(HANDLE file) {
   LARGE_INTEGER size{};
   if(!GetFileSizeEx(file,&size) || size.QuadPart<64)throw std::runtime_error("executable header unavailable");
+  /** 中文：从已固定文件按范围核对后精确读取请求字节，短读或越界返回 false，供 PE/CLR 头解析。 English: Range-check and exactly read requested bytes from the pinned file; short/out-of-range reads return false for PE/CLR parsing. 参数声明 / Declared parameters: uint64_t offset,void* output,DWORD length. */
   const auto read=[&](uint64_t offset,void* output,DWORD length) {
     if(offset>uint64_t(size.QuadPart) || length>uint64_t(size.QuadPart)-offset)return false;
     LARGE_INTEGER position{};position.QuadPart=offset;DWORD count=0;
@@ -322,6 +351,7 @@ static void selectedExecutable(HANDLE file) {
       !(header.Characteristics&IMAGE_FILE_EXECUTABLE_IMAGE) || header.Characteristics&IMAGE_FILE_DLL ||
       header.NumberOfSections>96)
     throw std::runtime_error("controlled early initialization requires an x86/x64 executable");
+  /** 中文：校验当前位数的 PE 可选头并检查 CLR 段映射、纯 IL 标志及入口 token，按 AnyCPU 标志核对有效位数。 English: Validate the width-specific PE optional header and CLR section mapping/pure-IL flags/entry token, resolving effective width from AnyCPU flags. 参数声明 / Declared parameters: const auto& optional,unsigned width. */
   const auto inspect=[&](const auto& optional,unsigned width) {
     if(header.SizeOfOptionalHeader!=sizeof(optional) || optional.NumberOfRvaAndSizes<16 ||
         (optional.Subsystem!=IMAGE_SUBSYSTEM_WINDOWS_GUI && optional.Subsystem!=IMAGE_SUBSYSTEM_WINDOWS_CUI))
@@ -372,6 +402,7 @@ static void selectedExecutable(HANDLE file) {
     inspect(optional,64);
   } else throw std::runtime_error("controlled early initialization requires an x86/x64 executable");
 }
+/** 中文：把完整 DLL 路径转当前 Windows 导入编码并往返核对，拒绝替换或最佳匹配造成的路径歧义。 English: Convert the full DLL path to the current Windows import encoding and verify its round trip, rejecting substitution/best-fit ambiguity. 参数声明 / Declared parameters: const std::wstring& library. */
 static std::string importPath(const std::wstring& library) {
   if(library.size()<7 || library.size()>=MAX_PATH || library[1]!=L':' || library[2]!=L'\\' ||
       !same(library.substr(library.size()-4),L".dll"))throw std::runtime_error("early policy requires a complete DLL path");
@@ -391,6 +422,7 @@ static std::string importPath(const std::wstring& library) {
     throw std::runtime_error("early DLL path cannot be represented by the Windows import encoding");
   return result;
 }
+/** 中文：检查重定向元数据是否存在，只有文件或路径确实不存在才返回 false，访问错误必须抛出而非放行。 English: Check redirection-metadata existence, returning false only for definite file/path absence and throwing on access errors rather than permitting them. 参数声明 / Declared parameters: const std::wstring& path. */
 static bool exists(const std::wstring& path) {
   if(GetFileAttributesW(path.c_str())!=INVALID_FILE_ATTRIBUTES)return true;
   const DWORD error=GetLastError();
@@ -398,6 +430,7 @@ static bool exists(const std::wstring& path) {
     throw std::runtime_error("early dependency redirection metadata unavailable");
   return false;
 }
+/** 中文：识别策略 DLL、固定系统依赖、当前 KnownDLL 集合及 API-set 名称，供激活图拒绝重定向保护依赖。 English: Recognize the policy DLL, fixed system dependencies/current KnownDLL set/API-set names for rejecting protected dependency redirection in activation graphs. 参数声明 / Declared parameters: const std::wstring& path,const std::wstring& library. */
 static bool policyDependency(const std::wstring& path,const std::wstring& library) {
   const auto name=path.substr(path.find_last_of(L"\\/")+1);
   const auto policy=library.substr(library.find_last_of(L"\\/")+1);
@@ -407,6 +440,7 @@ static bool policyDependency(const std::wstring& path,const std::wstring& librar
   // KnownDLL's own dependencies are also resolved from Windows. A manifest can
   // precede that resolution, so protect the current OS's entire KnownDLL set,
   // including transitive User32/OLE dependencies rather than a fixed DLL list.
+  /** 中文：有界枚举当前 OS 的 64 位 KnownDLL 注册表并确认 User32/OLE 存在，失败关闭注册表并拒绝早期初始化。 English: Boundedly enumerate the current OS's sixty-four-bit KnownDLL registry, require User32/OLE and close/reject early initialization on failure. */
   static const std::vector<std::wstring> known=[]() {
     HKEY raw=nullptr;
     if(RegOpenKeyExW(HKEY_LOCAL_MACHINE,L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\KnownDLLs",0,KEY_QUERY_VALUE|KEY_WOW64_64KEY,&raw)!=ERROR_SUCCESS)
@@ -430,6 +464,7 @@ static bool policyDependency(const std::wstring& path,const std::wstring& librar
   for(const auto& item:known)if(same(name,item))return true;
   return name.size()>4 && (same(name.substr(0,4),L"api-") || same(name.substr(0,4),L"ext-"));
 }
+/** 中文：按 Windows 查询返回长度分配激活上下文缓冲，限制 8 MiB 和最小结构长度，失败不解释不完整元数据。 English: Allocate activation-context query buffers from reported size with eight-MiB/minimum-structure bounds, rejecting incomplete metadata. 参数声明 / Declared parameters: HANDLE context,ULONG type,void* index,size_t minimum. */
 static std::vector<unsigned char> activationData(HANDLE context,ULONG type,void* index,size_t minimum) {
   SIZE_T length=0;
   if(QueryActCtxW(0,context,index,type,nullptr,0,&length) || GetLastError()!=ERROR_INSUFFICIENT_BUFFER ||
@@ -439,6 +474,7 @@ static std::vector<unsigned char> activationData(HANDLE context,ULONG type,void*
     throw std::runtime_error("early activation context unavailable");
   return data;
 }
+/** 中文：用禁 DTD/外部解析器且限深 128 的 XmlLite 读取 manifest 数据，识别解码后的 file 名称，拒绝保护依赖重定向；仅允许可信系统 Common Controls 例外。 English: Read manifest data through XmlLite with DTD/external resolution disabled/depth capped at 128. Inspect decoded file names, reject protected dependency redirection and allow only trusted system Common Controls exceptions. 参数声明 / Declared parameters: const void* contents,DWORD length,const std::wstring& library,bool systemControls=false. */
 static void manifestXml(const void* contents,DWORD length,const std::wstring& library,bool systemControls=false) {
   if(!contents || !length || length>8*1024*1024)throw std::runtime_error("early application manifest is too large or empty");
   IStream* stream=SHCreateMemStream(static_cast<const BYTE*>(contents),length);
@@ -478,6 +514,7 @@ struct ManifestResources {
   unsigned count=0;
   std::exception_ptr failure;
 };
+/** 中文：遍历 manifest 语言资源并将异常保存为 exception_ptr，通过 FALSE 停止枚举，不让异常穿越 Win32 回调 ABI。 English: Read manifest language resources and retain exceptions as exception_ptr while returning FALSE to stop enumeration, preventing exceptions crossing the Win32 callback ABI. 参数声明 / Declared parameters: HMODULE data,LPCWSTR type,LPCWSTR name,WORD language,LONG_PTR parameter. */
 static BOOL CALLBACK manifestLanguage(HMODULE data,LPCWSTR type,LPCWSTR name,WORD language,LONG_PTR parameter) {
   auto& read=*reinterpret_cast<ManifestResources*>(parameter);
   try {
@@ -488,6 +525,7 @@ static BOOL CALLBACK manifestLanguage(HMODULE data,LPCWSTR type,LPCWSTR name,WOR
     return TRUE;
   } catch(...) {read.failure=std::current_exception();return FALSE;}
 }
+/** 中文：主 EXE 只选资源 1，已解析私有程序集检查全部 manifest 语言；未知资源选择不能被当作没有重定向。 English: Select resource one for the main EXE but inspect all manifest languages in resolved private assemblies, never treating an unknown selection as no redirection. 参数声明 / Declared parameters: HMODULE data,LPCWSTR type,LPWSTR name,LONG_PTR parameter. */
 static BOOL CALLBACK manifestResource(HMODULE data,LPCWSTR type,LPWSTR name,LONG_PTR parameter) {
   auto& read=*reinterpret_cast<ManifestResources*>(parameter);
   // The process root selects resource 1. A resolved private assembly image's
@@ -500,6 +538,7 @@ static BOOL CALLBACK manifestResource(HMODULE data,LPCWSTR type,LPWSTR name,LONG
   }
   return TRUE;
 }
+/** 中文：用 DATAFILE/IMAGE_RESOURCE 或文件字节读取 manifest，完全避免执行 imports/TLS/DllMain；必需程序集资源缺失或错误均拒绝。 English: Read manifests as DATAFILE/IMAGE_RESOURCE or raw bytes without executing imports/TLS/DllMain, rejecting missing/failed required assembly metadata. 参数声明 / Declared parameters: const std::wstring& path,const std::wstring& library,bool image,bool required=false. */
 static void manifestMetadata(const std::wstring& path,const std::wstring& library,bool image,bool required=false) {
   if(image) {
     // DATAFILE/IMAGE_RESOURCE maps metadata only; it never resolves application
@@ -529,6 +568,7 @@ static void manifestMetadata(const std::wstring& path,const std::wstring& librar
     throw std::runtime_error("early application manifest file unavailable");
   manifestXml(contents.data(),count,library,controlSystemAssembly(path,true));
 }
+/** 中文：创建只读激活上下文并遍历 OS 解析的程序集图，直接读取其 manifest XML及文件描述；ulFileCount 为零仍不证明无重定向，最终释放上下文。 English: Create a read-only activation context and inspect OS-resolved assemblies' XML/file descriptions; zero ulFileCount does not prove no redirection, and release context on every exit. 参数声明 / Declared parameters: const std::wstring& source,const std::wstring& library,bool image. */
 static void activationDependencies(const std::wstring& source,const std::wstring& library,bool image) {
   manifestMetadata(source,library,image);
   ACTCTXW request{};request.cbSize=sizeof(request);request.lpSource=source.c_str();
@@ -568,6 +608,7 @@ static void activationDependencies(const std::wstring& source,const std::wstring
   } catch(...) {ReleaseActCtx(context);throw;}
   ReleaseActCtx(context);
 }
+/** 中文：创建前拒绝 .local、包重定向和本地 comctl32，核对内嵌/外部激活图，不通过加载应用代码验证依赖。 English: Before creation reject .local/package redirection/local comctl32 and check embedded/external activation graphs without loading application code for validation. 参数声明 / Declared parameters: const std::wstring& expected,const std::wstring& library. */
 static void earlyDependencies(const std::wstring& expected,const std::wstring& library) {
   // Redirection precedes KnownDLL resolution, even for a fully qualified import.
   // Inspect manifests as data with supported SxS queries, never by loading app
@@ -586,6 +627,7 @@ struct EarlyPolicy {
   Handle object;
   SakuraClipboardPolicy* data;
   std::wstring name;
+  /** 中文：为精确子进程创建新的用户/System ACL 策略映射，以奇偶 sequence 发布固定构建、身份与初始规则；已有同名映射拒绝复用。 English: Create a fresh user/System-ACL policy mapping for the exact child and publish build/identity/initial rules with odd-even sequence, rejecting an existing same-name mapping. 参数声明 / Declared parameters: const wchar_t* owner,DWORD pid,uint64_t created,uint32_t flags,uint32_t maximum. */
   EarlyPolicy(const wchar_t* owner,DWORD pid,uint64_t created,uint32_t flags,uint32_t maximum):
       object(nullptr),data(nullptr),name(mapping(owner,pid,created)) {
     const auto token=user(GetCurrentProcess());wchar_t* sid=nullptr;
@@ -606,7 +648,9 @@ struct EarlyPolicy {
     data->active=1;data->flags=flags;data->maxTextBytes=maximum;std::memcpy(data->build,SAKURA_CLIPBOARD_BUILD,65);
     MemoryBarrier();InterlockedExchange(&data->sequence,2);
   }
+  /** 中文：解除早期策略视图，Handle 成员随后释放映射句柄；不在析构中改变目标规则或恢复线程。 English: Unmap the early-policy view while Handle members subsequently close mapping handles; do not alter target rules/resume threads in destruction. */
   ~EarlyPolicy(){if(data)UnmapViewOfFile(data);}
+  /** 中文：先拒绝不兼容动态代码/签名缓解策略，再复制固定 ABI payload 并把策略 DLL 插到导入入口；子进程仍挂起。 English: Reject incompatible dynamic-code/signature mitigations, then copy the fixed-ABI payload and insert the policy DLL into imports while the child remains suspended. 参数声明 / Declared parameters: HANDLE process,const std::string& library. */
   void insert(HANDLE process,const std::string& library) {
     PROCESS_MITIGATION_DYNAMIC_CODE_POLICY dynamic{};PROCESS_MITIGATION_BINARY_SIGNATURE_POLICY signatures{};
     if(!GetProcessMitigationPolicy(process,ProcessDynamicCodePolicy,&dynamic,sizeof(dynamic)) || dynamic.ProhibitDynamicCode ||
@@ -621,12 +665,14 @@ struct EarlyPolicy {
         !DetourUpdateProcessWithDll(process,&imported,1))
       throw std::runtime_error("suspended process rejects early policy import");
   }
+  /** 中文：要求早期映射已就绪、序列稳定、规则活动且构建一致，防止仅凭 DLL 出现就认为策略已接管。 English: Require ready/stable/active/same-build early mapping rather than treating DLL presence alone as successful policy takeover. */
   void ready() {
     if(data->status!=1 || data->sequence&1 || !data->active || data->magic!=SakuraClipboardMagic ||
         data->version!=SakuraClipboardVersion || std::memcmp(data->build,SAKURA_CLIPBOARD_BUILD,65)!=0)
       throw std::runtime_error("early native policy did not initialize before application imports");
   }
 };
+/** 中文：定位目标精确系统 ntdll 映像后调用退出线程入口，让 loader 完成原 imports/TLS 而主线程仍挂起；按模块身份计算偏移而不假设 ASLR 相同。 English: Locate the target's exact system ntdll and call its thread-exit entry to finish original imports/TLS while the primary stays suspended, deriving offsets by image identity rather than assuming equal ASLR. 参数声明 / Declared parameters: HANDLE process,DWORD pid. */
 static void initializeLoader(HANDLE process,DWORD pid) {
   // The first import is already our synchronously configured policy DLL. This
   // thread lets the loader finish original application imports/TLS while the
@@ -635,6 +681,7 @@ static void initializeLoader(HANDLE process,DWORD pid) {
   const auto exit=GetProcAddress(local,"RtlExitUserThread");
   // Toolhelp has no module list until this fresh process's loader runs. Locate
   // the exact same mapped system ntdll image, without assuming ASLR addresses.
+  /** 中文：声明 K32GetMappedFileNameW 动态查询契约，用目标虚拟地址获取实际映像来源。 English: Declare the dynamic K32GetMappedFileNameW query contract for actual image provenance at a target virtual address. 参数声明 / Declared parameters: HANDLE,LPVOID,LPWSTR,DWORD. */
   using MappedName=DWORD(WINAPI*)(HANDLE,LPVOID,LPWSTR,DWORD);
   const auto mappedName=reinterpret_cast<MappedName>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"K32GetMappedFileNameW"));
   wchar_t localName[32768]{};
@@ -658,20 +705,24 @@ static void initializeLoader(HANDLE process,DWORD pid) {
   if (!thread.value || WaitForSingleObject(thread.value,30000)!=WAIT_OBJECT_0 || !module(pid,L"kernel32.dll",true))
     throw std::runtime_error("suspended process initialization did not complete");
 }
+/** 中文：输出精确进程 PID、创建时间、映像和位数，创建时间以字符串避免 JSON 数字精度丢失。 English: Output exact PID/creation/image/width, encoding creation time as a string to avoid JSON numeric precision loss. 参数声明 / Declared parameters: DWORD pid,uint64_t created,const std::wstring& expected,unsigned architecture. */
 static void printIdentity(DWORD pid,uint64_t created,const std::wstring& expected,unsigned architecture) {
   std::cout<<"{\"pid\":"<<pid<<",\"created\":\""<<created<<"\",\"image\":"<<json(expected)<<",\"bits\":"<<architecture<<'}';
 }
 // 服务先持久登记精确子进程，再给出对应阶段与 nonce；EOF 或错阶段直接拒绝继续。
+/** 中文：仅接受标准输入中完全匹配阶段与 nonce 的授权行，EOF、错阶段或错身份都拒绝继续。 English: Accept only an exact phase/nonce authorization line from stdin, rejecting EOF/wrong phase/wrong identity. 参数声明 / Declared parameters: const std::wstring& nonce,const char* phase. */
 static void permission(const std::wstring& nonce,const char* phase) {
   std::string line;
   if (!std::getline(std::cin,line) || line!=std::string(phase)+" "+utf8(nonce))
     throw std::runtime_error("controlled launch was not authorized");
 }
+/** 中文：刷新私有响应输出并检查流状态，交付失败抛错，让受控 Job 清理而非继续不可确认的启动。 English: Flush/check private response output, throwing on failed delivery so the controlled Job cleans up rather than continuing unconfirmed launch. */
 static void published() {
   std::cout.flush();
   if(!std::cout.good())throw std::runtime_error("controlled launch response unavailable");
 }
 // Job 在 CreateProcess 前设置关闭即终止，覆盖子进程出现到持久授权之间的失败窗口。
+/** 中文：固定 EXE/DLL 文件和摘要，创建带 kill-on-close Job 的挂起子进程；prepared 后等持久 attach 授权才插导入并跑 loader，attached 后等 resume 授权再复核身份/文件并恢复主线程，成功后解除 Job 兜底并报告 committed。任何异常仅终止本次精确 Job。 English: Pin EXE/DLL files/digests and create a suspended child in a kill-on-close Job. After prepared await durable attach permission before imports/loader; after attached await resume, reverify identities/files and resume primary, then release fallback/report committed. Any failure terminates only this exact Job. 参数声明 / Declared parameters: const wchar_t* owner,const std::wstring& expected,const std::wstring& digest, const std::wstring& library,uint32_t flags,uint32_t maximum,const std::wstring& nonce, int count,wchar_t** arguments. */
 static void launch(const wchar_t* owner,const std::wstring& expected,const std::wstring& digest,
     const std::wstring& library,uint32_t flags,uint32_t maximum,const std::wstring& nonce,
     int count,wchar_t** arguments) {
@@ -726,12 +777,14 @@ static void launch(const wchar_t* owner,const std::wstring& expected,const std::
   try {
     const auto creation=processCreation(process.value);
     const auto architecture=bits(process.value);
+    /** 中文：声明 GetPackageFullName 动态契约，以确切无包状态决定是否允许普通 EXE 启动。 English: Declare dynamic GetPackageFullName to require the exact unpackaged state for an ordinary EXE launch. 参数声明 / Declared parameters: HANDLE,UINT32*,PWSTR. */
     using InspectPackage=LONG(WINAPI*)(HANDLE,UINT32*,PWSTR);
     const auto inspectPackage=reinterpret_cast<InspectPackage>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"GetPackageFullName"));
     UINT32 packageLength=0;
     if(!inspectPackage || inspectPackage(process.value,&packageLength,nullptr)!=APPMODEL_ERROR_NO_PACKAGE)
       throw std::runtime_error("controlled early initialization requires an unpackaged executable");
     DWORD targetSession=0,ownSession=0;
+    /** 中文：在每个授权/初始化阶段重新核对创建时间、映像、架构、同用户/会话、精确 Job 成员和主线程挂起，阻止身份变化后沿用旧授权。 English: At every authorization/initialization phase reverify creation/image/architecture/user/session/exact Job membership/primary suspension so changed identity cannot reuse prior authority. */
     const auto check=[&]() {
       BOOL inJob=FALSE;
       if (!creation || architecture!=sizeof(void*)*8 || !ownUser(process.value) ||
@@ -776,6 +829,7 @@ static void launch(const wchar_t* owner,const std::wstring& expected,const std::
   }
 }
 #include "descendant-controller.h"
+/** 中文：按严格参数数量分派 list/status/apply/launch/descendants/adopt，校验数值范围并输出统一 JSON 错误与非零退出，错误不会标成已启动。 English: Dispatch list/status/apply/launch/descendants/adopt by exact argument counts, validate numeric bounds and emit uniform JSON/nonzero exit on failure without claiming launch success. 参数声明 / Declared parameters: int argc,wchar_t** argv. */
 int wmain(int argc,wchar_t** argv) {
   try {
     if(argc==3 && std::wstring(argv[1])==L"descendants"){descendantBroker(argv[2]);return 0;}

@@ -1,4 +1,5 @@
 # 烟雾验收：验证目录 IDMAP 视图的描述符封闭、映射账户和源所有权拒绝。
+# Smoke acceptance for IDMAP-view FD closure, mapped accounts and source-ownership refusal.
 """Actual production idmapped-view helpers in owned Linux namespaces only.
 
 Run as Root against a source folder. No account, VM, existing project, global
@@ -25,6 +26,8 @@ import uuid
 from types import SimpleNamespace
 
 
+# 加载明确目录的控制器并返回实际源码 SHA-256，报告与被测实现绑定。
+# Load the explicit controller directory and return actual source SHA-256 to bind evidence to the tested implementation.
 def load(folder):
     path = Path(folder).resolve(strict=True) / 'controller.py'
     spec = importlib.util.spec_from_file_location('sakura_owned_directory_view', path)
@@ -33,6 +36,8 @@ def load(folder):
     return controller, hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# 采集给定源目录/文件的设备/inode、账号、模式与 ACL，供映射前后不变比较。
+# Capture supplied source device/inode/account/mode/ACL for pre/post mapping invariance.
 def snapshot(paths):
     result = []
     for path in paths:
@@ -45,10 +50,14 @@ def snapshot(paths):
     return result
 
 
+# 读取夹具当前直接子进程列表，用于 helper 清理核对。
+# Read the fixture’s direct-child list for helper-cleanup checks.
 def direct_children():
     return (Path('/proc/self/task') / str(os.getpid()) / 'children').read_text().split()
 
 
+# 在自有子进程进入映射视图、封闭管理 FD 并降权，验证项目 I/O 与私有 socket，返回有界 JSON 证据。
+# Enter the mapped view in an owned child, close management FDs/drop privileges and verify project I/O/private socket through bounded JSON evidence.
 def application(controller, namespace, proof, path, source, user, runtime_socket, listener):
     reader, writer = os.pipe2(os.O_CLOEXEC)
     child = os.fork()
@@ -123,6 +132,8 @@ def application(controller, namespace, proof, path, source, user, runtime_socket
                 pass
 
 
+# 分别在原树和映射树下固定执行对象，验证真实 UID 执行权限与摘要一致，父进程回收本次子进程。
+# Compare original/mapped-tree executable pins and real-UID permissions/hash identity, reaping the owned child.
 def mapped_executable(controller, namespace, proof, path, user, listener, image, original, expected, mapped):
     reader, writer = os.pipe2(os.O_CLOEXEC)
     try:
@@ -222,6 +233,8 @@ print(json.dumps({'uid':os.getuid(),'gid':os.getgid(),'dataHex':data.hex(),
             except controller.DirectoryViewError: pass
 
 
+# 构建开放/私有祖先的自有项目，用真实 IDMAP helper 验证访问、运行和源身份/ACL 保持。
+# Build owned projects under public/private ancestors and verify access/exec/source identity-ACL preservation through real IDMAP helpers.
 def run_case(controller, root, project, user, nested):
     home = root / ('private-home' if nested else 'open-home')
     home.mkdir(mode=0o700 if nested else 0o755)
@@ -289,6 +302,8 @@ def run_case(controller, root, project, user, nested):
         listener.close()
 
 
+# 构造 Home/runtime 重叠路由并要求生产 guard 拒绝，核对源元数据、子进程和 FD 不变。
+# Construct Home/runtime-overlap routes and require production rejection with unchanged source metadata/children/FDs.
 def rejected_route(controller, root, project, user, protected):
     home = root / ('guard-' + protected)
     home.mkdir(mode=0o700)
@@ -325,12 +340,20 @@ def rejected_route(controller, root, project, user, protected):
         os.close(source)
 
 
+# 覆盖父取消、子 EOF 和延迟回执，要求 helper 有界清理且不遗留子进程/FD。
+# Cover parent cancellation, child EOF and delayed acknowledgement, requiring bounded cleanup without child/FD leaks.
 def rejected_helper(controller, kind):
     children, count = direct_children(), len(os.listdir('/proc/self/fd'))
+    # 在 helper 确认前注入自有取消异常，验证父侧失败清理。
+    # Inject owned cancellation before helper acknowledgement to check parent-side failure cleanup.
     def cancelled(_):
         raise RuntimeError('owned cancellation before namespace acknowledgement')
+    # 直接退出且不发送 namespace 回执，驱动真实 EOF 拒绝路径。
+    # Exit without namespace acknowledgement to exercise the real EOF refusal path.
     def no_receipt():
         os._exit(23)
+    # 故意延迟超过 helper 期限，驱动有界超时和精确子进程回收。
+    # Delay beyond the helper deadline to exercise bounded timeout/exact-child reaping.
     def delayed_receipt():
         controller.time.sleep(60)
         return {}
@@ -358,6 +381,8 @@ def rejected_helper(controller, kind):
     return {'case': kind + '-helper', 'passed': True, 'actualChildWait': True, 'rootFdCountUnchanged': True}
 
 
+# 用新建自有 UID 进程的 procfs 目录测试真实 IDMAP 不支持拒绝，先经过源账号验证。
+# Use a fresh owned-UID process’s procfs directory to test real unsupported-IDMAP refusal after source-account validation.
 def unsupported_filesystem(controller, project, user):
     # The proc directory belongs to a fresh, owned UID process, so production's
     # source-ownership guard is exercised before procfs rejects IDMAP itself.
@@ -426,6 +451,8 @@ def unsupported_filesystem(controller, project, user):
             'actualChildWait': True, 'rootFdCountUnchanged': True, 'originalOwnerModeAclUnchanged': True}
 
 
+# 仅在 Linux root 运行，选择不冲突自有 UID/源并执行映射与拒绝场景，清理本轮资源并输出源码绑定证据。
+# Run only as Linux root with nonconflicting owned UIDs/sources, execute mapping/refusal cases and clean owned resources with source-bound evidence.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', required=True)

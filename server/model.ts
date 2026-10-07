@@ -1,5 +1,6 @@
 /**
  * 模块职责：保留旧服务端模型导出入口，实际模型、错误及路径契约来自各自权威模块。
+ * Module purpose: Preserves legacy model exports while contracts, errors and paths remain owned by their authoritative modules.
  */
 // Compatibility facade. New consumers import contracts and host paths directly.
 export * from '../shared/contracts/vm.ts';

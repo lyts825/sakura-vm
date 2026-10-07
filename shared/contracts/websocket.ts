@@ -1,5 +1,8 @@
 /**
- * 模块职责：WebSocket 通道、帧 Schema、长度限制和关闭原因契约，统一升级准入与消息编解码。
+ * 模块职责（中文）：WebSocket 通道、帧 Schema、长度限制和关闭原因契约，统一升级准入与消息编解码。
+ * Module responsibility (English): channel frames, byte limits, authentication and close protocols.
+ * 详细范围（中文）：公开入口包括 socketChannels, SocketChannel, SOCKET_CLIENT_BYTES, SOCKET_SERVER_BYTES, terminalInputSchema, terminalOutputSchema, socketFrameSchemas, JsonSocketChannel, RfbStreamFragment, SocketClientMessage, SocketServerMessage, TerminalReady, socketCloseReasons, SocketCloseReason, socketUpgradeStatuses, closeSocket；职责覆盖通道帧、字节限制、认证和关闭协议，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include socketChannels, SocketChannel, SOCKET_CLIENT_BYTES, SOCKET_SERVER_BYTES, terminalInputSchema, terminalOutputSchema, socketFrameSchemas, JsonSocketChannel, RfbStreamFragment, SocketClientMessage, SocketServerMessage, TerminalReady, socketCloseReasons, SocketCloseReason, socketUpgradeStatuses, closeSocket. The scope covers channel frames, byte limits, authentication and close protocols. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 import { jsonValueSchema } from './json-values.ts';
@@ -56,7 +59,15 @@ export const socketCloseReasons = {
 } as const;
 export type SocketCloseReason = keyof typeof socketCloseReasons;
 export const socketUpgradeStatuses = { accepted: 101, locked: 423, refused: 403 } as const;
-export function closeSocket(socket: { close(code: number, reason: string): void }, reason: SocketCloseReason) {
+/**
+ * 中文：在通道帧、字节限制、认证和关闭协议流程中关闭所属连接或存储对象；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+ * English: In channel frames, byte limits, authentication and close protocols, close the owned connection/storage object. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+ * 中文：输入：socket：签名所示 { close(code: number, reason: string): void } 业务值；reason：结束或拒绝操作的可显示原因
+ * English: Inputs: socket: the { close(code: number, reason: string): void } domain value in the signature; reason: displayable operation-end/refusal reason
+ * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+ * English: Result: deliver through the described state/resource effects without returning business data
+ */
+export function closeSocket(socket: { /** 中文：声明以应用关闭码和原因字符串发送关闭帧的 socket 能力，实际连接释放由底层实现负责。 | English: Declare socket capability emitting an application close frame with code/reason, with actual connection release owned by the implementation. | 中文：输入：code：签名所示 number 业务值；reason：结束或拒绝操作的可显示原因 | English: Inputs: code: the number domain value in the signature; reason: displayable operation-end/refusal reason | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ close(code: number, reason: string): void }, reason: SocketCloseReason) {
   const frame = socketCloseReasons[reason];
   socket.close(frame.code, frame.reason);
 }
@@ -93,7 +104,15 @@ export const socketContractSchema = z.object({
   }).strict().optional(),
 }).strict();
 export type SocketContract = z.infer<typeof socketContractSchema>;
-export const socketContracts: Readonly<Record<SocketChannel, SocketContract>> = Object.fromEntries(socketChannels.map(channel => {
+export const socketContracts: Readonly<Record<SocketChannel, SocketContract>> = Object.fromEntries(socketChannels.map(/**
+ * 中文功能：为每个已声明通道构造编码、消息方向、认证描述和结束原因的契约条目。
+ * English: Build each declared channel's encoding, message directions, authentication description and termination-reason contract entry.
+ * 输入 / Inputs: channel 为 socketChannels 中的一个通道 ID / one channel ID from socketChannels.
+ * 结果与影响：返回 [channel, contract] 元组供 Object.fromEntries 汇总；JSON 通道附带消息 Schema 描述，桌面通道附带 RFB 策略。此处只生成元数据，不执行连接准入。
+ * Result and effects: Return a [channel, contract] tuple for Object.fromEntries, with message schemas for JSON channels and RFB policy for desktop channels. This builds metadata and does not perform connection admission.
+ * 设计思路：集中按通道决定双向/只读差异和生命周期原因，避免各使用方自行猜测；桌面消息保留有序二进制流语义，desktop 使用透传策略，desktop-view 使用只读过滤策略，其余通道由对应 JSON Schema 表达消息形状。
+ * Design: Centralize channel-specific interactive/read-only behavior and lifecycle reasons so consumers do not infer them independently. Desktop traffic retains ordered binary-stream semantics: desktop uses passthrough, desktop-view uses read-only filtering, and other channels describe messages with their JSON schemas.
+ */ channel => {
   const binary = channel === 'desktop' || channel === 'desktop-view';
   return [channel, { version: 1, encoding: binary ? 'binary' : 'json', protocol: binary ? 'rfb-3.7-or-3.8' : 'sakura-json-v1',
     framing: binary ? 'byte-stream' : 'message', clientMaxBytes: SOCKET_CLIENT_BYTES, serverMaxBytes: SOCKET_SERVER_BYTES,
@@ -120,12 +139,38 @@ export const socketContracts: Readonly<Record<SocketChannel, SocketContract>> = 
       serverSchema: z.toJSONSchema(socketFrameSchemas[channel as keyof typeof socketFrameSchemas].server) } : {}) }];
 })) as Record<SocketChannel, SocketContract>;
 
+/**
+ * 中文：按 JSON 通道解析文本并用该通道 client Schema 校验，类型重载返回对应消息；desktop/desktop-view 明确拒绝，因为 RFB 使用二进制流而非 JSON 帧。
+ * English: Parse text by JSON channel and validate with its client Schema, using typed overloads for corresponding messages. Explicitly reject desktop/desktop-view because RFB uses binary streams rather than JSON frames.
+ * 中文：输入：channel：签名所示 C 业务值；text：待处理的文本内容
+ * English: Inputs: channel: the C domain value in the signature; text: text content to process
+ * 中文：结果：C extends JsonSocketChannel ? SocketClientMessage<C> : never；调用者依赖此类型约定
+ * English: Result: C extends JsonSocketChannel ? SocketClientMessage<C> : never; callers depend on this type contract
+ */
 export function parseSocketInput<C extends SocketChannel>(channel: C, text: string):
   C extends JsonSocketChannel ? SocketClientMessage<C> : never;
+/**
+ * 中文：按 JSON 通道解析文本并用该通道 client Schema 校验，类型重载返回对应消息；desktop/desktop-view 明确拒绝，因为 RFB 使用二进制流而非 JSON 帧。
+ * English: Parse text by JSON channel and validate with its client Schema, using typed overloads for corresponding messages. Explicitly reject desktop/desktop-view because RFB uses binary streams rather than JSON frames.
+ * 中文：输入：channel：签名所示 SocketChannel 业务值；text：待处理的文本内容
+ * English: Inputs: channel: the SocketChannel domain value in the signature; text: text content to process
+ * 中文：拒绝原因：Desktop uses binary RFB frames。这些错误交给直接调用者或本函数 catch 处理
+ * English: Refusal reasons: Desktop uses binary RFB frames. These errors reach the direct caller or this function's catch handler
+ */
 export function parseSocketInput(channel: SocketChannel, text: string) {
   if (channel === 'desktop' || channel === 'desktop-view') throw new Error('Desktop uses binary RFB frames');
   return socketFrameSchemas[channel].client.parse(JSON.parse(text));
 }
+/**
+ * 中文：按指定 JSON 通道的 server Schema 校验后编码输出，拒绝桌面二进制通道和无效消息，不直接 stringify 未校验数据。
+ * English: Validate with the JSON channel's server Schema before encoding output, rejecting desktop binary channels/invalid messages rather than stringifying unchecked data.
+ * 中文：输入：channel：签名所示 SocketChannel 业务值；value：待校验、转换或保存的输入值
+ * English: Inputs: channel: the SocketChannel domain value in the signature; value: input value to validate/transform/save
+ * 中文：结果：string，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: string carrying the described computation/transport result; throwing branches do not provide success
+ * 中文：拒绝原因：Desktop uses binary RFB frames。这些错误交给直接调用者或本函数 catch 处理
+ * English: Refusal reasons: Desktop uses binary RFB frames. These errors reach the direct caller or this function's catch handler
+ */
 export function encodeSocketOutput(channel: SocketChannel, value: unknown): string {
   if (channel === 'desktop' || channel === 'desktop-view') throw new Error('Desktop uses binary RFB frames');
   return JSON.stringify(socketFrameSchemas[channel].server.parse(value));

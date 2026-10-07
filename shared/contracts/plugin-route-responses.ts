@@ -1,5 +1,8 @@
 /**
- * 模块职责：把插件 HTTP 路由标识映射到响应 Schema 和传输模式，供运行时校验与客户端契约生成使用。
+ * 模块职责（中文）：把插件 HTTP 路由标识映射到响应 Schema 和传输模式，供运行时校验与客户端契约生成使用。
+ * Module responsibility (English): mapping exact plugin routes to response schemas and transport modes.
+ * 详细范围（中文）：公开入口包括 automationGetFeatureSuiteResponseSchema, automationGetVmsVmIdAdvancedResponseSchema, automationPutVmsVmIdAdvancedResponseSchema, automationPostVmsVmIdAdvancedResponseSchema, automationGetVmsVmIdPackagesResponseSchema, automationPostVmsVmIdPackagesResponseSchema, automationPostVmsVmIdSuspendResponseSchema, backupsGetVmsVmIdBackupsResponseSchema, backupsPutVmsVmIdBackupsResponseSchema, backupsPostVmsVmIdBackupsResponseSchema, backupsPostVmsVmIdBackupDownloadResponseSchema, codeChecksGetVmsVmIdCodeDiagnosticsResponseSchema, codeChecksGetVmsVmIdLanguageServiceResponseSchema, codeChecksPostVmsVmIdLanguageServiceResponseSchema, codeChecksGetVmsVmIdDebuggerResponseSchema, codeChecksPostVmsVmIdDebuggerResponseSchema；职责覆盖精确插件路由到响应 Schema 和传输模式的映射，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include automationGetFeatureSuiteResponseSchema, automationGetVmsVmIdAdvancedResponseSchema, automationPutVmsVmIdAdvancedResponseSchema, automationPostVmsVmIdAdvancedResponseSchema, automationGetVmsVmIdPackagesResponseSchema, automationPostVmsVmIdPackagesResponseSchema, automationPostVmsVmIdSuspendResponseSchema, backupsGetVmsVmIdBackupsResponseSchema, backupsPutVmsVmIdBackupsResponseSchema, backupsPostVmsVmIdBackupsResponseSchema, backupsPostVmsVmIdBackupDownloadResponseSchema, codeChecksGetVmsVmIdCodeDiagnosticsResponseSchema, codeChecksGetVmsVmIdLanguageServiceResponseSchema, codeChecksPostVmsVmIdLanguageServiceResponseSchema, codeChecksGetVmsVmIdDebuggerResponseSchema, codeChecksPostVmsVmIdDebuggerResponseSchema. The scope covers mapping exact plugin routes to response schemas and transport modes. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 import type { HttpResponseContract } from './http-response.ts';
@@ -5041,6 +5044,14 @@ export const pluginRouteResponses = {
   ...typedPluginResponses,
 } as const satisfies Record<string, HttpResponseContract>;
 
+/**
+ * 中文：筛选指定插件命名空间的响应描述，移除插件前缀形成局部操作名映射，不混入其他插件契约。
+ * English: Filter response descriptions to the specified plugin namespace and strip its prefix for local operation keys without mixing other plugins' contracts.
+ * 中文：输入：pluginId：签名所示 string 业务值
+ * English: Inputs: pluginId: the string domain value in the signature
+ * 中文：结果：Record<string, HttpResponseContract>，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: Record<string, HttpResponseContract> carrying the described computation/transport result; throwing branches do not provide success
+ */
 export function pluginResponseContracts(pluginId: string): Record<string, HttpResponseContract> {
   return Object.fromEntries(
     Object.entries(pluginRouteResponses)

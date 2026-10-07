@@ -1,4 +1,5 @@
-/** 烟雾验收：验证PosixLoom/QEMU 真实实例启动、来宾命令与生命周期。 */
+/** 烟雾验收：验证PosixLoom/QEMU 真实实例启动、来宾命令与生命周期。
+ * Smoke acceptance for real PosixLoom/QEMU boot, guest commands and VM lifecycle. */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
@@ -25,6 +26,8 @@ const memoryMiB = testDesktop ? 2048 : 512;
 await machines.init();
 let id = '';
 const bootTimes: number[] = [];
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot() {
   const began = performance.now();
   await machines.start(id);
@@ -43,6 +46,8 @@ async function boot() {
   }
   throw new Error('Boot timed out\n' + machines.logs.get(id));
 }
+/** 等待桌面 ready 后经真实 SSH 读取 RFB banner，验证专用桌面账号与 Plasma 进程；期限或协议/进程断言失败拒绝，finally 结束 SSH。
+ * Await desktop readiness, read an RFB banner over real SSH and verify the dedicated desktop account/Plasma processes; deadline/protocol/process failures reject and finally closes SSH. */
 async function checkDesktop() {
   const deadline = Date.now() + 180000;
   while ((await desktops.view(id)).status !== 'ready') {
@@ -51,9 +56,11 @@ async function checkDesktop() {
   }
   const client = await machines.connect(id);
   try {
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>(/** 经真实 guest SSH nc 读取 VNC banner，最多十秒；首完整行须 RFB 003.008，成功主动关通道，创建/流错误拒绝。
+ * Read the VNC banner through real guest SSH nc within ten seconds; require RFB 003.008 on the first full line, close the channel on success and reject creation/stream errors. */ (resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('VNC banner timed out')), 10000);
-      client.exec('exec nc 127.0.0.1 5901', (error, channel) => {
+      client.exec('exec nc 127.0.0.1 5901', /** SSH nc 通道成功后累积到首换行，再撤计时并关通道校验 RFB 版本；流错误撤计时并拒绝，避免连接创建成功冒充 VNC 就绪。
+ * Accumulate the SSH nc channel to the first newline, clear timer/close and validate RFB version; reject stream errors with timer cleanup rather than equating channel creation with VNC readiness. */ (error, channel) => {
         if (error) {
           clearTimeout(timer);
           reject(error);
@@ -133,7 +140,8 @@ try {
   const interrupts = await machines.exec(id, 'grep -H . /sys/class/net/eth0/device/../msi_irqs/*');
   assert.equal(interrupts.code, 0, 'virtio-net must expose dedicated MSI-X interrupts');
   assert.match(interrupts.stdout, /:msix/);
-  await new Promise<void>((resolve, reject) => {
+  await new Promise<void>(/** 真实连接自有主机转发端口，十秒超时或 banner 前关闭拒绝；首行验证 SSH-2.0 后销毁 socket，证明转发实际可用。
+ * Connect to the owned host-forwarded port, rejecting ten-second timeout or closure before banner; validate SSH-2.0 on the first line and destroy the socket to prove forwarding actually works. */ (resolve, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port: forwardPort });
     let banner = '';
     socket.setTimeout(10000, () => socket.destroy(new Error('Forwarded SSH port timed out')));

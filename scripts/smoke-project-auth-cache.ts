@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实依赖工具的项目认证缓存、凭据边界和记录。 */
+/** 烟雾验收：验证真实依赖工具的项目认证缓存、凭据边界和记录。
+ * Smoke acceptance for real dependency tools’ project-authentication cache, credential boundaries and records. */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -58,11 +59,15 @@ try {
       throw new Error(machines.logs.get(vm.id));
     await delay(300);
   }
+  /** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+   * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
   const run = async (command: string, timeout = 300_000) => {
     const result = await machines.exec(vm.id, command, timeout);
     assert.equal(result.code, 0, result.stdout + result.stderr);
     return result.stdout;
   };
+  /** 通过真实 SFTP 流写入指定夹具文件，设置 0600 权限并等待 pipeline 完成。
+   * Write the fixture file through real SFTP with mode 0600 and await pipeline completion. */
   const write = async (file: string, text: string) =>
     machines.sftp(vm.id, async (ftp) =>
       pipeline(Readable.from([Buffer.from(text)]), ftp.createWriteStream(file, { flags: 'w', mode: 0o600 })),
@@ -110,6 +115,8 @@ try {
     },
   });
   await network.apply(vm.id, preview.config, preview.token);
+  /** 写入精确版本/来源/完整性锁定的 npm 清单，并加入生命周期标记用于确认预取/安装禁止脚本执行。
+   * Write npm manifests pinned to exact version/source/integrity and a lifecycle marker for verifying prefetch/install script suppression. */
   const manifests = async (version: string, integrity: string, filename: string) => {
     const manifest = {
       name: 'owned-auth-project',
@@ -146,6 +153,8 @@ try {
     'node-options=--require /workspace/npm-auth/hook.cjs\nregistry=http://127.0.0.1:9\n',
   );
   const jobs: any[] = [];
+  /** 启动 npm/pip 依赖任务并检查预期终态，输出不得泄漏令牌或 Basic 编码，结束后临时认证目录必须消失。
+   * Run npm/pip dependency work and check its expected final state, reject token/Basic-encoding leaks and require temporary authentication directories removed afterward. */
   const dev = async (
     manager: 'npm' | 'pip',
     operation: 'prefetch-dependencies' | 'install-cached-dependencies',
@@ -193,6 +202,8 @@ try {
   await run(
     'for i in $(seq 1 400); do if grep -q slow.tgz /run/sakura-auth-fixture/requests.json 2>/dev/null; then exit 0; fi; sleep 0.05; done; exit 1',
   );
+  /** 在来宾 /proc 精确识别认证 broker，检查命令行和环境中是否出现夹具凭据，返回 broker 数量及泄漏布尔值。
+   * Identify authentication brokers precisely in guest /proc, check argv/environment for fixture credentials and return broker count/leak status. */
   const scanProcesses = async () =>
     JSON.parse(
       await run(

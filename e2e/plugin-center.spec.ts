@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - plugin catalog searches, combines filters, and keeps the base configuration empty
- * - community catalog requires a trusted publisher before installation and can run then unload
- * - pack selection, independent retention and removal preserve shared dependencies without activating navigation
+ * 模块职责：浏览器回归模块，围绕 `plugin-center` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Browser regression for `plugin-center`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: plugin catalog searches, combines filters, and keeps the base configuration empty; community catalog requires a trusted publisher before installation and can run then unload.
  */
 import { expect, test, type Page } from '@playwright/test';
 import {
@@ -15,6 +16,16 @@ import {
 import { explainPlugins, resolvePlugins } from '../shared/plugin-selection.ts';
 import { randomUUID } from 'node:crypto';
 
+/**
+ * 中文功能：为插件中心安装可写的受控 API 路由，模拟用户选择、实际激活状态和社区目录，再打开对应页面。
+ * English: Install writable controlled API routes for plugin selection, actual activation and community metadata, then open the plugin-center page.
+ * 输入 / Inputs: page: Page; options: { selection?: PluginSelection; active?: string[]; errors?: Plugin… = {}。
+ * 结果：返回受控对象，公开字段包括 `selection, writes`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `selection, writes`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `emptySelection`, `page.route`, `page.goto`, `page.getByRole('button', { name: '插件中心', exact: true }).click`.
+ * 设计思路：用户选择与实际激活状态分开保存，浏览器用例可验证“保存后需重启”的差异；写入计数只观察路由请求，避免依赖后台服务或真实插件激活。
+ * Design: Store desired selection separately from actual activation so browser tests can verify the restart requirement. Write counters observe routed requests without relying on a controller process or real plugin activation.
+ */
 async function setup(
   page: Page,
   options: {
@@ -47,7 +58,16 @@ async function setup(
     deliveries: [] as Array<{ id: string; pluginId: string; event: { type: string;
       occurredAt: string }; status: string }>,
   };
-  await page.route('**/api/**', async (route) => {
+  await page.route('**/api/**', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { enabled: false, session: { configured: false, enabled: f… / route.fulfill({ status: 503, json: { error: '插件服务暂时不可用' } })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { enabled: false, session: { configured: false, enabled: f… / route.fulfill({ status: 503, json: { error: '插件服务暂时不可用' } })`) through a Promise.
+   * 状态影响 / State effects: `options.readError`, `selection`, `community.catalogs[input.id]`, `community.installed`, `community.subscriptions`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().url`, `route.request`, `route.fulfill`, `route.request().method`.
+   */
+  async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/access/status')
       return route.fulfill({
@@ -190,11 +210,44 @@ async function setup(
   });
   await page.goto('/');
   await page.getByRole('button', { name: '插件中心', exact: true }).click();
-  return { selection: () => selection, writes: () => writes };
+  return { /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`selection`）。
+   * Result: Return the branch-computed value (`selection`).
+   */
+  selection: () => selection, /**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`writes`）。
+   * Result: Return the branch-computed value (`writes`).
+   */
+  writes: () => writes };
 }
+/**
+ * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+ * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+ * 输入 / Inputs: page: Page; name: string。
+ * 结果：返回分支计算值（`page.getByRole('group', { name: '插件浏览方式' }).getByRole('button', { name: new RegE…`）。
+ * Result: Return the branch-computed value (`page.getByRole('group', { name: '插件浏览方式' }).getByRole('button', { name: new RegE…`).
+ * 协作入口 / Collaborators: `page.getByRole('group', { name: '插件浏览方式' }).getByRole`, `page.getByRole`.
+ */
 const view = (page: Page, name: string) =>
   page.getByRole('group', { name: '插件浏览方式' }).getByRole('button', { name: new RegExp(name) });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: plugin catalog searches, combines filters, and keeps the base configuration empty
+ * 协作入口 / Collaborators: `setup`, `expect(page.getByRole('article')).toHaveCount`, `expect`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('plugin catalog searches, combines filters, and keeps the base configuration empty', async ({
   page,
 }) => {
@@ -230,6 +283,17 @@ test('plugin catalog searches, combines filters, and keeps the base configuratio
   await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: community catalog requires a trusted publisher before installation and can run then unload
+ * 协作入口 / Collaborators: `setup`, `page.getByRole`, `market.getByRole('textbox', { name: '名称' }).last().fill`, `market.getByRole('textbox', { name: '名称' }).last`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('community catalog requires a trusted publisher before installation and can run then unload', async ({
   page,
 }) => {
@@ -267,6 +331,17 @@ test('community catalog requires a trusted publisher before installation and can
   await expect(market.getByText('尚无已安装插件。')).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: pack selection, independent retention and removal preserve shared dependencies without activating navigation
+ * 协作入口 / Collaborators: `setup`, `view(page, '整合包').click`, `view`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('pack selection, independent retention and removal preserve shared dependencies without activating navigation', async ({
   page,
 }) => {
@@ -298,6 +373,17 @@ test('pack selection, independent retention and removal preserve shared dependen
   expect(state.writes()).toBe(4);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: runtime, pending removal and dependency failures remain distinct
+ * 协作入口 / Collaborators: `setup`, `emptySelection`, `expect( page.getByRole('article', { name: '资源采样', exact: true }).locator('.…`, `expect`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('runtime, pending removal and dependency failures remain distinct', async ({ page }) => {
   await setup(page, {
     selection: { ...emptySelection(), plugins: ['files', 'metrics'] },
@@ -330,6 +416,17 @@ test('runtime, pending removal and dependency failures remain distinct', async (
   await expect(page.locator('.plugin-restart')).toContainText('刷新浏览器不会重启服务');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: failed reads can be retried and rejected changes preserve the current selection
+ * 协作入口 / Collaborators: `setup`, `expect(page.getByRole('alert')).toContainText`, `expect`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('failed reads can be retried and rejected changes preserve the current selection', async ({ page }) => {
   const state = await setup(page, { readError: true, writeError: true });
   await expect(page.getByRole('alert')).toContainText('插件服务暂时不可用');
@@ -343,6 +440,17 @@ test('failed reads can be retried and rejected changes preserve the current sele
   await expect(page.locator('.plugin-restart')).toHaveCount(0);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: catalog and packs fit desktop, mobile and night theme
+ * 协作入口 / Collaborators: `page.setViewportSize`, `setup`, `expect(page.getByRole('article')).toHaveCount`, `expect`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('catalog and packs fit desktop, mobile and night theme', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1050 });
   await setup(page);
@@ -382,6 +490,17 @@ test('catalog and packs fit desktop, mobile and night theme', async ({ page }) =
   await expect(page.getByRole('button', { name: '保留为独立选择' })).toBeHidden();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: manifest pages are discoverable through navigation and command palette
+ * 协作入口 / Collaborators: `setup`, `expect( page.getByRole('group', { name: '已启用的扩展' }).getByRole('button', { n…`, `expect`, `page.getByRole('group', { name: '已启用的扩展' }).getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('manifest pages are discoverable through navigation and command palette', async ({ page }) => {
   await setup(page, { active: ['command-palette', 'sandbox'] });
   await expect(

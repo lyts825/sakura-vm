@@ -1,9 +1,12 @@
-/** 实验性桌面章节示意，展示桌面会话与应用入口并保留环境条件提示。 */
+/** 实验性桌面章节示意，展示桌面会话与应用入口并保留环境条件提示。
+ * Illustrate experimental desktop sessions/application entries while preserving environment/plugin conditions. */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Tag, Terminal, Typed, useScene, Window} from '../stage';
 import {colors, font} from '../theme';
 
+/** 按桌面章节的旁白时间展示实验性 KDE/VNC 桌面与应用演示，并明确标示桌面插件依赖。
+ * Illustrate experimental KDE/VNC desktop and applications at narration cues, explicitly labeling the desktop-plugin requirement. */
 const DesktopInner: React.FC<SceneProps> = ({style}) => {
   const {seconds, cue} = useScene('desktop');
   return <ScenePaper id="desktop" style={style}>

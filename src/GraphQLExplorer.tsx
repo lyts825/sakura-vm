@@ -1,5 +1,8 @@
 /**
- * 模块职责：提供 GraphQL 查询和变量输入，执行请求并展示数据及查询错误。
+ * 模块职责（中文）：提供 GraphQL 查询和变量输入，执行请求并展示数据及查询错误。
+ * Module responsibility (English): Submitting GraphQL queries and variables and presenting results or query errors.
+ * 详细范围（中文）：公开入口包括 GraphQLExplorer；职责覆盖提交 GraphQL 查询与变量并显示结果或查询错误，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include GraphQLExplorer. The scope covers Submitting GraphQL queries and variables and presenting results or query errors. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
@@ -12,6 +15,12 @@ const example = `query Overview($limit: Int!) {
   jobs(limit: $limit) { id vmId status startedAt }
   plugins { id enabled }
 }`;
+/**
+ * 中文：呈现提交 GraphQL 查询与变量并显示结果或查询错误中的 GraphQLExplorer 界面，订阅 /graphql-schema，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the GraphQLExplorer surface for Submitting GraphQL queries and variables and presenting results or query errors, subscribing to /graphql-schema. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ */
 export function GraphQLExplorer({ request }: { request: Request }) {
   const info = useRemote<{
     version: string;
@@ -83,7 +92,7 @@ export function GraphQLExplorer({ request }: { request: Request }) {
             className="secondary compact"
             disabled={!query.trim()}
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：提交 POST /graphql，完成提交 GraphQL 查询与变量并显示结果或查询错误的数据交互并更新操作结果；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /graphql for Submitting GraphQL queries and variables and presenting results or query errors and update operation result. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：拒绝原因：查询变量必须是有效 JSON；查询变量需要 JSON 对象。这些错误交给直接调用者或本函数 catch 处理 | English: Refusal reasons: 查询变量必须是有效 JSON; 查询变量需要 JSON 对象. These errors reach the direct caller or this function's catch handler */ async (signal) => {
                 setResult('');
                 let values: unknown;
                 try {

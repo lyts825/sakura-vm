@@ -1,4 +1,5 @@
-/** 烟雾验收：验证无原生 addon 的 guest-task 输入、子进程 cgroup 与取消清理。 */
+/** 烟雾验收：验证无原生 addon 的 guest-task 输入、子进程 cgroup 与取消清理。
+ * Smoke acceptance for guest-task inputs without the native addon, child cgroups and cancellation cleanup. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -25,6 +26,8 @@ const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
 const { quote } = await import('../server/files.ts');
 const { guestTask, guestTaskControlPaths } = await import('../server/guest-task.ts');
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const sha = (data: Buffer) => createHash('sha256').update(data).digest('hex');
 const sourceFiles = ['server/guest-task.ts', 'server/machines.ts', 'scripts/smoke-guest-task-input.ts'];
 const sources: Record<string, string> = {};
@@ -35,10 +38,14 @@ const machines = new Machines(await createRuntime());
 let initialized = false, marker: string | undefined;
 const helper = `import hashlib,json,os,sys\ndata=sys.stdin.buffer.read(131073)\nassert len(data)<=131072\nprint(json.dumps({'length':len(data),'sha256':hashlib.sha256(data).hexdigest(),'cgroup':open('/proc/self/cgroup').read().strip()}),flush=True)\nif len(sys.argv)>1:\n sys.stderr.write('owned-input-exit\\n');sys.exit(23)\n`;
 const command = '/usr/bin/python3 -I -S -c ' + quote(helper);
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (script: string) => {
   const result = await machines.exec(vmId, script, 10000);
   assert.equal(result.code, 0, result.stderr); return result.stdout.trim();
 };
+/** 通过生产 guestTask 的单独 input 传输字节，验证调用时摘要、退出码、stderr 和精确 cgroup；源 Buffer 变异不影响传输，完成后域与控制目录必须消失。
+ * Send bytes separately through production guestTask input and verify call-time hash/exit/stderr/exact cgroup; source Buffer mutation must not affect transport, and domain/control directories must disappear afterward. */
 async function roundtrip(name: string, data: Buffer, mutate = false, nonzero = false) {
   const expected = { length: data.length, sha256: sha(data) }, runId = randomUUID();
   const operation = guestTask(machines, vmId, command + (nonzero ? ' nonzero' : ''),
@@ -68,8 +75,10 @@ try {
   await roundtrip('nonzero-output-preserved', Buffer.from('非零结果'), false, true);
   const exec = machines.exec.bind(machines), execInput = machines.execInput.bind(machines);
   let attempted = 0;
-  machines.exec = async (...args) => { attempted++; return exec(...args); };
-  machines.execInput = async (...args) => { attempted++; return execInput(...args); };
+  machines.exec = /** 计数实际进入 root 传输的调用并原样转发参数和结果，用于证明预检拒绝路径完全没有发出 exec/execInput。
+ * Count calls actually entering root transport and forward arguments/results unchanged, proving preflight refusal paths never issue exec/execInput. */ async (...args) => { attempted++; return exec(...args); };
+  machines.execInput = /** 计数实际进入 root 传输的调用并原样转发参数和结果，用于证明预检拒绝路径完全没有发出 exec/execInput。
+ * Count calls actually entering root transport and forward arguments/results unchanged, proving preflight refusal paths never issue exec/execInput. */ async (...args) => { attempted++; return execInput(...args); };
   try {
     await assert.rejects(guestTask(machines, vmId, command, new AbortController().signal, undefined,
       15000, undefined, undefined, { input: Buffer.alloc(131073) }), { code: 'GUEST_INPUT_INVALID' });

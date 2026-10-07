@@ -1,15 +1,22 @@
-/** 自动化章节的 UI 示意，按旁白 cue 展示命令预设、任务执行和维护状态。 */
+/** 自动化章节的 UI 示意，按旁白 cue 展示命令预设、任务执行和维护状态。
+ * Illustrate command presets/tasks/maintenance at narration cues in the automation chapter. */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Status, Tag, useScene, Window} from '../stage';
 import {colors, font} from '../theme';
 
+/** 按自动化章节的局部秒数展开 SVG 裁剪区域，逐步显示示意资源曲线；曲线固定，动画不采集运行中的主机指标。
+ * Expand an SVG clip region from the automation chapter’s local time to reveal fixed resource curves; this animation does not sample host metrics. */
 const ResourceChart = () => {
   const {seconds, duration} = useScene('automation');
   const length = interpolate(seconds, [1, duration - 1], [0, 925], clamp);
   return <svg viewBox="0 0 850 185" width="100%" height="150" preserveAspectRatio="none"><defs><clipPath id="chart-reveal"><rect width={length} height="185"/></clipPath></defs><g stroke="#e8dfe7" strokeWidth="1"><path d="M20 30H830M20 75H830M20 120H830M20 165H830"/></g><g clipPath="url(#chart-reveal)"><path d="M20 139C65 135 85 120 124 127S190 154 220 130S265 63 306 84S365 126 404 92S445 28 486 58S540 127 580 96S642 115 682 83S761 99 830 61" fill="none" stroke="#ad416f" strokeWidth="3.5"/><path d="M20 153C111 149 138 141 224 146S335 128 423 136S541 120 620 129S723 118 830 109" fill="none" stroke="#77a38c" strokeWidth="3"/></g></svg>;
 };
+/** 显示任务标题、时间和状态，已完成任务使用勾选图标及绿色，active 决定示意选中背景。
+ * Display task title, time and state; completed rows use a check icon and green color while active controls the illustrative selection background. */
 const TaskRow = ({title, state, time, active}: {title: string; state: string; time: string; active?: boolean}) => <div style={{height: 58, display: 'flex', alignItems: 'center', gap: 14, padding: '0 17px', borderBottom: `1px solid ${colors.line}`, background: active ? colors.blush : '#fff'}}><Icon type={state === '已完成' ? 'check' : 'terminal'} size={23} color={state === '已完成' ? colors.green : colors.accent}/><span style={{fontSize: 22, flex: 1}}>{title}</span><span style={{fontSize: 19, color: colors.muted}}>{time}</span><span style={{fontSize: 20, color: state === '已完成' ? colors.green : colors.accent}}>{state}</span></div>;
+/** 用旁白 cue 推动计划执行、完成与诊断状态，展示可选自动化插件的任务列表和固定资源曲线。
+ * Use narration cues to advance scheduled execution, completion and diagnosis, showing optional automation tasks and fixed resource curves. */
 const AutomationInner: React.FC<SceneProps> = ({style}) => {
   const {seconds, cue} = useScene('automation');
   const run = seconds > cue(0) + 1.4;

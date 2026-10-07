@@ -1,4 +1,5 @@
-/** 烟雾验收：验证签名 bundle 的完整性、导入与验证拒绝边界。 */
+/** 烟雾验收：验证签名 bundle 的完整性、导入与验证拒绝边界。
+ * Smoke acceptance for signed-bundle integrity/import and verification-refusal boundaries. */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
@@ -23,10 +24,14 @@ await machines.init();
 const features = await Features.create(machines, ['snapshots']);
 const policy = features.serviceValue('signedBundles') as InstanceType<typeof SignedBundles>;
 const output: string[] = [];
+/** 同时输出并保存本次验收结论，供最终报告按原顺序汇总；记录本身不替代此前的断言。
+ * Print and retain this verification result for ordered final reporting; recording does not replace the preceding assertions. */
 const record = (line: string) => {
   console.log(line);
   output.push(line);
 };
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 300000;

@@ -1,4 +1,5 @@
-/** 烟雾验收：验证快照差异的真实文件变化及结果展示。 */
+/** 烟雾验收：验证快照差异的真实文件变化及结果展示。
+ * Smoke acceptance for actual snapshot file differences and displayed results. */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,10 +20,14 @@ const machines = new Machines(await createRuntime());
 await machines.init();
 const diff = new SnapshotDiff(machines);
 const lines: string[] = [];
+/** 同时输出并保存本次验收结论，供最终报告按原顺序汇总；记录本身不替代此前的断言。
+ * Print and retain this verification result for ordered final reporting; recording does not replace the preceding assertions. */
 const record = (line: string) => {
   console.log(line);
   lines.push(line);
 };
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 270_000;

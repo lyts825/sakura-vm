@@ -1,5 +1,8 @@
 /**
- * 模块职责：管理单应用桌面会话，启动应用窗口并查看或终止已有会话。
+ * 模块职责（中文）：管理单应用桌面会话，启动应用窗口并查看或终止已有会话。
+ * Module responsibility (English): Starting and stopping single-application desktop sessions and configuring their policies.
+ * 详细范围（中文）：公开入口包括 SingleAppWindowsPanel；职责覆盖启动和停止单应用桌面会话并配置策略，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include SingleAppWindowsPanel. The scope covers Starting and stopping single-application desktop sessions and configuring their policies. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { ExternalLink, LoaderCircle, Square, TerminalSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -23,6 +26,14 @@ type AppSession = {
   startedAt: string;
 };
 
+/**
+ * 中文：呈现启动和停止单应用桌面会话并配置策略中的 SingleAppWindowsPanel 界面，订阅 /vms/{vm.id}/single-app，组合 TerminalSquare、LoaderCircle、ExternalLink，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the SingleAppWindowsPanel surface for Starting and stopping single-application desktop sessions and configuring their policies, subscribing to /vms/{vm.id}/single-app and composing TerminalSquare, LoaderCircle, ExternalLink. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, token, request } 提供 vm（vm 状态）、token（当前传输认证凭证）、request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { vm, token, request } provides context fields vm (vm state), token (current transport credential), request (transport capability bound to identity/authority scope)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function SingleAppWindowsPanel({ vm, token, request }: {
   vm: VMView; token: string; request: Request;
 }) {
@@ -41,11 +52,21 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     ? rules[program.trim()] : undefined;
   const unsavedRelaxation = !!savedPolicy &&
     ((!savedPolicy.copy && allowCopy) || (!savedPolicy.paste && allowPaste));
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [program, savedPolicy?.copy, savedPolicy?.paste] 变化时allowCopy 状态，allowPaste 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [program, savedPolicy?.copy, savedPolicy?.paste] change, allowCopy state, allowPaste state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setAllowCopy(savedPolicy?.copy ?? true);
     setAllowPaste(savedPolicy?.paste ?? true);
   }, [program, savedPolicy?.copy, savedPolicy?.paste]);
 
+  /**
+   * 中文：提交 POST /vms/{vm.id}/single-app，完成启动和停止单应用桌面会话并配置策略的数据交互并更新忙碌标记、错误反馈；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/single-app for Starting and stopping single-application desktop sessions and configuring their policies and update busy flag, error feedback. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：remove：移除服务端会话的异步操作
+   * English: Inputs: remove: asynchronous server-session removal
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+   * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+   */
   const updatePolicy = async (remove: boolean) => {
     if (busy) return;
     setBusy(true);
@@ -60,6 +81,14 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     finally { setBusy(false); }
   };
 
+  /**
+   * 中文：在启动和停止单应用桌面会话并配置策略流程中错误反馈，关闭所属连接或存储对象；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Starting and stopping single-application desktop sessions and configuring their policies, error feedback, close the owned connection/storage object. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：session：目标终端或桌面会话
+   * English: Inputs: session: target terminal/desktop session
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   */
   const open = async (session: AppSession) => {
     let popup: Window | undefined;
     try {
@@ -71,6 +100,14 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     }
   };
 
+  /**
+   * 中文：提交 POST /vms/{vm.id}/single-app，完成启动和停止单应用桌面会话并配置策略的数据交互并更新错误反馈、忙碌标记；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/single-app for Starting and stopping single-application desktop sessions and configuring their policies and update error feedback, busy flag. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+   * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+   */
   const start = async () => {
     if (busy) return;
     if (unsavedRelaxation) {
@@ -106,6 +143,16 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     }
   };
 
+  /**
+   * 中文：提交 POST /vms/{vm.id}/single-app，完成启动和停止单应用桌面会话并配置策略的数据交互并更新忙碌标记、错误反馈；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/single-app for Starting and stopping single-application desktop sessions and configuring their policies and update busy flag, error feedback. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：session：目标终端或桌面会话
+   * English: Inputs: session: target terminal/desktop session
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+   * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+   */
   const stop = async (session: AppSession) => {
     setBusy(true);
     setError('');

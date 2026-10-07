@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：在父身份和构建范围中发布有限槽位的创建预约及精确 Job 名。预约先于创建可见，提交时转移 Job 所有权，清理只撤销自己的槽位并保留并发互斥。
+ * Module responsibilities (English): Publish bounded creation-reservation slots/exact Job names scoped to parent identity/build. Reservations precede creation, transfer Job ownership on commit and clean only their own slots under concurrency locks.
+ */
 /** 创建前的命名 Job 预留表，绑定父 PID、创建时间和构建摘要，保护子进程出现到服务接管之间的窗口。 */
 #pragma once
 #include "protocol.h"
@@ -26,31 +30,40 @@ struct alignas(8) SakuraCreationRegistry {
 static_assert(sizeof(SakuraCreationRegistry)==1120,"Creation reservation ABI");
 struct CreationHandle {
   HANDLE value;
+  /** 中文：保存创建预约使用的自有句柄，禁止复制来保护 Job 和映射生命周期。 English: Retain an owned creation-reservation handle with copying prohibited to protect Job/mapping lifetimes. 参数声明 / Declared parameters: HANDLE input=nullptr. */
   explicit CreationHandle(HANDLE input=nullptr):value(input){}
+  /** 中文：关闭创建预约仍持有的有效句柄，已显式转移的空值跳过。 English: Close a valid handle still owned by the creation reservation, skipping null after explicit transfer. */
   ~CreationHandle(){if(value && value!=INVALID_HANDLE_VALUE)CloseHandle(value);}
+  /** 中文：删除此类型的复制构造，避免裸句柄或自有缓冲区被多个对象重复释放；传入对象不能通过此声明复制。 English: Delete this type's copy constructor to prevent multiple objects releasing the same raw handle/owned buffer; the supplied object cannot be copied through this declaration. 参数声明 / Declared parameters: const CreationHandle&. */
   CreationHandle(const CreationHandle&)=delete;
 };
 struct CreationView {
   SakuraCreationRegistry* value=nullptr;
+  /** 中文：解除预留表映射视图，句柄由所属 RAII 对象独立释放。 English: Unmap the reservation view; its owning RAII object closes the handle separately. */
   ~CreationView(){if(value)UnmapViewOfFile(value);}
 };
 struct CreationLock {
   HANDLE value;
+  /** 中文：有界等待预留 writer 互斥量，允许 abandoned 后由后续完整身份校验决定使用，超时拒绝。 English: Boundedly wait for the reservation writer mutex, allowing abandoned acquisition only with subsequent full identity checks and rejecting timeout. 参数声明 / Declared parameters: HANDLE mutex. */
   explicit CreationLock(HANDLE mutex):value(mutex) {
     const DWORD result=WaitForSingleObject(value,15000);
     if(result!=WAIT_OBJECT_0 && result!=WAIT_ABANDONED)throw std::runtime_error("creation reservation writer unavailable");
   }
+  /** 中文：释放构造时取得的预留 writer 互斥量。 English: Release the reservation writer mutex acquired during construction. */
   ~CreationLock(){ReleaseMutex(value);}
 };
+/** 中文：由 owner、父 PID 和创建时间生成预留表名字，使重启父进程不能继承旧预留。 English: Build the reservation-table name from owner/parent PID/creation time so a restarted parent cannot inherit old reservations. 参数声明 / Declared parameters: const std::wstring& owner,DWORD pid,uint64_t created. */
 inline std::wstring descendantCreationName(const std::wstring& owner,DWORD pid,uint64_t created) {
   return L"Local\\SakuraClipboard.Creation."+owner+L"."+std::to_wstring(pid)+L"."+std::to_wstring(created);
 }
+/** 中文：把 128 位预留 token 规范成固定宽十六进制 Job 名，精确连接预留表与内核 Job。 English: Encode the one-hundred-twenty-eight-bit reservation token into a fixed-width hexadecimal Job name linking the table to the exact kernel Job. 参数声明 / Declared parameters: const std::wstring& name,const SakuraCreationToken& token. */
 inline std::wstring descendantCreationJob(const std::wstring& name,const SakuraCreationToken& token) {
   constexpr wchar_t digits[]=L"0123456789abcdef";
   std::wstring result=name+L".job.";
   for(const uint64_t part:{token.low,token.high})for(int shift=60;shift>=0;shift-=4)result+=digits[(part>>shift)&15];
   return result;
 }
+/** 中文：同时检查预留 magic/version/reserved、父 PID/创建时间与构建摘要，不仅按映射名相信内容。 English: Check reservation magic/version/reserved/parent PID-creation/build rather than trusting contents from the mapping name alone. 参数声明 / Declared parameters: const SakuraCreationRegistry& value,DWORD pid,uint64_t created. */
 inline bool descendantCreationValid(const SakuraCreationRegistry& value,DWORD pid,uint64_t created) {
   return value.magic==SakuraCreationMagic && value.version==SakuraCreationVersion && !value.reserved &&
     value.parentPid==pid && value.parentCreated==created && std::memcmp(value.build,SAKURA_CLIPBOARD_BUILD,65)==0;
@@ -61,6 +74,7 @@ class DescendantReservation {
   CreationView view;
   size_t slot=SakuraCreationCapacity;
 public:
+  /** 中文：在 CreateProcess 前创建唯一命名 kill-on-close Job和用户/System ACL预留表，持 writer 锁填至多 64 个槽；任何身份或容量不确定都拒绝，封住子出现到服务接管之间的空窗。 English: Before CreateProcess create a unique named kill-on-close Job/user-System-ACL table and register under writer lock within sixty-four slots. Reject uncertain identity/capacity, protecting the gap from child appearance to service takeover. 参数声明 / Declared parameters: const std::wstring& owner. */
   explicit DescendantReservation(const std::wstring& owner) {
     const DWORD pid=GetCurrentProcessId();const auto created=processCreation(GetCurrentProcess());
     const auto name=descendantCreationName(owner,pid,created);
@@ -98,14 +112,18 @@ public:
       view.value->jobs[slot]=identity;MemoryBarrier();
     }else{LocalFree(security);throw std::runtime_error("creation reservation identity unavailable");}
   }
+  /** 中文：把精确 Job 句柄移交创建流程并置空本成员，析构不重复关闭已移交句柄。 English: Transfer the exact Job handle to creation and clear this member so destruction cannot close the transferred handle twice. */
   HANDLE releaseJob(){const HANDLE result=job.value;job.value=nullptr;return result;}
+  /** 中文：尽力在 writer 锁内清空本实例预留槽，保留 RAII 资源清理；失败不通过析构抛出异常。 English: Best-effort clear this instance's slot under writer lock, retaining RAII cleanup without throwing from destruction. */
   ~DescendantReservation(){
     if(view.value && slot<SakuraCreationCapacity)try{CreationLock lock(writer.value);view.value->jobs[slot]={};MemoryBarrier();}catch(...){}
   }
+  /** 中文：删除此类型的复制构造，避免裸句柄或自有缓冲区被多个对象重复释放；传入对象不能通过此声明复制。 English: Delete this type's copy constructor to prevent multiple objects releasing the same raw handle/owned buffer; the supplied object cannot be copied through this declaration. 参数声明 / Declared parameters: const DescendantReservation&. */
   DescendantReservation(const DescendantReservation&)=delete;
 };
 // Read-only OS identity and exact named Job membership. Called before ordinary
 // apply creates a policy mapping or starts any remote loader/configure thread.
+/** 中文：只读核对目标/原父创建时间及预留表，并验证当前目标确属表中精确命名 Job；普通 apply 在创建未提交期间必须拒绝，不能用同名映像或缺 DLL 代替成员证据。 English: Read-only verify target/original parent creation/table and exact named-Job membership. Ordinary apply must refuse pending creation; image names/missing DLLs cannot replace membership evidence. 参数声明 / Declared parameters: const std::wstring& owner,DWORD pid,uint64_t created. */
 inline bool descendantCreationPending(const std::wstring& owner,DWORD pid,uint64_t created) {
   CreationHandle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid));
   if(!process.value || processCreation(process.value)!=created)return false;

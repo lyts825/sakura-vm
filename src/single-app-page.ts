@@ -1,5 +1,8 @@
 /**
- * 模块职责：单应用弹窗入口：通过带 nonce 的消息完成父窗口握手，连接桌面并执行受控剪贴板传输。
+ * 模块职责（中文）：单应用弹窗入口：通过带 nonce 的消息完成父窗口握手，连接桌面并执行受控剪贴板传输。
+ * Module responsibility (English): Connecting a single-application desktop and clipboard through source/nonce handshakes.
+ * 详细范围（中文）：内部入口供相邻界面或契约模块使用；职责覆盖通过来源和 nonce 握手接入单应用桌面与剪贴板，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Internal entry points support adjacent UI/contract modules. The scope covers Connecting a single-application desktop and clipboard through source/nonce handshakes. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import type RFB from '@novnc/novnc';
 import { socketPath } from '../shared/socket-client.ts';
@@ -28,7 +31,7 @@ const copy = document.getElementById('copy') as HTMLButtonElement;
 const clipboardError = document.getElementById('clipboard-error')!;
 const nonce = new URLSearchParams(location.search).get('nonce');
 const parent = window.opener;
-document.getElementById('close')!.addEventListener('click', () => window.close());
+document.getElementById('close')!.addEventListener('click', /** 中文：在通过来源和 nonce 握手接入单应用桌面与剪贴板流程中关闭所属连接或存储对象；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Connecting a single-application desktop and clipboard through source/nonce handshakes, close the owned connection/storage object. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation */ () => window.close());
 toggleClipboard.addEventListener('click', () => {
   clipboard.hidden = !clipboard.hidden;
   toggleClipboard.setAttribute('aria-expanded', String(!clipboard.hidden));
@@ -37,10 +40,18 @@ toggleClipboard.addEventListener('click', () => {
 if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
   status.textContent = '请从 Sakura 桌面页重新打开应用窗口';
 } else {
-  const timeout = setTimeout(() => {
+  const timeout = setTimeout(/** 中文：在通过来源和 nonce 握手接入单应用桌面与剪贴板流程中移除登记的事件监听；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Connecting a single-application desktop and clipboard through source/nonce handshakes, remove registered event listeners. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     window.removeEventListener('message', receive);
     status.textContent = '应用连接超时，请从 Sakura 桌面页重新打开';
   }, 15000);
+  /**
+   * 中文：只接收父窗口同源且 nonce 匹配的初始化，验证实例/会话/程序和密码后解除 opener；懒加载 RFB、建立单应用连接并执行会话与应用剪贴板双重策略。
+   * English: Accept initialization only from the same-origin parent with a matching nonce, validate VM/session/program/password and detach opener. Lazily load RFB, connect the single application and enforce both session/application clipboard policy.
+   * 中文：输入：event：触发本处理器的事件及其数据
+   * English: Inputs: event: triggering event and its data
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   */
   async function receive(event: MessageEvent<Init>) {
     if (event.source !== parent || event.origin !== location.origin ||
         event.data?.type !== 'sakura-single-app-init' || event.data.nonce !== nonce) return;
@@ -67,13 +78,25 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
       let connection: ReturnType<typeof connectDesktop> | null = null;
       let connected = false;
       let sentClipboard = '';
+      /**
+       * 中文：根据连接状态、现有剪贴板内容及应用/会话策略更新复制和发送按钮，未授权方向不能通过界面触发。
+       * English: Update copy/send buttons from connection/content/application/session rules so disallowed directions cannot be triggered through the UI.
+       * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+       * English: Result: deliver through the described state/resource effects without returning business data
+       */
       const refreshButtons = () => {
         const rule = currentClipboardRule(context);
         send.disabled = !connected || !rule.paste || !sessionClipboard.paste;
         copy.disabled = !incoming.value || !rule.copy || !sessionClipboard.copy;
       };
+      /**
+       * 中文：以本会话凭证创建 RFB 客户端，按当前客户端身份过滤剪贴板事件，交给连接管理器统一重连和错误反馈。
+       * English: Create an RFB client with this session's credentials, filter clipboard events by current-client identity and use the connection manager for reconnection/error feedback.
+       * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+       * English: Result: deliver through the described state/resource effects without returning business data
+       */
       const connect = () => {
-        connection = connectDesktop(() => {
+        connection = connectDesktop(/** 中文：在通过来源和 nonce 握手接入单应用桌面与剪贴板流程中登记浏览器或资源事件监听；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Connecting a single-application desktop and clipboard through source/nonce handshakes, register browser/resource event listeners. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation */ () => {
           const next = new RFB(screen, url, {
             credentials: { password: session.password, username: '', target: '' },
           });
@@ -81,7 +104,7 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
           next.resizeSession = false;
           next.background = '#201b24';
           client = next;
-          next.addEventListener('clipboard', (event) => {
+          next.addEventListener('clipboard', /** 中文：更新 incoming.value、clipboardError.textContent 以维护通过来源和 nonce 握手接入单应用桌面与剪贴板当前状态；这些赋值属于此输入/事件的状态转换 | English: Update incoming.value, clipboardError.textContent to maintain current state for Connecting a single-application desktop and clipboard through source/nonce handshakes; these assignments belong to this input/event transition | 中文：输入：event：触发本处理器的事件及其数据 | English: Inputs: event: triggering event and its data | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data | 中文：拒绝原因：此应用会话已禁止复制到宿主。这些错误交给直接调用者或本函数 catch 处理 | English: Refusal reasons: 此应用会话已禁止复制到宿主. These errors reach the direct caller or this function's catch handler */ (event) => {
             if (client !== next) return;
             const text = (event as CustomEvent<{ text: string }>).detail.text;
             try {
@@ -104,6 +127,12 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
           refreshButtons();
         });
       };
+      /**
+       * 中文：规则变化时清空不再允许的输入/输出；已经发送的粘贴内容撤权后重新建立桌面连接，避免旧客户端继续保留禁止内容。
+       * English: Clear newly disallowed input/output when rules change; if previously sent paste content loses authority, recreate the desktop connection so the old client cannot retain forbidden content.
+       * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+       * English: Result: deliver through the described state/resource effects without returning business data
+       */
       const refreshPolicy = () => {
         if (!sessionClipboard.copy) incoming.value = '';
         if (!sessionClipboard.paste) outgoing.value = '';
@@ -123,7 +152,7 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
         }
         refreshButtons();
       };
-      send.addEventListener('click', () => {
+      send.addEventListener('click', /** 中文：更新 sentClipboard、clipboardError.textContent 以维护通过来源和 nonce 握手接入单应用桌面与剪贴板当前状态；这些赋值属于此输入/事件的状态转换 | English: Update sentClipboard, clipboardError.textContent to maintain current state for Connecting a single-application desktop and clipboard through source/nonce handshakes; these assignments belong to this input/event transition | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data | 中文：拒绝原因：应用窗口尚未连接；此应用会话已禁止粘贴。这些错误交给直接调用者或本函数 catch 处理 | English: Refusal reasons: 应用窗口尚未连接; 此应用会话已禁止粘贴. These errors reach the direct caller or this function's catch handler */ () => {
         try {
           if (!client || !connected) throw new Error('应用窗口尚未连接');
           if (!sessionClipboard.paste) throw new Error('此应用会话已禁止粘贴');
@@ -133,7 +162,7 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
           clipboardError.textContent = '';
         } catch (cause) { clipboardError.textContent = (cause as Error).message; }
       });
-      copy.addEventListener('click', () => {
+      copy.addEventListener('click', /** 中文：更新 clipboardError.textContent 以维护通过来源和 nonce 握手接入单应用桌面与剪贴板当前状态；这些赋值属于此输入/事件的状态转换 | English: Update clipboardError.textContent to maintain current state for Connecting a single-application desktop and clipboard through source/nonce handshakes; these assignments belong to this input/event transition | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
         if (!sessionClipboard.copy) {
           clipboardError.textContent = '此应用会话已禁止复制到宿主';
           return;
@@ -148,7 +177,7 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
         (message) => { clipboardError.textContent = message; });
       refreshPolicy();
       connect();
-      window.addEventListener('pagehide', () => {
+      window.addEventListener('pagehide', /** 中文：在通过来源和 nonce 握手接入单应用桌面与剪贴板流程中释放所属连接或界面寿命；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Connecting a single-application desktop and clipboard through source/nonce handshakes, dispose owned connection/UI lifetimes. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
         connection?.dispose();
         unsubscribePolicies();
         unsubscribeProtection();

@@ -2,7 +2,7 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
-应用与内置包版本：**2.3.6**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+应用与内置包版本：**2.3.7**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
 
 **真正运行 Linux 内核。** [PosixLoom](https://github.com/lyts825/posixloom) 负责命令编排、会话与 Windows 进程树管理，[QEMU](https://www.qemu.org/) 负责虚拟化。当前不是 WSL 的替代实现，也不依赖现有的 WSL 发行版。
 

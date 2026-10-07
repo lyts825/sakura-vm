@@ -1,4 +1,5 @@
-/** 准备隔离的现代 .NET 剪贴板验证运行时，核对官方发行元数据、下载摘要和复用夹具文件身份。 */
+/** 准备隔离的现代 .NET 剪贴板验证运行时，核对官方发行元数据、下载摘要和复用夹具文件身份。
+ * Prepare an isolated modern .NET clipboard fixture runtime, verifying official release metadata, archive hashes and reused fixture identities. */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -42,8 +43,12 @@ const filePins = {
   'shared/Microsoft.WindowsDesktop.App/10.0.9/WindowsBase.dll':
     '3d66a11f26131646033579d285bc911364e788c176d2f6c0ec11f10d4ae52f85',
 };
+/** 以 SHA-256 固定夹具资源字节，供离线复用前完整性核对。
+ * Pin fixture bytes with SHA-256 for integrity checks before offline reuse. */
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const privateParent = resolve('.data');
+/** 要求夹具目录严格位于当前工作区 .data 下且同盘，拒绝根本身和父路径跳出。
+ * Require fixture directories strictly inside workspace .data on the same drive, excluding root and parent escape. */
 function ownedPath(path) {
   const result = resolve(path),
     difference = relative(privateParent, result);
@@ -54,6 +59,8 @@ function ownedPath(path) {
   assert.equal(result[0].toLowerCase(), resolve(process.cwd())[0].toLowerCase());
   return result;
 }
+/** 仅从固定 Microsoft HTTPS 主机获取无重定向资源，核对状态与声明/实际字节上限，超时拒绝。
+ * Fetch only pinned Microsoft HTTPS resources without redirects, checking status/declared/actual size bounds and deadlines. */
 async function official(url, maximum) {
   const parsed = new URL(url);
   assert.equal(parsed.protocol, 'https:');
@@ -83,12 +90,16 @@ async function official(url, maximum) {
     assert.equal(bytes.length, length);
   return bytes;
 }
+/** 检查 DOS/PE magic 与真实 x86 machine，拒绝文件名伪装的其他架构。
+ * Check DOS/PE magic and actual x86 machine instead of trusting filenames. */
 function peX86(bytes, name) {
   assert.equal(bytes.readUInt16LE(0), 0x5a4d, name + ' DOS header');
   const offset = bytes.readUInt32LE(0x3c);
   assert.equal(bytes.readUInt32LE(offset), 0x4550, name + ' PE header');
   assert.equal(bytes.readUInt16LE(offset + 4), 0x14c, name + ' must be real x86');
 }
+/** 核对固定 runtime 版本/RID/元数据来源及全部资源摘要，关键 EXE 同时检查 PE 架构。
+ * Validate pinned runtime version/RID/metadata source/all hashes, also checking critical executable PE architecture. */
 async function verifyFiles(root, proof) {
   assert.equal(proof.version, version);
   assert.equal(proof.rid, 'win-x86');
@@ -106,6 +117,8 @@ async function verifyFiles(root, proof) {
   }
   return hashes;
 }
+/** 复用时逐项核实历史来源证明，创建时核对官方元数据与归档摘要后解压到自有目录，返回有证据绑定的运行时。
+ * Revalidate provenance on reuse or verify official metadata/archive hashes before owned extraction, returning an evidence-bound runtime. */
 export async function clipboardModernRuntimeFixture(destination, reused) {
   assert.equal(process.platform, 'win32');
   const root = ownedPath(reused || destination);
@@ -166,6 +179,8 @@ export async function clipboardModernRuntimeFixture(destination, reused) {
       assert.equal(actualSha512, entry.hash, 'Official runtime archive SHA-512 mismatch');
       const archive = join(root, name);
       await writeFile(archive, bytes);
+      /** 把单个值引用为 PowerShell 字面单引号字符串，双写内嵌引号避免命令解释。
+       * Quote one PowerShell single-quoted literal, doubling embedded quotes to avoid command interpretation. */
       const literal = (value) => "'" + value.replaceAll("'", "''") + "'";
       await execute(
         'powershell.exe',

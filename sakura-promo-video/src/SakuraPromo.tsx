@@ -1,4 +1,5 @@
-/** 将十二个章节按旁白时间线组装成全片，同步旁白、配乐、字幕与章节进度。 */
+/** 将十二个章节按旁白时间线组装成全片，同步旁白、配乐、字幕与章节进度。
+ * Assemble twelve narration-aligned chapters with global narration/music/captions/progress and scene-local animation frames. */
 import {Audio} from '@remotion/media';
 import {AbsoluteFill, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Captions} from './Captions';
@@ -17,6 +18,8 @@ import {IsolationScene} from './scenes/IsolationScene';
 import {DesktopScene} from './scenes/DesktopScene';
 import {ClosingScene} from './scenes/ClosingScene';
 
+/** 根据全片帧定位当前章节，显示章节标题与线性总进度；找不到区间时使用完整介绍标签，首帧也保持合法章节编号。
+ * Locate the chapter from global frames and show its title and linear film progress; use the full-introduction label outside intervals and keep a valid chapter number at the first frame. */
 const Progress = () => {
   const frame = useCurrentFrame();
   const active = timeline.findIndex(({from, durationInFrames}) => frame >= from && frame < from + durationInFrames);
@@ -24,6 +27,8 @@ const Progress = () => {
 };
 
 /** The audio transcript owns every start and duration. No fixed 150s limit. */
+/** 按统一全片起点与时长编排十二个 Sequence，音频准备完成后一次播放旁白与配乐；字幕和进度置于全局层，场景子组件读取各自局部帧。
+ * Schedule twelve sequences from shared global starts/durations and play narration and soundtrack once when audio is ready; captions/progress remain global while scenes consume local frames. */
 export const SakuraPromo = () => {
   const {fps} = useVideoConfig();
   return <AbsoluteFill style={{background: colors.paper, scale: 0.999}}>

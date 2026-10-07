@@ -1,4 +1,5 @@
 # 单窗口应用的挂载目录视图：用独立映射 UID 暴露项目目录，保持磁盘所有者与 ACL；核心函数须与 Wayland 实现保持 AST 一致。
+# Expose project directories through a distinct IDMAP UID while preserving disk owners/ACLs; core functions remain AST-equivalent to the Wayland implementation.
 """Manifest-bound copy of the verified Wayland directory-view functions.
 
 The application never enters the mapper user namespace. Its mount view maps
@@ -20,22 +21,30 @@ import stat
 import time
 RUNTIME = Path('/run/sakura-single-app-uid')
 UUID = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
+# 条件失败即拒绝目录视图操作，不返回未校验 namespace 或目录。
+# Refuse failed directory-view conditions rather than returning unvalidated namespaces/directories.
 def require(condition, message):
     if not condition: raise RuntimeError(message)
 
 
 class DirectoryViewError(RuntimeError):
+    # 保存失败阶段与 errno，并形成固定前缀诊断，供能力预检识别不可支持原因。
+    # Store stage/errno and form a fixed-prefix diagnostic for unsupported-capability checks.
     def __init__(self, stage, number=0):
         self.stage, self.errno = stage, number
         super().__init__("WAYLAND_DIRECTORY_VIEW_UNAVAILABLE: " + stage + " (errno " + str(number) + ")")
 
 
+# 将负系统调用结果转换为阶段化 errno 错误，成功返回原值。
+# Convert negative syscall results to stage-specific errno failures or return the successful value.
 def directory_view_call(stage, result):
     if result < 0:
         raise DirectoryViewError(stage, ctypes.get_errno())
     return result
 
 
+# 在当前挂载 namespace 中逐级无跟随重开目录，避免旧树 FD 被用作新 open_tree 源。
+# Reopen the directory without links in the current mount namespace, avoiding old-tree FDs as new open_tree sources.
 def directory_view_open(path):
     # Reopen in the current mount namespace, without following any component.
     # A descriptor from before unshare refers to the old mount tree and cannot
@@ -55,6 +64,8 @@ def directory_view_open(path):
         raise
 
 
+# 核对 namespace 类型与其 root user namespace 所有者的物理身份，关闭内核返回的父 FD。
+# Verify namespace type and root-user-namespace owner identity, closing the kernel-returned parent FD.
 def directory_view_namespace(descriptor, kind, owner):
     require(fcntl.ioctl(descriptor, 0xb703) == kind, '应用 namespace FD 类型不符')  # NS_GET_NSTYPE
     parent = fcntl.ioctl(descriptor, 0xb702 if kind == 0x10000000 else 0xb701)
@@ -66,6 +77,8 @@ def directory_view_namespace(descriptor, kind, owner):
         os.close(parent)
 
 
+# 有界等待直接 helper 子进程；超时只杀尚未回收的精确子进程并 wait，避免 PID 重用。
+# Wait boundedly for the direct helper; on timeout kill/reap only that unreaped child, avoiding PID reuse.
 def directory_view_wait(pid, deadline):
     while True:
         child, status = os.waitpid(pid, os.WNOHANG)
@@ -81,6 +94,8 @@ def directory_view_wait(pid, deadline):
         time.sleep(.01)
 
 
+# 短命 root helper 只执行摘要绑定函数，用私有 SEQPACKET 交换 namespace FD；设置父死亡信号、超时及 FD 封闭。
+# Run only digest-bound functions in short-lived root helpers, exchanging namespace FDs over private SEQPACKET with parent-death/time/FD bounds.
 def directory_view_helper(kind, initialize, parent_initialize=None):
     # Only manifest-bound Python functions run in these short-lived helpers;
     # they never execute an application or import a project directory.
@@ -183,11 +198,15 @@ def directory_view_helper(kind, initialize, parent_initialize=None):
                 pass
 
 
+# 创建仅用于 IDMAP 的 user namespace，项目与应用 UID/GID 必须不同且处于各自固定范围。
+# Create a user namespace solely for IDMAP with distinct project/application UID/GID in their fixed ranges.
 def directory_view_userns(identity, user):
     require(identity['uid'] != user.pw_uid and identity['gid'] != user.pw_gid
             and identity['uid'] >= 20000 and identity['gid'] >= 20000
             and 1000 <= user.pw_uid < 20000 and 1000 <= user.pw_gid < 20000,
             '应用目录映射需要不同的项目与 sandbox UID/GID')
+    # 向精确 helper 的 setgroups/UID/GID map 写入一条映射并检查完整写入，拒绝额外组权限。
+    # Write one exact helper UID/GID mapping with setgroups denied and require complete writes.
     def mappings(pid):
         root = Path('/proc') / str(pid)
         for name, content in [('setgroups', 'deny'), ('uid_map', str(identity['uid']) + ' ' + str(user.pw_uid) + ' 1'),
@@ -203,6 +222,8 @@ def directory_view_userns(identity, user):
     return descriptor
 
 
+# 以应用真实身份探测祖先遍历权限，选择可安全建立挂载路由的边界，子进程关闭权限 FD。
+# Probe ancestor traversal as the actual application identity and choose a safe mount-route boundary with child FD closure.
 def directory_view_ancestor(path, user):
     parents = list(reversed(Path(path).parents))
     reader, writer = os.pipe2(os.O_CLOEXEC)
@@ -254,6 +275,8 @@ def directory_view_ancestor(path, user):
                 pass
 
 
+# 禁止挂载路由覆盖根或与独立账号 Home/运行目录重叠，避免映射替换私有权限区域。
+# Forbid root routes or overlaps with private account Home/runtime to prevent mapped replacement of authority regions.
 def directory_view_route_guard(route, user):
     require(str(route) != '/', '应用目录 ancestor route 不能覆盖根目录')
     for protected in (Path(user.pw_dir), RUNTIME):
@@ -262,6 +285,8 @@ def directory_view_route_guard(route, user):
 
 
 # 用 userns 建立 IDMAP 后把挂载视图交给应用；应用自身不进入映射账户命名空间。
+# 核对原项目所有权、架构与 root user namespace，克隆挂载并应用 IDMAP，保留磁盘 UID/ACL 不变，返回固定视图证明。
+# Verify project ownership/architecture/root user namespace, clone/apply IDMAP while retaining on-disk UID/ACL, and return pinned view proof.
 def directory_view_create(checked, user):
     identity = checked['identity']
     path = Path(identity['directory'])
@@ -272,6 +297,8 @@ def directory_view_create(checked, user):
     require(stat.S_ISDIR(original.st_mode) and original.st_uid == identity['uid'] and original.st_gid == identity['gid'],
             '应用原项目目录需要准确 project UID/GID ownership')
     mapper = directory_view_userns(identity, user)
+    # 在 helper 的私有挂载树建立可遍历路由、克隆源并应用映射/安全挂载标志，失败关闭临时树 FD。
+    # Build traversable routes in the helper’s private tree, clone/map the source with safe mount flags and close temporary tree FDs on failure.
     def initialize():
         libc = ctypes.CDLL(None, use_errno=True)
         libc.syscall.restype = ctypes.c_long
@@ -355,12 +382,16 @@ def directory_view_create(checked, user):
         os.close(mapper)
 
 
+# 核对进程当前挂载 namespace 设备/inode 与原证明一致，离开视图拒绝。
+# Require the process mount namespace device/inode to match the original proof, refusing view escape.
 def directory_view_member(pid, proof):
     info = (Path('/proc') / str(pid) / 'ns/mnt').stat()
     require((str(info.st_dev), str(info.st_ino)) == (proof['device'], proof['inode']),
             '应用进程已离开原目录 namespace')
 
 
+# 校验并进入固定挂载 namespace，关闭该 FD 后重开映射目录核对物理身份与权限。
+# Validate/enter the pinned mount namespace, close its FD and reopen the mapped directory to verify identity/modes.
 def directory_view_enter(descriptor, proof, path):
     try:
         info = os.fstat(descriptor)
@@ -385,6 +416,8 @@ def directory_view_enter(descriptor, proof, path):
         raise
 
 
+# 校验持久目录视图字段与原桌面/boot/账号绑定；旧已停或尚未发布视图仅返回 None，不借此授权活视图。
+# Validate durable view fields against desktop/boot/account; stopped legacy or unpublished views return None without authorizing live mounts.
 def directory_view_proof(value):
     proof = value.get('directoryView')
     if proof is None:

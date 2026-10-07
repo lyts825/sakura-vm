@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：私有环境中的真实 Win32 控件、OLE 及公开 WinRT API 探针，复用普通夹具通信并测试缓存、嵌套创建、键盘和 preflight 失败，所有 GUI/STA 数据操作位于消息线程。
+ * Module responsibilities (English): Probe real Win32 controls/OLE/public WinRT APIs in private environments, reusing ordinary fixture communication for cached/nested/keyboard/preflight failures and keeping GUI/STA data operations on the message thread.
+ */
 /** 复用私有 window station 的常规 API 探针，覆盖 Win32 控件、OLE 及 WinRT 剪贴板接口。 */
 // Owned ordinary API probe. Reuse the existing fixture's proven private-station
 // launcher, JSON/UTF-8 helpers, Win32/OLE peer operations and clipboard owner.
@@ -15,28 +19,38 @@ static HWND editControl=nullptr, richControl=nullptr, editAnsiControl=nullptr, r
 static IUnknown* winrtClipboard=nullptr;
 static IUnknown* winrtCached=nullptr;
 using RtString=void*;
+/** 中文：保存 RoInitialize 的公开 WinRT ABI，apartment 参数决定线程初始化方式，HRESULT 供启动阶段判断。 English: Retain public RoInitialize ABI whose apartment argument chooses thread initialization and HRESULT controls runtime startup. 参数声明 / Declared parameters: unsigned. */
 static HRESULT (WINAPI* rtInitialize)(unsigned)=nullptr;
+/** 中文：保存 RoGetActivationFactory ABI，以 HSTRING 类名和 IID 获取带所有权的 factory 输出，HRESULT 表示激活结果。 English: Retain RoGetActivationFactory ABI for an HSTRING class/IID to owned factory output, with HRESULT reporting activation. 参数声明 / Declared parameters: RtString,REFIID,void**. */
 static HRESULT (WINAPI* rtFactory)(RtString,REFIID,void**)=nullptr;
+/** 中文：保存 RoActivateInstance ABI，以运行时类名创建实例并通过输出指针交付 COM 引用。 English: Retain RoActivateInstance ABI to create a runtime-class instance and deliver its COM reference through output. 参数声明 / Declared parameters: RtString,IUnknown**. */
 static HRESULT (WINAPI* rtActivate)(RtString,IUnknown**)=nullptr;
+/** 中文：保存 WindowsCreateString ABI，以 UTF-16 指针和显式长度构造 HSTRING，输出成功后必须删除。 English: Retain WindowsCreateString ABI to construct HSTRING from UTF-16 pointer/explicit length, requiring deletion after successful output. 参数声明 / Declared parameters: PCWSTR,UINT32,RtString*. */
 static HRESULT (WINAPI* rtCreateString)(PCWSTR,UINT32,RtString*)=nullptr;
+/** 中文：保存 WindowsDeleteString ABI，释放夹具创建的 HSTRING 并返回 HRESULT。 English: Retain WindowsDeleteString ABI to release fixture-created HSTRING and report HRESULT. 参数声明 / Declared parameters: RtString. */
 static HRESULT (WINAPI* rtDeleteString)(RtString)=nullptr;
+/** 中文：保存 WindowsGetStringRawBuffer ABI，返回只读 UTF-16 借用指针及显式长度，有效期依赖原 HSTRING。 English: Retain WindowsGetStringRawBuffer ABI returning borrowed read-only UTF-16 data/explicit length whose lifetime depends on its HSTRING. 参数声明 / Declared parameters: RtString,UINT32*. */
 static PCWSTR (WINAPI* rtStringBuffer)(RtString,UINT32*)=nullptr;
 static HRESULT winrtInitialization=E_NOTIMPL;
 
 // Public WinRT COM ABI, checked against installed Windows SDK 10.0.26100.0
 // windows.applicationmodel.datatransfer.h. Slots include IInspectable's six
 // methods; this calls documented interfaces, not an undocumented system API.
+/** 中文：按公开 WinRT COM ABI 的固定 vtable 槽取得声明类型函数，调用方负责匹配已验证接口 IID 和槽位。 English: Get a typed function at a fixed public WinRT COM ABI vtable slot; callers match the verified IID/slot. 参数声明 / Declared parameters: IUnknown* object,unsigned index. */
 template<class T> static T rtMethod(IUnknown* object,unsigned index) {
   return reinterpret_cast<T>((*reinterpret_cast<void***>(object))[index]);
 }
+/** 中文：解析固定 WinRT 接口 GUID，编写的常量非法即终止夹具，不能继续用空 IID。 English: Parse a fixed WinRT interface GUID, aborting the fixture for an invalid authored constant instead of continuing with an empty IID. 参数声明 / Declared parameters: PCWSTR text. */
 static IID rtId(PCWSTR text) {
   IID result{};if(FAILED(IIDFromString(text,&result)))std::abort();return result;
 }
+/** 中文：通过动态 WindowsCreateString 创建 HSTRING，API 未就绪或失败返回空，成功调用者配对删除。 English: Create HSTRING through dynamic WindowsCreateString, return null when unavailable/failing and require caller deletion on success. 参数声明 / Declared parameters: const std::wstring& value. */
 static RtString rtString(const std::wstring& value) {
   RtString result=nullptr;
   if(!rtCreateString || FAILED(rtCreateString(value.c_str(),UINT32(value.size()),&result)))return nullptr;
   return result;
 }
+/** 中文：从系统 combase 解析公开运行时 API 并初始化 STA/Clipboard factory，已有 factory 幂等返回，缺少导出或激活失败以 HRESULT 返回。 English: Resolve public APIs from system combase and initialize STA/Clipboard factory, return idempotently for an existing factory and report missing exports/activation failures via HRESULT. */
 static HRESULT winrtStart() {
   if(winrtClipboard)return S_OK;
   const HMODULE runtime=LoadLibraryExW(L"combase.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -53,6 +67,7 @@ static HRESULT winrtStart() {
   const HRESULT answer=rtFactory(name,rtId(L"{c627e291-34e2-4963-8eed-93cbb0ea3d70}"),reinterpret_cast<void**>(&winrtClipboard));
   rtDeleteString(name);return answer;
 }
+/** 中文：构造 DataPackage 并设置文本，再 SetContent/Flush；每个 HSTRING 与 COM 临时引用均释放，失败停止后续步骤。 English: Build a DataPackage/set text then SetContent/Flush, releasing HSTRING/temporary COM references and stopping subsequent steps on failure. 参数声明 / Declared parameters: const std::wstring& text. */
 static HRESULT winrtCopy(const std::wstring& text) {
   HRESULT answer=winrtStart();if(FAILED(answer))return answer;
   const auto name=rtString(L"Windows.ApplicationModel.DataTransfer.DataPackage");
@@ -69,10 +84,12 @@ static HRESULT winrtCopy(const std::wstring& text) {
   if(SUCCEEDED(answer))answer=rtMethod<HRESULT (STDMETHODCALLTYPE*)(IUnknown*)>(winrtClipboard,8)(winrtClipboard);
   return answer;
 }
+/** 中文：清空输出后取得当前 Clipboard 内容视图，先初始化运行时并保留原 HRESULT。 English: Clear output and obtain the current Clipboard view after runtime initialization while retaining the original HRESULT. 参数声明 / Declared parameters: IUnknown** out. */
 static HRESULT winrtView(IUnknown** out) {
   *out=nullptr;const HRESULT answer=winrtStart();
   return FAILED(answer)?answer:rtMethod<HRESULT (STDMETHODCALLTYPE*)(IUnknown*,IUnknown**)>(winrtClipboard,6)(winrtClipboard,out);
 }
+/** 中文：启动 GetTextAsync 后最多等待十秒并泵送 STA 消息，取得文本后释放操作、状态接口及 HSTRING，超时返回 HRESULT。 English: Start GetTextAsync, wait up to ten seconds while pumping STA messages, then release operation/status/HSTRING and report timeout via HRESULT. 参数声明 / Declared parameters: IUnknown* view,std::wstring& text. */
 static HRESULT winrtText(IUnknown* view,std::wstring& text) {
   if(!view)return E_POINTER;
   IUnknown* operation=nullptr;
@@ -93,6 +110,7 @@ static HRESULT winrtText(IUnknown* view,std::wstring& text) {
   if(SUCCEEDED(answer)&&value){UINT32 length=0;const auto bytes=rtStringBuffer(value,&length);text.assign(bytes,length);}
   if(value)rtDeleteString(value);info->Release();operation->Release();return answer;
 }
+/** 中文：按 edit/rich 与 ANSI/Unicode 场景创建真实多行子控件，保留系统类过程以验证普通复制剪切路径。 English: Create real multiline child controls for edit/rich and ANSI/Unicode scenarios, retaining system procedures to test ordinary copy/cut paths. 参数声明 / Declared parameters: const std::string& kind. */
 static HWND makeControl(const std::string& kind) {
   const DWORD style=WS_CHILD|WS_VISIBLE|ES_MULTILINE;
   const HINSTANCE instance=GetModuleHandleW(nullptr);
@@ -101,6 +119,7 @@ static HWND makeControl(const std::string& kind) {
   return CreateWindowExW(0,kind=="edit"?L"EDIT":L"RICHEDIT50W",L"",style,kind=="edit"?0:200,0,190,90,window,nullptr,instance,nullptr);
 }
 struct NestedControl { std::string kind;std::wstring input,after;bool created=false; };
+/** 中文：自定义父 WM_CREATE 内创建孩子并立即剪切，验证外层 CreateWindowEx 尚未返回时已保护新控件；其他消息走原编码默认过程。 English: Create/cut a child inside the parent's WM_CREATE to verify protection before outer CreateWindowEx returns; other messages use the encoding-appropriate default procedure. 参数声明 / Declared parameters: HWND parent,UINT message,WPARAM a,LPARAM b. */
 static LRESULT CALLBACK nestedControlProcedure(HWND parent,UINT message,WPARAM a,LPARAM b) {
   if(message==WM_CREATE) {
     auto context=static_cast<NestedControl*>(reinterpret_cast<CREATESTRUCTW*>(b)->lpCreateParams);
@@ -124,32 +143,47 @@ class ProbedOleData final:public IDataObject {
   std::string mode;
 public:
   unsigned reads=0;
+  /** 中文：持有 TextData 并记录指定 preflight 故障场景，用于观察 OLE 在清空旧内容前的读取。 English: Retain TextData with the chosen preflight fault mode to observe OLE reads before old clipboard contents are cleared. 参数声明 / Declared parameters: const std::wstring& text,std::string kind. */
   ProbedOleData(const std::wstring& text,std::string kind):source(new TextData(text,true)),mode(std::move(kind)) {}
+  /** 中文：释放探针拥有的 TextData 引用，计数生命周期由自身 COM 引用管理。 English: Release probe-owned TextData with the probe lifetime governed by COM reference counting. */
   ~ProbedOleData(){source->Release();}
+  /** 中文：只提供声明的 IUnknown/本类 COM 接口，清空输出并在成功时 AddRef；空输出或未知 IID 返回对应 HRESULT。 English: Expose only declared IUnknown/class COM interfaces, clear output and AddRef on success; null output/unknown IID return corresponding HRESULTs. 参数声明 / Declared parameters: REFIID id,void** out. */
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id,void** out) override {
     if(!out)return E_POINTER;*out=nullptr;if(id!=IID_IUnknown&&id!=IID_IDataObject)return E_NOINTERFACE;
     *out=static_cast<IDataObject*>(this);AddRef();return S_OK;
   }
+  /** 中文：原子增加包装对象 COM 引用计数并返回新计数，调用者需与 Release 配对。 English: Atomically increase the wrapper's COM reference count and return it, requiring caller pairing with Release. */
   ULONG STDMETHODCALLTYPE AddRef() override {return ULONG(InterlockedIncrement(&references));}
+  /** 中文：原子减少 COM 引用计数，归零即 delete 当前对象并返回剩余计数。 English: Atomically decrease COM references, delete this object at zero and return the remaining count. */
   ULONG STDMETHODCALLTYPE Release() override {const auto next=InterlockedDecrement(&references);if(!next)delete this;return ULONG(next);}
+  /** 中文：增加读取计数，可按 changing 场景延迟或 unavailable 返回 E_PENDING，其余委托真实 TextData。 English: Increment read count, delay in changing mode or return E_PENDING for unavailable, otherwise delegate real TextData. 参数声明 / Declared parameters: FORMATETC* format,STGMEDIUM* out. */
   HRESULT STDMETHODCALLTYPE GetData(FORMATETC* format,STGMEDIUM* out) override {
     ++reads;if(mode=="changing")Sleep(1000);
     if(mode=="unavailable"){if(out)*out={};return E_PENDING;}return source->GetData(format,out);
   }
+  /** 中文：委托 TextData 向调用者提供的 medium 渲染，保持底层容量及所有权检查。 English: Delegate caller-medium rendering to TextData with its capacity/ownership checks intact. 参数声明 / Declared parameters: FORMATETC* format,STGMEDIUM* out. */
   HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC* format,STGMEDIUM* out) override {return source->GetDataHere(format,out);}
+  /** 中文：委托 TextData 报告支持的格式与 medium，不读取实际数据。 English: Delegate supported format/medium capability queries to TextData without reading contents. 参数声明 / Declared parameters: FORMATETC* format. */
   HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* format) override {return source->QueryGetData(format);}
+  /** 中文：保留 TextData 的标准格式答复，不另行创建格式转换。 English: Retain TextData's canonical-format response without introducing conversion. 参数声明 / Declared parameters: FORMATETC* a,FORMATETC* b. */
   HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC* a,FORMATETC* b) override {return source->GetCanonicalFormatEtc(a,b);}
+  /** 中文：委托 TextData 的设置结果，此只读探针源按现有契约不实现写入。 English: Delegate setting to TextData, whose existing read-only probe contract does not implement writes. 参数声明 / Declared parameters: FORMATETC* f,STGMEDIUM* m,BOOL release. */
   HRESULT STDMETHODCALLTYPE SetData(FORMATETC* f,STGMEDIUM* m,BOOL release) override {return source->SetData(f,m,release);}
+  /** 中文：按 noenum/binaryonly 故障模式拒绝枚举或仅暴露二进制格式，其余只暴露 Unicode HGLOBAL，并拒绝非读取方向。 English: Refuse enumeration in noenum or expose only binary in binaryonly, otherwise expose Unicode HGLOBAL and reject non-read directions. 参数声明 / Declared parameters: DWORD direction,IEnumFORMATETC** out. */
   HRESULT STDMETHODCALLTYPE EnumFormatEtc(DWORD direction,IEnumFORMATETC** out) override {
     if(mode=="noenum"){if(out)*out=nullptr;return E_NOTIMPL;}
     if(direction!=DATADIR_GET)return E_NOTIMPL;
     FORMATETC format{CLIPFORMAT(mode=="binaryonly"?binary:CF_UNICODETEXT),nullptr,DVASPECT_CONTENT,-1,TYMED_HGLOBAL};
     return SHCreateStdEnumFmtEtc(1,&format,out);
   }
+  /** 中文：委托 TextData 的不支持通知结果，探针不实现数据推送订阅。 English: Delegate TextData's unsupported advisory result without implementing probe push subscriptions. 参数声明 / Declared parameters: FORMATETC* f,DWORD a,IAdviseSink* s,DWORD* c. */
   HRESULT STDMETHODCALLTYPE DAdvise(FORMATETC* f,DWORD a,IAdviseSink* s,DWORD* c) override {return source->DAdvise(f,a,s,c);}
+  /** 中文：委托 TextData 的不支持取消通知结果，保持 HRESULT。 English: Delegate TextData's unsupported advisory-cancellation result and preserve HRESULT. 参数声明 / Declared parameters: DWORD c. */
   HRESULT STDMETHODCALLTYPE DUnadvise(DWORD c) override {return source->DUnadvise(c);}
+  /** 中文：委托 TextData 的不支持通知枚举结果，保持输出契约。 English: Delegate TextData's unsupported advisory-enumeration result with its output contract. 参数声明 / Declared parameters: IEnumSTATDATA** out. */
   HRESULT STDMETHODCALLTYPE EnumDAdvise(IEnumSTATDATA** out) override {return source->EnumDAdvise(out);}
 };
+/** 中文：解析私有命令以驱动真实控件/键盘、嵌套创建、OLE preflight 和 WinRT 缓存访问，返回结构化结果并按分支平衡临时句柄/COM 引用。 English: Dispatch private commands to real controls/keyboard/nested creation/OLE preflight/WinRT cached access, emit structured results and balance temporary handles/COM references per branch. 参数声明 / Declared parameters: const std::string& line. */
 static void interfaceCommand(const std::string& line) {
   const auto split=line.find('\t');const auto action=line.substr(0,split);
   const auto text=split==std::string::npos?L"":wide(line.substr(split+1));
@@ -252,6 +286,7 @@ static void interfaceCommand(const std::string& line) {
   }
   standardFixtureCommand(line);
 }
+/** 中文：创建带关闭即终止的自有 Job，先暂停启动净凭据孩子、绑定 Job 后恢复并等待退出；失败清理精确孩子与句柄。 English: Create an owned kill-on-close Job, start a net-credentials child suspended, assign before resume and wait for exit; clean exact child/handles on failure. 参数声明 / Declared parameters: const std::wstring& executable,std::wstring command,std::wstring desktop=L"". */
 static int ownedLaunch(const std::wstring& executable,std::wstring command,std::wstring desktop=L"") {
   const HANDLE job=CreateJobObjectW(nullptr,nullptr);if(!job)return 9;
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
@@ -268,14 +303,17 @@ static int ownedLaunch(const std::wstring& executable,std::wstring command,std::
   }
   CloseHandle(child.hThread);WaitForSingleObject(child.hProcess,INFINITE);DWORD code=0;GetExitCodeProcess(child.hProcess,&code);CloseHandle(child.hProcess);CloseHandle(job);return int(code);
 }
+/** 中文：核对参数数目和非交互 station，单独引用托管 EXE 参数并指定私有 desktop 后委托 Job 启动。 English: Validate argument count/noninteractive station, quote managed EXE arguments separately and delegate Job launch with private desktop. 参数声明 / Declared parameters: int argc,wchar_t** argv. */
 static int managedLaunch(int argc,wchar_t** argv) {
   if(argc!=6||std::wstring(argv[4]).empty()||CompareStringOrdinal(argv[4],-1,L"WinSta0",-1,TRUE)==CSTR_EQUAL)return 2;
   return ownedLaunch(argv[2],clipboardArgument(argv[2])+L" "+clipboardArgument(argv[3])+L" "+clipboardArgument(argv[4])+L" "+clipboardArgument(argv[5]),std::wstring(argv[4])+L"\\default");
 }
+/** 中文：核对宿主加托管 DLL 的参数结构和私有 station，保留宿主 argv 顺序并委托自有 Job 启动。 English: Validate host-plus-managed-DLL argument structure/private station and retain host argv order for owned-Job launch. 参数声明 / Declared parameters: int argc,wchar_t** argv. */
 static int managedHostLaunch(int argc,wchar_t** argv) {
   if(argc!=7||std::wstring(argv[5]).empty()||CompareStringOrdinal(argv[5],-1,L"WinSta0",-1,TRUE)==CSTR_EQUAL)return 2;
   return ownedLaunch(argv[2],clipboardArgument(argv[2])+L" "+clipboardArgument(argv[3])+L" "+clipboardArgument(argv[4])+L" "+clipboardArgument(argv[5])+L" "+clipboardArgument(argv[6]),std::wstring(argv[5])+L"\\default");
 }
+/** 中文：分派自有启动/托管启动模式，建立私有 station、真实 GUI/OLE/WinRT 探针和命令消息循环；输出环境身份，结束释放缓存与窗口。 English: Dispatch owned/managed launch modes, establish private station/real GUI/OLE/WinRT probes and a command message loop, report environment identity and release caches/windows on exit. 参数声明 / Declared parameters: int argc,wchar_t** argv. */
 int wmain(int argc,wchar_t** argv) {
   if(argc==3&&std::wstring(argv[1])==L"--launch"){
     wchar_t executable[32768]{};if(!GetModuleFileNameW(nullptr,executable,32768))return 2;
@@ -336,7 +374,7 @@ int wmain(int argc,wchar_t** argv) {
     <<",\"editansi\":"<<(editAnsiControl?"true":"false")<<",\"richansi\":"<<(richAnsiControl?"true":"false")
     <<",\"foregroundOwned\":"<<(GetForegroundWindow()==window?"true":"false")<<",\"winrtInitialization\":"<<DWORD(winrtInitialization)<<'}'<<std::endl;
   const HANDLE replied=CreateEventW(nullptr,FALSE,FALSE,nullptr);
-  std::thread input([thread,replied](){std::string line;while(std::getline(std::cin,line)){auto contents=new std::string(std::move(line));
+  std::thread input(/** 中文：输入线程按一问一答投递堆上命令给 GUI 线程并等待回复事件，投递失败自行删除；EOF 投递退出，不在输入线程操作 STA 对象。 English: The input thread posts heap-owned commands one at a time to the GUI thread and waits for replies, deleting on posting failure; EOF posts quit without touching STA objects on the input thread. */ [thread,replied](){std::string line;while(std::getline(std::cin,line)){auto contents=new std::string(std::move(line));
     if(!PostThreadMessageW(thread,WM_APP,0,reinterpret_cast<LPARAM>(contents))){delete contents;break;}WaitForSingleObject(replied,INFINITE);}PostThreadMessageW(thread,WM_QUIT,0,0);});
   while(GetMessageW(&message,nullptr,0,0)>0){if(message.message==WM_APP){auto contents=reinterpret_cast<std::string*>(message.lParam);interfaceCommand(*contents);delete contents;SetEvent(replied);}else{TranslateMessage(&message);DispatchMessageW(&message);}}
   input.detach();if(winrtCached)winrtCached->Release();if(winrtClipboard)winrtClipboard->Release();if(cached)cached->Release();DestroyWindow(window);OleUninitialize();return 0;

@@ -1,5 +1,8 @@
 /**
- * 模块职责：将核心 operation ID 绑定到响应 Schema、状态码和传输模式，统一响应发布与校验。
+ * 模块职责（中文）：将核心 operation ID 绑定到响应 Schema、状态码和传输模式，统一响应发布与校验。
+ * Module responsibility (English): bindings from core operations to response status and schemas.
+ * 详细范围（中文）：公开入口包括 passkeyAuthenticationSchema, passkeyRegistrationSchema, storageActionSchema, auditResponseSchema, monitorResponseSchema, graphqlResultSchema, openApiResponseSchema, communityResultSchema, coreResponseSchemas, coreResponseContracts, coreResponseSchema；职责覆盖核心操作到响应状态和 Schema 的绑定，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include passkeyAuthenticationSchema, passkeyRegistrationSchema, storageActionSchema, auditResponseSchema, monitorResponseSchema, graphqlResultSchema, openApiResponseSchema, communityResultSchema, coreResponseSchemas, coreResponseContracts, coreResponseSchema. The scope covers bindings from core operations to response status and schemas. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 import * as dto from './core-dtos.ts';
@@ -208,4 +211,12 @@ export const coreResponseContracts: Readonly<Record<string, HttpResponseContract
   'extension.connectOptions': { kind: 'empty', statuses: [204] },
   'extension.inventoryOptions': { kind: 'empty', statuses: [204] },
 };
+/**
+ * 中文：按精确操作 ID 返回核心响应 Schema，未注册操作返回 undefined 供上层明确处理。
+ * English: Return the core response Schema by exact operation ID, using undefined for unregistered operations so the caller handles them explicitly.
+ * 中文：输入：id：目标资源标识
+ * English: Inputs: id: target resource identifier
+ * 中文：结果：z.ZodType | undefined，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: z.ZodType | undefined carrying the described computation/transport result; throwing branches do not provide success
+ */
 export const coreResponseSchema = (id: string): z.ZodType | undefined => coreResponseSchemas[id];

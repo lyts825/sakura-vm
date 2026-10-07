@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理团队项目模板的导入和应用，校验内容及目录条目唯一性。
+ * Module purpose: Imports/applies team project templates after checking content integrity and unique index entries.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -54,17 +55,55 @@ export const teamTemplateInput = z.object({
   targetName: createSchema.shape.name.optional(),
 }).strict();
 
+/**
+ * 入口 / Entry: digest.
+ * 功能：在管理团队项目模板的导入和应用中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(JSON.stringify(content)).digest('hex')` 供上层消费（`team-templates.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `team-templates.ts`; this entry produces `createHash('sha256').update(JSON.stringify(content)).digest('hex')` for its caller. Module context: Imports/applies team project templates after checking content integrity and unique index entries.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: content: Content
+ * 输出 / Returns: `createHash('sha256').update(JSON.stringify(content)).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const digest = (content: Content) => createHash('sha256').update(JSON.stringify(content)).digest('hex');
+/**
+ * 入口 / Entry: defaults.
+ * 功能：从当前输入或状态计算 `({ version: 1, templates: [] })`，供调用方后续验证或使用。
+ * Purpose: Computes `({ version: 1, templates: [] })` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: State；结果来自 / values from `({ version: 1, templates: [] })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const defaults = (): State => ({ version: 1, templates: [] });
 
 /** A host catalog of reviewed, portable VM/project blueprints. */
 export class TeamTemplates {
+  /**
+   * 入口 / Entry: TeamTemplates.constructor.
+   * 功能：建立 TeamTemplates 的管理团队项目模板的导入和应用上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the TeamTemplates context for this module's responsibility: Imports/applies team project templates after checking content integrity and unique index entries. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; file: default=join(DATA, 'team-templates.json')
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
     private file = join(DATA, 'team-templates.json'),
   ) {}
 
+  /**
+   * 入口 / Entry: TeamTemplates.state.
+   * 功能：在管理团队项目模板的导入和应用中，执行此领域的具体处理步骤并返回其结果；本入口产生 `state` 供上层消费（`TeamTemplates`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `TeamTemplates`; this entry produces `state` for its caller. Module context: Imports/applies team project templates after checking content integrity and unique index entries.
+   * 处理：通过 `stateSchema.parse`, `readStore`, `digest`, `state.templates.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `stateSchema.parse`, `readStore`, `digest`, `state.templates.map`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `state`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `item.fingerprint !== digest(item.content)`; `new Set(state.templates.map((item) => item.id)).size !== state.templates.length || new Set(state.templates.map((item) => item…`; 异常 / errors `new AppError('团队模板内容校验失败：' + item.id, 409)`; `new AppError('团队模板目录包含重复条目', 409)`.
+   */
   private async state() {
     const state = stateSchema.parse(await readStore(this.file, defaults));
     for (const item of state.templates)
@@ -76,6 +115,18 @@ export class TeamTemplates {
     return state;
   }
 
+  /**
+   * 入口 / Entry: TeamTemplates.draft.
+   * 功能：在管理团队项目模板的导入和应用中，执行此领域的具体处理步骤并返回其结果；本入口产生 `contentSchema.parse({ resources: { cpus: vm.cpus, memoryMiB: vm.memoryMiB, diskGiB: vm.diskGiB, accelerator: vm.accelerator, …` 供上层消费（`TeamTemplates`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `TeamTemplates`; this entry produces `contentSchema.parse({ resources: { cpus: vm.cpus, memoryMiB: vm.memoryMiB, diskGiB: vm.diskGiB, accelerator: vm.accelerator, …` for its caller. Module context: Imports/applies team project templates after checking content integrity and unique index entries.
+   * 处理：通过 `this.machines.get`, `this.workspaces.config`, `contentSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.workspaces.config`, `contentSchema.parse`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `project.repository`; `url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash`.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<Content>；结果来自 / values from `contentSchema.parse({ resources: { cpus: vm.cpus, memoryMiB: vm.memoryMiB, diskGiB: vm.diskGiB, accelerator: vm.accelerator, …`.
+   * 副作用 / Effects: 更新 / updates `repository`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async draft(id: string): Promise<Content> {
     const vm = this.machines.get(id);
     const project = await this.workspaces.config(id);
@@ -100,12 +151,35 @@ export class TeamTemplates {
     });
   }
 
+  /**
+   * 入口 / Entry: TeamTemplates.item.
+   * 功能：在管理团队项目模板的导入和应用中，执行此领域的具体处理步骤并返回其结果；本入口产生 `item` 供上层消费（`TeamTemplates`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `TeamTemplates`; this entry produces `item` for its caller. Module context: Imports/applies team project templates after checking content integrity and unique index entries.
+   * 处理：通过 `state.templates.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `state.templates.find`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: state: State; id: string optional
+   * 输出 / Returns: `item`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!item`; 异常 / errors `new AppError('团队模板不存在', 404)`.
+   */
   private item(state: State, id?: string) {
     const item = state.templates.find((entry) => entry.id === id);
     if (!item) throw new AppError('团队模板不存在', 404);
     return item;
   }
 
+  /**
+   * 入口 / Entry: TeamTemplates.action.
+   * 功能：在管理团队项目模板的导入和应用中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: true, executed: false, templates: state.templates.map( ({ content: _, ...metadata }) => metadata) }` / `{ ready: true, executed: false, name: templateName, fingerprint, previousFingerprint: existing?.fingerprint, content, exclude…` 供上层消费（`TeamTemplates`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `TeamTemplates`; this entry produces `{ ready: true, executed: false, templates: state.templates.map( ({ content: _, ...metadata }) => metadata) }` / `{ ready: true, executed: false, name: templateName, fingerprint, previousFingerprint: existing?.fingerprint, content, exclude…` for its caller. Module context: Imports/applies team project templates after checking content integrity and unique index entries.
+   * 处理：通过 `teamTemplateInput.parse`, `this.machines.get`, `this.state`, `state.templates.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `teamTemplateInput.parse`, `this.machines.get`, `this.state`, `state.templates.map`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `value.mode === 'list'`; `action === 'check'`; `action === 'check' || value.mode === 'inspect'`.
+   * 输入 / Inputs: id: string; input: unknown; action: 'check' | 'run'
+   * 输出 / Returns: `{ ready: true, executed: false, templates: state.templates.map( ({ content: _, ...metadata }) => metadata) }`; `{ ready: true, executed: false, name: templateName, fingerprint, previousFingerprint: existing?.fingerprint, content, exclude…`; `this.machines.locked('team-templates', async () => { const state = await this.state(); const existing = value.templateId ? th…`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `value.mode === 'capture'`; `!value.name`; `value.fingerprint !== fingerprint`; 异常 / errors `new AppError('保存模板需要名称')`; `new AppError('来源项目或资源已变化，请重新预览模板', 409)`.
+   */
   async action(id: string, input: unknown, action: 'check' | 'run') {
     const value = teamTemplateInput.parse(input);
     this.machines.get(id);
@@ -127,6 +201,15 @@ export class TeamTemplates {
       }
       if (value.fingerprint !== fingerprint)
         throw new AppError('来源项目或资源已变化，请重新预览模板', 409);
+      /**
+       * 入口 / Entry: TeamTemplates.action.callback@130.
+       * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.machines.locked / team-templates）。
+       * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.machines.locked / team-templates).
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `{ ready: true, executed: false, unchanged: true, template: existing }`; `{ ready: true, executed: true, template: saved }`.
+       * 副作用 / Effects: `state.templates.push`; `writeStore`; 更新 / updates `state.templates[state.templates.indexOf(existing)]`.
+       * 拒绝 / Refusals: 条件 / conditions `existing && existing.fingerprint !== value.previousFingerprint`; `existing && existing.name !== templateName`; `state.templates.some((item) => item.name === templateName && item !== existing)`; 异常 / errors `new AppError('团队模板已更新，请重新预览', 409)`; `new AppError('更新模板时名称必须保持不变', 409)`.
+       */
       return this.machines.locked('team-templates', async () => {
         const state = await this.state();
         const existing = value.templateId ? this.item(state, value.templateId) : undefined;
@@ -158,6 +241,17 @@ export class TeamTemplates {
         message: value.mode === 'create' ? '新实例使用模板中的资源与项目设置，不复制文件、密钥或端口转发。' : undefined };
     }
     if (!value.fingerprint) throw new AppError('请先预览并提交模板指纹', 409);
+    /**
+     * 入口 / Entry: TeamTemplates.action.callback@161.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.machines.locked / team-templates）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.machines.locked / team-templates).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ ready: true, executed: true, deleted: template.id }`; `{ ready: true, executed: true, templateId: template.id, vmId: vm.id, vm: await this.machines.view(vm.id) }`.
+     * 副作用 / Effects: `writeStore`; `this.machines.create`; `this.workspaces.save`; `this.machines.delete`; 更新 / updates `state.templates`.
+     * 拒绝 / Refusals: 条件 / conditions `template.fingerprint !== value.fingerprint`; `value.mode !== 'create' || !value.targetName`; 异常 / errors `new AppError('团队模板已更新，请重新预览', 409)`; `new AppError('创建实例需要目标名称')`.
+     * 失败处理：catch 分支执行 `await this.machines.delete(vm.id);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `await this.machines.delete(vm.id);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.machines.locked('team-templates', async () => {
       const state = await this.state();
       const template = this.item(state, value.templateId);

@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理 Windows 文件关联及原生集成配置，校验路径、注册项并支持恢复与撤销。
+ * Module purpose: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
  */
 import { lstat, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path';
@@ -73,8 +74,28 @@ const stateSchema = z
   })
   .strict();
 type State = z.infer<typeof stateSchema>;
+/**
+ * 入口 / Entry: defaults.
+ * 功能：从当前输入或状态计算 `({ contextMenu: false, editor: 'notepad', associations: [] })`，供调用方后续验证或使用。
+ * Purpose: Computes `({ contextMenu: false, editor: 'notepad', associations: [] })` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: NativeSettings；结果来自 / values from `({ contextMenu: false, editor: 'notepad', associations: [] })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const defaults = (): NativeSettings => ({ contextMenu: false, editor: 'notepad', associations: [] });
 
+/**
+ * 入口 / Entry: nativeMappings.
+ * 功能：在管理 Windows 文件关联及原生集成配置中，执行此领域的具体处理步骤并返回其结果；本入口产生 `[]` / `result` 供上层消费（`native-integration.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `native-integration.ts`; this entry produces `[]` / `result` for its caller. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+ * 处理：通过 `features.enabled.has`, `features.machines.records.values`, `features.machines.incidentLocked`, `features.workspaces.projects.list` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `features.enabled.has`, `features.machines.records.values`, `features.machines.incidentLocked`, `features.workspaces.projects.list`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!features.sync || !features.workspaces || !features.enabled.has('files')`; `vm.sandbox || features.machines.incidentLocked(vm.id)`; `config`.
+ * 输入 / Inputs: features: Features
+ * 输出 / Returns: Promise<NativeMapping[]>；结果来自 / values from `[]`; `result`.
+ * 副作用 / Effects: `result.push`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export async function nativeMappings(features: Features): Promise<NativeMapping[]> {
   if (!features.sync || !features.workspaces || !features.enabled.has('files')) return [];
   const result: NativeMapping[] = [];
@@ -101,11 +122,34 @@ export async function nativeMappings(features: Features): Promise<NativeMapping[
 
 // Shell substitutes %1 / %V after parsing this template. Windows paths cannot
 // contain quotes; literal percent signs in install paths would create placeholders.
+/**
+ * 入口 / Entry: commandPart.
+ * 功能：在管理 Windows 文件关联及原生集成配置中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``"${value}"`` 供上层消费（`native-integration.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `native-integration.ts`; this entry produces ``"${value}"`` for its caller. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+ * 处理：通过 `win32.isAbsolute`, `inline.test`, `value.endsWith` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `win32.isAbsolute`, `inline.test`, `value.endsWith`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: string
+ * 输出 / Returns: ``"${value}"``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!win32.isAbsolute(value) || /["%\x00-\x1f]/.test(value) || value.endsWith('\\')`; 异常 / errors `new AppError('Windows 集成安装路径不能包含引号、百分号或控制字符')`.
+ */
 function commandPart(value: string) {
   if (!win32.isAbsolute(value) || /["%\x00-\x1f]/.test(value) || value.endsWith('\\'))
     throw new AppError('Windows 集成安装路径不能包含引号、百分号或控制字符');
   return `"${value}"`;
 }
+/**
+ * 入口 / Entry: nativeRegistration.
+ * 功能：在管理 Windows 文件关联及原生集成配置中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result` 供上层消费（`native-integration.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `native-integration.ts`; this entry produces `result` for its caller. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+ * 处理：通过 `commandPart`, `put`, `association.extension.slice` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `commandPart`, `put`, `association.extension.slice`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `settings.contextMenu`.
+ * 输入 / Inputs: owner: string; settings: NativeSettings; node: string; helper: string; port: number
+ * 输出 / Returns: RegistryEntry[]；结果来自 / values from `result`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function nativeRegistration(
   owner: string,
   settings: NativeSettings,
@@ -116,6 +160,15 @@ export function nativeRegistration(
   const result: RegistryEntry[] = [];
   const progId = `Sakura.Workspace.${owner}`;
   const base = `${commandPart(node)} ${commandPart(helper)} --port ${port}`;
+  /**
+   * 入口 / Entry: nativeRegistration.put.
+   * 功能：把本层请求转交 `result.push`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `result.push` and propagates the provider result or rejection.
+   * 输入 / Inputs: path: string; value: string; name: default=''
+   * 输出 / Returns: `result.push({ path, name, value })`.
+   * 副作用 / Effects: `result.push`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const put = (path: string, value: string, name = '') => result.push({ path, name, value });
   if (settings.contextMenu) {
     for (const [parent, parameter] of [
@@ -142,6 +195,17 @@ export function nativeRegistration(
   return result;
 }
 
+/**
+ * 入口 / Entry: checkedHostPath.
+ * 功能：在管理 Windows 文件关联及原生集成配置中，核对调用资格、输入或资源归属；本入口产生 `{ path: actual, directory: info.isDirectory() }` 供上层消费（`native-integration.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `native-integration.ts`; this entry produces `{ path: actual, directory: info.isDirectory() }` for its caller. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+ * 处理：通过 `isAbsolute`, `within`, `inline.test`, `path.slice().includes` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `isAbsolute`, `within`, `inline.test`, `path.slice().includes`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: root: string; target: string
+ * 输出 / Returns: `{ path: actual, directory: info.isDirectory() }`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!isAbsolute(root) || !isAbsolute(target) || !within(root, target)`; `process.platform === 'win32' && (!/^[a-z]:[\\/]/i.test(path) || path.slice(2).includes(':'))`; `/[\x00-\x1f]/.test(path) || path .split(/[\\/]/) .some((p) => /[. ]$/.test(p) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$…`; 异常 / errors `new AppError('文件不在此项目的 Windows 同步目录中', 403)`; `new AppError('仅支持本机驱动器中的普通路径')`.
+ */
 export async function checkedHostPath(root: string, target: string) {
   if (!isAbsolute(root) || !isAbsolute(target) || !within(root, target))
     throw new AppError('文件不在此项目的 Windows 同步目录中', 403);
@@ -184,6 +248,14 @@ export class NativeIntegration {
   private pending = new Set<Promise<unknown>>();
   private epoch = 0;
   private tickets = new Map<string, { value: NativeHandoff; mapping: string; expires: number }>();
+  /**
+   * 入口 / Entry: NativeIntegration.constructor.
+   * 功能：建立 NativeIntegration 的管理 Windows 文件关联及原生集成配置上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the NativeIntegration context for this module's responsibility: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: mappings: () => Promise<NativeMapping[]>; file: default=join(DATA, 'native-integration.json'); registry: RegistryApply default=windowsRegistry(); launch: default=launchNative; runtime: default={ supported: process.platform === 'win32', node: proces…; guard: (vmId?: string) => void default=() => {}; now: default=Date.now
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private mappings: () => Promise<NativeMapping[]>,
     private file = join(DATA, 'native-integration.json'),
@@ -198,9 +270,31 @@ export class NativeIntegration {
     private guard: (vmId?: string) => void = () => {},
     private now = Date.now,
   ) {}
+  /**
+   * 入口 / Entry: NativeIntegration.init.
+   * 功能：在管理 Windows 文件关联及原生集成配置中，初始化并核对当前领域状态；处理结果记录到 `this.state`（`NativeIntegration`）。
+   * Purpose: Initializes and verifies current domain state in `NativeIntegration`; the outcome is recorded in `this.state`. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+   * 处理：通过 `stateSchema.parse`, `readStore` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `stateSchema.parse`, `readStore`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.state`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async init() {
     this.state = stateSchema.parse(await readStore(this.file, () => this.state));
   }
+  /**
+   * 入口 / Entry: NativeIntegration.view.
+   * 功能：在管理 Windows 文件关联及原生集成配置中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ supported: this.runtime.supported, version: this.state.version, settings: structuredClone(this.state.settings), pending: !!…` 供上层消费（`NativeIntegration`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `NativeIntegration`; this entry produces `{ supported: this.runtime.supported, version: this.state.version, settings: structuredClone(this.state.settings), pending: !!…` for its caller. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+   * 处理：通过 `structuredClone`, `this.mappings` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `structuredClone`, `this.mappings`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<NativeView>；结果来自 / values from `{ supported: this.runtime.supported, version: this.state.version, settings: structuredClone(this.state.settings), pending: !!…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async view(): Promise<NativeView> {
     return {
       supported: this.runtime.supported,
@@ -210,21 +304,67 @@ export class NativeIntegration {
       mappings: await this.mappings(),
     };
   }
+  /**
+   * 入口 / Entry: NativeIntegration.revoke.
+   * 功能：在管理 Windows 文件关联及原生集成配置中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`NativeIntegration`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeIntegration`; the calls and state transitions below complete the operation. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+   * 处理：通过 `this.tickets.clear` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.tickets.clear`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.tickets.clear`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   revoke() {
     this.epoch++;
     this.tickets.clear();
   }
+  /**
+   * 入口 / Entry: NativeIntegration.close.
+   * 功能：在管理 Windows 文件关联及原生集成配置中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`NativeIntegration`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `NativeIntegration`; the outcome is recorded in `this.closed`. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+   * 处理：通过 `this.revoke`, `Promise.allSettled` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.revoke`, `Promise.allSettled`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true;
     this.revoke();
     await Promise.allSettled(this.pending);
   }
+  /**
+   * 入口 / Entry: NativeIntegration.check.
+   * 功能：在管理 Windows 文件关联及原生集成配置中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`NativeIntegration`）。
+   * Purpose: Checks admission, input or resource ownership in `NativeIntegration`; the calls and state transitions below complete the operation. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+   * 处理：通过 `this.guard` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.guard`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: epoch: default=this.epoch; vmId: string optional
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `epoch !== this.epoch`; `!this.runtime.supported`; 异常 / errors `new AppError('服务正在关闭', 503)`; `new AppError('操作会话已失效，请重新打开', 409)`.
+   */
   private check(epoch = this.epoch, vmId?: string) {
     this.guard(vmId);
     if (this.closed) throw new AppError('服务正在关闭', 503);
     if (epoch !== this.epoch) throw new AppError('操作会话已失效，请重新打开', 409);
     if (!this.runtime.supported) throw new AppError('宿主机集成仅支持 Windows', 409);
   }
+  /**
+   * 入口 / Entry: NativeIntegration.action.
+   * 功能：在管理 Windows 文件关联及原生集成配置中，执行此领域的具体处理步骤并返回其结果；本入口产生 `await task` 供上层消费（`NativeIntegration`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeIntegration`; this entry produces `await task` for its caller. Module context: Owns Windows file associations and native integration, validating paths/registry state and supporting restoration and revocation.
+   * 处理：通过 `this.perform`, `this.pending.add`, `this.pending.delete` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.perform`, `this.pending.add`, `this.pending.delete`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: `await task`.
+   * 副作用 / Effects: `this.pending.add`; `this.pending.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `this.pending.delete(task);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.pending.delete(task);`; these steps also apply to exceptional exits.
+   */
   async action(input: unknown) {
     const task = this.perform(input);
     this.pending.add(task);
@@ -234,6 +374,19 @@ export class NativeIntegration {
       this.pending.delete(task);
     }
   }
+  /**
+   * 入口 / Entry: NativeIntegration.perform.
+   * 功能：校验并执行 Windows 集成配置、修复、撤销及原生打开动作。
+   * Purpose: Validates/executes Windows integration configuration, repair, revocation and native open actions.
+   * 设计：注册表变更核对原值，已有外部修改拒绝覆盖；持久计划和实际注册分阶段推进，finally 恢复 busy 状态。
+   * Design: Registry writes compare original values and refuse external changes; plan/registration stages are separate and finally clears busy state.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: `this.view()`; `structuredClone(ticket.value)`; `{ ticket, url: `http://127.0.0.1:${this.runtime.port}/#native=${ticket}` }`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: `writeStore`; `this.state.settings.associations.some`; `this.state.settings.associations.find`; `this.tickets.delete`; `this.tickets.set`; 更新 / updates `this.busy`, `this.state`, `candidates`, `executable`.
+   * 拒绝 / Refusals: 条件 / conditions `request.action === 'configure' || request.action === 'repair'`; `this.busy`; `request.version !== this.state.version`; 异常 / errors `new AppError('Windows 集成配置正在更新', 409)`; `new AppError('设置已改变，请刷新后重试', 409)`.
+   * 收尾：退出 try 区域时始终执行 `this.busy = false;`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.busy = false;`; these steps also apply to exceptional exits.
+   */
   private async perform(input: unknown) {
     const request = nativeRequest.parse(input),
       epoch = this.epoch;

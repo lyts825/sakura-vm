@@ -1,4 +1,5 @@
-/** 烟雾验收：验证GnuPG 中继源身份、nonce 前拒绝、项目绑定与本轮运行票据清理。 */
+/** 烟雾验收：验证GnuPG 中继源身份、nonce 前拒绝、项目绑定与本轮运行票据清理。
+ * Smoke acceptance for GnuPG source identity, pre-nonce refusal, project binding and exact-run retirement. */
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -69,9 +70,15 @@ const caseNames = [
 ] as const;
 const uuidPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const shaPattern = /^[a-f0-9]{64}$/;
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const hash = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
+/** 将输入编码成单个 POSIX shell 字面参数，嵌入单引号用结束/转义/重开方式保留原值；调用方仍负责命令和路径授权。
+ * Encode input as one literal POSIX shell argument, preserving embedded quotes by closing/escaping/reopening; callers still authorize the command/path. */
 const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
 const fixed = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C ';
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const python = (source: string) => '/usr/bin/python3 -I -S -c ' + quote(source);
 
 const application = String.raw`import hashlib,json,os,stat,subprocess,sys,time
@@ -350,15 +357,22 @@ type Setup = { workspace: string; parent: string; root: string; vmId: string; di
   ownedHostMarker: { path: string; sha256: string }; files: Map<string, string>;
   bootGuardBefore: { file: string; sha256: string; state: { attempts: number[] } };
   runtimeFiles: { qemu: FileDigest; disk: FileDigest; seed: FileDigest; sshPrivate: FileDigest };
-  oldJournals: Map<string, any>; exactQemu: () => number; secretDirectory: string };
+  oldJournals: Map<string, any>; exactQemu: /** 返回命令行精确引用本夹具磁盘的 QEMU 数量，用于证明自有实例启动/关闭，不以工具名称匹配替代资源归属。
+ * Return the number of QEMU processes whose argv exactly references this fixture disk, proving owned-VM start/closure without replacing resource ownership with executable-name matching. */ () => number; secretDirectory: string };
 
+/** 要求目标是给定根的非空子路径，拒绝绝对相对结果和上级逃逸；只验证路径归属，不跟随链接授权。
+ * Require a nonempty child path under the root and reject absolute-relative results/parent escape; lexical containment alone does not authorize followed links. */
 function inside(root: string, path: string) {
   const part = relative(root, path); assert.ok(part && !part.startsWith('..') && !isAbsolute(part));
 }
+/** 核验精确 realpath、普通文件、无链接、单硬链接及大小预算，返回 lstat 元数据作为后续 FD pin。
+ * Check exact realpath/regular file/no symlink/single hard link/size budget and return lstat metadata for subsequent FD pinning. */
 async function ordinaryFile(file: string, maximum = 16 * 1024 * 1024) {
   assert.equal(await realpath(file), file); const info = await lstat(file);
   assert.ok(info.isFile() && !info.isSymbolicLink() && info.nlink === 1 && info.size <= maximum); return info;
 }
+/** 打开后用 fstat 绑定前置 dev/ino/size/mtime，再流式摘要并复核长度/时间；读取中替换或超预算拒绝，finally 关闭句柄。
+ * Bind opened fstat to preflight dev-ino-size-mtime, stream hashes/recheck size-time and reject replacement/oversize, closing the handle in finally. */
 async function fileDigest(path: string, maximum: number): Promise<FileDigest> {
   const before = await ordinaryFile(path, maximum), handle = await open(path, 'r');
   try {
@@ -371,10 +385,14 @@ async function fileDigest(path: string, maximum: number): Promise<FileDigest> {
     return { path, sha256: digest.digest('hex'), bytes: count, device: opened.dev, inode: opened.ino, mtimeMs: opened.mtimeMs };
   } finally { await handle.close(); }
 }
+/** lstat 必须 ENOENT，其他错误传播；未知启动事务已存在则拒绝，避免本轮覆盖或恢复非自有状态。
+ * Require lstat ENOENT/propagate other errors; reject existing unknown startup transactions rather than overwrite/recover foreign state. */
 async function mustBeAbsent(path: string) {
   const found = await lstat(path).then(() => true, error => { if (error.code !== 'ENOENT') throw error; return false; });
   assert.equal(found, false, 'An unknown existing startup transaction is not authorized: ' + path);
 }
+/** 读取 Windows 目录 ACL 和物理对象 pin，拒绝非当前用户/System/Administrators 的有效授权，返回只读安全证据而不修复权限。
+ * Read Windows directory ACL/physical-object pins, reject effective access beyond current user/System/Administrators and return read-only evidence without repairing permissions. */
 function readonlyHostRoot(root: string) {
   // GetAccessControl and GetAttributes are read-only. No Add-Type/native guard is used
   // during offline validation; the native 128-bit FileID is checked at capture.
@@ -397,6 +415,8 @@ foreach($gpgRootRule in $gpgRootSecurity.GetAccessRules($true,$true,[Security.Pr
   return JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
     { input: JSON.stringify({ path: root }), encoding: 'utf8', windowsHide: true, timeout: 10000 }));
 }
+/** 核对参数/发行版/平台、精确 Farm 根与新冻结戳、HEAD/资源摘要及原停机证据；validate-only 只检验，显式 reuse-existing 才进入运行。
+ * Validate arguments/distribution/platform/exact Farm root/new freeze stamp/HEAD-assets/prior stopped evidence; validate-only observes and explicit reuse-existing permits execution. */
 async function validate(args: string[]): Promise<Setup> {
   const [distroInput, fixtureInput, freezeInput, mode = '--validate-only'] = args;
   assert.ok(args.length === 3 || args.length === 4,
@@ -413,6 +433,8 @@ async function validate(args: string[]): Promise<Setup> {
   assert.equal(freeze.version, 1); assert.equal(freeze.frozen, true);
   assert.equal(freeze.head, execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true }).trim());
   const files = new Map<string, string>();
+  /** 核验普通单链接文件并可比对预定摘要，登记内容哈希后返回字节，供冻结来源与历史保留。
+   * Validate a regular single-link file/optional pinned hash, retain its digest and return bytes for frozen sources/history preservation. */
   const remember = async (file: string, expected?: string) => {
     await ordinaryFile(file); const bytes = await readFile(file), digest = hash(bytes);
     if (expected !== undefined) { assert.match(expected, shaPattern); assert.equal(digest, expected, file); }
@@ -518,12 +540,16 @@ async function validate(args: string[]): Promise<Setup> {
     sshPrivate: await fileDigest(join(machineDirectory, 'id_rsa'), 16384),
   };
   for (const pin of [runtimeFiles.qemu, runtimeFiles.seed, runtimeFiles.sshPrivate]) files.set(pin.path, pin.sha256);
+  /** 按 QEMU 可执行文件名和本夹具根目录/实例参数精确筛选主机进程，返回观测数量；该数量是残留证据，不赋予终止其他进程的权限。
+   * Count host processes matching QEMU executable names and this fixture’s root/VM arguments; the count is residue evidence and grants no authority to terminate other processes. */
   const exactQemu = () => Number(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
     "$gpgFixture='" + root.replaceAll("'", "''") + "';$gpgVm='" + selected.id + "';@(" +
     "Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'sakura-qemu.exe' -or $_.Name -like 'qemu-system-*.exe') -and " +
     "$_.CommandLine -and $_.CommandLine.Contains($gpgFixture) -and $_.CommandLine.Contains($gpgVm) }).Count"],
   { encoding: 'utf8', windowsHide: true }).trim());
   assert.equal(exactQemu(), 0, 'This exact old fixture is running; takeover is not authorized.');
+  /** 递归冻结普通历史文件，拒绝链接或非普通对象，登记摘要供结束核对。
+   * Recursively pin ordinary historical files, reject links/nonregular objects and retain hashes for final comparison. */
   const snapshot = async (directory: string) => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       assert.equal(entry.isSymbolicLink(), false); const file = join(directory, entry.name);
@@ -571,20 +597,30 @@ async function validate(args: string[]): Promise<Setup> {
     files, oldJournals, exactQemu, secretDirectory, bootGuardBefore };
 }
 
+/** 建立最小自有 QEMU 适配器，仅允许一次冻结原实例启动；工具/驱动器/事务逐项核验，未知能力 fail closed，所有子进程必须实际关闭。
+ * Create a minimal owned-QEMU adapter allowing one frozen original boot; verify tools/drives/transactions, fail closed on unknown capabilities and require physical child closure. */
 function testOnlyEngine(setup: Setup, proof: any, diskOptions: string): Engine {
   const children = new Map<ChildProcess, { closed: Promise<void>; receipt: any }>(); let launched = false;
+  /** 显式拒绝夹具没有授权的运行时能力，使意外走入其他主机操作立即失败，不能静默用替身绕过生产路径。
+   * Explicitly reject runtime capabilities not authorized by this fixture so accidental host operations fail immediately instead of silently bypassing production paths with a substitute. */
   const unsupported = () => { throw new Error('An unknown test-only runtime operation is not authorized.'); };
-  const runtimeOwner = new Proxy({ close: async () => {
+  const runtimeOwner = new Proxy({ /** 终止此适配器登记的全部自有子进程并等待实际关闭 Promise；存在总期限时届满失败且清理计时器，不把 kill 调用等同于完成。
+ * Terminate all owned children registered by this adapter and await actual closure promises; where bounded, expiry fails and clears the timer, since calling kill is not completion. */ close: async () => {
     for (const [child, owner] of children) { owner.receipt.runtimeCloseRequested = true; child.kill(); }
     const outstanding = Promise.all([...children.values()].map(owner => owner.closed));
     let timer: ReturnType<typeof setTimeout> | undefined;
     try { await Promise.race([outstanding, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Owned QEMU actual close was not observed.')), 10000); })]); }
     finally { clearTimeout(timer); }
     assert.equal(children.size, 0);
-  } }, { get(target, key) { if (key === 'close') return target.close; return unsupported(); } });
+  } }, { /** 仅返回夹具显式定义的成员，未知属性立即拒绝，防止 Proxy 静默提供其他运行时能力。
+ * Return only members explicitly defined by the fixture and reject unknown properties so the Proxy cannot silently supply other runtime capabilities. */ get(target, key) { if (key === 'close') return target.close; return unsupported(); } });
+  /** 只准一次固定原磁盘/seed 的 QEMU，核验工具摘要、启动 flags 与未知事务缺席；显式记录 Ubuntu 夹具时钟调整并绑定实际 child/取消关闭证据。
+   * Allow one QEMU boot of fixed original disk/seed, verifying tool hashes/flags/absent unknown transactions; explicitly record Ubuntu fixture-clock adjustments and bind actual child/cancellation-close evidence. */
   const run: Engine['run'] = async (tool, args, options = {}) => {
     assert.equal(tool, 'sakura-qemu'); assert.equal(launched, false, 'Only one exact original VM may be launched.');
     options.signal?.throwIfAborted();
+    /** 转义正则表达式的元字符，按字面匹配夹具路径或标记，避免名称被解释为匹配规则。
+     * Escape regular-expression metacharacters so fixture paths/markers match literally rather than act as pattern syntax. */
     const escape = (value: string) => value.replaceAll(',', ',,');
     const drives = args.flatMap((argument, index) => argument === '-drive' ? [args[index + 1]] : []);
     assert.deepEqual(drives, [
@@ -615,6 +651,8 @@ function testOnlyEngine(setup: Setup, proof: any, diskOptions: string): Engine {
       exitCode: null, signal: null, stdoutEnded: false, stdoutClosed: false, stderrEnded: false, stderrClosed: false, settled: false };
     proof.qemuExecutions.push(receipt);
     const child = spawn(setup.runtimeFiles.qemu.path, executedArgs, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    /** 由实际 child close 事件兑现关闭 Promise，供运行时撤销等待，不能由 kill/exit 请求提前兑现。
+     * Resolve the closure promise from actual child close for runtime retirement, never prematurely from kill/exit requests. */
     let closedResolve!: () => void; const closed = new Promise<void>(yes => { closedResolve = yes; });
     children.set(child, { closed, receipt });
     child.once('spawn', () => { receipt.spawned = true; receipt.pid = child.pid; });
@@ -625,6 +663,8 @@ function testOnlyEngine(setup: Setup, proof: any, diskOptions: string): Engine {
       options.output?.(bytes); const content = name === 'stdout' ? stdout : stderr;
       const next = Buffer.concat([content, bytes]).subarray(-65536); if (name === 'stdout') stdout = next; else stderr = next;
     });
+    /** 取消只绑定当前自有 child 句柄，终止该进程；存在 receipt/entry 时同时记录取消证据，实际 close 仍由外层等待。
+     * Bind cancellation only to the current owned child and terminate it, recording receipt/entry evidence when present; outer code still awaits physical close. */
     const abort = () => { receipt.abortRequested = true; child.kill(); };
     options.signal?.addEventListener('abort', abort, { once: true });
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -648,10 +688,15 @@ function testOnlyEngine(setup: Setup, proof: any, diskOptions: string): Engine {
   // status/image operation or availability probe fails instead of launching.
   const value = { runtime: runtimeOwner, run, runStatus: unsupported, version: 'test-only direct-spawn Engine; no version probe',
     whpxAvailable: false, qemuIoAvailable: false, aarch64Available: false,
+    /** 拒绝通用 service 访问，维持此夹具只允许明确 QEMU 启动的最小运行时边界。
+     * Reject generic service access, preserving the fixture’s minimum runtime boundary of explicitly permitted QEMU launch only. */
     get service() { return unsupported(); } };
-  return new Proxy(value, { get(target, key) { if (Object.hasOwn(target, key)) return Reflect.get(target, key); return unsupported(); } }) as unknown as Engine;
+  return new Proxy(value, { /** 仅返回夹具显式定义的成员，未知属性立即拒绝，防止 Proxy 静默提供其他运行时能力。
+ * Return only members explicitly defined by the fixture and reject unknown properties so the Proxy cannot silently supply other runtime capabilities. */ get(target, key) { if (Object.hasOwn(target, key)) return Reflect.get(target, key); return unsupported(); } }) as unknown as Engine;
 }
 
+/** 使用原 Farm 身份、stock GnuPG 和原生 Windows extra 传输验证签名/解密、保护正文、资源替换拒绝与取消清理；所有原始返回和 helper 物理关闭留证，finally 比较历史基线。
+ * Use original Farm identities/stock GnuPG/native Windows extra transport to verify signing-decryption/protected bodies/replacement denial/cancellation cleanup; retain raw-result/helper-close evidence and compare historical baselines in finally. */
 async function runSmoke(setup: Setup) {
   const invocation = randomUUID(), canary = 'gpg-protected-body-' + invocation;
   const proofFile = join(setup.root, 'gpg-agent-project-identity-evidence-' + invocation + '.json');
@@ -679,10 +724,19 @@ async function runSmoke(setup: Setup) {
   const log = await open(logFile, 'wx'); await writeFile(proofFile, JSON.stringify(proof, null, 2) + '\n', { flag: 'wx' });
   process.once('exit', code => writeFileSync(exitFile, JSON.stringify({ version: 1, invocation, actualExitCode: code,
     proofFile, logFile, proofSha256: hash(JSON.stringify(proof, null, 2) + '\n'), client: proof.client, at: new Date().toISOString() }) + '\n', { flag: 'wx' }));
+  /** 将保护正文或秘密标记替换为固定占位后返回文本，供本夹具日志和错误证据使用；原任务输入不被修改。
+   * Replace protected body/secret markers with fixed placeholders for fixture logs/error evidence without mutating actual task input. */
   const mask = (value: unknown) => String(value).replaceAll(canary, '[owned body]');
+  /** 将当前完整验收证据写入专用 proofFile，返回写入 Promise；失败传播，避免只在内存中标记通过。
+   * Write the complete current verification evidence to its dedicated proofFile and return the write promise; failures propagate rather than mark an in-memory-only pass. */
   const persist = () => writeFile(proofFile, JSON.stringify(proof, null, 2) + '\n');
+  /** 先脱敏再将同一条结论写入本轮日志与控制台，等待日志写入完成，保留真实写入错误。
+   * Redact and write the same result to the run log/console, awaiting log completion and retaining actual write failures. */
   const line = async (value: string) => { await log.write(mask(value) + '\n'); console.log(mask(value)); };
-  const check = async (name: typeof caseNames[number], action: () => Promise<unknown>) => {
+  /** 先保存当前场景阶段，再执行异步断言，成功后记录返回证据并落盘；失败保存脱敏错误与场景信息后重抛。
+   * Persist the active case/phase, then run asynchronous assertions and retain returned evidence on success with persistence; retain redacted failure/case information before rethrowing. */
+  const check = async (name: typeof caseNames[number], action: /** 执行一个证据用例的异步动作并返回观测，异常由用例包装器记录后传播；动作不自行宣称整轮通过。
+ * Execute one evidence case asynchronously and return observations; the case wrapper records/propagates failures and the action does not claim the whole run passed. */ () => Promise<unknown>) => {
     proof.activeCase = { name, startedAt: new Date().toISOString() }; await persist();
     try { const evidence = await action(); proof.cases.push({ ...proof.activeCase, finishedAt: new Date().toISOString(), evidence });
       delete proof.activeCase; await persist(); await line('PASS ' + setup.distro + ' ' + name);
@@ -716,6 +770,8 @@ async function runSmoke(setup: Setup) {
   const bootLogFile = join(setup.parent, 'gpg-agent-project-identity-boot-' + invocation + '.log');
   const bootLogFd = openSync(bootLogFile, 'wx'); let bootLogBytes = 0;
   proof.bootLog = { file: bootLogFile, actualClosed: false, truncated: false };
+  /** 最多保存四 MiB 原始启动日志，超出记录 truncated，避免来宾输出耗尽本地存储。
+   * Retain at most four MiB raw boot logs and mark truncation to prevent guest output exhausting local storage. */
   const captureBootLog = (chunk: Buffer | string) => {
     const bytes = Buffer.from(chunk); const available = Math.max(0, 4 * 1024 * 1024 - bootLogBytes);
     if (bytes.length > available) proof.bootLog.truncated = true;
@@ -733,6 +789,8 @@ async function runSmoke(setup: Setup) {
   }));
   const stage = identities[ids[0]].directory + '/gpg-agent-' + invocation;
   const nativeExec = machines.exec.bind(machines), nativeInput = machines.execInput.bind(machines);
+  /** 要求保护正文不在 root argv，保存命令及分离输入的摘要/长度，明确后续结果是 Machines UTF-8 返回值而非 wire 原字节。
+   * Require body absence from root argv and retain command/separate-input hashes-lengths, explicitly identifying later output as Machines UTF-8 values rather than raw wire bytes. */
   const inspectCommand = (command: string, input?: Buffer) => {
     assert.ok(!command.includes(canary), 'Project body appeared in a root command');
     const receipt: any = { sha256: hash(command), bodyAbsent: true, inputBytes: input?.length,
@@ -740,6 +798,8 @@ async function runSmoke(setup: Setup) {
       resultSource: 'Machines returned UTF-8 text; not raw SSH wire bytes', actualReturned: false };
     proof.rootCommands.push(receipt); return receipt;
   };
+  /** 观测真实 reply 的状态与两路 UTF-8 摘要，并按精确 GPG 命令绑定 owner/lease/正文；只记录固定拒绝/合法回包诊断，不替换原结果或失败。
+   * Observe actual reply status/both UTF-8 stream hashes and bind exact GPG commands to owner-lease-body, recording fixed refusal/valid-envelope diagnostics without replacing results/failures. */
   const observeReply = async <T extends { code: number; stdout: string; stderr: string }>(reply: Promise<T>, receipt: any, command: string): Promise<T> => {
     try {
       const actual = await reply;
@@ -774,7 +834,8 @@ async function runSmoke(setup: Setup) {
   const originalAlpineReady = `set -e\ntest -f /var/lib/cloud/.bootstrap-complete\n${bootSetup()}\n/bin/sync`;
   const readonlyAlpineReady = 'set -e\ntest -f /var/lib/cloud/.bootstrap-complete\ntest -d /workspace\n/bin/sync';
   const cloudReady = 'test -f /var/lib/cloud/instance/boot-finished && test -d /workspace && /bin/sync';
-  machines.exec = (async (...call: Parameters<typeof nativeExec>) => {
+  machines.exec = (/** 只观测自有 GPG VM 的 root 命令；启动阶段拒绝未知检查与身份文件，只对已知 Alpine 检查作只读替换并记录摘要，云检查保持原文且仅延长超时。
+ * Observe root commands only for the owned GPG VM; during startup reject unknown checks/identity files, substitute only known Alpine readiness read-only with digests, and preserve cloud commands while extending timeout. */ async (...call: Parameters<typeof nativeExec>) => {
     assert.equal(call[0], setup.vmId); const receipt = inspectCommand(call[1]);
     if (machines.state(setup.vmId) === 'starting') {
       await mustBeAbsent(join(setup.machineDirectory, 'identity.json'));
@@ -800,7 +861,8 @@ async function runSmoke(setup: Setup) {
     }
     return observeReply(nativeExec(...call), receipt, call[1]);
   }) as typeof machines.exec;
-  machines.execInput = (async (...call: Parameters<typeof nativeInput>) => {
+  machines.execInput = (/** 运行期限定 execInput 到自有 VM，记录正文摘要后沿用原输入执行，再审计原回包，禁止未知启动阶段输入操作。
+ * Limit runtime execInput to the owned VM, record body digest, execute the original input and audit its reply; reject unknown startup input operations. */ async (...call: Parameters<typeof nativeInput>) => {
     assert.equal(call[0], setup.vmId); assert.equal(machines.state(setup.vmId), 'running', 'Unknown startup input operation refused.');
     const receipt = inspectCommand(call[1], call[2]); return observeReply(nativeInput(...call), receipt, call[1]);
   }) as typeof machines.execInput;
@@ -818,7 +880,8 @@ async function runSmoke(setup: Setup) {
   const owners = new Map<string, Owner>(), ownPlainRuns = new Set<string>();
   const originalStart = Bridge.prototype.start;
   let currentLabel = 'complete';
-  Bridge.prototype.start = async function (...call: Parameters<typeof originalStart>) {
+  Bridge.prototype.start = /** 包装正式 GPG bridge 入场以绑定项目与冻结来源/辅助器哈希，登记真实 helper 观测；仅在指定窗口替换自有 SOURCE 以验证原生来源拒绝，调用原 start 保留行为。
+ * Wrap formal GPG-bridge admission to bind project/frozen source/helper digests and register real helper observations; replace owned SOURCE only in the selected window to test native refusal, preserving behavior through original start. */ async function (...call: Parameters<typeof originalStart>) {
     const context = call[2]; assert.equal(context.identity.projectId, ids[0]);
     assert.equal(context.resource.hostSourceSha256, this.hostSourceSha256); assert.equal(context.resource.hostHelperSha256, this.hostHelperSha256);
     const owner: Owner = { bridge: this, context: structuredClone(context), label: currentLabel, nativeObservations: [], nativeClosed: [] };
@@ -828,12 +891,14 @@ async function runSmoke(setup: Setup) {
     const helpers = Reflect.get(this, 'helpers') as Set<ObservedRelay>;
     assert.ok(helpers instanceof Set); assert.equal(helpers.size, 0);
     const originalAdd = helpers.add;
-    helpers.add = function (helper: ObservedRelay) {
+    helpers.add = /** 保持 Set.add 结果并为每个真实 helper 建立出生/来源/nonce/退出观测；等待其原 closed Promise，将验证失败保留在 owner.nativeClosed 中供统一清理验收。
+ * Preserve Set.add’s result and capture each real helper’s birth/source/nonce/exit evidence; await its original closed promise and retain validation failures in owner.nativeClosed for cleanup acceptance. */ function (helper: ObservedRelay) {
       const result = originalAdd.call(this, helper); assert.ok(helper.child.pid);
       const observed: NativeObservation = { pid: helper.child.pid, originalPid: null, eventNames: [], sourceRefusalCodes: [],
         nonceSent: false, birthBeforeSourceConnect: false, birthBeforeNonce: false, actualClose: false, exitCode: null, signal: null };
       owner.nativeObservations.push(observed);
-      const settled = helper.closed.then(actual => {
+      const settled = helper.closed.then(/** 真实 helper 退出后读取有界结构化事件，核实 IDENTITY PID、来源拒绝码、出生先于连接/nonce及实际退出码；事件声明与真正关闭分别记录。
+ * After actual helper exit read bounded structured events, verify IDENTITY PID, source-refusal codes, birth preceding connect/nonce and actual exit code, recording event claims separately from real closure. */ actual => {
         const events = helper.metadata; assert.ok(Array.isArray(events) && events.length <= 64);
         observed.eventNames = events.map(event => { assert.equal(typeof event.event, 'string'); return event.event as string; });
         const identity = events.find(event => event.event === 'IDENTITY')?.helper as { pid?: number } | undefined;
@@ -857,11 +922,15 @@ async function runSmoke(setup: Setup) {
     return originalStart.apply(this, call);
   };
   const controllers = new Set<AbortController>(), pending = new Set<Promise<unknown>>();
+  /** 以最多 128 KiB JSON stdin 调用当前 boot 的隔离观测器，六十秒期限，要求零退出并返回解析报告。
+   * Call the isolated current-boot observer with at most 128-KiB JSON stdin/sixty-second deadline, require zero exit and return parsed reports. */
   const observe = async (request: object) => {
     const input = Buffer.from(JSON.stringify({ bootId, ...request })); assert.ok(input.length <= 128 * 1024);
     const result = await machines.execInput(setup.vmId, fixed + python(observer), input, 60000);
     assert.equal(result.code, 0, result.stderr); return JSON.parse(result.stdout);
   };
+  /** 读取指定标签的实际正文开始标记，首次保存后要求后续元数据与摘要不变，返回观测。
+   * Read the label’s actual body-start marker, retaining its first metadata/hash and requiring later observations unchanged. */
   const report = async (label: string, ready = false) => {
     const observed = await observe({ operation: 'report', identity: identities[ids[0]], stage, invocation, label, ready });
     if (observed.report) {
@@ -872,9 +941,15 @@ async function runSmoke(setup: Setup) {
     }
     return observed;
   };
+  /** 读取本夹具指定项目的落盘身份日志并解析 JSON，供精确运行票据和关闭阶段核对；缺失或损坏直接失败。
+   * Read/parse the fixture project’s persisted identity journal for exact-run receipts/closure-phase comparison; missing/corrupt records fail directly. */
   const journal = async (id: string) => JSON.parse(await readFile(join(setup.machineDirectory, 'project-identities', id + '.json'), 'utf8'));
+  /** 构造 stock GPG 夹具的项目正文，包含明确 canary 注释和字面 stage/标签/模式参数，供保护传输检查。
+   * Build the stock-GPG fixture project body with explicit canary comment/literal stage-label-mode arguments for protected-transport checks. */
   const command = (label: string, mode: string) => '# ' + canary + '\n/usr/bin/python3 -I -S ' +
     quote(stage + '/fixture.py') + ' ' + quote(stage) + ' ' + quote(label) + ' ' + quote(mode);
+  /** 登记取消控制器与待完成任务，在精确项目调用真实 GPG 转发；finally 从追踪集移除，返回原 Promise 供签名/取消核验。
+   * Register cancellation/pending work and call real GPG forwarding in the exact project, removing tracking in finally and returning the original promise for signing/cancellation checks. */
   const run = (label: string, mode: string, controller = new AbortController()) => {
     currentLabel = label; controllers.add(controller);
     const result = spaces.projects.inScope(setup.vmId, ids[0], () => runGpgAgentForward(machines, setup.vmId,
@@ -882,6 +957,8 @@ async function runSmoke(setup: Setup) {
     pending.add(result); void result.finally(() => { controllers.delete(controller); pending.delete(result); }).catch(() => {});
     return result;
   };
+  /** 对实际 UID/GID、Home/cwd/NNP、私有 GPG Home、boot/run/cgroup 与正文开始标记一致性断言，签名时另核对解密摘要和 VALIDSIG。
+   * Assert actual UID-GID/home-cwd-NNP/private GPG home/boot-run-cgroup/body-start consistency, additionally verifying decrypted hash/VALIDSIG for signed cases. */
   const validateReport = (value: any) => {
     const identity = identities[ids[0]]; assert.equal(value.uid, identity.uid); assert.equal(value.gid, identity.gid);
     assert.deepEqual(value.groups, []); assert.equal(value.home, identity.home); assert.equal(value.cwd, identity.directory);
@@ -895,6 +972,8 @@ async function runSmoke(setup: Setup) {
       assert.ok(value.signature.validsig.startsWith('[GNUPG:] VALIDSIG ')); assert.ok(value.fingerprints.length);
     }
   };
+  /** 六十秒内等真实 GPG 报告，将进程全部凭据、网络/cgroup inode 与精确身份/resource ready 票据绑定后返回。
+   * Await a real GPG report within sixty seconds and bind all process credentials/network-cgroup inodes to exact identity/resource-ready receipts before returning. */
   const waitReady = async (label: string) => {
     const deadline = Date.now() + 60000;
     for (;;) {
@@ -919,6 +998,8 @@ async function runSmoke(setup: Setup) {
       assert.ok(Date.now() < deadline, 'Owned stock GPG command did not become ready: ' + label); await delay(100);
     }
   };
+  /** 要求主机/原生资源票据 closed、guest 路径与原进程消失、bridge 无流/helper；逐个比较实际 helper exit/socket close 并核验 host lease 关闭记录。
+   * Require host/native resources closed/guest paths-original processes gone/zero bridge streams-helpers, compare actual helper exit-socket closure and verify host-lease close records. */
   const stopped = async (owner: Owner, processes: any[] = []) => {
     const runId = owner.context.owner.runId, entry = (await journal(ids[0])).runs.find((item: any) => item.runId === runId);
     assert.ok(entry); assert.equal(entry.phase, 'closed');
@@ -958,6 +1039,8 @@ async function runSmoke(setup: Setup) {
   };
   let firstReady: any, secondReady: any, first: Promise<any> | undefined, second: Promise<any> | undefined;
   const firstController = new AbortController();
+  /** 比较整个历史基线，只允许同字节原子绑定发布改变 ledger inode；记录已验证的新 inode，不放宽内容/权限/身份字段。
+   * Compare the complete historical baseline, allowing only same-byte atomic binding publication to change ledger inode; record verified new inodes without relaxing content/permissions/identity. */
   const compareBaseline = (actual: any) => {
     const { ledgerObjects: previousLedger, ...previous } = baseline;
     const { ledgerObjects: currentLedger, ...current } = actual;
@@ -986,7 +1069,8 @@ async function runSmoke(setup: Setup) {
     proof.reachedRunning = true;
     bootId = (await machines.exec(setup.vmId, fixed + '/bin/cat /proc/sys/kernel/random/boot_id', 10000)).stdout.trim();
     assert.match(bootId, uuidPattern);
-    await check(caseNames[0], async () => {
+    await check(caseNames[0], /** 只读确认原夹具现成 GPG/Python、SSH 转发许可和被冻结 host SOURCE/helper 身份；依赖不足直接拒绝，不修改源配置或启动管理 Agent。
+ * Read-only verify the original fixture’s existing GPG/Python, SSH-forwarding permission and frozen host SOURCE/helper identities; refuse missing dependencies without altering source configuration or managing the Agent. */ async () => {
       const guest = await machines.exec(setup.vmId, fixed + '/bin/sh -c ' +
         quote('test -x /usr/bin/gpg && test -x /usr/bin/python3 && command -v gpgconf >/dev/null'), 10000);
       assert.equal(guest.code, 0,
@@ -1054,7 +1138,8 @@ async function runSmoke(setup: Setup) {
       assert.notEqual(firstReady.report.runId, secondReady.report.runId);
       assert.notEqual(firstReady.report.gpgHome, secondReady.report.gpgHome); return { first: firstReady, second: secondReady };
     });
-    await check(caseNames[7], async () => {
+    await check(caseNames[7], /** 以邻项目真实 UID 访问目标 GPG Home/socket 必须 PermissionError，同时核验空 groups/零能力、独立网络及正式 task 票据关闭。
+ * Require PermissionError when a real neighbor UID accesses target GPG home/sockets, while verifying empty groups/zero capabilities, separate network and closed formal task receipts. */ async () => {
       const oldIds = new Set((await journal(ids[1])).runs.map((value: any) => value.runId));
       const target = owners.get(firstReady.report.runId); assert.ok(target);
       const refusedPaths = [firstReady.report.gpgHome + '/S.gpg-agent', gpgAgentSocketPath(target.context.resource.leaseId)];
@@ -1120,7 +1205,8 @@ async function runSmoke(setup: Setup) {
       assert.equal(hash(await readFile(join(setup.machineDirectory, 'project-identities', ids[0] + '.json'))), before);
       return { reads, hostJournalUnchanged: true, issuedAgain: false };
     });
-    await check(caseNames[11], async () => {
+    await check(caseNames[11], /** 在桥接入场窗口替换自有来源文件，要求真实 relay 在发 nonce 前以 SOURCE_W32_FORMAT 拒绝并实际退出；关闭精确原任务后恢复来源，重验物理锚与哈希。
+ * Replace the owned source during bridge admission and require real relays to reject with SOURCE_W32_FORMAT before nonce and actually exit; close the exact original task, restore source and reverify physical anchor/digest. */ async () => {
       replacementPending = true;
       let result: Awaited<ReturnType<typeof run>> | undefined, refusal: string | undefined;
       try { result = await run('replacement', 'complete'); } catch (error) { refusal = mask(error); }
@@ -1162,6 +1248,8 @@ async function runSmoke(setup: Setup) {
     await persist();
   }
   finally {
+    /** 将清理步骤与脱敏错误保存在报告中，供最终失败判断；记录本身不吞掉其他步骤的清理机会。
+     * Retain cleanup step/redacted failure in the report for final acceptance while allowing other teardown steps to run. */
     const cleanupError = (step: string, error: unknown) => proof.cleanupErrors.push({ step, error: mask(error) });
     for (const controller of controllers) controller.abort(); await Promise.allSettled([...pending]);
     if (replaced) {
@@ -1208,6 +1296,8 @@ async function runSmoke(setup: Setup) {
         await mustBeAbsent(join(setup.machineDirectory, name));
       assert.equal(hash(await readFile(setup.freezeFile)), hash(setup.freezeBytes));
       const finalRecords = JSON.parse(await readFile(join(setup.root, 'machines.json'), 'utf8'));
+      /** 仅剔除允许随观测变化的 lastUsedAt，保留其他字段进行前后不变性比较。
+       * Remove only observational lastUsedAt and retain every other field for before/after immutability comparison. */
       const stable = (value: any) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'lastUsedAt'));
       assert.equal(finalRecords.length, 1); assert.deepEqual(stable(finalRecords[0]), stable(setup.record));
       const ownIds = new Set([...owners.keys(), ...ownPlainRuns]);

@@ -1,5 +1,6 @@
 /**
  * 模块职责：声明插件可读取的服务键与接口，作为插件依赖声明的统一类型边界。
+ * Module purpose: Declares readable plugin service keys/interfaces as the shared dependency-contract boundary.
  */
 import type { BackupsV1, BundlesV1, CodeIntelligenceV1, CommandPresetsV1, ContainersV1, DataMigrationV1, DebugAdapterV1, DesktopsV1, DownloadsV1, ExtendedFeaturesV1, FeatureSuiteV1, FileHistoryV1, FileLocksV1, FilesV1, FolderSyncV1, GitWorkbenchV1, IdeV1, ImagesV1, JobsV1, LanguageServicesV1, MaintenanceV1, MetricsV1, NetworkProfilesV1, NextFeaturesV1, PipelinesV1, ProjectFilesV1, RecipesV1, RuntimeVersionsV1, SecretsV1, ServiceHealthV1, ToolchainsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 /** Read-only public contracts. Every convenience access resolves a revocable ServiceRef. */

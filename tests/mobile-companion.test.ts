@@ -1,7 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - mobile companion pairs through a bounded code and filters durable read-only feeds
- * - mobile disconnect revokes its server credential
+ * 模块职责：回归验证模块，围绕 `mobile-companion` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `mobile-companion`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: mobile companion pairs through a bounded code and filters durable read-only feeds; mobile disconnect revokes its server credential.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,12 +19,33 @@ const vmA = '00000000-0000-4000-8000-000000000002';
 const vmB = '00000000-0000-4000-8000-000000000003';
 const defaultPolicy = { enabled: true, vmIds: [vmA], kinds: ['cpu'] };
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: mobile companion pairs through a bounded code and filters durable read-only feeds
+ * 状态影响 / State effects: `now`, `service`, `allowed`, `ownerPresent`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `t.after`.
+ * 检查边界 / Checked boundaries: `assert.ok(address && typeof address !== 'string')`; `assert.equal(page.status, 200)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('mobile companion pairs through a bounded code and filters durable read-only feeds', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-mobile-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const file = join(directory, 'mobile.json');
   let now = Date.UTC(2026, 0, 1), ownerPresent = true, allowed = true;
-  const access = { enabled: true, users: () => ownerPresent
+  const access = { enabled: true, /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`ownerPresent ? [{ id: ownerId, role: 'owner' }] : []`）。
+   * Result: Return the branch-computed value (`ownerPresent ? [{ id: ownerId, role: 'owner' }] : []`).
+   * 验证场景 / Scenario: mobile companion pairs through a bounded code and filters durable read-only feeds
+   */
+  users: () => ownerPresent
     ? [{ id: ownerId, role: 'owner' }] : [] } as unknown as AccessControl;
   let service = new MobileCompanion(access, async () => ({
     vms: [{ id: vmA, name: 'Allowed', status: 'running' },
@@ -47,6 +70,15 @@ test('mobile companion pairs through a bounded code and filters durable read-onl
   assert.ok(address && typeof address !== 'string');
   const base = `http://127.0.0.1:${address.port}`;
   const origin = `https://127.0.0.1:${address.port}`;
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: path: string; input: unknown; extra: Record<string, string> = {}。
+   * 结果：返回分支计算值（`fetch(base + path, { method: 'POST', headers: { origin, 'content-type': 'applica…`）。
+   * Result: Return the branch-computed value (`fetch(base + path, { method: 'POST', headers: { origin, 'content-type': 'applica…`).
+   * 验证场景 / Scenario: mobile companion pairs through a bounded code and filters durable read-only feeds
+   * 协作入口 / Collaborators: `fetch`, `JSON.stringify`.
+   */
   const post = (path: string, input: unknown, extra: Record<string, string> = {}) =>
     fetch(base + path, { method: 'POST', headers: { origin, 'content-type': 'application/json',
       ...extra }, body: JSON.stringify(input) });
@@ -101,10 +133,30 @@ test('mobile companion pairs through a bounded code and filters durable read-onl
   assert.equal((await fetch(base + '/mobile/feed', { headers: { cookie } })).status, 401);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: mobile disconnect revokes its server credential
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `t.after`.
+ * 检查边界 / Checked boundaries: `assert.ok(address && typeof address !== 'string')`; `assert.ok('code' in pairing && typeof pairing.code === 'string')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('mobile disconnect revokes its server credential', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-mobile-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const access = { enabled: true, users: () => [{ id: ownerId, role: 'owner' }] } as
+  const access = { enabled: true, /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回列表形式的受控数据，供调用者遍历或比较。
+   * Result: Return controlled data as a list for iteration or comparison.
+   * 验证场景 / Scenario: mobile disconnect revokes its server credential
+   */
+  users: () => [{ id: ownerId, role: 'owner' }] } as
     unknown as AccessControl;
   const service = new MobileCompanion(access, async () => ({
     vms: [{ id: vmA, name: 'Allowed', status: 'running' }], alerts: [] }),

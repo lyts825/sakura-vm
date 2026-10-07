@@ -1,3 +1,7 @@
+# 模块职责：systemd 有效策略模型，核对生产控制器如何组合服务属性与拒绝不安全配置。
+# Module: Models for effective systemd policy, checking how production controllers combine service properties and reject unsafe configuration.
+# 阅读方式：按初始化、具名辅助函数与测试情景阅读；便携模型与模拟接口不能证明真实 Linux 隔离。
+# Reading guide: Follow initialization, named helpers and cases; portable models and substituted interfaces do not attest real Linux isolation.
 # 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
 """Effective systemd policy models; no claim of a live systemd guest proof."""
 import ast
@@ -17,6 +21,13 @@ import uuid
 source = Path(sys.argv[1]).read_bytes()
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：返回分支计算值（`(ns, responses, queries, files, directories)`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`(ns, responses, queries, files, directories)`); its implementation and call sites define the actual type.
+# 状态影响 / State effects: `ns['tool']`, `ns['directory_fd']`, `ns['egress_nnp_directory']`, `ns['egress_boot_read']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `dict`, `ast.parse`, `ast.Module`, `isinstance`.
 def fixture():
     ns = dict(base64=base64, hashlib=hashlib, json=json, os=os, re=re, stat=stat, struct=struct, uuid=uuid)
     tree = ast.parse(source)
@@ -36,6 +47,13 @@ def fixture():
                                     listdir=lambda path: directories.get(path, []),
                                     open=lambda *_args, **_kwargs: 20, close=lambda *_: None,
                                     fstat=lambda _: types.SimpleNamespace(st_mode=stat.S_IFREG | 0o755, st_uid=0, st_nlink=1))
+    # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+    # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+    # 输入 / Inputs: argv, **kwargs。
+    # 结果：返回分支计算值（`responses[unit]`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`responses[unit]`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `dict`, `len`, `argv[5].startswith`, `queries.append`.
+    # 检查边界 / Checked boundaries: `argv[:5] == ['systemctl', 'show', '--system', '--no-pager', '--all']`; `kwargs == dict(executable='/proc/self/fd/20', pass_fds=(20,), timeout=15)`.
     def execute(argv, **kwargs):
         assert argv[:5] == ['systemctl', 'show', '--system', '--no-pager', '--all']
         assert kwargs == dict(executable='/proc/self/fd/20', pass_fds=(20,), timeout=15)
@@ -47,11 +65,23 @@ def fixture():
     return ns, responses, queries, files, directories
 
 
+# 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+# English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+# 输入 / Inputs: flags = ''。
+# 结果：返回分支计算值（`'{ path=/usr/sbin/sshd ; argv[]=/usr/sbin/sshd -D ; flags=' + flags + ' ; start_time=[] ; stop_time=…`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`'{ path=/usr/sbin/sshd ; argv[]=/usr/sbin/sshd -D ; flags=' + flags + ' ; start_time=[] ; stop_time=…`); its implementation and call sites define the actual type.
 def command(flags=''):
     return '{ path=/usr/sbin/sshd ; argv[]=/usr/sbin/sshd -D ; flags=' + flags + \
            ' ; start_time=[] ; stop_time=[] ; pid=0 ; code=(null) ; status=0/0 }'
 
 
+# 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+# English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+# 输入 / Inputs: unit, **changes。
+# 结果：返回分支计算值（`('\n'.join(lines) + '\n').encode()`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`('\n'.join(lines) + '\n').encode()`); its implementation and call sites define the actual type.
+# 状态影响 / State effects: `values[key[:-2]]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `re.fullmatch`, `dict`, `account.group`, `command().replace`.
 def reply(unit, **changes):
     account = re.fullmatch(r'user@([1-9][0-9]*)\.service', unit)
     values = dict(Id=unit, LoadState='loaded', ActiveState='inactive', NeedDaemonReload='no', NoNewPrivileges='yes',
@@ -69,12 +99,26 @@ def reply(unit, **changes):
     return ('\n'.join(lines) + '\n').encode()
 
 
+# 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+# English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+# 输入 / Inputs: ns, files, directories, name。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `files[folder + '/sakura-project-egress.conf']`, `directories[folder]`. Follow the actual model assignments / 以模型中的实际赋值为准。
 def install_gate(ns, files, directories, name):
     folder = '/etc/systemd/system/' + name + '.d'
     files[folder + '/sakura-project-egress.conf'] = ns['EGRESS_SYSTEMD_GATE']
     directories[folder] = ['sakura-project-egress.conf']
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: ns, call, code。
+# 结果：返回分支计算值（`error.detail`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`error.detail`); its implementation and call sites define the actual type.
+# 失败 / Failure: `AssertionError('expected ' + code)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `call`, `AssertionError`.
+# 检查边界 / Checked boundaries: `error.code == code`.
 def refused(ns, call, code):
     try:
         call()
@@ -84,6 +128,14 @@ def refused(ns, call, code):
     raise AssertionError('expected ' + code)
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `responses[unit]`, `responses['user@20001.service']`, `responses['sshd.service']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `reply`, `ns['egress_systemd_nnp']`, `refused`.
+# 检查边界 / Checked boundaries: `queries == ['sshd.service', 'user@20001.service']`; `detail['service'] == 'user@20001.service' and detail['reason'] == 'effective-no-new-privileges'`.
 def effective_values_and_template_instance():
     ns, responses, queries, _files, _directories = fixture()
     for unit in ('sshd.service', 'user@20001.service'):
@@ -107,6 +159,14 @@ def effective_values_and_template_instance():
     ns['egress_systemd_nnp'](('sshd.service',))
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `responses['sshd.service']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `reply`, `command`, `refused`.
+# 检查边界 / Checked boundaries: `b'ExecStartPre' not in responses['sshd.service']`.
 def full_privilege_prefix_and_complete_flags():
     ns, responses, _queries, _files, _directories = fixture()
     commands = ('ExecStartEx', 'ExecStartPreEx', 'ExecStartPostEx', 'ExecConditionEx', 'ExecReloadEx', 'ExecStopEx', 'ExecStopPostEx')
@@ -132,6 +192,14 @@ def full_privilege_prefix_and_complete_flags():
     refused(ns, lambda: ns['egress_systemd_nnp'](('sshd.service',)), 'EGRESS_NNP_SERVICE_UNSUPPORTED')
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `directories['/usr/lib/systemd/system/service.d']`, `files['/usr/lib/systemd/system/service.d/10-timeout.conf']`, `responses['atd.service']`, `files[extra]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `install_gate`, `reply`, `ns['egress_systemd_nnp']`.
+# 检查边界 / Checked boundaries: `queries == ['atd.service', '<manager>', 'atd.service', '<manager>']`; `detail['reason'] == 'unqualified-extra-dropin' and detail['path'] == extra`.
 def absent_units_are_separate_from_live_protection():
     ns, responses, queries, files, directories = fixture()
     install_gate(ns, files, directories, 'atd.service')
@@ -160,6 +228,14 @@ def absent_units_are_separate_from_live_protection():
     assert detail['reason'] == 'unit-search-path-unavailable'
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `responses[prefix + '@sakura-nnp-check.service']`, `directories['/etc/systemd/system']`, `responses['ssh@operator.service']`, `directories['/etc/systemd/system/ssh@operator.service.d']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `reply`, `refused`, `ns['egress_systemd_nnp']`.
+# 检查边界 / Checked boundaries: `detail['service'] == 'ssh@operator.service'`; `queries == ['<manager>', 'ssh@sakura-nnp-check.service', 'sshd@sakura-nnp-check.service', 'ssh@opera…`.
 def ssh_templates_and_installed_instances():
     ns, responses, queries, files, directories = fixture()
     for prefix in ('ssh', 'sshd'):
@@ -179,6 +255,14 @@ def ssh_templates_and_installed_instances():
     refused(ns, lambda: ns['egress_systemd_nnp'](('ssh@.service',)), 'EGRESS_NNP_SERVICE_UNSUPPORTED')
 
 
+# 中文功能：核对模型证据或测试条件，按实现返回判定或拒绝不符合要求的输入。
+# English: Check model evidence or test conditions, returning a decision or rejecting inputs as specified by the implementation.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['egress_nnp_configuration']`, `ns['egress_systemd_nnp']`, `ns['egress_nnp_live']`, `ns['binding_read']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `ns['egress_nnp_check']`, `events.clear`, `dict`.
+# 检查边界 / Checked boundaries: `events == [('configuration',), ('effective', ('user@20001.service',)), ('live', 20001, 'systemd')]`; `result == dict(version=1, privateAccounts=1)`.
 def admission_and_restore_check_real_user_instances():
     ns, _responses, _queries, _files, _directories = fixture()
     events = []
@@ -199,10 +283,24 @@ def admission_and_restore_check_real_user_instances():
     assert not any(event[0] == 'live' for event in events), 'early restoration does not wait for daemons or restart sessions'
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `responses['ssh.service']`, `responses['sshd.service']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `dict`, `raw`, `ns['egress_systemd_ssh_state']`.
+# 检查边界 / Checked boundaries: `ns['egress_systemd_ssh_state'](20, 'ssh.service') == values`; `ns['egress_systemd_ssh_state'](20, 'sshd.service') == values`.
 def ssh_listener_authority_strict_properties():
     ns, responses, queries, _files, _directories = fixture()
     values = dict(Id='ssh.service', LoadState='loaded', ActiveState='active', SubState='running',
                   NeedDaemonReload='no', NoNewPrivileges='yes', MainPID='1040', ControlGroup='/system.slice/ssh.service')
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: changes = None。
+    # 结果：返回分支计算值（`('\n'.join((key + '=' + value for key, value in result.items())) + '\n').encode()`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`('\n'.join((key + '=' + value for key, value in result.items())) + '\n').encode()`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `dict`, `('\n'.join((key + '=' + value for key, value in result.items())) + '\n').encode`, `'\n'.join`, `result.items`.
     def raw(changes=None):
         result = dict(values, **(changes or {}))
         return ('\n'.join(key + '=' + value for key, value in result.items()) + '\n').encode()

@@ -1,5 +1,6 @@
 /**
  * 模块职责：从操作目录生成公开 OpenAPI 文档，保持请求和响应说明与服务声明一致。
+ * Module purpose: Generates public OpenAPI documentation from operations so request/response contracts remain aligned with declarations.
  */
 import { PLUGINS } from '../shared/plugins.ts';
 import type { ApiDocument, ApiParameter } from '../shared/api-document.ts';
@@ -7,6 +8,17 @@ import { operationDirectory, operationEntries } from './operation-catalog.ts';
 import { APP_VERSION } from '../shared/version.ts';
 import { z } from 'zod';
 
+/**
+ * 入口 / Entry: apiDocument.
+ * 功能：从已声明操作及当前启用插件生成 OpenAPI 请求、响应和权限文档。
+ * Purpose: Generates OpenAPI request/response/authority documentation from declared operations and enabled plugins.
+ * 设计：只发布目录中可核对的契约，文档生成不加载任意插件实现或执行领域动作。
+ * Design: Only verifiable catalogue contracts are published; generation does not execute domain actions or arbitrary plugin implementations.
+ * 输入 / Inputs: active: Iterable<string>; port: number; catalogVersion: default=0
+ * 输出 / Returns: ApiDocument；结果来自 / values from `document`.
+ * 副作用 / Effects: `parameters.push`; 更新 / updates `(document.paths[policy.path] ||= {})[policy.method.toLowerCase()]`, `document.paths[policy.path]`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function apiDocument(active: Iterable<string>, port: number, catalogVersion = 0): ApiDocument {
   const enabled = new Set(active);
   const directory = operationDirectory(enabled);

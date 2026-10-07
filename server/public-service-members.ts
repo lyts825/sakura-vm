@@ -1,7 +1,10 @@
 // Generated from independent versioned interfaces by scripts/service-contracts.ts.
 // 公开服务能力目录：仅由独立版本接口生成成员、方法及嵌套返回关系，供服务代理校验能力边界。
+// Public service capabilities: derive members/methods/nested returns only from independent versioned interfaces for broker capability checks.
 import type { ServiceContract } from './service-ref.ts';
 
+/** 以稳定服务 ID 索引能力描述；members/optional/methods 限制公开访问，properties/returns 指向嵌套服务关系，描述数据不直接执行方法。
+ * Index capabilities by stable service ID; members/optional/methods bound public access and properties/returns identify nested services. Descriptor data does not execute methods. */
 export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<any>>> = {
   "sakura.service.access-control.v1": {
     "id": "sakura.service.access-control.v1",

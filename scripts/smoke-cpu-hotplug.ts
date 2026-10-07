@@ -1,4 +1,5 @@
-/** 烟雾验收：验证Debian/TCG 的 CPU 热插拔、在线 CPU 数和重启持久性。 */
+/** 烟雾验收：验证Debian/TCG 的 CPU 热插拔、在线 CPU 数和重启持久性。
+ * Smoke acceptance for Debian/TCG CPU hotplug, online CPU count and reboot persistence. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

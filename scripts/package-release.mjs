@@ -1,4 +1,5 @@
-/** 将编译服务、前端、见证程序和运行脚本组装成可安装发行包，随后生成完整性清单。 */
+/** 将编译服务、前端、见证程序和运行脚本组装成可安装发行包，随后生成完整性清单。
+ * Assemble the verified release layout and its complete manifest from build artifacts and fixed runtime preparation entries. */
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';

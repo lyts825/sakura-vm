@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - a QEMU launch failure removes the unpublished incoming target
- * - incoming target atomically adopts source identity and persists a non-bootable prepared record
- * - target preparation replays its original receipt and reconstructs the same transfer after host restart
+ * 模块职责：回归验证模块，围绕 `live-migration-target` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `live-migration-target`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: a QEMU launch failure removes the unpublished incoming target; incoming target atomically adopts source identity and persists a non-bootable prepared record.
  */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
@@ -29,9 +30,39 @@ after(async () => {
   await rm(resolved, { recursive: true, force: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a QEMU launch failure removes the unpublished incoming target
+ * 协作入口 / Collaborators: `writeFile`, `machines.init`, `assert.rejects`, `receiver.prepare`.
+ * 检查边界 / Checked boundaries: `assert.rejects(receiver.prepare({ requesterId: randomUUID(), sourceVmId: randomUUID(), transferId: randomUUID(), config: { name: '…`; `assert.equal(registered, false)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('a QEMU launch failure removes the unpublished incoming target', async () => {
   await writeFile(process.env.SAKURA_IMAGE_PATH!, 'synthetic base');
-  const engine = { qemuIoAvailable: false, runtime: { close: async () => {} },
+  const engine = { qemuIoAvailable: false, runtime: { /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: a QEMU launch failure removes the unpublished incoming target
+   */
+  close: async () => {} },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: tool: string; args: string[]。
+     * 结果：返回分支计算值（`writeFile(args.at(-2)!, 'synthetic overlay')`），以 Promise 交付。
+     * Result: Return the branch-computed value (`writeFile(args.at(-2)!, 'synthetic overlay')`) through a Promise.
+     * 验证场景 / Scenario: a QEMU launch failure removes the unpublished incoming target
+     * 失败 / Failure: `new Error('injected QEMU launch failure')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `writeFile`, `args.at`.
+     */
     run: async (tool: string, args: string[]) => {
       if (tool === 'sakura-img') return writeFile(args.at(-2)!, 'synthetic overlay');
       throw new Error('injected QEMU launch failure');
@@ -40,7 +71,25 @@ test('a QEMU launch failure removes the unpublished incoming target', async () =
   const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   let registered = false;
-  const peers = { registerMigrationSession: () => { registered = true; return randomUUID(); },
+  const peers = { /**
+   * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+   * English: Generate or verify digest and identity material required by this suite.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`randomUUID()`）。
+   * Result: Return the branch-computed value (`randomUUID()`).
+   * 验证场景 / Scenario: a QEMU launch failure removes the unpublished incoming target
+   * 状态影响 / State effects: `registered`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `randomUUID`.
+   */
+  registerMigrationSession: () => { registered = true; return randomUUID(); },
+    /**
+     * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+     * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: a QEMU launch failure removes the unpublished incoming target
+     */
     closeMigrationSession: () => {} } as unknown as HostPeers;
   try {
     const receiver = new LiveMigrationReceiver(machines, peers);
@@ -56,9 +105,39 @@ test('a QEMU launch failure removes the unpublished incoming target', async () =
   } finally { await machines.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: incoming target atomically adopts source identity and persists a non-bootable prepared record
+ * 协作入口 / Collaborators: `writeFile`, `machines.init`, `randomUUID`, `createSshKey`.
+ * 检查边界 / Checked boundaries: `assert.rejects(machines.createIncomingTarget({ name: 'invalid' }, { key: 'not a private key', seed: identity.seed, }, source), /身份…`; `assert.equal((await machines.createIncomingTarget({ name: 'target' }, identity, source)).id, target.id)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('incoming target atomically adopts source identity and persists a non-bootable prepared record', async () => {
   await writeFile(process.env.SAKURA_IMAGE_PATH!, 'synthetic base');
-  const engine = { qemuIoAvailable: false, runtime: { close: async () => {} },
+  const engine = { qemuIoAvailable: false, runtime: { /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: incoming target atomically adopts source identity and persists a non-bootable prepared record
+   */
+  close: async () => {} },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: tool: string; args: string[]。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: incoming target atomically adopts source identity and persists a non-bootable prepared record
+     * 失败 / Failure: `new Error(`Unexpected ${tool}`)`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `writeFile`, `args.at`.
+     */
     run: async (tool: string, args: string[]) => {
       if (tool !== 'sakura-img') throw new Error(`Unexpected ${tool}`);
       await writeFile(args.at(-2)!, 'synthetic overlay');
@@ -92,9 +171,39 @@ test('incoming target atomically adopts source identity and persists a non-boota
   } finally { await machines.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: target preparation replays its original receipt and reconstructs the same transfer after host restart
+ * 状态影响 / State effects: `restored`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `writeFile`, `machines.init`, `randomUUID`, `createSshKey`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(await receiver.prepare(input), receipt)`; `assert.equal(registered, 1)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('target preparation replays its original receipt and reconstructs the same transfer after host restart', async () => {
   await writeFile(process.env.SAKURA_IMAGE_PATH!, 'synthetic base');
-  const engine = { qemuIoAvailable: false, whpxAvailable: false, runtime: { close: async () => {} },
+  const engine = { qemuIoAvailable: false, whpxAvailable: false, runtime: { /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: target preparation replays its original receipt and reconstructs the same transfer after host restart
+   */
+  close: async () => {} },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: tool: string; args: string[]; options: { signal: AbortSignal }。
+     * 结果：返回分支计算值（`writeFile(args.at(-2)!, 'synthetic overlay')`），以 Promise 交付。
+     * Result: Return the branch-computed value (`writeFile(args.at(-2)!, 'synthetic overlay')`) through a Promise.
+     * 验证场景 / Scenario: target preparation replays its original receipt and reconstructs the same transfer after host restart
+     * 协作入口 / Collaborators: `writeFile`, `args.at`.
+     */
     run: async (tool: string, args: string[], options?: { signal: AbortSignal }) => {
       if (tool === 'sakura-img') return writeFile(args.at(-2)!, 'synthetic overlay');
       await new Promise<void>(resolve => options!.signal.addEventListener('abort', () => resolve(), { once: true }));
@@ -105,12 +214,47 @@ test('target preparation replays its original receipt and reconstructs the same 
   const sessions = new Set<string>();
   let registered = 0;
   const peers = {
+    /**
+     * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+     * English: Generate or verify digest and identity material required by this suite.
+     * 输入 / Inputs: _requester: string; ports: { sessionId?: string }。
+     * 结果：返回分支计算值（`id`）。
+     * Result: Return the branch-computed value (`id`).
+     * 验证场景 / Scenario: target preparation replays its original receipt and reconstructs the same transfer after host restart
+     * 协作入口 / Collaborators: `randomUUID`, `sessions.add`.
+     */
     registerMigrationSession: (_requester: string, ports: { sessionId?: string }) => {
       registered++; const id = ports.sessionId || randomUUID(); sessions.add(id); return id;
     },
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: id: string。
+     * 结果：返回分支计算值（`sessions.has(id)`）。
+     * Result: Return the branch-computed value (`sessions.has(id)`).
+     * 验证场景 / Scenario: target preparation replays its original receipt and reconstructs the same transfer after host restart
+     * 协作入口 / Collaborators: `sessions.has`.
+     */
     matchesMigrationSession: (id: string) => sessions.has(id),
+    /**
+     * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+     * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+     * 输入 / Inputs: id: string。
+     * 结果：返回分支计算值（`sessions.delete(id)`）。
+     * Result: Return the branch-computed value (`sessions.delete(id)`).
+     * 验证场景 / Scenario: target preparation replays its original receipt and reconstructs the same transfer after host restart
+     * 协作入口 / Collaborators: `sessions.delete`.
+     */
     closeMigrationSession: (id: string) => sessions.delete(id),
   } as unknown as HostPeers;
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: _port: number; command: string。
+   * 结果：返回分支计算值（`command === 'query-status' ? { running: false, status: 'inmigrate' } : [{ device…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`command === 'query-status' ? { running: false, status: 'inmigrate' } : [{ device…`) through a Promise.
+   * 验证场景 / Scenario: target preparation replays its original receipt and reconstructs the same transfer after host restart
+   */
   const query = async (_port: number, command: string) => command === 'query-status'
     ? { running: false, status: 'inmigrate' }
     : [{ device: 'sakura-disk', inserted: { ro: false, 'node-name': '#target', image: { 'virtual-size': 8 * 1024 ** 3 } } }];

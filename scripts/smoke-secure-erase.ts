@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实来宾文件预览、覆盖、核实、移除及操作记录。 */
+/** 烟雾验收：验证真实来宾文件预览、覆盖、核实、移除及操作记录。
+ * Smoke acceptance for actual file preview/overwrite/verify/removal and operation records. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -33,6 +34,8 @@ try {
   assert.equal((await machines.exec(vm.id,
     "printf 'private example' > /workspace/erase-me.txt && ln /workspace/erase-me.txt /workspace/hardlink.txt && ln -s erase-me.txt /workspace/symlink.txt")).code, 0);
 
+  /** 经公开 secure-erase 操作提交输入，等待任务结束并返回完整任务记录；场景据最终状态判断擦除/拒绝。
+   * Submit through public secure-erase, await completion and return the full job record for scenario assertions on erasure/denial. */
   async function task(options: Record<string, unknown>) {
     const job = await features.action(vm.id,
       { action: 'run', featureId: 'secure-erase', options }) as JobView;

@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：真实原生祖先夹具驱动 TLS/DLL 创建及后续普通、暂停、ANSI、令牌创建，私有管道保留精确孩子句柄用于恢复和标准句柄对象比对。
+ * Module responsibilities (English): A real native ancestor drives TLS/DLL creation and later ordinary/suspended/ANSI/token launches, retaining exact children through a private pipe for resume and standard-handle object comparison.
+ */
 /** 原生后代父进程夹具，驱动 TLS 初始化、创建请求和管道命令，记录精确父子身份与退出结果。 */
 #include "fixture-descendant.h"
 #include "fixture-descendant-token.h"
@@ -5,16 +9,19 @@
 #include <sstream>
 
 static SakuraDescendantInitEvidence exeInitialization{};
+/** 中文：EXE 进程附加 TLS 阶段执行指定后代创建并保存证据，其他通知不操作。 English: Run the requested descendant creation at EXE process-attach TLS and save evidence, ignoring other notifications. 参数声明 / Declared parameters: PVOID,DWORD reason,PVOID. */
 static void NTAPI descendantFixtureExeTls(PVOID,DWORD reason,PVOID) {
   if(reason==DLL_PROCESS_ATTACH)exeInitialization=descendantFixtureInitialize(L"exe-tls");
 }
 PIMAGE_TLS_CALLBACK descendantFixtureExeCallback __attribute__((section(".CRT$XLB"),used))=descendantFixtureExeTls;
+/** 中文：严格解码管道 UTF-8 参数，非法或空转换返回空，供后续创建前校验。 English: Strictly decode UTF-8 pipe arguments, returning empty on invalid/empty conversion for subsequent prelaunch validation. 参数声明 / Declared parameters: const std::string& text. */
 static std::wstring fromUtf8(const std::string& text) {
   const int size=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),int(text.size()),nullptr,0);
   if(size<=0)return {};std::wstring answer(size,L'\0');
   if(!MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),int(text.size()),answer.data(),size))return {};
   return answer;
 }
+/** 中文：按 owner/PID/创建时间读取祖先共享策略，检查活动、状态和偶数序列后释放视图与段。 English: Read ancestor policy by owner/PID/creation time, check active/status/even sequence then release the view/section. 参数声明 / Declared parameters: const std::wstring& owner. */
 static bool parentReady(const std::wstring& owner) {
   const auto name=L"Local\\SakuraClipboard."+owner+L"."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(processCreation(GetCurrentProcess()));
   HANDLE section=OpenFileMappingW(FILE_MAP_READ,FALSE,name.c_str());
@@ -22,9 +29,11 @@ static bool parentReady(const std::wstring& owner) {
   const bool ready=data && data->status==1 && data->active && data->pid==GetCurrentProcessId() && !(data->sequence&1);
   if(data)UnmapViewOfFile(data);if(section)CloseHandle(section);return ready;
 }
+/** 中文：一次写入完整响应字节，仅实际写入长度等于输入长度才报告成功。 English: Write a complete response and report success only when the actual byte count equals the input length. 参数声明 / Declared parameters: HANDLE pipe,const std::string& text. */
 static bool lineWrite(HANDLE pipe,const std::string& text) {
   DWORD count=0;return WriteFile(pipe,text.data(),DWORD(text.size()),&count,nullptr) && count==text.size();
 }
+/** 中文：逐字节读取换行命令、忽略 CR 并限制到 32768 字节，断开或超限返回 false。 English: Read newline commands bytewise, ignore CR and bound them to 32768 bytes, returning false on disconnect/overflow. 参数声明 / Declared parameters: HANDLE pipe,std::string& result. */
 static bool lineRead(HANDLE pipe,std::string& result) {
   result.clear();char character=0;DWORD count=0;
   while(ReadFile(pipe,&character,1,&count,nullptr) && count) {
@@ -32,6 +41,7 @@ static bool lineRead(HANDLE pipe,std::string& result) {
   }
   return false;
 }
+/** 中文：先选择私有 station/desktop 并报告 TLS/DLL 创建证据，处理 spawn/resume/令牌和标准句柄身份命令；保留成功孩子精确句柄用于后续操作并最终关闭。 English: Select private station/desktop and report TLS/DLL creation evidence, then process spawn/resume/token/standard-handle identity commands; retain exact successful child handles for later actions and close them at exit. */
 int wmain() {
   const auto owner=descendantFixtureArgument(L"--descendant-owner=");const bool entry=parentReady(owner);
   const auto stationName=descendantFixtureArgument(L"--descendant-station="),pipeName=descendantFixtureArgument(L"--descendant-pipe=");
@@ -63,6 +73,7 @@ int wmain() {
     }
     if(fields.size()==5 && fields[0]=="std-identities"){
       const DWORD pid=DWORD(std::stoul(fields[1]));bool identical=false;
+      /** 中文：声明 CompareObjectHandles 的动态调用签名，以精确内核对象比较确认继承标准句柄身份。 English: Declare the dynamic CompareObjectHandles signature for exact-kernel-object comparison of inherited standard handles. 参数声明 / Declared parameters: HANDLE,HANDLE. */
       using Compare=BOOL(WINAPI*)(HANDLE,HANDLE);
       const auto compare=reinterpret_cast<Compare>(GetProcAddress(GetModuleHandleW(L"kernelbase.dll"),"CompareObjectHandles"));
       for(size_t index=0;index<children.size();++index)if(children[index].dwProcessId==pid && tokenOwners[index].standard && compare){

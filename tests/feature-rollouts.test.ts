@@ -1,7 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - versioned host rollout survives restart and gates selected plugin activation
- * - rollout percentage uses a stable versioned cohort and cannot bypass a disabled flag
+ * 模块职责：回归验证模块，围绕 `feature-rollouts` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `feature-rollouts`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: versioned host rollout survives restart and gates selected plugin activation; rollout percentage uses a stable versioned cohort and cannot bypass a disabled flag.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,6 +16,19 @@ import { Features } from '../server/features.ts';
 import { PluginManager } from '../server/plugin-manager.ts';
 import type { Machines } from '../server/machines.ts';
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: versioned host rollout survives restart and gates selected plugin activation
+ * 状态影响 / State effects: `blocked`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `t.after`.
+ * 检查边界 / Checked boundaries: `assert.equal(rollouts.decision('metrics').allowed, true)`; `assert.equal(rollouts.decision('metrics').allowed, false)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('versioned host rollout survives restart and gates selected plugin activation', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'sakura-rollout-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -45,7 +60,15 @@ test('versioned host rollout survives restart and gates selected plugin activati
   const installed = new PluginManager(managerFile);
   const selected = await installed.init();
   const machines = Object.assign(new EventEmitter(), {
-    records: new Map(), get: () => ({}),
+    records: new Map(), /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({})`）。
+     * Result: Return the branch-computed value (`({})`).
+     * 验证场景 / Scenario: versioned host rollout survives restart and gates selected plugin activation
+     */
+    get: () => ({}),
   }) as unknown as Machines;
   const skipped = await installed.start(machines,
     (id) => restarted.decision(id).allowed);
@@ -69,6 +92,18 @@ test('versioned host rollout survives restart and gates selected plugin activati
   await restarted.close();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: rollout percentage uses a stable versioned cohort and cannot bypass a disabled flag
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `t.after`.
+ * 检查边界 / Checked boundaries: `assert.ok('bucket' in preview)`; `assert.equal(service.decision('metrics').bucket, preview.bucket)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('rollout percentage uses a stable versioned cohort and cannot bypass a disabled flag', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'sakura-rollout-'));
   t.after(() => rm(root, { recursive: true, force: true }));

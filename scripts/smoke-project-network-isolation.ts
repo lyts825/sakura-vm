@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目私有网络与隔离通信的实际行为。 */
+/** 烟雾验收：验证项目私有网络与隔离通信的实际行为。
+ * Smoke acceptance for actual private project networking and isolated communication. */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -34,22 +35,31 @@ const git = new GitWorkbench(machines, features.workspaces);
 const runtimes = new RuntimeVersions(machines, features.workspaces);
 const toolchains = new Toolchains(machines, features.workspaces);
 const ide = new Ide(machines, features.workspaces, join(directory, 'host-ssh'));
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function command(id: string, script: string, timeout = 10_000) {
   const result = await machines.exec(id, script, timeout);
   assert.equal(result.code, 0, result.stderr || result.stdout);
   return result.stdout.trim();
 }
+/** 等待指定任务收敛并读取最终记录，必须为 done 才返回；失败状态附任务错误和日志，避免把排队成功误作执行成功。
+ * Await the requested job and read its final record, returning only for done; failures include job errors/logs so acceptance into the queue is not mistaken for execution success. */
 async function job(id: string, projectId = 'default') {
   const key = projectId === 'default' ? id : `${id}:${projectId}`;
   await features.workspaces.jobs.wait(key);
   const result = features.workspaces.jobs.view(key);
   assert.equal(result?.status, 'done', result?.error + '\n' + result?.log);
 }
+/** 通过真实 SSH PTY 执行项目 shell 并输入网络域自检，收集有界 stdout/错误；十五秒内必须零退出，finally 结束 SSH。
+ * Run a real SSH PTY project shell/input network-domain checks, collect bounded stdout/errors and require zero exit within fifteen seconds, closing SSH in finally. */
 async function interactiveProjectShell(id: string, command: string) {
   const ssh = await machines.connect(id);
   try {
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>(/** 以真实 PTY 执行项目 shell，收集输出和退出码并设 15 秒截止；写入网络 namespace/routes 后 exit，Promise 以通道关闭为完成而非命令已送达。
+ * Execute the project shell through a real PTY, collect output/exit status with a fifteen-second deadline, write namespace/routes then exit; completion requires channel closure rather than command delivery. */ (resolve, reject) => {
       ssh.exec(command, { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
+        /** SSH exec 失败立即拒绝，否则挂接数据/错误/close 后发送固定网络观测并结束输入；close 清计时器且非零退出附诊断。
+         * Reject failed SSH exec immediately; otherwise attach data/error/close listeners before sending fixed network observations and ending input, clearing the timer on close and reporting nonzero-exit diagnostics. */
         (error, stream) => {
           if (error) return reject(error);
           let stderr = '', stdout = '';

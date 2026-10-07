@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - assistant redaction covers complete and partial keys, credentials, headers, URL credentials and known tokens
- * - actual HTTP model discovery, preflight and generation send only reviewed text; context and answers never persist
- * - expired previews, unsupported URLs, disabled integration and cloud aliases are rejected before sending context
+ * 模块职责：回归验证模块，围绕 `local-assistant` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `local-assistant`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: assistant redaction covers complete and partial keys, credentials, headers, URL credentials and known tokens; actual HTTP model discovery, preflight and generation send only reviewed text; context and answers never persist.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,17 +29,41 @@ const plan = {
     { purpose: '读取 Git 状态', command: 'git status --short', risk: 'read', verify: '检查输出和退出状态' },
   ],
 };
+/**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: content = 'Model answer'。
+ * 结果：返回分支计算值（`({ model: settings.model, done: true, message: { role: 'assistant', content }, }…`）。
+ * Result: Return the branch-computed value (`({ model: settings.model, done: true, message: { role: 'assistant', content }, }…`).
+ */
 const answer = (content = 'Model answer') => ({
   model: settings.model,
   done: true,
   message: { role: 'assistant', content },
 });
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: t: test.TestContext; fetcher: typeof fetch。
+ * 结果：返回受控对象，公开字段包括 `file, create, advance`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `file, create, advance`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.ok(resolve(directory).startsWith(resolve(tmpdir()) + sep))`.
+ */
 async function fixture(t: test.TestContext, fetcher?: typeof fetch) {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-local-assistant-'));
   assert.ok(resolve(directory).startsWith(resolve(tmpdir()) + sep));
   const file = join(directory, 'assistant.json');
   let now = Date.now();
   const managers: LocalAssistant[] = [];
+  /**
+   * 中文功能：构造测试所需的数据、身份、协议帧或适配器，保持生成结果可被本组断言观察。
+   * English: Construct test data, identity, protocol frames or adapters with results observable by this suite.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`manager`），以 Promise 交付。
+   * Result: Return the branch-computed value (`manager`) through a Promise.
+   * 协作入口 / Collaborators: `managers.push`, `manager.init`.
+   */
   const create = async () => {
     const manager = new LocalAssistant(file, fetcher, () => now);
     managers.push(manager);
@@ -52,12 +77,30 @@ async function fixture(t: test.TestContext, fetcher?: typeof fetch) {
   return {
     file,
     create,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: ms: number。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `now`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     advance: (ms: number) => {
       now += ms;
     },
   };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: assistant redaction covers complete and partial keys, credentials, headers, URL credentials and known tokens
+ * 协作入口 / Collaborators: `redactAssistantContext`, `assert.ok`, `result.content.includes`, `headers.content.includes`.
+ * 检查边界 / Checked boundaries: `assert.ok(result.redactions >= 8)`; `assert.ok(result.content.includes('safe code'))`.
+ */
 test('assistant redaction covers complete and partial keys, credentials, headers, URL credentials and known tokens', () => {
   const secrets = [
     'PRIVATE_CONTENT',
@@ -80,9 +123,31 @@ test('assistant redaction covers complete and partial keys, credentials, headers
   assert.ok(!headers.content.includes('HIDDEN_'));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: actual HTTP model discovery, preflight and generation send only reviewed text; context and answers never persist
+ * 协作入口 / Collaborators: `createServer`, `t.after`, `fixture`, `f.create`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual( (await assistant.models()).models.map((model) => model.name), [settings.model], )`; `assert.equal(requests.length, 1, 'preview never contacts a model')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('actual HTTP model discovery, preflight and generation send only reviewed text; context and answers never persist', async (t) => {
   const requests: { path: string; body: any }[] = [];
-  const server = createServer(async (req, res) => {
+  const server = createServer(/**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: req; res。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: actual HTTP model discovery, preflight and generation send only reviewed text; context and answers never persist
+   * 状态影响 / State effects: `content`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `JSON.parse`, `requests.push`, `answer`, `JSON.stringify`.
+   */
+  async (req, res) => {
     let content = '';
     for await (const chunk of req) content += chunk;
     const body = content ? JSON.parse(content) : undefined;
@@ -143,6 +208,19 @@ test('actual HTTP model discovery, preflight and generation send only reviewed t
   await assert.rejects(restored.generate(preview.id), /过期/);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: expired previews, unsupported URLs, disabled integration and cloud aliases are rejected before sending context
+ * 状态影响 / State effects: `preview`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `f.create`, `assert.rejects`, `assistant.models`.
+ * 检查边界 / Checked boundaries: `assert.rejects(assistant.models(), /启用/)`; `assert.throws(() => assistant.configure(1, { ...settings, endpoint }))`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('expired previews, unsupported URLs, disabled integration and cloud aliases are rejected before sending context', async (t) => {
   let chats = 0;
   const f = await fixture(t, async (url, init) => {
@@ -179,6 +257,19 @@ test('expired previews, unsupported URLs, disabled integration and cloud aliases
   await assert.rejects(assistant.generate(preview.id), /过期/);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: invalid plans, incomplete answers, tool requests and oversized model responses never become actionable results
+ * 状态影响 / State effects: `output`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `answer`, `fixture`, `f.create`, `assistant.configure`.
+ * 检查边界 / Checked boundaries: `assert.rejects( assistant.generate(assistant.preview({ mode: 'plan', instruction: 'plan' }).id), /完整的命令计划/, )`; `assert.rejects( assistant.generate(assistant.preview({ mode: 'ask', instruction: 'answer' }).id), /响应/, )`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('invalid plans, incomplete answers, tool requests and oversized model responses never become actionable results', async (t) => {
   let output: any = answer('not json');
   const f = await fixture(t, async (url) =>
@@ -212,8 +303,28 @@ test('invalid plans, incomplete answers, tool requests and oversized model respo
   );
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: only one model operation runs, disconnect cancellation releases it, and shutdown aborts pending work
+ * 状态影响 / State effects: `ready`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `f.create`, `assistant.configure`, `assistant.models`.
+ * 检查边界 / Checked boundaries: `assert.rejects(assistant.models(), (error: any) => error.status === 429)`; `assert.rejects(first, /取消/)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('only one model operation runs, disconnect cancellation releases it, and shutdown aborts pending work', async (t) => {
-  let entered!: () => void;
+  let entered!: /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void;
   let ready = new Promise<void>((resolve) => {
     entered = resolve;
   });
@@ -244,8 +355,27 @@ test('only one model operation runs, disconnect cancellation releases it, and sh
   await assert.rejects(assistant.models(), /关闭/);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: saving new model settings cancels an in-flight request and never forwards old context to the new endpoint
+ * 协作入口 / Collaborators: `fixture`, `f.create`, `assistant.configure`, `assistant.generate`.
+ * 检查边界 / Checked boundaries: `assert.rejects(pending, /取消/)`; `assert.equal(calls.length, 1)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('saving new model settings cancels an in-flight request and never forwards old context to the new endpoint', async (t) => {
-  let entered!: () => void;
+  let entered!: /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void;
   const ready = new Promise<void>((resolve) => {
     entered = resolve;
   });

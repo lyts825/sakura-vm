@@ -1,5 +1,6 @@
 /**
  * 模块职责：提供宿主资源治理单例及契约导出，确保各领域共享同一预算与清理目录。
+ * Module purpose: Exports the shared host governor and contracts so all domains use the same budget and cleanup directory.
  */
 import { HostRuntime } from './governor.ts';
 

@@ -1,5 +1,6 @@
 /**
  * 模块职责：部署单应用控制器并校验账户、目录视图与退休回执，连接必须属于原完整运行域。
+ * Module purpose: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
  */
 import { quote } from './shell.ts';
 import { createHash } from 'node:crypto';
@@ -35,6 +36,15 @@ const process = z.object({ pid: z.number().int().positive(), created: decimal, i
 const supervisor = process;
 const endpoint = process.extend({ kernelInode: decimal }).strict();
 export const appRetirementSchema = z.object({ reason: z.literal('guest-reboot'), bootId: z.uuid() }).strict();
+/**
+ * 入口 / Entry: callback@50.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.object().strict().superRefine）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.object().strict().superRefine).
+ * 输入 / Inputs: value; ctx
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `ctx.addIssue`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const appReceiptSchema = z.object({ version: z.literal(1), id: z.uuid(), build: digest, origin: appOriginSchema,
   identity: projectIdentitySchema, run: projectIdentityRunSchema,
   state: z.enum(['preparing', 'prepared', 'starting', 'running', 'stopping', 'stopped']),
@@ -72,7 +82,27 @@ export const appRecoverySchema = z.object({ run: projectIdentityRunSchema.nullab
   .refine(value => Boolean(value.run) !== Boolean(value.absence));
 
 /** Canonical receipt hash only; the stream argv contains no app body or secrets. */
+/**
+ * 入口 / Entry: appOriginHash.
+ * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(canonical).digest('hex')` 供上层消费（`single-app-sandbox.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `single-app-sandbox.ts`; this entry produces `createHash('sha256').update(canonical).digest('hex')` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+ * 处理：通过 `sort`, `appOriginSchema.parse`, `createHash().update().digest`, `createHash().update` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `sort`, `appOriginSchema.parse`, `createHash().update().digest`, `createHash().update`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: origin: AppOrigin
+ * 输出 / Returns: `createHash('sha256').update(canonical).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function appOriginHash(origin: AppOrigin) {
+  /**
+   * 入口 / Entry: appOriginHash.sort.
+   * 功能：从当前输入或状态计算 `Array.isArray(value) ? value.map(sort) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().ma…`，供调用方后续验证或使用。
+   * Purpose: Computes `Array.isArray(value) ? value.map(sort) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().ma…` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: value: unknown
+   * 输出 / Returns: unknown；结果来自 / values from `Array.isArray(value) ? value.map(sort) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().ma…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const sort = (value: unknown): unknown => Array.isArray(value) ? value.map(sort) : value && typeof value === 'object'
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sort((value as Record<string, unknown>)[key])])) : value;
   // Match Python ensure_ascii=True, including surrogate pairs in literal args.
@@ -82,7 +112,26 @@ export function appOriginHash(origin: AppOrigin) {
 }
 
 export class SingleAppControl {
+  /**
+   * 入口 / Entry: SingleAppControl.constructor.
+   * 功能：建立 SingleAppControl 的部署单应用控制器并校验账户、目录视图与退休回执上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the SingleAppControl context for this module's responsibility: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; options: { sourceDirectory?: string } default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(private machines: Machines, private options: { sourceDirectory?: string } = {}) {}
+  /**
+   * 入口 / Entry: SingleAppControl.install.
+   * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `bundle.manifest.build` 供上层消费（`SingleAppControl`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `SingleAppControl`; this entry produces `bundle.manifest.build` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+   * 处理：通过 `singleAppSources`, `this.machines.get`, `this.machines.exec`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `singleAppSources`, `this.machines.get`, `this.machines.exec`, `quote`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; signal: AbortSignal optional
+   * 输出 / Returns: `bundle.manifest.build`.
+   * 副作用 / Effects: `this.machines.exec`; `this.machines.writeGuestFile`.
+   * 拒绝 / Refusals: 条件 / conditions `installed.code !== 0`; `created.code !== 0`; `committed.code !== 0`; 异常 / errors `new AppError('单应用图形环境或受控源码目录准备失败', 409, 'SINGLE_APP_INSTALL_FAILED')`; `new AppError('单应用源码暂存尚未完成，请保留并核对原暂存', 409, 'SINGLE_APP_INSTALL_PENDING')`.
+   */
   async install(id: string, signal?: AbortSignal) {
     const bundle = await singleAppSources(this.options.sourceDirectory), distro = this.machines.get(id).distro || 'alpine';
     const packages = distro === 'alpine'
@@ -124,11 +173,35 @@ export class SingleAppControl {
     if (committed.code !== 0) throw new AppError('单应用固定源码提交未确认', 409, 'SINGLE_APP_SOURCE_CHANGED');
     return bundle.manifest.build;
   }
+  /**
+   * 入口 / Entry: SingleAppControl.command.
+   * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S ` + quote('/usr/local/lib/sakura-sin…` 供上层消费（`SingleAppControl`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `SingleAppControl`; this entry produces ``env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S ` + quote('/usr/local/lib/sakura-sin…` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+   * 处理：通过 `digest.parse`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `digest.parse`, `quote`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: build: string; action: 'prepare' | 'start' | 'status' | 'stop' | 'recover' | 'prepare-run'
+   * 输出 / Returns: ``env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S ` + quote('/usr/local/lib/sakura-sin…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   command(build: string, action: 'prepare' | 'start' | 'status' | 'stop' | 'recover' | 'prepare-run') {
     digest.parse(build);
     return `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S ` +
       quote('/usr/local/lib/sakura-single-app/' + build + '/controller.py') + ' ' + action;
   }
+  /**
+   * 入口 / Entry: SingleAppControl.call.
+   * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `reply.result` 供上层消费（`SingleAppControl`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `SingleAppControl`; this entry produces `reply.result` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+   * 处理：通过 `appOriginSchema.parse`, `this.machines.execInput`, `this.command`, `inline.test` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `appOriginSchema.parse`, `this.machines.execInput`, `this.command`, `inline.test`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; build: string; action: 'prepare' | 'start' | 'status' | 'stop'; origin: AppOrigin; environment: Record<string, string> optional; signal: AbortSignal optional
+   * 输出 / Returns: `reply.result`.
+   * 副作用 / Effects: `this.machines.execInput`; 更新 / updates `origin`, `reply`.
+   * 拒绝 / Refusals: 条件 / conditions `input.length > 65536`; `response.code !== 0 || reply.ok !== true`; 异常 / errors `new AppError('单应用输入超过传输边界', 413, 'SINGLE_APP_REQUEST_TOO_LARGE')`; `new AppError('单应用控制应答未确认，原运行票据已保留', 503, 'SINGLE_APP_CONTROL_UNCONFIRMED')`.
+   * 失败处理：catch 分支执行 `throw new AppError('单应用控制应答未确认，原运行票据已保留', 503, 'SINGLE_APP_CONTROL_UNCONFIRMED');`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `throw new AppError('单应用控制应答未确认，原运行票据已保留', 503, 'SINGLE_APP_CONTROL_UNCONFIRMED');`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async call(id: string, build: string, action: 'prepare' | 'start' | 'status' | 'stop',
     origin: AppOrigin, environment?: Record<string, string>, signal?: AbortSignal) {
     origin = appOriginSchema.parse(origin);
@@ -147,6 +220,17 @@ export class SingleAppControl {
     }
     return reply.result;
   }
+  /**
+   * 入口 / Entry: SingleAppControl.recover.
+   * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `parsed.data.result` 供上层消费（`SingleAppControl`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `SingleAppControl`; this entry produces `parsed.data.result` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+   * 处理：通过 `this.machines.execInput`, `this.command`, `z.object().strict().safeParse`, `z.object().strict` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.execInput`, `this.command`, `z.object().strict().safeParse`, `z.object().strict`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; build: string; request: { id: string; identity: z.infer<typeof projectIdentitySchema>; bootId: string; native…
+   * 输出 / Returns: `parsed.data.result`.
+   * 副作用 / Effects: `this.machines.execInput`.
+   * 拒绝 / Refusals: 条件 / conditions `response.code !== 0 || !parsed.success`; 异常 / errors `new AppError('单应用原准备意图无法只读核销；未知原域或资源已保留', 503, 'SINGLE_APP_INTENT_CLEANUP_UNCONFIRMED')`.
+   */
   async recover(id: string, build: string, request: { id: string; identity: z.infer<typeof projectIdentitySchema>; bootId: string; nativeBuild: string }) {
     const response = await this.machines.execInput(id, this.command(build, 'recover'), Buffer.from(JSON.stringify(request)), 40000);
     const parsed = z.object({ ok: z.literal(true), result: appRecoverySchema }).strict().safeParse(
@@ -155,6 +239,17 @@ export class SingleAppControl {
       throw new AppError('单应用原准备意图无法只读核销；未知原域或资源已保留', 503, 'SINGLE_APP_INTENT_CLEANUP_UNCONFIRMED');
     return parsed.data.result;
   }
+  /**
+   * 入口 / Entry: SingleAppControl.prepareRun.
+   * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `parsed.data.result` 供上层消费（`SingleAppControl`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `SingleAppControl`; this entry produces `parsed.data.result` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+   * 处理：通过 `z.object().strict().parse`, `z.object().strict`, `z.object`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `z.object().strict().parse`, `z.object().strict`, `z.object`, `z.uuid`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; build: string; raw: { id: string; identity: z.infer<typeof projectIdentitySchema>; bootId: string; native…; signal: AbortSignal optional
+   * 输出 / Returns: `parsed.data.result`.
+   * 副作用 / Effects: `this.machines.execInput`.
+   * 拒绝 / Refusals: 条件 / conditions `response.code !== 0 || !parsed.success`; 异常 / errors `new AppError('单应用原来源的 native 准备应答未确认，请按原 UUID 核对', 503, 'SINGLE_APP_NATIVE_PREPARE_UNCONFIRMED')`.
+   */
   async prepareRun(id: string, build: string, raw: { id: string; identity: z.infer<typeof projectIdentitySchema>; bootId: string; nativeBuild: string }, signal?: AbortSignal) {
     const request = z.object({ id: z.uuid(), identity: projectIdentitySchema, bootId: z.uuid(), nativeBuild: digest }).strict().parse(raw);
     const response = await this.machines.execInput(id, this.command(build, 'prepare-run'), Buffer.from(JSON.stringify(request)), 180000, signal);
@@ -164,6 +259,17 @@ export class SingleAppControl {
       throw new AppError('单应用原来源的 native 准备应答未确认，请按原 UUID 核对', 503, 'SINGLE_APP_NATIVE_PREPARE_UNCONFIRMED');
     return parsed.data.result;
   }
+  /**
+   * 入口 / Entry: SingleAppControl.legacy.
+   * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `z.array(z.object({ id: z.uuid(), uid: z.number().int().min(1000), user: z.string(), home: z.string().startsWith('/') }).stric…` 供上层消费（`SingleAppControl`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `SingleAppControl`; this entry produces `z.array(z.object({ id: z.uuid(), uid: z.number().int().min(1000), user: z.string(), home: z.string().startsWith('/') }).stric…` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+   * 处理：通过 `this.machines.exec`, `quote`, `z.array().max().parse`, `z.array().max` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.exec`, `quote`, `z.array().max().parse`, `z.array().max`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `z.array(z.object({ id: z.uuid(), uid: z.number().int().min(1000), user: z.string(), home: z.string().startsWith('/') }).stric…`.
+   * 副作用 / Effects: `this.machines.exec`; `z.string().startsWith`.
+   * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; 异常 / errors `new AppError('旧单应用无完整票据，原标记无法只读核对', 409, 'SINGLE_APP_LEGACY_REVIEW_REQUIRED')`.
+   */
   async legacy(id: string) {
     // Legacy markers have no complete run, boot or original namespace proof.
     // This fixed read-only inventory grants no stop or stream authorization.
@@ -185,6 +291,17 @@ export class SingleAppControl {
     return z.array(z.object({ id: z.uuid(), uid: z.number().int().min(1000), user: z.string(), home: z.string().startsWith('/') }).strict())
       .max(1024).parse(JSON.parse(result.stdout));
   }
+  /**
+   * 入口 / Entry: SingleAppControl.streamCommand.
+   * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.command(build, 'status').replace(/ status$/, '') + ` stream ${z.uuid().parse(origin.run.runId)} ${appOriginHash(origin)}…` 供上层消费（`SingleAppControl`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `SingleAppControl`; this entry produces `this.command(build, 'status').replace(/ status$/, '') + ` stream ${z.uuid().parse(origin.run.runId)} ${appOriginHash(origin)}…` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+   * 处理：通过 `digest.parse`, `this.command().replace`, `this.command`, `z.uuid().parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `digest.parse`, `this.command().replace`, `this.command`, `z.uuid().parse`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: build: string; origin: AppOrigin
+   * 输出 / Returns: `this.command(build, 'status').replace(/ status$/, '') + ` stream ${z.uuid().parse(origin.run.runId)} ${appOriginHash(origin)}…`.
+   * 副作用 / Effects: `this.command().replace`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   streamCommand(build: string, origin: AppOrigin) {
     digest.parse(build);
     return this.command(build, 'status').replace(/ status$/, '') + ` stream ${z.uuid().parse(origin.run.runId)} ${appOriginHash(origin)}`;
@@ -193,6 +310,17 @@ export class SingleAppControl {
 
 // Account names are never recycled: data left by an old window cannot become
 // readable by a new window that happens to receive the same Unix identity.
+/**
+ * 入口 / Entry: appIdentity.
+ * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ user, home: `/home/${user}`, marker: `/var/lib/sakura/single-apps/${id}` }` 供上层消费（`single-app-sandbox.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `single-app-sandbox.ts`; this entry produces `{ user, home: `/home/${user}`, marker: `/var/lib/sakura/single-apps/${id}` }` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+ * 处理：通过 `inline.test`, `id.replaceAll().slice`, `id.replaceAll` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `inline.test`, `id.replaceAll().slice`, `id.replaceAll`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: id: string
+ * 输出 / Returns: `{ user, home: `/home/${user}`, marker: `/var/lib/sakura/single-apps/${id}` }`.
+ * 副作用 / Effects: `id.replaceAll().slice`; `id.replaceAll`.
+ * 拒绝 / Refusals: 条件 / conditions `!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)`; 异常 / errors `new Error('Invalid application session ID')`.
+ */
 export function appIdentity(id: string) {
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id))
     throw new Error('Invalid application session ID');
@@ -200,6 +328,15 @@ export function appIdentity(id: string) {
   return { user, home: `/home/${user}`, marker: `/var/lib/sakura/single-apps/${id}` };
 }
 
+/**
+ * 入口 / Entry: appIdentityScript.
+ * 功能：从当前输入或状态计算 ``set -eu test ! -e ${home} && test ! -L ${home} ! id ${user} >/dev/null 2>&1 mkdir -p /var/lib/sakura/single-apps test ! -e $…`，供调用方后续验证或使用。
+ * Purpose: Computes ``set -eu test ! -e ${home} && test ! -L ${home} ! id ${user} >/dev/null 2>&1 mkdir -p /var/lib/sakura/single-apps test ! -e $…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: id: string; alpine: boolean
+ * 输出 / Returns: ``set -eu test ! -e ${home} && test ! -L ${home} ! id ${user} >/dev/null 2>&1 mkdir -p /var/lib/sakura/single-apps test ! -e $…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function appIdentityScript(id: string, alpine: boolean) {
   const { user, home, marker } = appIdentity(id);
   const create = alpine
@@ -224,6 +361,17 @@ chmod 600 ${home}/.sakura-vnc-password
 printf '%s\\n' "$uid" "$password"`;
 }
 
+/**
+ * 入口 / Entry: appIdentityCheck.
+ * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``test -f ${marker} && test ! -L ${marker} test "$(stat -c %u ${marker})" = 0 test "$(cat ${marker})" = ${uid} test "$(id -u $…` 供上层消费（`single-app-sandbox.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `single-app-sandbox.ts`; this entry produces ``test -f ${marker} && test ! -L ${marker} test "$(stat -c %u ${marker})" = 0 test "$(cat ${marker})" = ${uid} test "$(id -u $…` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+ * 处理：通过 `appIdentity` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `appIdentity`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: id: string; uid: number
+ * 输出 / Returns: ``test -f ${marker} && test ! -L ${marker} test "$(stat -c %u ${marker})" = 0 test "$(cat ${marker})" = ${uid} test "$(id -u $…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!Number.isSafeInteger(uid) || uid < 1000`; 异常 / errors `new Error('Invalid application UID')`.
+ */
 export function appIdentityCheck(id: string, uid: number) {
   if (!Number.isSafeInteger(uid) || uid < 1000) throw new Error('Invalid application UID');
   const { user, marker } = appIdentity(id);
@@ -233,11 +381,33 @@ test "$(cat ${marker})" = ${uid}
 test "$(id -u ${user})" = ${uid}`;
 }
 
+/**
+ * 入口 / Entry: appCleanupScript.
+ * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``${appIdentityCheck(id, uid)} || exit 1\n${uidCleanupScript(uid)}`` 供上层消费（`single-app-sandbox.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `single-app-sandbox.ts`; this entry produces ``${appIdentityCheck(id, uid)} || exit 1\n${uidCleanupScript(uid)}`` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+ * 处理：通过 `appIdentityCheck`, `uidCleanupScript` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `appIdentityCheck`, `uidCleanupScript`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: id: string; uid: number
+ * 输出 / Returns: ``${appIdentityCheck(id, uid)} || exit 1\n${uidCleanupScript(uid)}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function appCleanupScript(id: string, uid: number) {
   return `${appIdentityCheck(id, uid)} || exit 1\n${uidCleanupScript(uid)}`;
 }
 
 /** Stop an existing account's processes without racing PID reuse. */
+/**
+ * 入口 / Entry: uidCleanupScript.
+ * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``python3 -I -S -c ${quote(script)}`` 供上层消费（`single-app-sandbox.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `single-app-sandbox.ts`; this entry produces ``python3 -I -S -c ${quote(script)}`` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+ * 处理：通过 `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: uid: number; environment: 'SAKURA_DESKTOP_UID' optional
+ * 输出 / Returns: ``python3 -I -S -c ${quote(script)}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!Number.isSafeInteger(uid) || uid < 1000`; 异常 / errors `new Error('Invalid application UID')`.
+ */
 export function uidCleanupScript(uid: number, environment?: 'SAKURA_DESKTOP_UID') {
   if (!Number.isSafeInteger(uid) || uid < 1000) throw new Error('Invalid application UID');
   const script = `import os,signal,time
@@ -269,6 +439,17 @@ while any(processes()):
   return `python3 -I -S -c ${quote(script)}`;
 }
 
+/**
+ * 入口 / Entry: appSupervisedCommand.
+ * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``sh -c ${quote(`set -eu\n${appIdentityCheck(id, uid)}\n` + `cleanup() { trap - EXIT HUP INT TERM; ${cleanup}\n}\n` + `trap cl…` 供上层消费（`single-app-sandbox.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `single-app-sandbox.ts`; this entry produces ``sh -c ${quote(`set -eu\n${appIdentityCheck(id, uid)}\n` + `cleanup() { trap - EXIT HUP INT TERM; ${cleanup}\n}\n` + `trap cl…` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+ * 处理：通过 `appCleanupScript`, `quote`, `appIdentityCheck` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `appCleanupScript`, `quote`, `appIdentityCheck`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: id: string; uid: number; command: string; afterCleanup: default=''
+ * 输出 / Returns: ``sh -c ${quote(`set -eu\n${appIdentityCheck(id, uid)}\n` + `cleanup() { trap - EXIT HUP INT TERM; ${cleanup}\n}\n` + `trap cl…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function appSupervisedCommand(id: string, uid: number, command: string, afterCleanup = '') {
   const cleanup = appCleanupScript(id, uid) + '\n' + afterCleanup;
   return `sh -c ${quote(`set -eu\n${appIdentityCheck(id, uid)}\n` +
@@ -276,6 +457,17 @@ export function appSupervisedCommand(id: string, uid: number, command: string, a
     `trap cleanup EXIT\ntrap 'exit 129' HUP INT TERM\n${command}\n`)}`;
 }
 
+/**
+ * 入口 / Entry: appVncFirewallScript.
+ * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``set -eu ${appIdentityCheck(id, uid)} test ! -e ${marker}.firewall ! iptables -w -S ${chain} >/dev/null 2>&1 ! ip6tables -w -…` 供上层消费（`single-app-sandbox.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `single-app-sandbox.ts`; this entry produces ``set -eu ${appIdentityCheck(id, uid)} test ! -e ${marker}.firewall ! iptables -w -S ${chain} >/dev/null 2>&1 ! ip6tables -w -…` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+ * 处理：通过 `appIdentity`, `id.replaceAll().slice`, `id.replaceAll`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `appIdentity`, `id.replaceAll().slice`, `id.replaceAll`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: id: string; uid: number; port: number
+ * 输出 / Returns: ``set -eu ${appIdentityCheck(id, uid)} test ! -e ${marker}.firewall ! iptables -w -S ${chain} >/dev/null 2>&1 ! ip6tables -w -…`.
+ * 副作用 / Effects: `id.replaceAll().slice`; `id.replaceAll`.
+ * 拒绝 / Refusals: 条件 / conditions `!Number.isInteger(port) || port < 5910 || port > 5917`; 异常 / errors `new Error('Invalid application port')`.
+ */
 export function appVncFirewallScript(id: string, uid: number, port: number) {
   if (!Number.isInteger(port) || port < 5910 || port > 5917) throw new Error('Invalid application port');
   const { marker } = appIdentity(id);
@@ -309,6 +501,17 @@ touch ${marker}.firewall
 trap - EXIT HUP INT TERM`;
 }
 
+/**
+ * 入口 / Entry: appVncFirewallRemoveScript.
+ * 功能：在部署单应用控制器并校验账户、目录视图与退休回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``set -eu ${appIdentityCheck(id, uid)} umask 077 exec 9>${marker}.firewall-lock flock -x -w 10 9 if test -f ${marker}.firewall…` 供上层消费（`single-app-sandbox.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `single-app-sandbox.ts`; this entry produces ``set -eu ${appIdentityCheck(id, uid)} umask 077 exec 9>${marker}.firewall-lock flock -x -w 10 9 if test -f ${marker}.firewall…` for its caller. Module context: Installs single-app control and validates account/directory/retirement receipts; connections require original complete run ownership.
+ * 处理：通过 `appIdentity`, `id.replaceAll().slice`, `id.replaceAll`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `appIdentity`, `id.replaceAll().slice`, `id.replaceAll`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: id: string; uid: number; port: number
+ * 输出 / Returns: ``set -eu ${appIdentityCheck(id, uid)} umask 077 exec 9>${marker}.firewall-lock flock -x -w 10 9 if test -f ${marker}.firewall…`.
+ * 副作用 / Effects: `id.replaceAll().slice`; `id.replaceAll`.
+ * 拒绝 / Refusals: 条件 / conditions `!Number.isInteger(port) || port < 5910 || port > 5917`; 异常 / errors `new Error('Invalid application port')`.
+ */
 export function appVncFirewallRemoveScript(id: string, uid: number, port: number) {
   if (!Number.isInteger(port) || port < 5910 || port > 5917) throw new Error('Invalid application port');
   const { marker } = appIdentity(id);

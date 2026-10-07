@@ -1,5 +1,8 @@
 /**
- * 模块职责：编辑日志保留策略，预览清理范围并展示存储占用与实际清理结果。
+ * 模块职责（中文）：编辑日志保留策略，预览清理范围并展示存储占用与实际清理结果。
+ * Module responsibility (English): Configuring log retention and previewing cleanup scope and storage usage.
+ * 详细范围（中文）：公开入口包括 LogRetentionSettings；职责覆盖配置日志保留并预览清理范围与占用，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include LogRetentionSettings. The scope covers Configuring log retention and previewing cleanup scope and storage usage. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
@@ -7,20 +10,40 @@ import { useEffect, useState } from 'react';
 import type { LogRetentionPolicy, LogRetentionPreview, LogRetentionView } from '../shared/log-retention';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 
+/**
+ * 中文：把日志占用字节换算成两位区域格式小数的 MiB。
+ * English: Convert log-storage bytes to MiB with two locale-formatted fractional digits.
+ * 中文：输入：n：签名所示 number 业务值
+ * English: Inputs: n: the number domain value in the signature
+ */
 const bytes = (n: number) => `${formatDecimal((n / 1024 ** 2), 2)} MiB`;
+/**
+ * 中文：呈现配置日志保留并预览清理范围与占用中的 LogRetentionSettings 界面，订阅 /log-retention，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the LogRetentionSettings surface for Configuring log retention and previewing cleanup scope and storage usage, subscribing to /log-retention. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ */
 export function LogRetentionSettings({ request }: { request: Request }) {
   const remote = useRemote<LogRetentionView>(request, '/log-retention', true, 0);
   const action = useAction();
   const [policy, setPolicy] = useState<LogRetentionPolicy>({ enabled: false, days: 30, maxMiB: 64 });
   const [preview, setPreview] = useState<LogRetentionPreview | null>(null);
   const [saved, setSaved] = useState<LogRetentionView | null>(null);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [remote.data] 变化时策略草稿，saved 状态，preview 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data] change, policy draft, saved state, preview state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (remote.data) {
       setPolicy(remote.data.policy);
       setSaved(remote.data);
       setPreview(null);
     }
   }, [remote.data]);
+  /**
+   * 中文：在配置日志保留并预览清理范围与占用流程中策略草稿，preview 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Configuring log retention and previewing cleanup scope and storage usage, policy draft, preview state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：value：待校验、转换或保存的输入值
+   * English: Inputs: value: input value to validate/transform/save
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const change = (value: Partial<LogRetentionPolicy>) => {
     setPolicy({ ...policy, ...value });
     setPreview(null);
@@ -80,7 +103,7 @@ export function LogRetentionSettings({ request }: { request: Request }) {
             className="secondary compact"
             disabled={!valid}
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：提交 POST /log-retention，完成配置日志保留并预览清理范围与占用的数据交互并更新preview 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /log-retention for Configuring log retention and previewing cleanup scope and storage usage and update preview state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 setPreview(null);
                 const value = await request<LogRetentionPreview>(
                   '/log-retention',
@@ -99,6 +122,14 @@ export function LogRetentionSettings({ request }: { request: Request }) {
             disabled={!preview || !valid}
             onClick={() =>
               void action.run(
+                /**
+                 * 中文：提交 POST /log-retention；GET /log-retention，完成配置日志保留并预览清理范围与占用的数据交互并更新preview 状态、saved 状态、策略草稿；异步失败传给此处的捕获分支或外层动作反馈
+                 * English: Perform POST /log-retention; GET /log-retention for Configuring log retention and previewing cleanup scope and storage usage and update preview state, saved state, policy draft. Propagate asynchronous failure to this catch path or the outer action feedback
+                 * 中文：输入：signal：本次调用的取消寿命
+                 * English: Inputs: signal: cancellation lifetime for this invocation
+                 * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+                 * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+                 */
                 async (signal) => {
                   const token = preview!.token;
                   setPreview(null);

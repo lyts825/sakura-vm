@@ -1,5 +1,6 @@
 /**
  * 模块职责：生成固定缓存转交控制程序，核对原暂存归属并按账户边界交付或清理缓存。
+ * Module purpose: Generates fixed cache handoff control code, verifying original staging ownership before delivery or cleanup.
  */
 /** Trusted root code. It copies only inert cache bytes and never reads project files or environment. */
 export const projectCacheTransferControl = String.raw`

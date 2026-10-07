@@ -1,5 +1,8 @@
 /**
- * 模块职责：Webhook 事件类型、过滤、订阅与投递状态的公共契约，供自动化与投递界面共享。
+ * 模块职责（中文）：Webhook 事件类型、过滤、订阅与投递状态的公共契约，供自动化与投递界面共享。
+ * Module responsibility (English): Defining public event, filter, subscription and delivery contracts.
+ * 详细范围（中文）：公开入口包括 webhookTypes, webhookJobStatuses, webhookAlertKinds, WebhookEvent, WebhookFilter, WebhookSubscription, WebhookDelivery, WebhookView；职责覆盖定义事件、过滤、订阅和投递公共契约，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include webhookTypes, webhookJobStatuses, webhookAlertKinds, WebhookEvent, WebhookFilter, WebhookSubscription, WebhookDelivery, WebhookView. The scope covers Defining public event, filter, subscription and delivery contracts. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 export const webhookTypes = ['job.finished', 'alert.raised'] as const;
 export const webhookJobStatuses = ['done', 'error', 'cancelled', 'interrupted'] as const;

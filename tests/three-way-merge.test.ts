@@ -1,12 +1,24 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - three-way merge retains independent edits, insertions, deletions and newline bytes
- * - overlapping edits and simultaneous insertions need an explicit resolution
+ * 模块职责：回归验证模块，围绕 `three-way-merge` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `three-way-merge`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: three-way merge retains independent edits, insertions, deletions and newline bytes; overlapping edits and simultaneous insertions need an explicit resolution.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { threeWayMerge, resolvedMerge } from '../shared/three-way-merge.ts';
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: three-way merge retains independent edits, insertions, deletions and newline bytes
+ * 协作入口 / Collaborators: `assert.equal`, `resolvedMerge`, `threeWayMerge`.
+ * 检查边界 / Checked boundaries: `assert.equal(resolvedMerge(threeWayMerge(base, ours, theirs), {}), expected)`.
+ */
 test('three-way merge retains independent edits, insertions, deletions and newline bytes', () => {
   const cases = [
     ['a\nb\nc\n', 'A\nb\nc\n', 'a\nb\nC\n', 'A\nb\nC\n'],
@@ -19,6 +31,16 @@ test('three-way merge retains independent edits, insertions, deletions and newli
     assert.equal(resolvedMerge(threeWayMerge(base, ours, theirs), {}), expected);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: overlapping edits and simultaneous insertions need an explicit resolution
+ * 协作入口 / Collaborators: `threeWayMerge`, `assert.equal`, `parts.filter`, `assert.throws`.
+ * 检查边界 / Checked boundaries: `assert.equal(parts.filter((part) => part.kind === 'conflict').length, 1)`; `assert.throws(() => resolvedMerge(parts, {}), /冲突/)`.
+ */
 test('overlapping edits and simultaneous insertions need an explicit resolution', () => {
   for (const input of [
     ['a\nb\n', 'a\nours\nb\n', 'a\ntheirs\nb\n'],

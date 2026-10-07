@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理项目容器、模板及私有数据库操作，将客户机任务与项目服务运行归属关联。
+ * Module purpose: Owns project container, template and private database operations, associating guest tasks with project service ownership.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { posix } from 'node:path';
@@ -49,6 +50,17 @@ export const containerActionSchema = z.discriminatedUnion('action', [
     .object({ action: z.enum(['compose-up', 'compose-down', 'compose-restart']), file: repositoryPath })
     .strict(),
 ]);
+/**
+ * 入口 / Entry: jsonLines.
+ * 功能：在管理项目容器、模板及私有数据库操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `text .trim() .split('\n') .filter(Boolean) .map((line) => JSON.parse(line))` 供上层消费（`containers.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `containers.ts`; this entry produces `text .trim() .split('\n') .filter(Boolean) .map((line) => JSON.parse(line))` for its caller. Module context: Owns project container, template and private database operations, associating guest tasks with project service ownership.
+ * 处理：通过 `text.trim().split().filter().map`, `text.trim().split().filter`, `text.trim().split`, `text.trim` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `text.trim().split().filter().map`, `text.trim().split().filter`, `text.trim().split`, `text.trim`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: text: string
+ * 输出 / Returns: `text .trim() .split('\n') .filter(Boolean) .map((line) => JSON.parse(line))`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function jsonLines(text: string) {
   return text
     .trim()
@@ -58,15 +70,45 @@ function jsonLines(text: string) {
 }
 export class Containers {
   jobs = new Jobs('containers');
+  /**
+   * 入口 / Entry: Containers.constructor.
+   * 功能：建立 Containers 的管理项目容器、模板及私有数据库操作上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the Containers context for this module's responsibility: Owns project container, template and private database operations, associating guest tasks with project service ownership. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
   ) {}
+  /**
+   * 入口 / Entry: Containers.supported.
+   * 功能：在管理项目容器、模板及私有数据库操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `vm` 供上层消费（`Containers`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Containers`; this entry produces `vm` for its caller. Module context: Owns project container, template and private database operations, associating guest tasks with project service ownership.
+   * 处理：通过 `this.machines.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `vm`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!vm.distro || vm.distro === 'alpine'`; 异常 / errors `new AppError('容器面板首版支持 Debian 和 Ubuntu')`.
+   */
   private supported(id: string) {
     const vm = this.machines.get(id);
     if (!vm.distro || vm.distro === 'alpine') throw new AppError('容器面板首版支持 Debian 和 Ubuntu');
     return vm;
   }
+  /**
+   * 入口 / Entry: Containers.view.
+   * 功能：读取客户机 Docker、Dev Container 与项目容器状态并生成面板视图。
+   * Purpose: Reads guest Docker, Dev Container and project container state to build the panel view.
+   * 设计：检查发行版及实例状态，读取失败返回可诊断状态；观察不自动安装或接管未知容器。
+   * Design: Distribution/runtime checks precede reads; failures remain diagnosable and observation does not install or adopt unknown containers.
+   * 输入 / Inputs: id: string; signal: AbortSignal optional
+   * 输出 / Returns: `{ supported: false, installed: false, containers: [], images: [], volumes: [], files: [], job: this.jobs.view(id), }`; `{ supported: true, installed: false, available: false, privateNetwork, containers: [], images: [], volumes: [], files: [], jo…`; `{ supported: true, installed: tools.code === 0, available: false, runtime, privateNetwork: true, error: runtime.reason || und…`；另有分支返回 / additional branch-specific returns.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `data.code !== 0`; 异常 / errors `new AppError(data.stderr || '无法读取 Docker 状态')`.
+   */
   async view(id: string, signal?: AbortSignal) {
     const vm = this.machines.get(id);
     if (!vm.distro || vm.distro === 'alpine')
@@ -168,6 +210,17 @@ export class Containers {
       job: this.jobs.view(id),
     };
   }
+  /**
+   * 入口 / Entry: Containers.templateMetadata.
+   * 功能：在管理项目容器、模板及私有数据库操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `verifyDevcontainerTemplateMetadata(result.stdout, templateId, version)` 供上层消费（`Containers`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Containers`; this entry produces `verifyDevcontainerTemplateMetadata(result.stdout, templateId, version)` for its caller. Module context: Owns project container, template and private database operations, associating guest tasks with project service ownership.
+   * 处理：通过 `this.supported`, `this.machines.state`, `devcontainerTemplateId.parse`, `devcontainerTemplateReference` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.supported`, `this.machines.state`, `devcontainerTemplateId.parse`, `devcontainerTemplateReference`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; input: string; version: string optional; signal: AbortSignal optional
+   * 输出 / Returns: `verifyDevcontainerTemplateMetadata(result.stdout, templateId, version)`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; `result.code !== 0`; 异常 / errors `new AppError('请先启动发行版', 409)`; `new AppError(result.stderr || '无法读取模板源元数据', 502)`.
+   */
   async templateMetadata(id: string, input: string, version?: string, signal?: AbortSignal) {
     this.supported(id);
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
@@ -185,6 +238,18 @@ export class Containers {
     if (result.code !== 0) throw new AppError(result.stderr || '无法读取模板源元数据', 502);
     return verifyDevcontainerTemplateMetadata(result.stdout, templateId, version);
   }
+  /**
+   * 入口 / Entry: Containers.devcontainerView.
+   * 功能：在管理项目容器、模板及私有数据库操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ cliInstalled: false, files: [], error: result.stderr }` / `{ cliInstalled: !!version && version !== 'unavailable', version: version === 'unavailable' ? undefined : version, files, }` 供上层消费（`Containers`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Containers`; this entry produces `{ cliInstalled: false, files: [], error: result.stderr }` / `{ cliInstalled: !!version && version !== 'unavailable', version: version === 'unavailable' ? undefined : version, files, }` for its caller. Module context: Owns project container, template and private database operations, associating guest tasks with project service ownership.
+   * 处理：通过 `quote`, `this.machines.exec`, `result.stdout.split`, `fileOutput.trim().split().filter` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `quote`, `this.machines.exec`, `result.stdout.split`, `fileOutput.trim().split().filter`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `result.code !== 0`.
+   * 输入 / Inputs: id: string; directory: string; signal: AbortSignal optional
+   * 输出 / Returns: `{ cliInstalled: false, files: [], error: result.stderr }`; `{ cliInstalled: !!version && version !== 'unavailable', version: version === 'unavailable' ? undefined : version, files, }`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async devcontainerView(id: string, directory: string, signal?: AbortSignal) {
     const command =
       `set -eu\ncd ${quote(directory)}\n` +
@@ -203,6 +268,18 @@ export class Containers {
       files,
     };
   }
+  /**
+   * 入口 / Entry: Containers.logs.
+   * 功能：在管理项目容器、模板及私有数据库操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ log: redactValues((result.stdout + result.stderr).slice(-32768), privateValues), }` 供上层消费（`Containers`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Containers`; this entry produces `{ log: redactValues((result.stdout + result.stderr).slice(-32768), privateValues), }` for its caller. Module context: Owns project container, template and private database operations, associating guest tasks with project service ownership.
+   * 处理：通过 `this.supported`, `containerId.parse`, `this.workspaces.resolvedConfig`, `this.assertPrivateRuntime` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.supported`, `containerId.parse`, `this.workspaces.resolvedConfig`, `this.assertPrivateRuntime`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `privateNetwork`; `separator > 0 && (Object.hasOwn(project.secrets || {}, item.slice(0, separator)) || /(?:PASSWORD|PAS…`; `arg === '--requirepass' && config.Cmd?.[index + 1]`.
+   * 输入 / Inputs: id: string; target: string; signal: AbortSignal optional
+   * 输出 / Returns: `{ log: redactValues((result.stdout + result.stderr).slice(-32768), privateValues), }`.
+   * 副作用 / Effects: `this.machines.exec`; `privateValues.push`; `arg.startsWith`.
+   * 拒绝 / Refusals: 条件 / conditions `metadata.code !== 0`; `result.code !== 0`; 异常 / errors `new AppError('无法核对容器日志中的私密配置')`; `new AppError('无法读取容器日志')`.
+   */
   async logs(id: string, target: string, signal?: AbortSignal) {
     this.supported(id);
     containerId.parse(target);
@@ -244,17 +321,50 @@ export class Containers {
       log: redactValues((result.stdout + result.stderr).slice(-32768), privateValues),
     };
   }
+  /**
+   * 入口 / Entry: Containers.run.
+   * 功能：校验容器动作，在原项目作用域执行安装、构建、启动或停止等客户机操作。
+   * Purpose: Validates container actions and executes installation/build/start/stop work in the original project scope.
+   * 设计：用户命令经过项目账户入口，管理员准备脚本固定；私有 Docker 会话依据受管服务票据停止。
+   * Design: User commands use project-account execution while admin setup remains fixed; private Docker shutdown uses managed service tickets.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: `this.jobs.start( id, (log, signal) => this.workspaces.projects.inScope(id, projectId, () => this.machines.locked(id, async ()…`.
+   * 副作用 / Effects: `this.jobs.start`.
+   * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; 异常 / errors `new AppError('请先启动发行版')`.
+   */
   async run(id: string, input: unknown) {
     const vm = this.supported(id),
       value = containerActionSchema.parse(input);
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
     const projectId = projectIdSchema.parse(this.workspaces.projects.current(id));
     const preparation = ['install', 'install-devcontainer-cli', 'template-apply'].includes(value.action);
+    /**
+     * 入口 / Entry: Containers.run.callback@257.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.machines.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.machines.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: `stopPrivateDocker`; `this.machines.exec`; 更新 / updates `command`.
+     * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; `value.action === 'start-project-runtime' || value.action === 'stop-project-runtime'`; `!privateNetwork`; 异常 / errors `new AppError('请先启动或恢复发行版', 409)`; `new AppError('此项目使用共享 Docker，不需要独立启动环境', 409)`.
+     * 收尾：退出 try 区域时始终执行 `output.flush();`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `output.flush();`; these steps also apply to exceptional exits.
+     * 失败处理：catch 分支执行 `if ( privateNetwork && ['dockerfile-up', 'compose-up', 'devcontainer-up'].includes(value.action) ) { const p = privateDockerP…`; `throw new AppError(redactValues((error as Error).message, values));`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `if ( privateNetwork && ['dockerfile-up', 'compose-up', 'devcontainer-up'].includes(value.action) ) { const p = privateDockerP…`; `throw new AppError(redactValues((error as Error).message, values));`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.jobs.start(
       id,
       (log, signal) =>
         this.workspaces.projects.inScope(id, projectId, () =>
-          this.machines.locked(id, async () => {
+          this.machines.locked(id,
+          /**
+           * 中文功能：在原项目任务范围分派 Docker/Dev Container 动作，区分共享准备、私有运行和清理配置，生成并执行对应受控命令。
+           * English: Dispatches Docker/Dev Container actions in the original project-task scope, distinguishes shared preparation/private runtime/cleanup configuration and builds/executes controlled commands.
+           * 所属 / Owner: Containers.run.
+           * 输入 / Inputs: 无显式参数 / no explicit parameters.
+           * 设计：模板只应用到空目录，经同父暂存和最终复核后替换；私有运行携带项目绑定和 attempt，等待后复核运行身份。
+           * Design: Templates use an empty destination and same-parent staging with final rechecks; private runs carry project binding/attempt and recheck run identity after waits.
+           */
+          async () => {
             signal.throwIfAborted();
             if (this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复发行版', 409);
             const saved = await this.workspaces.config(id),
@@ -454,14 +564,45 @@ export class Containers {
       { title: `容器 · ${value.action}`, vmId: id, projectId },
     );
   }
+  /**
+   * 入口 / Entry: Containers.close.
+   * 功能：把本层请求转交 `this.jobs.close`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.jobs.close` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.jobs.close()`.
+   * 副作用 / Effects: `this.jobs.close`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   close() {
     return this.jobs.close();
   }
+  /**
+   * 入口 / Entry: Containers.assertPrivateRuntime.
+   * 功能：在管理项目容器、模板及私有数据库操作中，核对调用资格、输入或资源归属；本入口产生 `status` 供上层消费（`Containers`）。
+   * Purpose: Checks admission, input or resource ownership in `Containers`; this entry produces `status` for its caller. Module context: Owns project container, template and private database operations, associating guest tasks with project service ownership.
+   * 处理：通过 `privateDockerStatus` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `privateDockerStatus`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; project: Project; signal: AbortSignal optional
+   * 输出 / Returns: `status`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!status.valid`; 异常 / errors `new AppError(status.reason || '请先启动此项目的私有 Docker 环境', 409)`.
+   */
   private async assertPrivateRuntime(id: string, project: Project, signal?: AbortSignal) {
     const status = await privateDockerStatus(this.machines, id, project, signal);
     if (!status.valid) throw new AppError(status.reason || '请先启动此项目的私有 Docker 环境', 409);
     return status;
   }
+  /**
+   * 入口 / Entry: Containers.privateDatabase.
+   * 功能：构造受管私有数据库的 Compose、凭证和服务执行，限制项目网络及数据目录。
+   * Purpose: Builds managed private database Compose/credentials/service work within project network and data-directory constraints.
+   * 设计：私密值不进入公开日志；启动和停止共享原项目服务归属，失败不以容器名称冒充完整运行证明。
+   * Design: Secrets stay out of public logs; start/stop share original service ownership and names cannot replace full run proof.
+   * 输入 / Inputs: id: string; input: { database: 'postgres' | 'mysql' | 'redis'; password: string; name?: string; port?: n…; signal: AbortSignal; log: (text: string) => void
+   * 输出 / Returns: `this.workspaces.projects.inScope(id, projectId, () => this.machines.locked(id, async () => { if (this.machines.state(id) !== …`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async privateDatabase(
     id: string,
     input: { database: 'postgres' | 'mysql' | 'redis'; password: string; name?: string; port?: number },
@@ -486,8 +627,28 @@ export class Containers {
       .strict()
       .parse(input);
     const projectId = projectIdSchema.parse(this.workspaces.projects.current(id));
+    /**
+     * 入口 / Entry: Containers.privateDatabase.callback@490.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.machines.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.machines.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.machines.exec`.
+     * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; `project.networkIsolation !== 'private'`; `result.code !== 0`; 异常 / errors `new AppError('请先启动或恢复实例', 409)`; `new AppError('项目网络已变化，请重新执行数据库操作', 409)`.
+     * 收尾：退出 try 区域时始终执行 `output.flush();`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `output.flush();`; these steps also apply to exceptional exits.
+     * 失败处理：catch 分支执行 `const cleanup = await this.machines.exec( id, `ids=$(${p.config}/docker-client ps -aq --filter ${quote('label=sakura.attempt=…`; `if (cleanup.code !== 0) throw new AppError('数据库启动未完成且清理失败，请停止项目 Docker 环境', 409);`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `const cleanup = await this.machines.exec( id, `ids=$(${p.config}/docker-client ps -aq --filter ${quote('label=sakura.attempt=…`; `if (cleanup.code !== 0) throw new AppError('数据库启动未完成且清理失败，请停止项目 Docker 环境', 409);`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.workspaces.projects.inScope(id, projectId, () =>
-      this.machines.locked(id, async () => {
+      this.machines.locked(id,
+      /**
+       * 中文功能：为原项目准备并启动受管私有数据库，固定数据库类型、端口、凭据、数据目录和网络归属。
+       * English: Prepares and starts the original project's managed private database with pinned database type, port, credentials, data directory and network ownership.
+       * 所属 / Owner: Containers.privateDatabase.
+       * 输入 / Inputs: 无显式参数 / no explicit parameters.
+       */
+      async () => {
         if (this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例', 409);
         const project = await this.workspaces.resolvedConfig(id);
         if (project.networkIsolation !== 'private')
@@ -588,6 +749,17 @@ export class Containers {
       }),
     );
   }
+  /**
+   * 入口 / Entry: Containers.prefetchImage.
+   * 功能：在管理项目容器、模板及私有数据库操作中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Containers`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Containers`; the calls and state transitions below complete the operation. Module context: Owns project container, template and private database operations, associating guest tasks with project service ownership.
+   * 处理：通过 `this.workspaces.networkEnvironment`, `privateDockerPaths`, `envPrefix`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.workspaces.networkEnvironment`, `privateDockerPaths`, `envPrefix`, `quote`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; project: Project; image: string; signal: AbortSignal; log: (text: string) => void
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; 异常 / errors `new AppError(result.stderr || '镜像预取或私有导入失败', 409)`.
+   */
   private async prefetchImage(
     id: string,
     project: Project,
@@ -610,6 +782,17 @@ export class Containers {
   }
 }
 
+/**
+ * 入口 / Entry: privateComposeScript.
+ * 功能：在管理项目容器、模板及私有数据库操作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( `set -eu\numask 077\nroot=$(realpath -e -- ${quote(project.directory)})\nfile=$(realpath -e -- ${quote(posix.join(project.d…` 供上层消费（`containers.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `containers.ts`; this entry produces `( `set -eu\numask 077\nroot=$(realpath -e -- ${quote(project.directory)})\nfile=$(realpath -e -- ${quote(posix.join(project.d…` for its caller. Module context: Owns project container, template and private database operations, associating guest tasks with project service ownership.
+ * 处理：通过 `id.slice`, `privateComposeValidator`, `quote`, `posix.join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `id.slice`, `privateComposeValidator`, `quote`, `posix.join`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: id: string; project: Project; file: string; operation: string; attempt: string
+ * 输出 / Returns: `( `set -eu\numask 077\nroot=$(realpath -e -- ${quote(project.directory)})\nfile=$(realpath -e -- ${quote(posix.join(project.d…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function privateComposeScript(
   id: string,
   project: Project,

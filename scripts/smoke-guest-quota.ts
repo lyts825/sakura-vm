@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目 UID 配额的超限写入拒绝、重启、清除和卷移除。 */
+/** 烟雾验收：验证项目 UID 配额的超限写入拒绝、重启、清除和卷移除。
+ * Smoke acceptance for project-UID quota write refusal, reboot, reset and volume retirement. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,6 +19,8 @@ const machines = new Machines(await createRuntime());
 await machines.init();
 const workspaces = new Workspaces(machines);
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时将抛错。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout fails. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 270000;
@@ -26,11 +29,15 @@ async function boot(id: string) {
     await delay(250);
   }
 }
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function run(id: string, command: string, timeout = 30000) {
   const result = await machines.exec(id, command, timeout);
   assert.equal(result.code, 0, result.stderr || result.stdout || command);
   return result.stdout.trim();
 }
+/** 以非 root 配额账号尝试超过二十 MiB 的写入，要求非零和 Quota 错误，随后删除本次越额文件。
+ * Attempt a write beyond twenty MiB as the quota user, requiring nonzero/Quota diagnostics before removing this oversized fixture file. */
 async function enforced(id: string, name: string) {
   const result = await machines.exec(id,
     `su quotauser ${name === 'alpine' ? '' : '-s /bin/sh'} -c ` +

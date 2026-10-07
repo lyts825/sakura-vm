@@ -1,4 +1,5 @@
 # 模块职责：对经核验的项目普通文件执行覆写与删除，检测读取长度变化和路径越界。
+# Module purpose: Overwrites/removes verified project regular files, checking read lengths, original identity and path boundaries.
 """Guest-side logical overwrite. It does not prove physical media erasure."""
 
 import base64
@@ -15,12 +16,25 @@ CHUNK = 1024 * 1024
 MAX_BYTES = 128 * 1024 * 1024
 
 
+# 入口 / Entry: fail.
+# 功能：向 stderr 输出拒绝原因并以退出码 2 结束逻辑擦除操作。
+# Purpose: Reports a refusal reason to stderr and exits the logical-erasure operation with status 2.
+# 输入 / Inputs: message
+# 输出 / Returns: 无显式结果，正常完成返回 None / no explicit result; successful completion returns None.
+# 拒绝 / Refusals: `SystemExit(2)`.
 def fail(message):
     print(message, file=sys.stderr)
     raise SystemExit(2)
 
 
 # 逐级使用目录 FD 和 O_NOFOLLOW 打开，后续操作保留同一父目录与文件句柄，不重新解析链接路径。
+# 入口 / Entry: open_file.
+# 功能：逐级固定父目录 FD 并以 O_NOFOLLOW 打开原文件，返回供后续身份核验和删除使用的句柄。
+# Purpose: Pins parent-directory FDs component by component and opens the original file with O_NOFOLLOW, returning handles for identity checks/removal.
+# 输入 / Inputs: path; write
+# 输出 / Returns: `(directory, name, file_descriptor)`
+# 副作用 / Effects: 调用 / calls `os.open`, `os.close`.
+# 拒绝 / Refusals: `'无效的项目文件路径'`; `re-raise`.
 def open_file(path, write):
     parts = path.split("/")
     if not path.startswith("/") or any(part in ("", ".", "..") for part in parts[1:]):
@@ -41,6 +55,13 @@ def open_file(path, write):
         raise
 
 
+# 入口 / Entry: hash_file.
+# 功能：精确读取预期字节数并计算 SHA-256，提前 EOF 表示文件变化而拒绝。
+# Purpose: Reads the exact expected byte count and computes SHA-256, refusing premature EOF as file change.
+# 输入 / Inputs: fd; size
+# 输出 / Returns: `digest.hexdigest()`
+# 副作用 / Effects: 调用 / calls `os.read`.
+# 拒绝 / Refusals: `'读取期间文件长度发生变化'`.
 def hash_file(fd, size):
     digest = hashlib.sha256()
     os.lseek(fd, 0, os.SEEK_SET)
@@ -54,6 +75,13 @@ def hash_file(fd, size):
     return digest.hexdigest()
 
 
+# 入口 / Entry: overwrite.
+# 功能：对固定文件 FD 写入随机或零字节，处理短写并 fsync 确认逻辑覆写落盘。
+# Purpose: Writes random/zero bytes to the pinned file FD, handling short writes and fsyncing logical overwrite persistence.
+# 输入 / Inputs: fd; size; randomize
+# 输出 / Returns: 无显式结果，正常完成返回 None / no explicit result; successful completion returns None.
+# 副作用 / Effects: 调用 / calls `os.write`, `os.fsync`.
+# 拒绝 / Refusals: `'覆盖写入未完成'`.
 def overwrite(fd, size, randomize):
     os.lseek(fd, 0, os.SEEK_SET)
     remaining = size
@@ -70,6 +98,16 @@ def overwrite(fd, size, randomize):
     os.fsync(fd)
 
 
+# 入口 / Entry: main.
+# 功能：核验预览 token、原文件身份和单链接限制，三轮覆写校验后才解除原目录项。
+# Purpose: Checks preview token, original file identity and the single-link restriction, unlinking the original directory entry only after three verified overwrite passes.
+# 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+# 输出 / Returns: `None`
+# 副作用 / Effects: 调用 / calls `open_file`, `fcntl.flock`, `overwrite`, `os.unlink`, `os.fsync`, `os.close`.
+# 拒绝 / Refusals: `'仅允许单链接的普通文件'`; `'文件超过 128 MiB 上限'`; `'预览已过期：文件内容或身份发生变化'`.
+# 设计：预览摘要绑定设备、inode、大小、时间与内容；零字节校验和最终目录项身份核对后才 unlink。结果仅确认逻辑覆写，不能证明物理介质擦除。
+# Design: Preview digest binds device, inode, size, timestamps and contents; unlink follows zero-byte verification and final directory-entry identity checks. The result confirms logical overwrite, not physical-media erasure.
+# 收尾 / Finalization: `os.close(fd)`; `os.close(directory)`.
 def main():
     request = json.loads(base64.b64decode(sys.argv[1], validate=True))
     path = request["path"]

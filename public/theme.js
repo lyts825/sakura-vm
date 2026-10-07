@@ -1,4 +1,5 @@
-/** 首屏主题引导，在应用挂载前读取本地昼夜偏好并同步根元素与浏览器主题色。 */
+/** 首屏主题引导，在应用挂载前读取本地昼夜偏好并同步根元素与浏览器主题色。
+ * Apply stored day/night preference and browser theme color before application mounting, falling back to the daytime palette when storage is unavailable. */
 try {
   const theme = localStorage.getItem('sakura-theme') === 'night' ? 'night' : 'day';
   document.documentElement.dataset.theme = theme;

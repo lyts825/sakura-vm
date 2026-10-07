@@ -1,5 +1,8 @@
 /**
- * 模块职责：实例创建和资源配置表单，复用发行版、架构与硬件选项并提交控制面操作。
+ * 模块职责（中文）：实例创建和资源配置表单，复用发行版、架构与硬件选项并提交控制面操作。
+ * Module responsibility (English): Forms for creating VMs and editing their resource configuration.
+ * 详细范围（中文）：公开入口包括 CreateModal, ConfigPanel；职责覆盖创建实例与编辑资源配置的表单，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include CreateModal, ConfigPanel. The scope covers Forms for creating VMs and editing their resource configuration. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import {
   ArrowRight,
@@ -21,13 +24,27 @@ import { useRemote } from '../feature-shared';
 import { usePlugin } from '../plugin-context';
 import { active, memory, Modal } from './ui';
 
+/**
+ * 中文：呈现创建实例与编辑资源配置的表单中的 ResourceFields 界面，组合 Cpu、MemoryStick，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ResourceFields surface for Forms for creating VMs and editing their resource configuration and composing Cpu, MemoryStick. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  config,
+  set,
+  disabled = false,
+} 提供 config（config 状态）、set（ 状态）、disabled（disabled 状态） 上下文字段
+ * English: Inputs: {
+  config,
+  set,
+  disabled = false,
+} provides context fields config (config state), set ( state), disabled (disabled state)
+ */
 function ResourceFields({
   config,
   set,
   disabled = false,
 }: {
   config: VMConfig;
-  set: (v: VMConfig) => void;
+  set: /** 中文：合并指定资源字段到受控表单草稿，保留未编辑字段；这是 ResourceFields 的调用契约 | English: Merge selected resource fields into the controlled form draft, preserving untouched fields; this is the callable contract of ResourceFields | 中文：输入：v：签名所示 VMConfig 业务值 | English: Inputs: v: the VMConfig domain value in the signature | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (v: VMConfig) => void;
   disabled?: boolean;
 }) {
   return (
@@ -90,6 +107,22 @@ function ResourceFields({
     </fieldset>
   );
 }
+/**
+ * 中文：呈现创建实例与编辑资源配置的表单中的 CreateModal 界面，订阅 /images、/storage-pools，组合 ResourceFields、HardDrive、LoaderCircle、Plus，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the CreateModal surface for Forms for creating VMs and editing their resource configuration, subscribing to /images, /storage-pools and composing ResourceFields, HardDrive, LoaderCircle, Plus. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  busy,
+  names,
+  close,
+  submit,
+} 提供 busy（忙碌标记）、names（names 状态）、close（close 状态）、submit（submit 状态） 上下文字段
+ * English: Inputs: {
+  busy,
+  names,
+  close,
+  submit,
+} provides context fields busy (busy flag), names (names state), close (close state), submit (submit state)
+ */
 export function CreateModal({
   busy,
   names,
@@ -98,8 +131,8 @@ export function CreateModal({
 }: {
   busy: boolean;
   names: string[];
-  close: () => void;
-  submit: (c: VMConfig, boot: boolean) => unknown;
+  close: /** 中文：请求关闭当前界面，实际导航或卸载由父级决定；这是 CreateModal 的调用契约 | English: Request surface closure, leaving actual navigation/unmounting to the parent; this is the callable contract of CreateModal | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ () => void;
+  submit: /** 中文：把已校验的新实例表单交给创建流程，失败由上层显示；这是 CreateModal 的调用契约 | English: Submit the validated new-VM form to creation, with outer failure feedback; this is the callable contract of CreateModal | 中文：输入：c：签名所示 VMConfig 业务值；boot：签名所示 boolean 业务值 | English: Inputs: c: the VMConfig domain value in the signature; boot: the boolean domain value in the signature | 中文：结果：unknown；调用者依赖此类型约定 | English: Result: unknown; callers depend on this type contract */ (c: VMConfig, boot: boolean) => unknown;
 }) {
   const [config, set] = useState<VMConfig>({
     name: names.includes('alpine-dev') ? `alpine-${names.length + 1}` : 'alpine-dev',
@@ -134,7 +167,14 @@ export function CreateModal({
           发行版
           <select
             value={imageId}
-            onChange={(e) => {
+            onChange={/**
+             * 中文功能：切换发行版或镜像时同步架构、加速器和固件，并按镜像最低要求提高内存及磁盘配置。
+             * English: Synchronize architecture/accelerator/firmware when switching distro/image and raise memory/disk settings to image minimum requirements.
+             * 输入 / Inputs: e.
+             * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+             * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+             */
+            (e) => {
               const arm64 = e.target.value === 'debian-arm64';
               const distro = (arm64 ? 'debian' : e.target.value) as VMConfig['distro'];
               const image = images.data?.find((i) => i.id === e.target.value);
@@ -233,7 +273,7 @@ export function CreateModal({
             type="button"
             className="secondary compact"
             disabled={poolBusy || !poolName.trim() || !poolPath.trim()}
-            onClick={() => {
+            onClick={/** 中文：提交 operation /storage-pools，完成创建实例与编辑资源配置的表单的数据交互并更新poolBusy 状态、poolError 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform operation /storage-pools for Forms for creating VMs and editing their resource configuration and update poolBusy state, poolError state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
               setPoolBusy(true);
               setPoolError('');
               void api<{ created: { id: string } }>('/storage-pools', 'POST', {
@@ -271,6 +311,22 @@ export function CreateModal({
     </Modal>
   );
 }
+/**
+ * 中文：呈现创建实例与编辑资源配置的表单中的 ConfigPanel 界面，组合 ResourceFields、Network、Plus、Save、Trash2，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ConfigPanel surface for Forms for creating VMs and editing their resource configuration and composing ResourceFields, Network, Plus, Save, Trash2. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  vm,
+  busy,
+  save,
+  remove,
+} 提供 vm（vm 状态）、busy（忙碌标记）、save（save 状态）、remove（移除服务端会话的异步操作） 上下文字段
+ * English: Inputs: {
+  vm,
+  busy,
+  save,
+  remove,
+} provides context fields vm (vm state), busy (busy flag), save (save state), remove (asynchronous server-session removal)
+ */
 export function ConfigPanel({
   vm,
   busy,
@@ -279,8 +335,8 @@ export function ConfigPanel({
 }: {
   vm: VMView;
   busy: boolean;
-  save: (c: VMConfig) => unknown;
-  remove: () => void;
+  save: /** 中文：提交当前编辑内容并返回保存结果，失败允许调用者保留草稿；这是 ConfigPanel 的调用契约 | English: Submit current edit content and return its save result, allowing callers to retain drafts on failure; this is the callable contract of ConfigPanel | 中文：输入：c：签名所示 VMConfig 业务值 | English: Inputs: c: the VMConfig domain value in the signature | 中文：结果：unknown；调用者依赖此类型约定 | English: Result: unknown; callers depend on this type contract */ (c: VMConfig) => unknown;
+  remove: /** 中文：异步删除对应服务端会话，成功兑现后才改变本地标签集合；这是 ConfigPanel 的调用契约 | English: Asynchronously remove the server session before success permits local tab changes; this is the callable contract of ConfigPanel | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ () => void;
 }) {
   const [config, set] = useState<VMConfig>({
     name: vm.name,

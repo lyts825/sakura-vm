@@ -1,4 +1,5 @@
-/** 烟雾验收：验证Windows 隐藏托盘服务启动、真实状态读取及策略恢复。 */
+/** 烟雾验收：验证Windows 隐藏托盘服务启动、真实状态读取及策略恢复。
+ * Smoke acceptance for hidden Windows tray-service startup, actual state reads and policy restoration. */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -21,6 +22,8 @@ await new Promise<void>((done) => listener.listen(0, '127.0.0.1', done));
 const port = (listener.address() as { port: number }).port;
 await new Promise<void>((done) => listener.close(() => done()));
 const script = resolve('scripts/sakura-tray.ps1');
+/** 在独立托盘配置与数据目录运行 STA PowerShell，三十秒期限；返回 JSON 输出或空对象，不操作用户托盘配置。
+ * Run STA PowerShell against isolated tray configuration/data with a thirty-second deadline; return JSON output or an empty object without using user tray settings. */
 const run = async (...args: string[]) => {
   const { stdout } = await promisify(execFile)('powershell.exe',
     ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', script,

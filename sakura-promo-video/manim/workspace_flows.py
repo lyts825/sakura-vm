@@ -1,4 +1,5 @@
 # 绘制磁盘恢复及项目账户边界的 Manim 动画，为宣传视频提供可重用流程片段。
+# Create reusable Manim clips for disk-recovery semantics and project-account boundaries.
 """Ten-second recovery and project-account explainers for Sakura video 1.1.
 
 These illustrate disk recovery semantics and Linux account boundaries.
@@ -13,11 +14,15 @@ from manim import (
 from kernel_flow import BG, INK, PINK, PALE, MUTED, WIRE, FONT
 
 
+# 用固定 Pango 字体创建可指定字号/颜色/粗细的文本节点，保持流程片段字形一致。
+# Create text with the fixed Pango font and size/color/weight options for consistent flow typography.
 def label(text, size=38, color=INK, bold=False):
     return Text(text, font=FONT, font_size=size, color=color,
                 weight=BOLD if bold else "NORMAL")
 
 
+# 组合圆角底框、可换行标题和可选副标题，按输入尺寸/位置返回整体节点。
+# Combine a rounded card, multiline title and optional subtitle into one positioned node of supplied dimensions.
 def card(title, subtitle, width, height, position, size=42, accent=False):
     box = RoundedRectangle(width=width, height=height, corner_radius=0.21,
                            stroke_color=PINK if accent else WIRE, stroke_width=2.5,
@@ -31,6 +36,8 @@ def card(title, subtitle, width, height, position, size=42, accent=False):
     return VGroup(box, content).move_to(position)
 
 
+# 创建指定端点间的统一颜色/线宽连线，供流程图连接。
+# Create a consistently styled line between supplied endpoints for flow connections.
 def wire(start, end):
     return Line(start, end, color=WIRE, stroke_width=3)
 
@@ -38,6 +45,8 @@ def wire(start, end):
 class RecoveryFlow(Scene):
     """Stopped disk: restore original, clone independently, backup to new."""
 
+    # 从停机原磁盘分别演示快照、独立克隆与校验备份的恢复去向，避免把三种恢复语义混同。
+    # Animate distinct snapshot/independent-clone/verified-backup paths from a stopped original disk, preserving their different recovery meanings.
     def construct(self):
         self.camera.background_color = BG
         original = card("Stopped\ninstance", "ORIGINAL DISK", 3.25, 2.1,
@@ -78,6 +87,8 @@ class RecoveryFlow(Scene):
 class ProjectIsolation(Scene):
     """Two persistent project accounts inside one shared Linux instance."""
 
+    # 在同一实例中演示各项目 UID/Home 与执行域，以及本机控制入口和项目权限之间的边界。
+    # Animate per-project UID/Home/execution domains inside one instance and the boundary between local control and project authority.
     def construct(self):
         self.camera.background_color = BG
         control = card("Sakura", "LOCAL CONTROL PLANE", 6.15, 1.45,

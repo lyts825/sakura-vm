@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - installation and recovery replies require complete matching identities and strict envelopes
- * - administrator installation requests validate architecture, boot, identifiers and credential-free network
- * - installer prerequisites supply relocatable shell tools under a fixed environment and directory
+ * 模块职责：回归验证模块，围绕 `runtime-install` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `runtime-install`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: installation and recovery replies require complete matching identities and strict envelopes; administrator installation requests validate architecture, boot, identifiers and credential-free network.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,8 +16,26 @@ const request = { operation: 'verify' as const, tool: 'node' as const, version: 
 const ready = { version: 1, tool: 'node', architecture: 'x86_64', requestedVersion: request.version,
   phase: 'ready', installId, directoryDevice: '1', directoryInode: '9', executableDevice: '1',
   executableInode: '10', executableSha256: 'a'.repeat(64) };
+/**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: value: unknown。
+ * 结果：返回分支计算值（`({ code: 0, stdout: JSON.stringify(value), stderr: '' })`）。
+ * Result: Return the branch-computed value (`({ code: 0, stdout: JSON.stringify(value), stderr: '' })`).
+ * 协作入口 / Collaborators: `JSON.stringify`.
+ */
 const result = (value: unknown) => ({ code: 0, stdout: JSON.stringify(value), stderr: '' });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: installation and recovery replies require complete matching identities and strict envelopes
+ * 协作入口 / Collaborators: `assert.equal`, `parseRuntimeInstall`, `result`, `parseRuntimeInstallRecovery`.
+ * 检查边界 / Checked boundaries: `assert.equal(parseRuntimeInstall(result({ version: 1, ok: true, result: ready }), { tool: 'node', version: request.version, archit…`; `assert.equal(parseRuntimeInstallRecovery(result({ version: 1, ok: true, result: null }), request), null)`.
+ */
 test('installation and recovery replies require complete matching identities and strict envelopes', () => {
   assert.equal(parseRuntimeInstall(result({ version: 1, ok: true, result: ready }),
     { tool: 'node', version: request.version, architecture: 'x86_64', phase: 'ready' }).installId, installId);
@@ -31,6 +50,16 @@ test('installation and recovery replies require complete matching identities and
     { tool: 'node', version: request.version, phase: 'ready' }));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: administrator installation requests validate architecture, boot, identifiers and credential-free network
+ * 协作入口 / Collaborators: `assert.match`, `runtimeInstallCommand`, `assert.throws`.
+ * 检查边界 / Checked boundaries: `assert.match(runtimeInstallCommand({ ...request, architecture: 'aarch64' }), /\\"architecture\\":\\"aarch64\\"/)`; `assert.throws(() => runtimeInstallCommand({ ...request, architecture: 'arm64' as any }))`.
+ */
 test('administrator installation requests validate architecture, boot, identifiers and credential-free network', () => {
   assert.match(runtimeInstallCommand({ ...request, architecture: 'aarch64' }), /\\"architecture\\":\\"aarch64\\"/);
   assert.throws(() => runtimeInstallCommand({ ...request, architecture: 'arm64' as any }));
@@ -41,6 +70,16 @@ test('administrator installation requests validate architecture, boot, identifie
   assert.throws(() => runtimeInstallCommand({ ...request, network: { LD_PRELOAD: '/project/lib.so' } }));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: installer prerequisites supply relocatable shell tools under a fixed environment and directory
+ * 协作入口 / Collaborators: `['alpine', undefined, 'debian', 'ubuntu'].map`, `spawnSync`, `JSON.stringify`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal(parsed.status, 0, parsed.stderr || parsed.error?.message)`; `assert.deepEqual(args.slice(0, 6), ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin', 'HOME=/root', 'LANG=C', 'LC_ALL=C'…`.
+ */
 test('installer prerequisites supply relocatable shell tools under a fixed environment and directory', () => {
   const network = { HTTPS_PROXY: 'https://proxy.example:8443', NO_PROXY: 'localhost;$(echo unit-marker) ${PATH}' };
   const commands = ['alpine', undefined, 'debian', 'ubuntu'].map(distro => runtimeInstallSetup(distro, network));
@@ -71,6 +110,17 @@ test('installer prerequisites supply relocatable shell tools under a fixed envir
 // A deterministic filesystem model exercises the shipped controller's state
 // transitions and pathname/metadata checks on Windows too. It is not evidence
 // of Linux ownership, kernel cgroups or official artifact installation.
+/**
+ * 中文功能：提取运行时安装命令中的生产 Python 控制器，在受控文件系统和进程适配器上执行并核对模型输出。
+ * English: Extract the production Python controller from the runtime-install command, run it against controlled filesystem/process adapters, and assert the model output.
+ * 输入 / Inputs: scenario: string。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `runtimeInstallCommand`, `command.split("<<'SAKURA_RUNTIME_INSTALL'\n")[1] .replace('import errno,fcn…`, `command.split("<<'SAKURA_RUNTIME_INSTALL'\n")[1] .replace`, `command.split`.
+ * 检查边界 / Checked boundaries: `assert.equal(executed.status, 0, executed.stderr || executed.error?.message)`; `assert.equal(executed.stdout.trim(), 'ok')`.
+ * 设计思路：保留生产控制器定义，仅替换模型不能提供的宿主接口；故障矩阵复用同一实现，避免另写一套安装算法。该模型不能证明真实 Linux 权限或安装成功。
+ * Design: Keep the production controller definitions and replace only host interfaces unavailable in the model. Fault cases exercise one implementation rather than a second installation algorithm; the model does not attest real Linux privileges or installation success.
+ */
 function controllerModel(scenario: string) {
   const command = runtimeInstallCommand({ ...request, installId, runId, bootId });
   const source = command.split("<<'SAKURA_RUNTIME_INSTALL'\n")[1]
@@ -308,4 +358,12 @@ for (const scenario of ['prepared', 'confirm', 'identity', 'recover', 'ready', '
   'normalize-hardlink', 'normalize-alias', 'normalize-unknown', 'managed-normalize', 'managed-confirm',
   'managed-inode', 'managed-external', 'managed-ready-mode', 'managed-ready-recover', 'managed-recover',
   'managed-cancel', 'managed-unknown'])
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`controllerModel(scenario)`）。
+   * Result: Return the branch-computed value (`controllerModel(scenario)`).
+   * 协作入口 / Collaborators: `controllerModel`.
+   */
   test(`fixed installer controller model: ${scenario}`, () => controllerModel(scenario));

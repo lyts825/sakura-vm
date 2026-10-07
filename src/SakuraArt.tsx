@@ -1,5 +1,8 @@
 /**
- * 模块职责：渲染欢迎界面的装饰性花瓣与光点，保持装饰元素不参与辅助技术阅读。
+ * 模块职责（中文）：渲染欢迎界面的装饰性花瓣与光点，保持装饰元素不参与辅助技术阅读。
+ * Module responsibility (English): Rendering decorative blossoms and reacting to visibility and reduced-motion preferences.
+ * 详细范围（中文）：公开入口包括 SakuraArt；职责覆盖渲染樱花装饰并响应可见性和减少动态效果偏好，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include SakuraArt. The scope covers Rendering decorative blossoms and reacting to visibility and reduced-motion preferences. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { memo, useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { Pause, Play, Wind } from 'lucide-react';
@@ -26,10 +29,10 @@ const glimmers = [
 ] as const;
 
 /** Local painted artwork with SVG atmosphere. Motion uses transforms and opacity, never a frame loop. */
-export const SakuraArt = memo(function SakuraArt() {
+export const SakuraArt = memo(/** 中文：呈现渲染樱花装饰并响应可见性和减少动态效果偏好中的 SakuraArt 界面，组合 Wind、Play、Pause，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示 | English: Render the SakuraArt surface for Rendering decorative blossoms and reacting to visibility and reduced-motion preferences and composing Wind, Play, Pause. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state */ function SakuraArt() {
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
-  const [paused, setPaused] = useState(() => {
+  const [paused, setPaused] = useState(/** 中文：在渲染樱花装饰并响应可见性和减少动态效果偏好流程中读取浏览器缓存值；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Rendering decorative blossoms and reacting to visibility and reduced-motion preferences, read a browser-cache value. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation */ () => {
     try {
       return localStorage.getItem('sakura-motion') === 'paused';
     } catch {
@@ -39,9 +42,17 @@ export const SakuraArt = memo(function SakuraArt() {
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [inView, setInView] = useState(true);
   const [pageVisible, setPageVisible] = useState(() => !document.hidden);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [] 变化时登记浏览器或资源事件监听；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [] change, register browser/resource event listeners. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     const media = matchMedia('(prefers-reduced-motion: reduce)');
+    /**
+     * 中文：在渲染樱花装饰并响应可见性和减少动态效果偏好流程中reduced 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Rendering decorative blossoms and reacting to visibility and reduced-motion preferences, reduced state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     */
     const updateMotion = () => setReduced(media.matches);
+    /**
+     * 中文：在渲染樱花装饰并响应可见性和减少动态效果偏好流程中pageVisible 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Rendering decorative blossoms and reacting to visibility and reduced-motion preferences, pageVisible state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     */
     const updateVisibility = () => setPageVisible(!document.hidden);
     const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0 });
     if (ref.current) observer.observe(ref.current);
@@ -49,6 +60,12 @@ export const SakuraArt = memo(function SakuraArt() {
     document.addEventListener('visibilitychange', updateVisibility);
     updateMotion();
     updateVisibility();
+    /**
+     * 中文：在渲染樱花装饰并响应可见性和减少动态效果偏好流程中断开当前客户端，移除登记的事件监听；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Rendering decorative blossoms and reacting to visibility and reduced-motion preferences, disconnect the current client, remove registered event listeners. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     return () => {
       observer.disconnect();
       media.removeEventListener('change', updateMotion);
@@ -56,7 +73,19 @@ export const SakuraArt = memo(function SakuraArt() {
     };
   }, []);
   const playing = !paused && !reduced && inView && pageVisible;
+  /**
+   * 中文：为当前组件唯一 SVG ID 生成局部引用，多个装饰组件共存时渐变和裁剪定义不会串用。
+   * English: Build local references from the component's unique SVG ID so concurrent decorative instances do not share gradient/clip definitions accidentally.
+   * 中文：输入：name：目标名称或文件名
+   * English: Inputs: name: target name/filename
+   */
   const url = (name: string) => `url(#${id}-${name})`;
+  /**
+   * 中文：在渲染樱花装饰并响应可见性和减少动态效果偏好流程中paused 状态，持久化浏览器缓存值；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Rendering decorative blossoms and reacting to visibility and reduced-motion preferences, paused state, persist a browser-cache value. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const toggle = () => {
     const next = !paused;
     setPaused(next);

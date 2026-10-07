@@ -1,5 +1,8 @@
 /**
- * 模块职责：管理黄金镜像库，执行构建、导入、检查和实例创建并呈现任务结果。
+ * 模块职责（中文）：管理黄金镜像库，执行构建、导入、检查和实例创建并呈现任务结果。
+ * Module responsibility (English): UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles.
+ * 详细范围（中文）：公开入口包括 GoldenImageLibrary；职责覆盖快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include GoldenImageLibrary. The scope covers UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
@@ -9,6 +12,22 @@ import type { GoldenImagesView } from './view-types';
 import type { GoldenAction, GoldenResult } from '../../shared/golden-images';
 import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';
 
+/**
+ * 中文：呈现快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现中的 GoldenImageLibrary 界面，订阅 /golden-images，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the GoldenImageLibrary surface for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles, subscribing to /golden-images. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  request,
+  refresh,
+  vms,
+  sourceId = '',
+} 提供 request（带身份和权限作用域的传输能力）、refresh（refresh 状态）、vms（vms 状态）、sourceId（sourceId 状态） 上下文字段
+ * English: Inputs: {
+  request,
+  refresh,
+  vms,
+  sourceId = '',
+} provides context fields request (transport capability bound to identity/authority scope), refresh (refresh state), vms (vms state), sourceId (sourceId state)
+ */
 export function GoldenImageLibrary({
   request,
   refresh,
@@ -16,7 +35,7 @@ export function GoldenImageLibrary({
   sourceId = '',
 }: {
   request: Request;
-  refresh: () => Promise<unknown>;
+  refresh: /** 中文：请求父级重新核对远端视图；完成异步刷新后才兑现返回值；这是 GoldenImageLibrary 的调用契约 | English: Ask the parent to reconcile remote state and fulfill only after asynchronous refresh; this is the callable contract of GoldenImageLibrary | 中文：结果：Promise<unknown>；调用者依赖此类型约定，Promise 拒绝表示异步失败 | English: Result: Promise<unknown>; callers depend on this type contract, with promise rejection representing asynchronous failure */ () => Promise<unknown>;
   vms: VMView[];
   sourceId?: string;
 }) {
@@ -30,8 +49,14 @@ export function GoldenImageLibrary({
     [instanceName, setInstanceName] = useState('from-golden');
   const source = vms.find((vm) => vm.id === vmId);
   const busy = action.busy || remote.data?.job?.status === 'running';
+  /**
+   * 中文：提交 POST /golden-images，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /golden-images for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：input：尚待校验的输入数据；message：签名所示 string 业务值
+   * English: Inputs: input: input data requiring validation; message: the string domain value in the signature
+   */
   const run = (input: GoldenAction, message: string) =>
-    action.run(async (signal) => {
+    action.run(/** 中文：提交 POST /golden-images，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互并更新reviewed 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /golden-images for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles and update reviewed state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
       await request<GoldenResult>('/golden-images', 'POST', input, signal);
       remote.reload();
       await refresh();
@@ -182,7 +207,7 @@ export function GoldenImageLibrary({
           className="secondary compact"
           disabled={cancellation.busy}
           onClick={() =>
-            void cancellation.run(async () => {
+            void cancellation.run(/** 中文：提交 POST /jobs/{remote.data!.job!.id}/cancel，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /jobs/{remote.data!.job!.id}/cancel for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
               await request(`/jobs/${remote.data!.job!.id}/cancel`, 'POST');
               remote.reload();
             })

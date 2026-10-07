@@ -1,5 +1,8 @@
 /**
- * 模块职责：无障碍审计浮层的尺寸、结果列表与可操作控件样式，保持报告在小屏幕内可滚动。
+ * 模块职责（中文）：无障碍审计浮层的尺寸、结果列表与可操作控件样式，保持报告在小屏幕内可滚动。
+ * Module responsibility (English): layout, theme and motion rules for the accessibility-audit surface, reused through component class selectors.
+ * 详细范围（中文）：布局与视觉规则由对应组件 class 使用，包含响应式尺寸、状态样式和已声明动效；更新选择器时需同步组件引用
+ * Detailed scope (English): Components consume these layout/visual rules through class selectors, including responsive sizes, state styles and declared motion; selector changes must stay aligned with component references
  */
 .accessibility-audit {
   position: fixed;

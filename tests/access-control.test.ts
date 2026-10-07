@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - opt-in account mode replaces the shared token with expiring scoped identities
- * - account login locks out repeated guessing and does not persist sessions
- * - passkey challenges are single-use and stored credentials survive restart and revoke their sessions
+ * 模块职责：回归验证模块，围绕 `access-control` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `access-control`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: opt-in account mode replaces the shared token with expiring scoped identities; account login locks out repeated guessing and does not persist sessions.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,6 +13,19 @@ import { join } from 'node:path';
 import { AccessControl } from '../server/access-control.ts';
 import { Passkeys } from '../server/passkeys.ts';
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: opt-in account mode replaces the shared token with expiring scoped identities
+ * 状态影响 / State effects: `now`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `Date.UTC`.
+ * 检查边界 / Checked boundaries: `assert.equal(access.enabled, false)`; `assert.equal(access.enabled, true)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('opt-in account mode replaces the shared token with expiring scoped identities', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-access-'));
   let now = Date.UTC(2026, 0, 1);
@@ -53,6 +67,19 @@ test('opt-in account mode replaces the shared token with expiring scoped identit
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: account login locks out repeated guessing and does not persist sessions
+ * 状态影响 / State effects: `now`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `Date.UTC`.
+ * 检查边界 / Checked boundaries: `assert.rejects(access.login({ username: 'owner', password: 'wrong password' }), /无效/)`; `assert.rejects(access.login({ username: 'owner', password: 'correct horse battery staple' }), /尝试过多/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('account login locks out repeated guessing and does not persist sessions', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-access-'));
   let now = Date.UTC(2026, 0, 1);
@@ -77,6 +104,19 @@ test('account login locks out repeated guessing and does not persist sessions', 
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: passkey challenges are single-use and stored credentials survive restart and revoke their sessions
+ * 状态影响 / State effects: `now`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `Date.UTC`.
+ * 检查边界 / Checked boundaries: `assert.rejects(passkeys.beginUnlock(1), /本机平台/)`; `assert.equal(begin.options.rpId, 'localhost')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('passkey challenges are single-use and stored credentials survive restart and revoke their sessions', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-passkeys-'));
   const file = join(directory, 'accounts.json');
@@ -140,6 +180,19 @@ test('passkey challenges are single-use and stored credentials survive restart a
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: session handoff moves one live credential without extending its lifetime
+ * 状态影响 / State effects: `now`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `Date.UTC`.
+ * 检查边界 / Checked boundaries: `assert.match(cancelled.code, /^[A-Za-z0-9_-]{24}$/)`; `assert.rejects(access.redeemHandoff({ code: cancelled.code }), /无效或已过期/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('session handoff moves one live credential without extending its lifetime', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-handoff-'));
   let now = Date.UTC(2026, 0, 1);

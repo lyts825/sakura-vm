@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # 项目启动器的临时来宾夹具：传入已有负载，验证自有 UID 执行、继承描述符泄露、环境可见性及 EOF/超量输入拒绝。
+# Temporary guest fixture for existing launcher payloads, proving owned-UID execution, FD/environment visibility and EOF/excess-input refusal.
 """Disposable-root guest fixture; not one of the three production assets."""
 import base64
 import fcntl
@@ -17,7 +18,11 @@ raw = sys.stdin.buffer.read(131073)
 assert len(raw) <= 131072
 
 
+# 返回降权 preexec 回调，调用方显式提供本轮 UID/GID。
+# Return a privilege-drop preexec callback using the explicitly supplied owned UID/GID.
 def drop(uid, gid):
+    # 清空补充组并统一三个真实/有效/保存 UID/GID，避免残留 root 身份。
+    # Clear groups and set real/effective/saved UID/GID consistently, leaving no retained root identity.
     def apply():
         os.setgroups([])
         os.setresgid(gid, gid, gid)
@@ -45,6 +50,8 @@ elif mode == 'inherit':
     inherited_paths = [path + '/cgroup.kill', '/var/lib/sakura/project-identities/lock', __file__]
     inherited = [os.open(inherited_paths[0], os.O_WRONLY | os.O_CLOEXEC)]
     inherited.extend(os.open(p, os.O_RDONLY | os.O_CLOEXEC) for p in inherited_paths[1:])
+    # 将本轮子进程写入自有 cgroup，供负载/取消边界检查。
+    # Place the owned child in its cgroup for payload/cancellation boundary checks.
     def enter():
         with open(path + '/cgroup.procs', 'w') as stream:
             stream.write(str(os.getpid()))
@@ -99,6 +106,8 @@ elif mode == 'inspect':
 elif mode in ('no-eof', 'extra', 'pending'):
     command = base64.b64decode(sys.argv[2], validate=True).decode()
     process = subprocess.Popen(['/bin/sh', '-c', command], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # 把终止信号变为 KeyboardInterrupt，退出正常夹具流程并走清理。
+    # Convert termination into KeyboardInterrupt so the fixture exits through cleanup.
     def interrupted(_signum, _frame):
         raise KeyboardInterrupt
     for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):

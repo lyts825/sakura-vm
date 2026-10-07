@@ -1,5 +1,8 @@
 /**
- * 模块职责：“项目工作区”插件清单：多项目配置、开发模板、初始化命令与项目服务。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ * 模块职责（中文）：“项目工作区”插件清单：多项目配置、开发模板、初始化命令与项目服务。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ * Module responsibility (English): declarations of dependencies, services, admission policy and UI contributions for project configuration, identities and running services.
+ * 详细范围（中文）：公开入口包括 manifest；职责覆盖声明项目配置、账号与运行服务的依赖、服务、准入策略和界面贡献，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include manifest. The scope covers declarations of dependencies, services, admission policy and UI contributions for project configuration, identities and running services. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 

@@ -1,28 +1,42 @@
-/** 受控 S3 HTTP 夹具，模拟对象、版本和锁定响应供备份验收使用，不作为真实远端存储证据。 */
+/** 受控 S3 HTTP 夹具，模拟对象、版本和锁定响应供备份验收使用，不作为真实远端存储证据。
+ * Model controlled S3 objects/versions/lock responses for backup acceptance; fixture behavior is not evidence of real remote storage. */
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
+/** 编码 XML 五种保留字符，避免对象键与桶名破坏夹具响应结构。
+ * Escape the five XML reserved characters so object keys/bucket names cannot corrupt fixture responses. */
 const escapeXml = (value: string) => value.replace(/[&<>"']/g, (character) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]!);
+/** 为响应片段增加 UTF-8 XML 声明，保持 S3 客户端可解析的格式。
+ * Prefix response fragments with a UTF-8 XML declaration for S3-client parsing. */
 const xml = (value: string) => `<?xml version="1.0" encoding="UTF-8"?>${value}`;
 
 /** A small in-process S3 protocol fixture. It validates the SDK's HTTP flow, not SigV4. */
+/** 建立自有回环 S3 夹具与内存对象/分段上传表，支持列举、普通与分段读写和删除；要求签名头形状但不承担生产签名验证，返回观测计数和关闭句柄。
+ * Create an owned loopback S3 fixture with in-memory objects/multipart state and list/read/write/delete support; require signature-header shape without production signature validation, returning counters and a close handle. */
 export async function mockS3(bucket = 'sakura-test') {
   const objects = new Map<string, Buffer>();
   const uploads = new Map<string, { key: string; parts: Map<number, Buffer> }>();
   let partCount = 0;
+  /** 按流收集本地夹具请求体并连接为 Buffer，完整读完后才应用上传状态。
+   * Collect the local fixture request stream into a Buffer, applying upload state only after the body is fully read. */
   const readBody = async (request: IncomingMessage) => {
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     return Buffer.concat(chunks);
   };
+  /** 用指定状态、XML 正文和附加头结束夹具响应，默认声明 application/xml。
+   * Finish a fixture response with the supplied status/XML/extra headers, defaulting to application/xml. */
   const respond = (response: ServerResponse, code: number, body = '', headers: Record<string, string> = {}) => {
     response.writeHead(code, { 'Content-Type': 'application/xml', ...headers });
     response.end(body);
   };
+  /** 生成指定 S3 错误代码的 404 XML，用于不存在的桶、对象或上传会话。
+   * Return 404 XML with the supplied S3 error code for missing buckets/objects/upload sessions. */
   const missing = (response: ServerResponse, name = 'NoSuchKey') =>
     respond(response, 404, xml(`<Error><Code>${name}</Code><Message>Not found</Message></Error>`));
-  const server = createServer(async (request, response) => {
+  const server = createServer(/** 实现内存 S3 夹具的桶列表、对象与分片上传/完成/取消，仅检查 SigV4 头形状；按 bucket/key/uploadId 绑定数据，XML 转义和错误状态供正式客户端协议验证。
+ * Implement in-memory S3 bucket listing, objects and multipart upload/complete/abort with SigV4-header shape checks only; bind data by bucket/key/uploadId and escape XML/error statuses for formal-client protocol verification. */ async (request, response) => {
     try {
       if (!request.headers.authorization?.startsWith('AWS4-HMAC-SHA256 ')) {
         respond(response, 403); return;
@@ -99,7 +113,11 @@ export async function mockS3(bucket = 'sakura-test') {
   return {
     endpoint: `http://127.0.0.1:${address.port}`,
     objects,
+    /** 读取实际收到的分段上传次数，供调用方确认大对象走过分段路径。
+     * Read the number of received multipart parts so callers can confirm large uploads used the multipart path. */
     get partCount() { return partCount; },
+    /** 关闭本夹具监听器并等待完成；server.close 错误拒绝 Promise，避免将未关闭资源报告为成功。
+     * Close this fixture listener and await completion; reject server.close errors rather than report unclosed resources as success. */
     close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
   };
 }

@@ -1,5 +1,6 @@
 /**
  * 模块职责：解析客户机 DNS 配置和诊断结果，区分实例未运行与配置不可读情况。
+ * Module purpose: Parses guest DNS configuration and diagnostics, distinguishing stopped guests from unreadable resolver state.
  */
 import type { VmAccess as Machines } from './vm-access.ts';
 
@@ -21,6 +22,18 @@ if command -v resolvectl >/dev/null 2>&1; then
   printf 'DNSSEC_STATE=%s\n' "$state"
 fi`;
 
+/**
+ * 入口 / Entry: parseGuestDns.
+ * 功能：在解析客户机 DNS 配置和诊断结果中，转换协议或持久数据表示并保持调用边界；本入口产生 `{ source, nameservers, searchDomains, routingDomains, dnssecTools, dnssecState, dnssecValidation: 'not-verified' as const, }` 供上层消费（`guest-dns.ts`）。
+ * Purpose: Converts protocol or durable data representations at the call boundary in `guest-dns.ts`; this entry produces `{ source, nameservers, searchDomains, routingDomains, dnssecTools, dnssecState, dnssecValidation: 'not-verified' as const, }` for its caller. Module context: Parses guest DNS configuration and diagnostics, distinguishing stopped guests from unreadable resolver state.
+ * 处理：通过 `output.slice().split`, `output.slice`, `line.indexOf`, `line.slice` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `output.slice().split`, `output.slice`, `line.indexOf`, `line.slice`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `index < 1`; `!value`; `key === 'SOURCE'`.
+ * 输入 / Inputs: output: string
+ * 输出 / Returns: `{ source, nameservers, searchDomains, routingDomains, dnssecTools, dnssecState, dnssecValidation: 'not-verified' as const, }`.
+ * 副作用 / Effects: `nameservers.push`; `searchDomains.push`; `routingDomains.push`; `dnssecTools.push`; 更新 / updates `source`, `dnssecState`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function parseGuestDns(output: string) {
   const nameservers: string[] = [], searchDomains: string[] = [], routingDomains: string[] = [], dnssecTools: string[] = [];
   let source = '/etc/resolv.conf', dnssecState: string | null = null;
@@ -47,6 +60,18 @@ export function parseGuestDns(output: string) {
   };
 }
 
+/**
+ * 入口 / Entry: guestDnsDiagnostics.
+ * 功能：在解析客户机 DNS 配置和诊断结果中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: false, executed: false, reason: '请先启动实例，再检查客户机解析器。' }` / `{ ready: false, executed: false, reason: '客户机解析器配置不可读或检查失败。', exitCode: result.code, }` 供上层消费（`guest-dns.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `guest-dns.ts`; this entry produces `{ ready: false, executed: false, reason: '请先启动实例，再检查客户机解析器。' }` / `{ ready: false, executed: false, reason: '客户机解析器配置不可读或检查失败。', exitCode: result.code, }` for its caller. Module context: Parses guest DNS configuration and diagnostics, distinguishing stopped guests from unreadable resolver state.
+ * 处理：通过 `machines.state`, `signal.throwIfAborted`, `machines.exec`, `parseGuestDns` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `machines.state`, `signal.throwIfAborted`, `machines.exec`, `parseGuestDns`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `machines.state(id) !== 'running'`; `result.code !== 0`.
+ * 输入 / Inputs: machines: Machines; id: string; action: 'check' | 'run'; signal: AbortSignal optional
+ * 输出 / Returns: `{ ready: false, executed: false, reason: '请先启动实例，再检查客户机解析器。' }`; `{ ready: false, executed: false, reason: '客户机解析器配置不可读或检查失败。', exitCode: result.code, }`; `{ ready: true, executed: action === 'run', checkedAt: new Date().toISOString(), ...parseGuestDns(result.stdout), message: '已读…`.
+ * 副作用 / Effects: `machines.exec`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export async function guestDnsDiagnostics(
   machines: Machines,
   id: string,

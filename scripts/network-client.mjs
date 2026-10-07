@@ -1,4 +1,5 @@
-/** CLI 和构建脚本的受管理网络入口；通过服务核心提供 networkFor 与 networkRuntime。 */
+/** CLI 和构建脚本的受管理网络入口；通过服务核心提供 networkFor 与 networkRuntime。
+ * Choose the source or compiled managed-network entry from the installation layout and expose scoped tool network clients. */
 import { existsSync } from 'node:fs';
 
 const source = new URL('../server/network-entry.ts', import.meta.url);

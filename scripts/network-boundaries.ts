@@ -1,4 +1,5 @@
-/** 通过 AST 检查直接网络 API、动态导入及包装器使用，要求网络能力遵循声明的受管理入口。 */
+/** 通过 AST 检查直接网络 API、动态导入及包装器使用，要求网络能力遵循声明的受管理入口。
+ * Inspect AST imports/aliases/value references to enforce the managed network adapter boundary and reject direct unowned network creation. */
 import ts from 'typescript';
 
 const modules = new Set([
@@ -22,8 +23,12 @@ const pure: Record<string, Set<string>> = {
 };
 const globals = new Set(['fetch', 'WebSocket', 'EventSource', 'XMLHttpRequest']);
 const adapterModules = new Set(['ws', 'ssh2', '@aws-sdk/client-s3']);
+/** 去掉 node: 前缀，将 builtin 与短模块名规范到相同网络禁用表。
+ * Remove node: prefixes so builtin/short names share the forbidden-network table. */
 const moduleName = (value: string) => value.replace(/^node:/, '');
 
+/** 只从静态字符串 AST 提取值，动态表达式返回 undefined 交给调用者保守处理。
+ * Extract only static string AST values, leaving dynamic expressions undefined for conservative handling. */
 export function staticString(node: ts.Node | undefined): string | undefined {
   if (!node) return;
   if (ts.isStringLiteralLike(node)) return node.text;
@@ -34,6 +39,8 @@ export function staticString(node: ts.Node | undefined): string | undefined {
   }
 }
 
+/** 从标识符、字面量或静态计算键取得成员名，无法证明的键返回 undefined。
+ * Extract member names from identifiers/literals/static computed keys, returning undefined when unproven. */
 function propertyName(node: ts.Node) {
   return ts.isIdentifier(node)
     ? node.text
@@ -42,12 +49,16 @@ function propertyName(node: ts.Node) {
       : staticString(node);
 }
 
+/** 沿父链识别类型位置，区分声明引用与实际运行网络调用。
+ * Inspect ancestry for type positions to distinguish declaration references from runtime network calls. */
 function inType(node: ts.Node) {
   for (let parent: ts.Node | undefined = node; parent; parent = parent.parent)
     if (ts.isTypeNode(parent)) return true;
   return false;
 }
 
+/** 排除字段名、绑定/参数声明与类型引用，仅把实际值使用作为网络别名来源。
+ * Exclude property names/bindings/parameters/type refs and identify actual value uses for network alias tracking. */
 function valueReference(node: ts.Identifier) {
   const parent = node.parent;
   if (inType(node)) return false;
@@ -66,10 +77,14 @@ function valueReference(node: ts.Identifier) {
 }
 
 /** A repository source guard, not an OS sandbox or an arbitrary-code verifier. */
+/** 分析网络 import/别名/构造调用，要求 socket、fetch、SSH/S3 走受管入口，并返回精确源诊断。
+ * Analyze network imports/aliases/construction, requiring managed socket/fetch/SSH/S3 entry points and returning source diagnostics. */
 export function networkBoundaryErrors(file: string, source: ts.SourceFile): string[] {
   file = file.replaceAll('\\', '/');
   if (file.startsWith('server/network/')) return [];
   const errors: string[] = [];
+  /** 附带源文件与一基行号累计边界诊断，不中断遍历，以便一次报告全部违规。
+   * Accumulate boundary diagnostics with source path/one-based line without stopping traversal, reporting all violations together. */
   const report = (node: ts.Node, message: string) =>
     errors.push(
       `${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}: ${message}`,
@@ -78,13 +93,18 @@ export function networkBoundaryErrors(file: string, source: ts.SourceFile): stri
   // another lexical scope. Dependencies are traversed by the architecture gate.
   const options = { noLib: true, noResolve: true, allowJs: true };
   const host = ts.createCompilerHost(options);
-  host.getSourceFile = (name) => (name === source.fileName ? source : undefined);
+  host.getSourceFile = /** 把语法分析器取源入口限定为当前文件，其他文件返回 undefined，边界审计无需引入依赖图中的外部实现。
+ * Restrict the parser’s source lookup to this file and return undefined for others, keeping the boundary audit independent of external implementation graphs. */ (name) => (name === source.fileName ? source : undefined);
   const checker = ts.createProgram([source.fileName], options, host).getTypeChecker();
+  /** 递归收集 import/变量来源，以便后续别名解析不依赖语句顺序。
+   * Collect import/variable origins recursively so alias resolution does not depend on statement order. */
   const declarations = (node: ts.Identifier) =>
     (ts.isShorthandPropertyAssignment(node.parent)
       ? checker.getShorthandAssignmentValueSymbol(node.parent)
       : checker.getSymbolAtLocation(node)
     )?.declarations || [];
+  /** 沿已登记标识符/属性/绑定追溯模块与成员来源，防环并保守处理不明值。
+   * Trace module/member origin through registered identifiers/properties/bindings with cycle guards and conservative unknown handling. */
   function origin(
     node: ts.Expression,
     seen = new Set<ts.Node>(),
@@ -132,6 +152,8 @@ export function networkBoundaryErrors(file: string, source: ts.SourceFile): stri
       }
     }
   }
+  /** 识别静态 require/import 模块加载及返回别名，不能证明静态模块时保持拒绝边界。
+   * Recognize static require/import loaders and result aliases, retaining refusal boundaries when static provenance is unproven. */
   function moduleLoader(expression: ts.Expression): boolean {
     if (
       expression.kind === ts.SyntaxKind.ImportKeyword ||
@@ -152,6 +174,8 @@ export function networkBoundaryErrors(file: string, source: ts.SourceFile): stri
         }
     return false;
   }
+  /** 针对 builtin 网络与外部客户端模块核对当前文件是否为允许的受管实现。
+   * Validate whether the current source may use a builtin network/external-client module as an allowed managed implementation. */
   const checkModule = (node: ts.ImportDeclaration | ts.ExportDeclaration) => {
     if (!node.moduleSpecifier || !ts.isStringLiteralLike(node.moduleSpecifier)) return;
     const module = moduleName(node.moduleSpecifier.text);
@@ -179,6 +203,8 @@ export function networkBoundaryErrors(file: string, source: ts.SourceFile): stri
         report(entry, `Direct network primitive ${module}.${name}; use networkFor`);
     }
   };
+  /** 递归检查网络值使用、构造及选项，要求 S3 显式凭据、WebSocketServer noServer 与受管 SSH sock。
+   * Recursively inspect network uses/construction/options, requiring explicit S3 credentials, noServer WebSocket servers and managed SSH sockets. */
   function visit(node: ts.Node) {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) checkModule(node);
     if (

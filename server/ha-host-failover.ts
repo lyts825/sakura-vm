@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理宿主失联接管、来源启动授权和重加入，依赖见证服务确认防止双主。
+ * Module purpose: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
  */
 import type { HostPeersV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
 import { AppError } from '../shared/errors.ts';
@@ -26,8 +27,25 @@ export class HaHostFailover {
   private statusPending = new Set<string>();
   private failbackPhases: Record<string, 'pending' | 'completed' | null> = {};
   private recoveries: Record<string, boolean> = {};
+  /**
+   * 签名 / Signature: HaHostFailover.unregisterStart.
+   * 功能：为管理宿主失联接管、来源启动授权和重加入声明 unregisterStart 的输入与结果契约，所属容器为 HaHostFailover。
+   * Purpose: Declares the input/result contract for unregisterStart in HaHostFailover. Module responsibility: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   private unregisterStart?: () => void;
 
+  /**
+   * 入口 / Entry: HaHostFailover.constructor.
+   * 功能：建立 HaHostFailover 的管理宿主失联接管、来源启动授权和重加入上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the HaHostFailover context for this module's responsibility: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; peers: HostPeersV1; replications: SnapshotReplicationsV1; policies: () => Promise<Record<string, Policy>>; client: HaWitnessClient | null
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private machines: Machines,
     private peers: HostPeersV1,
@@ -36,9 +54,26 @@ export class HaHostFailover {
     private client: HaWitnessClient | null,
   ) {}
 
+  /**
+   * 入口 / Entry: HaHostFailover.configured.
+   * 功能：从当前输入或状态计算 `!!this.client`，供调用方后续验证或使用。
+   * Purpose: Computes `!!this.client` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `!!this.client`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   configured() {
     return !!this.client;
   }
+  /**
+   * 入口 / Entry: HaHostFailover.view.
+   * 功能：从当前输入或状态计算 `{ configured: !!this.client, armed: !!this.armed[id], phase: this.phases[id] || null, targetVmId: this.targetVmIds[id] || nul…`，供调用方后续验证或使用。
+   * Purpose: Computes `{ configured: !!this.client, armed: !!this.armed[id], phase: this.phases[id] || null, targetVmId: this.targetVmIds[id] || nul…` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ configured: !!this.client, armed: !!this.armed[id], phase: this.phases[id] || null, targetVmId: this.targetVmIds[id] || nul…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   view(id: string) {
     return {
       configured: !!this.client,
@@ -52,10 +87,33 @@ export class HaHostFailover {
     };
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.identity.
+   * 功能：从当前输入或状态计算 `{ sourceHostId: this.peers.view().hostId, sourceVmId: id }`，供调用方后续验证或使用。
+   * Purpose: Computes `{ sourceHostId: this.peers.view().hostId, sourceVmId: id }` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ sourceHostId: this.peers.view().hostId, sourceVmId: id }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private identity(id: string) {
     return { sourceHostId: this.peers.view().hostId, sourceVmId: id };
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.authorizeStart.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，核对调用资格、输入或资源归属；本入口产生 `void` 供上层消费（`HaHostFailover`）。
+   * Purpose: Checks admission, input or resource ownership in `HaHostFailover`; this entry produces `void` for its caller. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.machines.get`, `this.client.authorizeStart`, `this.identity` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.client.authorizeStart`, `this.identity`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!this.machines.get(id).haWitnessEnrollment`.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!this.client`; 异常 / errors `new AppError('宿主失联接管已启用，但见证节点未配置', 503, 'HA_WITNESS_UNAVAILABLE')`; `new AppError( `见证节点未确认来源启动：${(error as Error).message}`, 503, 'HA_WITNESS_UNAVAILABLE', )`.
+   * 失败处理：catch 分支执行 `throw new AppError( `见证节点未确认来源启动：${(error as Error).message}`, 503, 'HA_WITNESS_UNAVAILABLE', );`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `throw new AppError( `见证节点未确认来源启动：${(error as Error).message}`, 503, 'HA_WITNESS_UNAVAILABLE', );`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async authorizeStart(id: string) {
     if (!this.machines.get(id).haWitnessEnrollment) return;
     if (!this.client)
@@ -71,10 +129,30 @@ export class HaHostFailover {
     }
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.disarm.
+   * 功能：把本层请求转交 `this.enqueue`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.enqueue` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; failureThreshold: number
+   * 输出 / Returns: `this.enqueue(() => this.disarmNow(id, failureThreshold))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   disarm(id: string, failureThreshold: number) {
     return this.enqueue(() => this.disarmNow(id, failureThreshold));
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.disarmNow.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.armed[id]`, `this.phases[id]`（`HaHostFailover`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaHostFailover`; the outcome is recorded in `this.armed[id]`, `this.phases[id]`. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.client.heartbeat`, `this.identity`, `this.rememberReturn` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.client.heartbeat`, `this.identity`, `this.rememberReturn`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; failureThreshold: number
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.armed[id]`, `this.phases[id]`.
+   * 拒绝 / Refusals: 条件 / conditions `!this.client`; 异常 / errors `new AppError('见证节点未配置，不能安全撤销宿主失联策略', 503)`.
+   */
   private async disarmNow(id: string, failureThreshold: number) {
     if (!this.client) throw new AppError('见证节点未配置，不能安全撤销宿主失联策略', 503);
     const result = await this.client.heartbeat({ ...this.identity(id), failureThreshold, plan: null });
@@ -83,10 +161,30 @@ export class HaHostFailover {
     this.phases[id] = 'source';
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.sample.
+   * 功能：把本层请求转交 `this.enqueue`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.enqueue` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.enqueue(() => this.scan())`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   sample() {
     return this.enqueue(() => this.scan());
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.enqueue.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，执行此领域的具体处理步骤并返回其结果；本入口产生 `current` 供上层消费（`HaHostFailover`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaHostFailover`; this entry produces `current` for its caller. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.work.catch().then`, `this.work.catch`, `current.then` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.work.catch().then`, `this.work.catch`, `current.then`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: task: () => Promise<T>
+   * 输出 / Returns: `current`.
+   * 副作用 / Effects: 更新 / updates `this.work`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private enqueue<T>(task: () => Promise<T>) {
     const current = this.work.catch(() => {}).then(task);
     this.work = current.then(
@@ -96,6 +194,18 @@ export class HaHostFailover {
     return current;
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.keepalive.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，执行此领域的具体处理步骤并返回其结果；本入口产生 `Promise.resolve()` / `this.keepalivePending` 供上层消费（`HaHostFailover`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaHostFailover`; this entry produces `Promise.resolve()` / `this.keepalivePending` for its caller. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `Promise.resolve`, `this.sendKeepalives().finally`, `this.sendKeepalives` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.resolve`, `this.sendKeepalives().finally`, `this.sendKeepalives`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed || !this.client`; `this.keepalivePending`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `Promise.resolve()`; `this.keepalivePending`; `current`.
+   * 副作用 / Effects: `this.sendKeepalives().finally`; `this.sendKeepalives`; 更新 / updates `this.keepalivePending`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private keepalive() {
     if (this.closed || !this.client) return Promise.resolve();
     if (this.keepalivePending) return this.keepalivePending;
@@ -106,8 +216,30 @@ export class HaHostFailover {
     return current;
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.sendKeepalives.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`HaHostFailover`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaHostFailover`; the calls and state transitions below complete the operation. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.policies`, `Promise.all`, `inline.map`, `this.machines.records.values` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.policies`, `Promise.all`, `inline.map`, `this.machines.records.values`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async sendKeepalives() {
     const policies = await this.policies();
+    /**
+     * 入口 / Entry: HaHostFailover.sendKeepalives.callback@112.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline.map）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline.map).
+     * 输入 / Inputs: vm
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: 更新 / updates `this.errors[vm.id]`, `this.armed[vm.id]`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     * 失败处理：catch 分支执行 `this.errors[vm.id] = (error as Error).message;`; `this.armed[vm.id] = false;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `this.errors[vm.id] = (error as Error).message;`; `this.armed[vm.id] = false;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     await Promise.all(
       [...this.machines.records.values()].map(async (vm) => {
         const enrollment = vm.haWitnessEnrollment;
@@ -153,6 +285,18 @@ export class HaHostFailover {
     );
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.init.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，初始化并核对当前领域状态；处理结果记录到 `this.unregisterStart`, `this.keepaliveTimer`, `this.timer`（`HaHostFailover`）。
+   * Purpose: Initializes and verifies current domain state in `HaHostFailover`; the outcome is recorded in `this.unregisterStart`, `this.keepaliveTimer`, `this.timer`. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.machines.beforeHaStart`, `this.machines.records.keys`, `this.statusPending.add`, `this.refreshPendingStatuses` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.beforeHaStart`, `this.machines.records.keys`, `this.statusPending.add`, `this.refreshPendingStatuses`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.client`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.statusPending.add`; `setInterval`; 更新 / updates `this.unregisterStart`, `this.keepaliveTimer`, `this.timer`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async init() {
     this.unregisterStart = this.machines.beforeHaStart?.((id) => this.authorizeStart(id));
     // A completed rejoin survives local policy revocation and source-service
@@ -175,6 +319,18 @@ export class HaHostFailover {
     this.timer.unref();
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.rememberReturn.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.failbackPhases[id]`（`HaHostFailover`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaHostFailover`; the outcome is recorded in `this.failbackPhases[id]`. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.pendingReturns.set`, `this.pendingReturns.delete` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.pendingReturns.set`, `this.pendingReturns.delete`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `phase === 'pending'`; `phase === 'completed' || phase === null`; `phase !== undefined`.
+   * 输入 / Inputs: id: string; threshold: number; phase: 'pending' | 'completed' | null | undefined
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.pendingReturns.set`; `this.pendingReturns.delete`; 更新 / updates `this.failbackPhases[id]`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private rememberReturn(id: string, threshold: number, phase: 'pending' | 'completed' | null | undefined) {
     if (phase === 'pending') this.pendingReturns.set(id, threshold);
     else if (phase === 'completed' || phase === null) this.pendingReturns.delete(id);
@@ -182,6 +338,18 @@ export class HaHostFailover {
     if (phase === 'completed') delete this.errors[id];
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.recordStatus.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.phases[id]`, `this.targetVmIds[id]`, `this.recoveries[id]`（`HaHostFailover`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaHostFailover`; the outcome is recorded in `this.phases[id]`, `this.targetVmIds[id]`, `this.recoveries[id]`. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.statusPending.delete`, `this.pendingReturns.delete`, `this.rememberReturn` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.statusPending.delete`, `this.pendingReturns.delete`, `this.rememberReturn`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `status.error`; `status.recoveryHeld`; `status.phase === 'source' && status.failureThreshold`.
+   * 输入 / Inputs: id: string; status: Awaited<ReturnType<HaWitnessClient['status']>>
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.statusPending.delete`; `this.pendingReturns.delete`; 更新 / updates `this.phases[id]`, `this.targetVmIds[id]`, `this.recoveries[id]`, `this.errors[id]`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private recordStatus(id: string, status: Awaited<ReturnType<HaWitnessClient['status']>>) {
     this.statusPending.delete(id);
     this.phases[id] = status.phase || '';
@@ -193,8 +361,31 @@ export class HaHostFailover {
       this.rememberReturn(id, status.failureThreshold, status.failback?.phase || null);
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.refreshPendingStatuses.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`HaHostFailover`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaHostFailover`; this entry produces `void` for its caller. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `Promise.all`, `inline.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.all`, `inline.map`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!this.client || this.closed`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async refreshPendingStatuses() {
     if (!this.client || this.closed) return;
+    /**
+     * 入口 / Entry: HaHostFailover.refreshPendingStatuses.callback@199.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline.map）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline.map).
+     * 输入 / Inputs: id
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: `this.statusPending.delete`; 更新 / updates `this.errors[id]`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     * 失败处理：catch 分支执行 `if (error instanceof AppError && error.code === 'HA_WITNESS_NOT_REGISTERED') { this.statusPending.delete(id); if (this.machin…`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `if (error instanceof AppError && error.code === 'HA_WITNESS_NOT_REGISTERED') { this.statusPending.delete(id); if (this.machin…`; these statements determine whether a failure is absorbed or rejected again.
+     */
     await Promise.all(
       [...this.statusPending].map(async (id) => {
         if (!this.machines.records.has(id)) {
@@ -218,6 +409,19 @@ export class HaHostFailover {
     );
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.scan.
+   * 功能：采样宿主失联条件并根据见证授权决定是否执行目标副本接管。
+   * Purpose: Samples host-loss conditions and uses witness authority to decide target replica promotion.
+   * 设计：核验来源、目标和副本身份，先取得见证与隔离证明再启动；未确认状态继续保留栅栏记录。
+   * Design: Source/target/replica checks and witness/fencing proof precede startup; unconfirmed state retains fence records.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 更新 / updates `this.errors[vm.id]`, `this.armed[id]`, `plan`, `this.phases[id]`.
+   * 拒绝 / Refusals: 条件 / conditions `!enrollment || enrollment.targetHostId !== parsed.data.targetHostId || enrollment.failureThreshold !== parsed.data.failureThr…`; `!this.client`; 异常 / errors `new AppError('来源实例见证登记与策略不一致，拒绝布防', 409)`; `new AppError('见证节点未配置', 503)`.
+   * 失败处理：catch 分支执行 `this.errors[vm.id] = (error as Error).message;`; `this.armed[id] = false;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.errors[vm.id] = (error as Error).message;`; `this.armed[id] = false;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async scan() {
     if (this.closed) return;
     await this.refreshPendingStatuses();
@@ -332,6 +536,20 @@ export class HaHostFailover {
     }
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.witnessStatus.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ configured: false, error: '见证节点未配置' }` / `{ configured: true, ...(await this.client.status(this.identity(id))) }` 供上层消费（`HaHostFailover`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaHostFailover`; this entry produces `{ configured: false, error: '见证节点未配置' }` / `{ configured: true, ...(await this.client.status(this.identity(id))) }` for its caller. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.client.status`, `this.identity` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.client.status`, `this.identity`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!this.client`.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ configured: false, error: '见证节点未配置' }`; `{ configured: true, ...(await this.client.status(this.identity(id))) }`; `{ configured: true, error: (error as Error).message }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `return { configured: true, error: (error as Error).message };`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `return { configured: true, error: (error as Error).message };`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async witnessStatus(id: string) {
     if (!this.client) return { configured: false, error: '见证节点未配置' };
     try {
@@ -341,10 +559,33 @@ export class HaHostFailover {
     }
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.rejoin.
+   * 功能：把本层请求转交 `this.enqueue`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.enqueue` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; dataReconciled: boolean
+   * 输出 / Returns: `this.enqueue(() => this.rejoinNow(id, dataReconciled))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   rejoin(id: string, dataReconciled: boolean) {
     return this.enqueue(() => this.rejoinNow(id, dataReconciled));
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.rejoinNow.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: true, executed: true, ...result, message: result.failback === 'pending' ? '目标副本已退役，来源可重新启动；见证将确认来源应用健康后回切流量。' : resu…` 供上层消费（`HaHostFailover`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaHostFailover`; this entry produces `{ ready: true, executed: true, ...result, message: result.failback === 'pending' ? '目标副本已退役，来源可重新启动；见证将确认来源应用健康后回切流量。' : resu…` for its caller. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.machines.requireUnlocked`, `this.machines.requireStopped`, `this.client.rejoin`, `this.identity` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.requireUnlocked`, `this.machines.requireStopped`, `this.client.rejoin`, `this.identity`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `result.failback === 'pending'`; `enrollment`; `!this.statusPending.has(id)`.
+   * 输入 / Inputs: id: string; dataReconciled: boolean
+   * 输出 / Returns: `{ ready: true, executed: true, ...result, message: result.failback === 'pending' ? '目标副本已退役，来源可重新启动；见证将确认来源应用健康后回切流量。' : resu…`.
+   * 副作用 / Effects: `this.statusPending.add`; `this.pendingReturns.set`; 更新 / updates `this.failbackPhases[id]`, `this.errors[id]`, `this.armed[id]`, `this.phases[id]`.
+   * 拒绝 / Refusals: 条件 / conditions `!dataReconciled`; `!this.client`; 异常 / errors `new AppError('请先回迁目标期间的写入，或明确接受丢失目标新数据', 409)`; `new AppError('见证节点未配置', 503)`.
+   * 失败处理：catch 分支执行 `this.errors[id] = (error as Error).message;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.errors[id] = (error as Error).message;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async rejoinNow(id: string, dataReconciled: boolean) {
     if (!dataReconciled) throw new AppError('请先回迁目标期间的写入，或明确接受丢失目标新数据', 409);
     this.machines.requireUnlocked(id);
@@ -381,6 +622,20 @@ export class HaHostFailover {
     };
   }
 
+  /**
+   * 入口 / Entry: HaHostFailover.close.
+   * 功能：在管理宿主失联接管、来源启动授权和重加入中，结束、撤销或清理本次拥有的领域资源；本入口产生 `void` 供上层消费（`HaHostFailover`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `HaHostFailover`; this entry produces `void` for its caller. Module context: Owns host-loss promotion, source startup authority and rejoin; witness confirmation prevents competing active owners.
+   * 处理：通过 `this.unregisterStart`, `clearInterval`, `this.keepalivePending.catch`, `this.work.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.unregisterStart`, `clearInterval`, `this.keepalivePending.catch`, `this.work.catch`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!this.client`; `!vm.haWitnessEnrollment`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `clearInterval`; 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `console.error(`实例 ${vm.id} 的见证关闭心跳失败：`, (error as Error).message);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `console.error(`实例 ${vm.id} 的见证关闭心跳失败：`, (error as Error).message);`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async close() {
     this.closed = true;
     this.unregisterStart?.();

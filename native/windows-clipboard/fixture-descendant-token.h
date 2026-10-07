@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：共用令牌场景构造与证据收集，覆盖原对象固定、权限变化、隐式模拟拒绝及 API 参数/继承保真；自有模拟与句柄均在结束恢复。
+ * Module responsibilities (English): Share token-scenario construction/evidence for original-object pinning, privilege changes, implicit impersonation refusal and API argument/inheritance fidelity, restoring owned impersonation/handles afterward.
+ */
 /** 后代令牌场景的共享验证代码，覆盖不同创建 API、受限令牌及身份拒绝情况。 */
 #pragma once
 #include "fixture-descendant.h"
@@ -6,14 +10,17 @@
 #include <memory>
 
 constexpr wchar_t SakuraTokenLiteral[]=L"empty space 中文 \\ trailing\\ \"quoted\"";
+/** 中文：识别 as-user、with-token 和 with-logon 场景，以决定是否使用令牌夹具创建路径。 English: Recognize as-user/with-token/with-logon scenarios for dispatch to token-fixture creation. 参数声明 / Declared parameters: const std::string& mode. */
 inline bool tokenFixtureMode(const std::string& mode){return mode.rfind("as-user-",0)==0 || mode.rfind("with-token",0)==0 || mode=="with-logon";}
 struct TokenFixtureHandles {
   HANDLE primary=nullptr,argument=nullptr,input=nullptr,output=nullptr,error=nullptr;
   bool impersonated=false;
+  /** 中文：先撤销本层模拟，再关闭自有令牌和标准句柄，并保存进入析构时的 LastError。 English: Revert this layer's impersonation, close owned token/standard handles and preserve LastError captured at destruction. */
   ~TokenFixtureHandles(){const DWORD saved=GetLastError();if(impersonated)RevertToSelf();for(HANDLE handle:{primary,argument,input,output,error})if(handle && handle!=INVALID_HANDLE_VALUE)CloseHandle(handle);SetLastError(saved);}
 };
 struct TokenFixtureStandardHandles {
   HANDLE input=nullptr,output=nullptr,error=nullptr;
+  /** 中文：关闭为标准句柄身份比对保留的三个精确句柄，共享证据最后释放时执行。 English: Close the three exact handles retained for standard-handle identity comparison when shared evidence is finally released. */
   ~TokenFixtureStandardHandles(){for(HANDLE handle:{input,output,error})if(handle)CloseHandle(handle);}
 };
 struct TokenFixtureEvidence {
@@ -24,6 +31,7 @@ struct TokenFixtureEvidence {
   uint64_t sourceToken=0,sourceModifiedBefore=0,sourceModifiedAfter=0;
   std::shared_ptr<TokenFixtureStandardHandles> standard;
 };
+/** 中文：读取指定进程 token 的 AuthenticationId、session 和类型，失败返回零并关闭暂持 token。 English: Read a process token's AuthenticationId/session/type, return zero on failure and close the temporary token. 参数声明 / Declared parameters: HANDLE process,DWORD& session,DWORD& type. */
 inline uint64_t tokenFixtureAuthentication(HANDLE process,DWORD& session,DWORD& type) {
   HANDLE token=nullptr;DWORD size=0;TOKEN_STATISTICS statistics{};
   if(!OpenProcessToken(process,TOKEN_QUERY,&token))return 0;
@@ -31,6 +39,7 @@ inline uint64_t tokenFixtureAuthentication(HANDLE process,DWORD& session,DWORD& 
   CloseHandle(token);if(!good)return 0;type=DWORD(statistics.TokenType);
   return (uint64_t(DWORD(statistics.AuthenticationId.HighPart))<<32)|statistics.AuthenticationId.LowPart;
 }
+/** 中文：打开两个精确进程的 token 并比较用户 SID，失败返回 false，所有暂持 token 均关闭。 English: Open tokens for two exact processes and compare user SIDs, returning false on failure and closing both temporary tokens. 参数声明 / Declared parameters: HANDLE left,HANDLE right. */
 inline bool tokenFixtureSameUser(HANDLE left,HANDLE right) {
   HANDLE first=nullptr,second=nullptr;DWORD one=0,two=0;bool same=false;
   if(OpenProcessToken(left,TOKEN_QUERY,&first) && OpenProcessToken(right,TOKEN_QUERY,&second)){
@@ -39,6 +48,7 @@ inline bool tokenFixtureSameUser(HANDLE left,HANDLE right) {
   }
   if(first)CloseHandle(first);if(second)CloseHandle(second);return same;
 }
+/** 中文：验证关闭原 token 句柄后仍固定同一对象，改变并恢复权限后旧 ModifiedId 快照仍拒绝，隐式 token 遇线程模拟也拒绝；输出证据并撤销自身变更。 English: Verify token pinning after original-handle close, rejection of old ModifiedId snapshots after privilege mutation/restoration and implicit-token rejection under impersonation; output evidence while undoing fixture changes. */
 inline std::string tokenFixtureSourceCheck() {
   TokenFixtureHandles owned;
   if(!OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY|TOKEN_DUPLICATE,&owned.primary) ||
@@ -59,6 +69,7 @@ inline std::string tokenFixtureSourceCheck() {
   TOKEN_PRIVILEGES update{},previous{};update.PrivilegeCount=1;update.Privileges[0]={notify,enabled?0u:DWORD(SE_PRIVILEGE_ENABLED)};
   if(!AdjustTokenPrivileges(inspected.argument(),FALSE,&update,sizeof(previous),&previous,&size) || GetLastError()!=ERROR_SUCCESS ||
       !GetTokenInformation(inspected.argument(),TokenStatistics,&changed,sizeof(changed),&size))throw std::runtime_error("fixture source mutation unavailable");
+  /** 中文：执行预期失败的身份核验调用，捕获任意异常转为拒绝证据，正常返回为 false。 English: Run an identity check expected to fail and convert any exception into rejection evidence, returning false for normal completion. 参数声明 / Declared parameters: const auto& call. */
   const auto rejected=[](const auto& call){try{call();return false;}catch(...){return true;}};
   const bool beforeCallRejected=rejected([&]{inspected.verifySource();});
   const bool childCheckRejected=rejected([&]{inspected.verifyChild(GetCurrentProcess());});
@@ -70,11 +81,13 @@ inline std::string tokenFixtureSourceCheck() {
   if(!owned.impersonated)throw std::runtime_error("fixture implicit impersonation unavailable");
   const bool implicitChangedRejected=rejected([&]{implicit.verifySource();});
   if(!RevertToSelf())throw std::runtime_error("fixture implicit impersonation restore failed");owned.impersonated=false;
+  /** 中文：组合 LUID 的高低 32 位为无符号 64 位证据，保留完整身份位值。 English: Combine both LUID halves into unsigned 64-bit evidence without losing identity bits. 参数声明 / Declared parameters: const LUID& value. */
   const auto luid=[](const LUID& value){return (uint64_t(DWORD(value.HighPart))<<32)|value.LowPart;};
   char answer[1024]{};
   std::snprintf(answer,sizeof(answer),"{\"sourceHandleClosedStillPinned\":true,\"beforeCallRejected\":%s,\"childCheckRejected\":%s,\"restoredSnapshotRejected\":%s,\"implicitChangedRejected\":%s,\"tokenId\":\"%llu\",\"modifiedBefore\":\"%llu\",\"modifiedChanged\":\"%llu\",\"modifiedRestored\":\"%llu\"}\n",beforeCallRejected?"true":"false",childCheckRejected?"true":"false",restoredSnapshotRejected?"true":"false",implicitChangedRejected?"true":"false",static_cast<unsigned long long>(luid(before.TokenId)),static_cast<unsigned long long>(luid(before.ModifiedId)),static_cast<unsigned long long>(luid(changed.ModifiedId)),static_cast<unsigned long long>(luid(restored.ModifiedId)));
   return answer;
 }
+/** 中文：按场景构造显式/隐式、受限或错误 token，通过指定 API 创建并记录原 token 前后身份及孩子继承状态；标准句柄精确对象保留至后续核验，最终恢复模拟和原错误。 English: Construct explicit/implicit/restricted/invalid tokens per scenario, create through the chosen API and record source identity before/after plus child inheritance; retain exact standard objects for later checks and restore impersonation/original error. 参数声明 / Declared parameters: const std::string& mode,const std::wstring& image,std::wstring& command,const std::wstring& desktop, const std::wstring& directory,bool semantics,PROCESS_INFORMATION& child,TokenFixtureEvidence& evidence. */
 inline BOOL tokenFixtureCreate(const std::string& mode,const std::wstring& image,std::wstring& command,const std::wstring& desktop,
     const std::wstring& directory,bool semantics,PROCESS_INFORMATION& child,TokenFixtureEvidence& evidence) {
   TokenFixtureHandles owned;
@@ -111,11 +124,13 @@ inline BOOL tokenFixtureCreate(const std::string& mode,const std::wstring& image
     environment+=L"SystemRoot="+std::wstring(system,size);environment.push_back(L'\0');environment.push_back(L'\0');flags|=CREATE_UNICODE_ENVIRONMENT;
   }
   BOOL created=FALSE;
+  /** 中文：组合 LUID 的高低 32 位为无符号 64 位证据，保留完整身份位值。 English: Combine both LUID halves into unsigned 64-bit evidence without losing identity bits. 参数声明 / Declared parameters: const LUID& value. */
   const auto luid=[](const LUID& value){return (uint64_t(DWORD(value.HighPart))<<32)|value.LowPart;};
   TOKEN_STATISTICS before{},after{};DWORD statisticsSize=0;
   const HANDLE source=token?token:owned.primary;
   const BOOL inspected=GetTokenInformation(source,TokenStatistics,&before,sizeof(before),&statisticsSize);
   if(mode=="as-user-A"){
+    /** 中文：将夹具宽参数按 ACP 转换为包含终止符的原 ANSI 创建参数。 English: Convert wide fixture values with ACP into original ANSI creation arguments including their terminator. 参数声明 / Declared parameters: const std::wstring& value. */
     const auto ansi=[](const std::wstring& value){const int size=WideCharToMultiByte(CP_ACP,0,value.c_str(),-1,nullptr,0,nullptr,nullptr);std::string text(size,'\0');if(size)WideCharToMultiByte(CP_ACP,0,value.c_str(),-1,text.data(),size,nullptr,nullptr);return text;};
     const auto path=ansi(image),work=ansi(directory),desk=ansi(desktop);auto arguments=ansi(command);
     STARTUPINFOA info{};info.cb=sizeof(info);info.lpDesktop=const_cast<char*>(desk.c_str());info.dwFlags=startup.dwFlags;info.hStdInput=startup.hStdInput;info.hStdOutput=startup.hStdOutput;info.hStdError=startup.hStdError;

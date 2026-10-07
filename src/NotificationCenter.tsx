@@ -1,5 +1,8 @@
 /**
- * 模块职责：展示控制面事件与通知，提供事件详情和用户可操作的反馈。
+ * 模块职责（中文）：展示控制面事件与通知，提供事件详情和用户可操作的反馈。
+ * Module responsibility (English): Presenting controller events and notification details.
+ * 详细范围（中文）：公开入口包括 NotificationCenter；职责覆盖呈现控制面事件与通知详情，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include NotificationCenter. The scope covers Presenting controller events and notification details. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from './localization';
 import { useEffect, useRef, useState } from 'react';
@@ -10,13 +13,27 @@ type Event = Pick<
   AlertEvent,
   'id' | 'kind' | 'message' | 'createdAt' | 'acknowledged' | 'jobId' | 'projectId'
 >;
+/**
+ * 中文：呈现呈现控制面事件与通知详情中的 NotificationCenter 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the NotificationCenter surface for Presenting controller events and notification details. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  events,
+  onAcknowledge,
+  busy,
+} 提供 events（events 状态）、onAcknowledge（onAcknowledge 状态）、busy（忙碌标记） 上下文字段
+ * English: Inputs: {
+  events,
+  onAcknowledge,
+  busy,
+} provides context fields events (events state), onAcknowledge (onAcknowledge state), busy (busy flag)
+ */
 export function NotificationCenter({
   events,
   onAcknowledge,
   busy,
 }: {
   events: Event[];
-  onAcknowledge: (id: string) => void;
+  onAcknowledge: /** 中文：把事件确认通知外层，以更新通知中心未读状态；这是 NotificationCenter 的调用契约 | English: Notify the outer owner of event acknowledgment to update unread state; this is the callable contract of NotificationCenter | 中文：输入：id：目标资源标识 | English: Inputs: id: target resource identifier | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (id: string) => void;
   busy: boolean;
 }) {
   const supported = typeof Notification !== 'undefined';
@@ -25,7 +42,7 @@ export function NotificationCenter({
   const [limit, setLimit] = useState(50);
   const [permissionError, setPermissionError] = useState('');
   const seen = useRef<Set<string> | null>(null);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [events, permission, supported] 变化时登记集合或存储条目，按指定 Schema 校验并解码；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [events, permission, supported] change, register collection/storage entries, validate/decode with the specified schema. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (seen.current === null) {
       seen.current = new Set(events.map((event) => event.id));
       return;
@@ -64,7 +81,7 @@ export function NotificationCenter({
         {supported && permission === 'default' && (
           <button
             className="secondary compact"
-            onClick={() => {
+            onClick={/** 中文：由用户触发申请浏览器通知权限，结果更新权限状态，浏览器拒绝请求时显示站点权限检查提示。 | English: Request browser-notification permission from a user action, update permission state on fulfillment and display site-permission guidance if the browser rejects it. | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
               void Notification.requestPermission()
                 .then(setPermission)
                 .catch(() => setPermissionError('无法启用浏览器通知，请检查站点权限。'));

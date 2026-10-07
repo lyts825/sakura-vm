@@ -1,5 +1,8 @@
 /**
- * 模块职责：X11/Wayland 剪贴板应用与会话状态的公共视图，描述桥接安装、连接和应用策略。
+ * 模块职责（中文）：X11/Wayland 剪贴板应用与会话状态的公共视图，描述桥接安装、连接和应用策略。
+ * Module responsibility (English): Describing X11/Wayland clipboard sessions and application policies.
+ * 详细范围（中文）：公开入口包括 X11ClipboardApplication, X11ClipboardSession, X11ClipboardView；职责覆盖描述 X11/Wayland 剪贴板会话和应用策略，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include X11ClipboardApplication, X11ClipboardSession, X11ClipboardView. The scope covers Describing X11/Wayland clipboard sessions and application policies. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import type { ClipboardRule } from './clipboard-policy.ts';
 import type { JobView } from './contracts/jobs.ts';

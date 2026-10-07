@@ -1,6 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - independent HTTPS witness powers off source before promoting a paired target
+ * 模块职责：回归验证模块，围绕 `ha-witness-network` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `ha-witness-network`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: independent HTTPS witness powers off source before promoting a paired target.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,21 +21,60 @@ import { haWitnessServerConfigSchema, startHaWitnessServer } from '../server/ha-
 import { checkHaWitnessDeployment } from '../server/ha-witness-preflight.ts';
 import { observeHaFailoverDrill, prepareHaFailoverDrill } from '../server/ha-witness-drill.ts';
 
+/**
+ * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+ * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+ * 输入 / Inputs: server: Server。
+ * 结果：返回分支计算值（``https://127.0.0.1:${address.port}/``），以 Promise 交付。
+ * Result: Return the branch-computed value (``https://127.0.0.1:${address.port}/``) through a Promise.
+ * 失败 / Failure: `new Error('missing test port')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `server.address`.
+ */
 async function listen(server: Server) {
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('missing test port');
   return `https://127.0.0.1:${address.port}/`;
 }
+/**
+ * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+ * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+ * 输入 / Inputs: server: Server。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ */
 async function close(server: Server) {
   await new Promise<void>((done) => server.close(() => done()));
 }
+/**
+ * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+ * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+ * 输入 / Inputs: request: import('node:http').IncomingMessage。
+ * 结果：返回分支计算值（`body ? JSON.parse(body) : null`），以 Promise 交付。
+ * Result: Return the branch-computed value (`body ? JSON.parse(body) : null`) through a Promise.
+ * 状态影响 / State effects: `body`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `chunk.toString`, `JSON.parse`.
+ */
 async function input(request: import('node:http').IncomingMessage) {
   let body = '';
   for await (const chunk of request) body += chunk.toString();
   return body ? JSON.parse(body) : null;
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: independent HTTPS witness powers off source before promoting a paired target
+ * 状态影响 / State effects: `bmcIdentity`, `targetIdentity`, `witnessService`, `config.listen.port`, `cliObserver`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 失败 / Failure: `new Error('witness port missing')`; `new Error('unsafe witness cleanup')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `generate`.
+ * 检查边界 / Checked boundaries: `assert.equal(haWitnessServerConfigSchema.safeParse({ ...config, sourceTokens: undefined, sourceToken }).success, false, 'one share…`; `assert.equal(haWitnessServerConfigSchema.safeParse({ ...config, sourceTokens: { [sourceHostId]: sourceToken, [secondSourceHostId]:…`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('independent HTTPS witness powers off source before promoting a paired target', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sakura-ha-witness-network-'));
   const cert = await generate([{ name: 'commonName', value: 'localhost' }], {
@@ -63,7 +105,27 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     sha256: 'a'.repeat(64), snapshotAt: new Date(sourceAt).toISOString(),
     maxReplicaAgeMinutes: 10,
   };
-  const bmc = createServer(tls, (req, res) => void (async () => {
+  const bmc = createServer(tls, /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: req; res。
+   * 结果：返回分支计算值（`void (async () => { assert.equal(req.headers.authorization, `Basic ${Buffer.from…`）。
+   * Result: Return the branch-computed value (`void (async () => { assert.equal(req.headers.authorization, `Basic ${Buffer.from…`).
+   * 验证场景 / Scenario: independent HTTPS witness powers off source before promoting a paired target
+   * 协作入口 / Collaborators: `(async () => { assert.equal(req.headers.authorization, `Basic ${Buffer.from…`.
+   */
+  (req, res) => void (/**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: independent HTTPS witness powers off source before promoting a paired target
+   * 状态影响 / State effects: `poweredOff`, `bmcIdentity`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `assert.equal`, `Buffer.from('admin:password').toString`, `Buffer.from`, `assert.deepEqual`.
+   * 检查边界 / Checked boundaries: `assert.equal(req.headers.authorization, `Basic ${Buffer.from('admin:password').toString('base64')}`)`; `assert.equal(req.url, '/redfish/v1/Systems/1/Actions/ComputerSystem.Reset')`.
+   */
+  async () => {
     assert.equal(req.headers.authorization,
       `Basic ${Buffer.from('admin:password').toString('base64')}`);
     if (req.method === 'POST') {
@@ -76,7 +138,30 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     res.end(JSON.stringify({ UUID: bmcIdentity,
       PowerState: poweredOff ? 'Off' : 'On' }));
   })());
-  const target = createServer(tls, (req, res) => void (async () => {
+  const target = createServer(tls, /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: req; res。
+   * 结果：返回分支计算值（`void (async () => { assert.equal(req.headers.authorization, `Bearer ${targetToke…`）。
+   * Result: Return the branch-computed value (`void (async () => { assert.equal(req.headers.authorization, `Bearer ${targetToke…`).
+   * 验证场景 / Scenario: independent HTTPS witness powers off source before promoting a paired target
+   * 协作入口 / Collaborators: `(async () => { assert.equal(req.headers.authorization, `Bearer ${targetToke…`.
+   */
+  (req, res) => void (/**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: independent HTTPS witness powers off source before promoting a paired target
+   * 状态影响 / State effects: `result`, `targetRunning`, `targetRetired`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 失败 / Failure: `new Error(`unexpected target path ${req.url}`)`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `assert.equal`, `res.end`, `JSON.stringify`, `input`.
+   * 检查边界 / Checked boundaries: `assert.equal(req.headers.authorization, `Bearer ${targetToken}`)`; `assert.deepEqual(payload, { transferId, remoteVmId, sha256: plan.sha256, sourceVmId, snapshotId })`.
+   * 设计思路：根据受控条件分别注入拒绝或结果，保持分支证据可观察，供调用者失败恢复用例复用。
+   * Design: Inject rejection or results under controlled conditions while keeping branch evidence observable for caller recovery tests.
+   */
+  async () => {
     assert.equal(req.headers.authorization, `Bearer ${targetToken}`);
     if (req.method === 'GET' && req.url === '/peer/status') {
       res.end(JSON.stringify({ version: 1, id: targetIdentity }));
@@ -247,8 +332,27 @@ test('independent HTTPS witness powers off source before promoting a paired targ
       cliExited = new Promise((done, fail) => {
         cliObserver!.once('error', fail); cliObserver!.once('exit', done);
       });
-      const ready = new Promise<void>((done, fail) => {
+      const ready = new Promise<void>(/**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: done; fail。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: independent HTTPS witness powers off source before promoting a paired target
+       * 协作入口 / Collaborators: `setTimeout`, `cliObserver!.stdout!.on`, `cliObserver!.stderr!.on`, `cliExited!.then`.
+       */
+      (done, fail) => {
         const timer = setTimeout(() => fail(new Error(`compiled CLI baseline failed: ${cliOutput}`)), 15_000);
+        /**
+         * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+         * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+         * 输入 / Inputs: chunk: Buffer。
+         * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+         * Result: No explicit result value; callers observe completion, state changes or an exception.
+         * 验证场景 / Scenario: independent HTTPS witness powers off source before promoting a paired target
+         * 状态影响 / State effects: `cliOutput`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+         * 协作入口 / Collaborators: `chunk.toString`, `cliOutput.split`, `JSON.parse`, `clearTimeout`.
+         */
         const consume = (chunk: Buffer) => {
           cliOutput += chunk.toString();
           for (const line of cliOutput.split(/\r?\n/)) {
@@ -265,11 +369,28 @@ test('independent HTTPS witness powers off source before promoting a paired targ
       });
       await ready;
     }
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: independent HTTPS witness powers off source before promoting a paired target
+     */
     let baselineCaptured = () => {};
     const baseline = new Promise<void>((done) => { baselineCaptured = done; });
     observing = observeHaFailoverDrill(config, drillPlan, {
       output: join(root, 'observations.jsonl'), intervalMs: 25, timeoutMs: 30_000,
       signal: drillAbort.signal,
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: sample。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: independent HTTPS witness powers off source before promoting a paired target
+       * 协作入口 / Collaborators: `baselineCaptured`.
+       */
       onSample: (sample) => {
         if (sample.phase === 'source' && sample.sourceStartAllowed === true) baselineCaptured();
       },

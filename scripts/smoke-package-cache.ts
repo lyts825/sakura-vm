@@ -1,4 +1,5 @@
-/** 烟雾验收：验证依赖预取、离线安装、缓存清单、篡改拒绝和清除。 */
+/** 烟雾验收：验证依赖预取、离线安装、缓存清单、篡改拒绝和清除。
+ * Smoke acceptance for dependency prefetch/offline install/manifests/tamper refusal and reset. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,6 +20,8 @@ const { packageCacheScript } = await import('../server/package-cache.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const suite = new FeatureSuite(machines, new Workspaces(machines));
+/** 针对给定实例轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * For the specified VM, poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function waitRunning(id: string) {
   const deadline = Date.now() + 270000;
   while (machines.state(id) !== 'running') {

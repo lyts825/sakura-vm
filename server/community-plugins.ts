@@ -1,5 +1,6 @@
 /**
  * 模块职责：校验、安装并执行社区 WASM 扩展，管理签名、路由及可恢复的原资源清理。
+ * Module purpose: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
  */
 import { networkFor } from './network/index.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
@@ -50,6 +51,15 @@ const extensionPanel = z
     fields: z.array(extensionField).max(8),
   })
   .strict();
+/**
+ * 入口 / Entry: callback@56.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.object().strict().superRefine）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.object().strict().superRefine).
+ * 输入 / Inputs: value; context
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `context.addIssue`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const extensions = z
   .object({ routes: z.array(extensionRoute).max(8), panels: z.array(extensionPanel).max(4) })
   .strict()
@@ -149,6 +159,14 @@ const stateSchema = z
   .strict();
 type State = z.infer<typeof stateSchema>;
 type Entry = z.infer<typeof entry>;
+/**
+ * 入口 / Entry: defaults.
+ * 功能：从当前输入或状态计算 `({ schemaVersion: 1, publishers: [], sources: [], installed: [], catalogs: {}, subscriptions: [], schedules: [], deliveries: …`，供调用方后续验证或使用。
+ * Purpose: Computes `({ schemaVersion: 1, publishers: [], sources: [], installed: [], catalogs: {}, subscriptions: [], schedules: [], deliveries: …` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: State；结果来自 / values from `({ schemaVersion: 1, publishers: [], sources: [], installed: [], catalogs: {}, subscriptions: [], schedules: [], deliveries: …`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const defaults = (): State => ({
   schemaVersion: 1,
   publishers: [],
@@ -160,7 +178,29 @@ const defaults = (): State => ({
   deliveries: [],
   observed: {},
 });
+/**
+ * 入口 / Entry: sha256.
+ * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(bytes).digest('hex')` 供上层消费（`community-plugins.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `community-plugins.ts`; this entry produces `createHash('sha256').update(bytes).digest('hex')` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: bytes: Uint8Array
+ * 输出 / Returns: `createHash('sha256').update(bytes).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+/**
+ * 入口 / Entry: confirmComputations.
+ * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`community-plugins.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `community-plugins.ts`; the calls and state transitions below complete the operation. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+ * 处理：通过 `Promise.allSettled` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `Promise.allSettled`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: tasks: Promise<unknown>[]
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `result.status === 'rejected' && result.reason instanceof AppError && result.reason.code === 'COMPUTE_CLEANUP_PENDING'`; 异常 / errors `result.reason`.
+ */
 async function confirmComputations(tasks: Promise<unknown>[]) {
   const results = await Promise.allSettled(tasks);
   for (const result of results)
@@ -196,6 +236,19 @@ export const communityPluginRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('unschedule'), pluginId }).strict(),
 ]);
 
+/**
+ * 入口 / Entry: publicKey.
+ * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ key, fingerprint: sha256(key.export({ type: 'spki', format: 'der' })) }` 供上层消费（`community-plugins.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `community-plugins.ts`; this entry produces `{ key, fingerprint: sha256(key.export({ type: 'spki', format: 'der' })) }` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+ * 处理：通过 `inline.test`, `createPublicKey`, `sha256`, `key.export` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `inline.test`, `createPublicKey`, `sha256`, `key.export`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: string
+ * 输出 / Returns: { key: KeyObject; fingerprint: string }；结果来自 / values from `{ key, fingerprint: sha256(key.export({ type: 'spki', format: 'der' })) }`.
+ * 副作用 / Effects: `createPublicKey`; 更新 / updates `key`.
+ * 拒绝 / Refusals: 条件 / conditions `!/^-----BEGIN PUBLIC KEY-----\r?\n[A-Za-z0-9+/=\r\n]+-----END PUBLIC KEY-----\s*$/.test(value)`; `key.asymmetricKeyType !== 'ed25519'`; 异常 / errors `new AppError('只接受 Ed25519 公钥 PEM，不能上传私钥')`; `new AppError('发布者公钥无效')`.
+ * 失败处理：catch 分支执行 `throw new AppError('发布者公钥无效');`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `throw new AppError('发布者公钥无效');`; these statements determine whether a failure is absorbed or rejected again.
+ */
 function publicKey(value: string): { key: KeyObject; fingerprint: string } {
   if (!/^-----BEGIN PUBLIC KEY-----\r?\n[A-Za-z0-9+/=\r\n]+-----END PUBLIC KEY-----\s*$/.test(value))
     throw new AppError('只接受 Ed25519 公钥 PEM，不能上传私钥');
@@ -209,6 +262,14 @@ function publicKey(value: string): { key: KeyObject; fingerprint: string } {
   return { key, fingerprint: sha256(key.export({ type: 'spki', format: 'der' })) };
 }
 
+/**
+ * 入口 / Entry: signedPluginPayload.
+ * 功能：从当前输入或状态计算 `Buffer.from( JSON.stringify({ schemaVersion: value.schemaVersion, id: value.id, name: value.name, description: value.descript…`，供调用方后续验证或使用。
+ * Purpose: Computes `Buffer.from( JSON.stringify({ schemaVersion: value.schemaVersion, id: value.id, name: value.name, description: value.descript…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: value: Pick< Entry, 'schemaVersion' | 'id' | 'name' | 'description' | 'version' | 'sha256' |…
+ * 输出 / Returns: `Buffer.from( JSON.stringify({ schemaVersion: value.schemaVersion, id: value.id, name: value.name, description: value.descript…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export function signedPluginPayload(
   value: Pick<
     Entry,
@@ -230,6 +291,15 @@ export function signedPluginPayload(
   );
 }
 
+/**
+ * 入口 / Entry: validateSource.
+ * 功能：在校验、安装并执行社区 WASM 扩展中，核对调用资格、输入或资源归属；本入口产生 `url.href` 供上层消费（`community-plugins.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `community-plugins.ts`; this entry produces `url.href` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+ * 输入 / Inputs: value: string
+ * 输出 / Returns: `url.href`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.hash`; 异常 / errors `new AppError('目录源必须是无凭据的 HTTPS 地址')`.
+ */
 function validateSource(value: string) {
   const url = new URL(value);
   if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.hash)
@@ -237,6 +307,15 @@ function validateSource(value: string) {
   return url.href;
 }
 
+/**
+ * 入口 / Entry: artifactUrl.
+ * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；本入口产生 `url.href` 供上层消费（`community-plugins.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `community-plugins.ts`; this entry produces `url.href` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+ * 输入 / Inputs: sourceUrl: string; target: string
+ * 输出 / Returns: `url.href`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `url.protocol !== 'https:' || url.origin !== base.origin || url.username || url.password || url.hash`; 异常 / errors `new AppError('插件文件必须位于目录源的 HTTPS 主机')`.
+ */
 function artifactUrl(sourceUrl: string, target: string) {
   const base = new URL(sourceUrl),
     url = new URL(target, base);
@@ -245,8 +324,34 @@ function artifactUrl(sourceUrl: string, target: string) {
   return url.href;
 }
 
+/**
+ * 入口 / Entry: download.
+ * 功能：从当前输入或状态计算 `new Promise((resolve, reject) => { const request = httpsGet( urlText, { timeout: 10_000, headers: { accept: 'application/json…`，供调用方后续验证或使用。
+ * Purpose: Computes `new Promise((resolve, reject) => { const request = httpsGet( urlText, { timeout: 10_000, headers: { accept: 'application/json…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: urlText: string; limit: number
+ * 输出 / Returns: Promise<Buffer>；结果来自 / values from `new Promise((resolve, reject) => { const request = httpsGet( urlText, { timeout: 10_000, headers: { accept: 'application/json…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 async function download(urlText: string, limit: number): Promise<Buffer> {
+  /**
+   * 入口 / Entry: download.callback@249.
+   * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（current continuation）。
+   * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (current continuation).
+   * 输入 / Inputs: resolve; reject
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `request.on`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   return new Promise((resolve, reject) => {
+    /**
+     * 入口 / Entry: download.callback@253.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（httpsGet）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (httpsGet).
+     * 输入 / Inputs: response
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const request = httpsGet(
       urlText,
       { timeout: 10_000, headers: { accept: 'application/json, application/wasm' } },
@@ -272,6 +377,16 @@ async function download(urlText: string, limit: number): Promise<Buffer> {
   });
 }
 
+/**
+ * 入口 / Entry: readU32.
+ * 功能：在校验、安装并执行社区 WASM 扩展中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `result >>> 0` 供上层消费（`community-plugins.ts`）。
+ * Purpose: Reads/verifies domain state and constructs a caller-facing result in `community-plugins.ts`; this entry produces `result >>> 0` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+ * 分支 / Branches: `!(byte & 128)`.
+ * 输入 / Inputs: bytes: Uint8Array; cursor: { at: number }; end: number
+ * 输出 / Returns: `result >>> 0`.
+ * 副作用 / Effects: 更新 / updates `shift`, `result`.
+ * 拒绝 / Refusals: 条件 / conditions `cursor.at >= end`; `shift === 28 && byte > 15`; 异常 / errors `new AppError('WebAssembly 段长度无效')`; `new AppError('WebAssembly 整数溢出')`.
+ */
 function readU32(bytes: Uint8Array, cursor: { at: number }, end: number) {
   let result = 0;
   for (let shift = 0; shift < 35; shift += 7) {
@@ -285,6 +400,19 @@ function readU32(bytes: Uint8Array, cursor: { at: number }, end: number) {
 }
 
 /** The module gets no host imports, one bounded linear memory, and no table. */
+/**
+ * 入口 / Entry: validatePluginWasm.
+ * 功能：在校验、安装并执行社区 WASM 扩展中，核对调用资格、输入或资源归属；处理结果记录到 `cursor.at`（`community-plugins.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `community-plugins.ts`; the outcome is recorded in `cursor.at`. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+ * 处理：通过 `bytes.subarray`, `readU32`, `copy.set`, `WebAssembly.compile` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `bytes.subarray`, `readU32`, `copy.set`, `WebAssembly.compile`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: bytes: Uint8Array
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `copy.set`; 更新 / updates `memories`, `cursor.at`, `module`.
+ * 拒绝 / Refusals: 条件 / conditions `bytes.length < 8 || bytes.length > 512 * 1024 || Buffer.from(bytes.subarray(0, 8)).toString('hex') !== '0061736d01000000'`; `end > bytes.length`; `section === 4 && readU32(bytes, cursor, end) > 0`; 异常 / errors `new AppError('需要不超过 512 KiB 的 WebAssembly v1 模块')`; `new AppError('WebAssembly 段长度无效')`.
+ * 失败处理：catch 分支执行 `throw new AppError('WebAssembly 模块无法编译');`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `throw new AppError('WebAssembly 模块无法编译');`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function validatePluginWasm(bytes: Uint8Array) {
   if (
     bytes.length < 8 ||
@@ -359,15 +487,49 @@ export class CommunityPlugins {
   private running = new Map<string, Set<{ abort: AbortController; done: Promise<unknown> }>>();
   private problems: Record<string, string> = {};
   private inFlight = 0;
+  /**
+   * 入口 / Entry: CommunityPlugins.source.
+   * 功能：向调用者提供 `this.dependencies.events` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.dependencies.events` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.dependencies.events`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get source() {
     return this.dependencies.events;
   }
   private timer?: ScheduleHandle;
   private pending?: Promise<void>;
   private eventError?: string;
+  /**
+   * 入口 / Entry: CommunityPlugins.blocked.
+   * 功能：从当前输入或状态计算 `this.dependencies.blocked?.() || false`，供调用方后续验证或使用。
+   * Purpose: Computes `this.dependencies.blocked?.() || false` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.dependencies.blocked?.() || false`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private blocked = () => this.dependencies.blocked?.() || false;
+  /**
+   * 入口 / Entry: CommunityPlugins.mutation.
+   * 功能：把本层请求转交 `this.dependencies.mutation`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.dependencies.mutation` and propagates the provider result or rejection.
+   * 输入 / Inputs: delta: number
+   * 输出 / Returns: `this.dependencies.mutation?.(delta)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private mutation = (delta: number) => this.dependencies.mutation?.(delta);
   private closed = false;
+  /**
+   * 入口 / Entry: CommunityPlugins.constructor.
+   * 功能：建立 CommunityPlugins 的校验、安装并执行社区 WASM 扩展上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the CommunityPlugins context for this module's responsibility: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: file: default=join(DATA, 'community-plugins.json'); directory: default=join(DATA, 'community-plugins'); fetchBytes: default=download; now: default=Date.now; pluginDirectory: default=new PluginDirectory(); dependencies: { events?: () => Promise<WebhookEvent[]>; schedule?: boolean; blocked?: () => boolean… default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private file = join(DATA, 'community-plugins.json'),
     private directory = join(DATA, 'community-plugins'),
@@ -375,13 +537,52 @@ export class CommunityPlugins {
     private now = Date.now,
     readonly pluginDirectory = new PluginDirectory(),
     private dependencies: {
+      /**
+       * 签名 / Signature: CommunityPlugins.constructor.events.
+       * 功能：为校验、安装并执行社区 WASM 扩展声明 events 的输入与结果契约，所属容器为 CommunityPlugins.constructor。
+       * Purpose: Declares the input/result contract for events in CommunityPlugins.constructor. Module responsibility: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: Promise<WebhookEvent[]>.
+       * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+       * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+       */
       events?: () => Promise<WebhookEvent[]>;
       schedule?: boolean;
+      /**
+       * 签名 / Signature: CommunityPlugins.constructor.blocked.
+       * 功能：为校验、安装并执行社区 WASM 扩展声明 blocked 的输入与结果契约，所属容器为 CommunityPlugins.constructor。
+       * Purpose: Declares the input/result contract for blocked in CommunityPlugins.constructor. Module responsibility: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: boolean.
+       * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+       * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+       */
       blocked?: () => boolean;
+      /**
+       * 签名 / Signature: CommunityPlugins.constructor.mutation.
+       * 功能：为校验、安装并执行社区 WASM 扩展声明 mutation 的输入与结果契约，所属容器为 CommunityPlugins.constructor。
+       * Purpose: Declares the input/result contract for mutation in CommunityPlugins.constructor. Module responsibility: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+       * 输入 / Inputs: delta: number
+       * 输出 / Returns: void.
+       * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+       * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+       */
       mutation?: (delta: number) => void;
     } = {},
   ) {}
 
+  /**
+   * 入口 / Entry: CommunityPlugins.init.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，初始化并核对当前领域状态；处理结果记录到 `this.state`, `instance.phase`, `this.problems[item.id]`（`CommunityPlugins`）。
+   * Purpose: Initializes and verifies current domain state in `CommunityPlugins`; the outcome is recorded in `this.state`, `instance.phase`, `this.problems[item.id]`. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `stat().catch`, `stat`, `info.isFile`, `stateSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `stat().catch`, `stat`, `info.isFile`, `stateSchema.parse`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `item.phase && item.phase !== 'running'`; `!bytes || sha256(bytes) !== item.sha256`; `!signer || !verify( null, signedPluginPayload(item), publicKey(signer.publicKey).key, Buffer.from(it…`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.state.publishers.map`; `this.state.installed.map`; `this.state.publishers.find`; `this.publish`; `this.pluginDirectory.setDesired`; 更新 / updates `this.state`, `instance.phase`, `this.problems[item.id]`, `instance.error`.
+   * 拒绝 / Refusals: 条件 / conditions `info && (!info.isFile() || info.size > 8 * 1024 ** 2)`; `new Set(this.state.publishers.map((item) => item.fingerprint)).size !== this.state.publishers.length || new Set(this.state.so…`; `publicKey(trusted.publicKey).fingerprint !== trusted.fingerprint`; 异常 / errors `new AppError('第三方插件记录类型或大小无效', 503)`; `new AppError('第三方插件目录包含重复记录', 503)`.
+   */
   async init() {
     const info = await stat(this.file).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error;
@@ -448,9 +649,29 @@ export class CommunityPlugins {
     if (this.source && this.dependencies.schedule !== false) this.startEvents();
   }
 
+  /**
+   * 入口 / Entry: CommunityPlugins.wasmFile.
+   * 功能：把本层请求转交 `join`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `join` and propagates the provider result or rejection.
+   * 输入 / Inputs: item: Pick<Entry, 'id' | 'version' | 'sha256'>
+   * 输出 / Returns: `join(this.directory, `${item.id}-${item.version}-${item.sha256}.wasm`)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private wasmFile(item: Pick<Entry, 'id' | 'version' | 'sha256'>) {
     return join(this.directory, `${item.id}-${item.version}-${item.sha256}.wasm`);
   }
+  /**
+   * 入口 / Entry: CommunityPlugins.publish.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，校验并提交领域状态变更；完成下述调用及状态处理（`CommunityPlugins`）。
+   * Purpose: Validates and commits a domain state change in `CommunityPlugins`; the calls and state transitions below complete the operation. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `instance.contribute`, `this.pluginDirectory.publish` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `instance.contribute`, `this.pluginDirectory.publish`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: instance: PluginInstance; item: Pick<Entry, 'id' | 'extensions'>
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.pluginDirectory.publish`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private publish(instance: PluginInstance, item: Pick<Entry, 'id' | 'extensions'>) {
     for (const panel of item.extensions?.panels || []) instance.contribute('panel', panel.id);
     for (const route of item.extensions?.routes || [])
@@ -459,6 +680,19 @@ export class CommunityPlugins {
     instance.contribute('schedule', item.id);
     this.pluginDirectory.publish(instance);
   }
+  /**
+   * 入口 / Entry: CommunityPlugins.removeArtifact.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`CommunityPlugins`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `CommunityPlugins`; the calls and state transitions below complete the operation. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `this.wasmFile`, `readFile().catch`, `readFile`, `rm` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.wasmFile`, `readFile().catch`, `readFile`, `rm`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: item: Pick<Entry, 'id' | 'version' | 'sha256'>; commit: () => Promise<void>
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `rm`; `writeFile`.
+   * 拒绝 / Refusals: 条件 / conditions `original`; `(restore as NodeJS.ErrnoException).code !== 'EEXIST'`; 异常 / errors `new AggregateError([error, restore], '原插件产物恢复未完成')`; `error`.
+   * 失败处理：catch 分支执行 `if (original) try { await writeFile(file, original, { flag: 'wx', mode: 0o600 }); } catch (restore) { if ((restore as NodeJS.…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if (original) try { await writeFile(file, original, { flag: 'wx', mode: 0o600 }); } catch (restore) { if ((restore as NodeJS.…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async removeArtifact(item: Pick<Entry, 'id' | 'version' | 'sha256'>, commit: () => Promise<void>) {
     const file = this.wasmFile(item);
     const original = await readFile(file).catch((error: NodeJS.ErrnoException) => {
@@ -479,6 +713,19 @@ export class CommunityPlugins {
       throw error;
     }
   }
+  /**
+   * 入口 / Entry: CommunityPlugins.retire.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `retiring.installed.find((current) => current.id === item.id)!.phase`, `retiring.installed.find((current) => current.id === item.id)!.generation`, `instance.phase`（`CommunityPlugins`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `CommunityPlugins`; the outcome is recorded in `retiring.installed.find((current) => current.id === item.id)!.phase`, `retiring.installed.find((current) => current.id === item.id)!.generation`, `instance.phase`. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `this.pluginDirectory.get`, `instance.revoke`, `this.pluginDirectory.changed`, `structuredClone` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.pluginDirectory.get`, `instance.revoke`, `this.pluginDirectory.changed`, `structuredClone`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: item: State['installed'][number]
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `retiring.installed.find`; `this.save`; `task.abort.abort`; `failed.installed.find`; `this.save().catch`; 更新 / updates `retiring.installed.find((current) => current.id === item.id)!.phase`, `retiring.installed.find((current) => current.id === item.id)!.generation`, `instance.phase`, `instance.error`.
+   * 拒绝 / Refusals: 异常 / errors `error`.
+   * 失败处理：catch 分支执行 `instance.phase = 'cleanup-pending';`; `instance.error = String(error);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `instance.phase = 'cleanup-pending';`; `instance.error = String(error);`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async retire(item: State['installed'][number]) {
     const instance = this.pluginDirectory.get('community', item.id)!;
     instance.revoke();
@@ -506,6 +753,18 @@ export class CommunityPlugins {
       throw error;
     }
   }
+  /**
+   * 入口 / Entry: CommunityPlugins.pendingCleanup.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `instance.phase`, `instance.error`, `item.phase`（`CommunityPlugins`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `CommunityPlugins`; the outcome is recorded in `instance.phase`, `instance.error`, `item.phase`. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `this.pluginDirectory.get`, `this.pluginDirectory.changed`, `structuredClone`, `next.installed.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.pluginDirectory.get`, `this.pluginDirectory.changed`, `structuredClone`, `next.installed.find`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `item`.
+   * 输入 / Inputs: id: string; error: unknown
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `next.installed.find`; `this.save().catch`; `this.save`; 更新 / updates `instance.phase`, `instance.error`, `item.phase`, `item.generation`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async pendingCleanup(id: string, error: unknown) {
     const instance = this.pluginDirectory.get('community', id)!;
     instance.phase = 'cleanup-pending';
@@ -521,6 +780,17 @@ export class CommunityPlugins {
       this.state = next;
     });
   }
+  /**
+   * 入口 / Entry: CommunityPlugins.serial.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；本入口产生 `task` 供上层消费（`CommunityPlugins`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `CommunityPlugins`; this entry produces `task` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `this.writes.catch().then`, `this.writes.catch`, `task.then` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.writes.catch().then`, `this.writes.catch`, `task.then`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: work: () => Promise<T>
+   * 输出 / Returns: `task`.
+   * 副作用 / Effects: `this.writes.catch().then`; `this.writes.catch`; 更新 / updates `this.writes`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private serial<T>(work: () => Promise<T>) {
     const task = this.writes
       .catch(() => {})
@@ -534,10 +804,32 @@ export class CommunityPlugins {
     );
     return task;
   }
+  /**
+   * 入口 / Entry: CommunityPlugins.save.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，校验并提交领域状态变更；处理结果记录到 `this.state`（`CommunityPlugins`）。
+   * Purpose: Validates and commits a domain state change in `CommunityPlugins`; the outcome is recorded in `this.state`. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `writeStore` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `writeStore`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: next: State
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `writeStore`; 更新 / updates `this.state`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async save(next: State) {
     await writeStore(this.file, next);
     this.state = next;
   }
+  /**
+   * 入口 / Entry: CommunityPlugins.view.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ publishers: this.state.publishers.map(({ publicKey: _, ...item }) => item), sources: this.state.sources, installed: this.st…` 供上层消费（`CommunityPlugins`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `CommunityPlugins`; this entry produces `{ publishers: this.state.publishers.map(({ publicKey: _, ...item }) => item), sources: this.state.sources, installed: this.st…` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `this.state.publishers.map`, `this.state.deliveries.slice().reverse`, `this.state.deliveries.slice`, `this.pluginDirectory.view` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.state.publishers.map`, `this.state.deliveries.slice().reverse`, `this.state.deliveries.slice`, `this.pluginDirectory.view`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ publishers: this.state.publishers.map(({ publicKey: _, ...item }) => item), sources: this.state.sources, installed: this.st…`.
+   * 副作用 / Effects: `this.state.publishers.map`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   view() {
     return {
       publishers: this.state.publishers.map(({ publicKey: _, ...item }) => item),
@@ -553,6 +845,17 @@ export class CommunityPlugins {
     };
   }
 
+  /**
+   * 入口 / Entry: CommunityPlugins.startEvents.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.timer`（`CommunityPlugins`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `CommunityPlugins`; the outcome is recorded in `this.timer`. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `scheduler.register` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `scheduler.register`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `scheduler.register`; 更新 / updates `this.timer`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private startEvents() {
     this.timer = scheduler.register({
       owner: 'core:community-plugins',
@@ -561,6 +864,17 @@ export class CommunityPlugins {
       immediate: true,
       overlap: 'skip',
       backoff: { initialMs: 5000, maxMs: 60000 },
+      /**
+       * 入口 / Entry: CommunityPlugins.startEvents.run.
+       * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`CommunityPlugins`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `CommunityPlugins`; the calls and state transitions below complete the operation. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+       * 处理：通过 `this.tick` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `this.tick`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 拒绝 / Refusals: 条件 / conditions `this.eventError`; 异常 / errors `new AppError(this.eventError, 503)`.
+       */
       run: async () => {
         await this.tick();
         if (this.eventError) throw new AppError(this.eventError, 503);
@@ -568,7 +882,27 @@ export class CommunityPlugins {
     });
   }
 
+  /**
+   * 入口 / Entry: CommunityPlugins.recoverCleanup.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`CommunityPlugins`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `CommunityPlugins`; the calls and state transitions below complete the operation. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `this.serial` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.serial`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; generation: string
+   * 输出 / Returns: Promise<void>.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async recoverCleanup(id: string, generation: string): Promise<void> {
+    /**
+     * 入口 / Entry: CommunityPlugins.recoverCleanup.callback@572.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.state.installed.find`; `next.installed.find`; `this.save`.
+     * 拒绝 / Refusals: 条件 / conditions `!instance || !item || instance.generation !== generation || instance.phase !== 'cleanup-pending'`; 异常 / errors `new AppError('原社区插件恢复票据已变化', 409, 'RECOVERY_STALE')`.
+     */
     await this.serial(async () => {
       const instance = this.pluginDirectory.get('community', id);
       const item = this.state.installed.find(entry => entry.id === id);
@@ -583,9 +917,31 @@ export class CommunityPlugins {
     });
   }
 
+  /**
+   * 入口 / Entry: CommunityPlugins.action.
+   * 功能：执行扩展的安装、授权、启停、撤销或移除，验证签名和 WASM 运行边界。
+   * Purpose: Installs/grants/enables/revokes/removes community extensions under signature and WASM runtime boundaries.
+   * 设计：持久声明与受管运行分开提交；原实例清理未确认时保留票据，避免覆盖旧资源或扩大扩展权限。
+   * Design: Durable declarations and managed runtime publication are separate; pending original cleanup retains tickets instead of replacing resources or widening grants.
+   * 输入 / Inputs: raw: unknown
+   * 输出 / Returns: `this.run(input.pluginId, input.input)`; `this.serial(async () => { const next = structuredClone(this.state); if (input.operation === 'trust') { const { fingerprint } …`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async action(raw: unknown) {
     const input = communityPluginRequest.parse(raw);
     if (input.operation === 'run') return this.run(input.pluginId, input.input);
+    /**
+     * 入口 / Entry: CommunityPlugins.action.callback@589.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view()`.
+     * 副作用 / Effects: `next.publishers.some`; `next.publishers.push`; `next.installed.some`; `next.publishers.filter`; `next.sources.push`; 更新 / updates `next.publishers`, `next.sources`, `parsed`, `next.catalogs[source.id]`.
+     * 拒绝 / Refusals: 条件 / conditions `input.operation === 'trust'`; `next.publishers.some((item) => item.fingerprint === fingerprint)`; `next.publishers.length >= 32`; 异常 / errors `new AppError('此发布者已经受信任', 409)`; `new AppError('发布者数量已达上限', 409)`.
+     * 失败处理：catch 分支执行 `throw new AppError('插件目录不是有效 JSON', 502);`; `if (old) await this.pendingCleanup(old.id, error);`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `throw new AppError('插件目录不是有效 JSON', 502);`; `if (old) await this.pendingCleanup(old.id, error);`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.serial(async () => {
       const next = structuredClone(this.state);
       if (input.operation === 'trust') {
@@ -777,6 +1133,17 @@ export class CommunityPlugins {
     });
   }
 
+  /**
+   * 入口 / Entry: CommunityPlugins.invokeRoute.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.run(id, { kind: 'http', routeId, body })` 供上层消费（`CommunityPlugins`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `CommunityPlugins`; this entry produces `this.run(id, { kind: 'http', routeId, body })` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `pluginId.parse`, `extensionId.parse`, `this.state.installed.find`, `item.extensions.routes.some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `pluginId.parse`, `extensionId.parse`, `this.state.installed.find`, `item.extensions.routes.some`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: rawPluginId: string; rawRouteId: string; body: unknown
+   * 输出 / Returns: `this.run(id, { kind: 'http', routeId, body })`.
+   * 副作用 / Effects: `this.state.installed.find`.
+   * 拒绝 / Refusals: 条件 / conditions `!item?.extensions?.routes.some((route) => route.id === routeId)`; 异常 / errors `new AppError('签名插件未声明此 HTTP 操作', 404)`.
+   */
   async invokeRoute(rawPluginId: string, rawRouteId: string, body: unknown) {
     const id = pluginId.parse(rawPluginId);
     const routeId = extensionId.parse(rawRouteId);
@@ -786,6 +1153,18 @@ export class CommunityPlugins {
     return this.run(id, { kind: 'http', routeId, body });
   }
 
+  /**
+   * 入口 / Entry: CommunityPlugins.tick.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` / `this.pending` 供上层消费（`CommunityPlugins`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `CommunityPlugins`; this entry produces `void` / `this.pending` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `this.blocked`, `this.mutation`, `this.deliverEvents().then().finally`, `this.deliverEvents().then` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.blocked`, `this.mutation`, `this.deliverEvents().then().finally`, `this.deliverEvents().then`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed || !this.source || this.blocked()`; `this.pending`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`; `this.pending`; `task`.
+   * 副作用 / Effects: 更新 / updates `this.pending`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async tick() {
     if (this.closed || !this.source || this.blocked()) return;
     if (this.pending) return this.pending;
@@ -807,6 +1186,19 @@ export class CommunityPlugins {
     return task;
   }
 
+  /**
+   * 入口 / Entry: CommunityPlugins.deliverEvents.
+   * 功能：筛选并向允许接收事件的运行扩展投递有界事件，记录执行结果。
+   * Purpose: Filters and delivers bounded events to eligible running extensions and records outcomes.
+   * 设计：投递遵循当前授权、去重与超时，扩展失败只更新自身记录，不把未确认执行伪报成功。
+   * Design: Delivery follows current grants, deduplication and deadlines; extension failure updates its own evidence without claiming unconfirmed success.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`; `sourceError`.
+   * 副作用 / Effects: `fetched.slice().flatMap().sort`; `fetched.slice().flatMap`; `fetched.slice`; 更新 / updates `fetched`, `sourceError`, `resultPreview`, `status`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `sourceError = String((error as Error).message || error).slice(0, 300);`; `status = 'failed';`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `sourceError = String((error as Error).message || error).slice(0, 300);`; `status = 'failed';`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async deliverEvents() {
     let fetched: WebhookEvent[] = [];
     let sourceError: string | undefined;
@@ -822,6 +1214,15 @@ export class CommunityPlugins {
         return parsed.success && parsed.data.type !== 'test' ? [parsed.data] : [];
       })
       .sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+    /**
+     * 入口 / Entry: CommunityPlugins.deliverEvents.callback@825.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `selected`.
+     * 副作用 / Effects: `next.deliveries.push`; `selected.push`; `this.save`; 更新 / updates `next.deliveries`, `schedule.nextRunAt`, `next.observed[id]`.
+     * 拒绝 / Refusals: 条件 / conditions `Object.keys(next.observed).length >= 20000`; 异常 / errors `new AppError('插件事件去重窗口已满，请稍后重试', 409)`.
+     */
     const tasks = await this.serial(async () => {
       const next = structuredClone(this.state);
       const now = this.now();
@@ -898,6 +1299,15 @@ export class CommunityPlugins {
         status = 'failed';
         error = String((failure as Error).message || failure).slice(0, 300);
       }
+      /**
+       * 入口 / Entry: CommunityPlugins.deliverEvents.callback@901.
+       * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+       * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `void`.
+       * 副作用 / Effects: `this.save`; 更新 / updates `record.status`, `record.processedAt`, `record.error`, `record.resultPreview`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       await this.serial(async () => {
         const next = structuredClone(this.state);
         const record = next.deliveries.find((item) => item.id === task.id);
@@ -912,6 +1322,20 @@ export class CommunityPlugins {
     return sourceError;
   }
 
+  /**
+   * 入口 / Entry: CommunityPlugins.run.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ pluginId: id, version: item.version, result: await done }` 供上层消费（`CommunityPlugins`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `CommunityPlugins`; this entry produces `{ pluginId: id, version: item.version, result: await done }` for its caller. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `this.state.installed.find`, `this.pluginDirectory.get`, `instance.check`, `withPluginAuthority` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.state.installed.find`, `this.pluginDirectory.get`, `instance.check`, `withPluginAuthority`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!active.size`.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: `{ pluginId: id, version: item.version, result: await done }`.
+   * 副作用 / Effects: `this.state.installed.find`; `active.add`; `this.running.set`; `active.delete`; `this.running.delete`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `this.inFlight >= 4`; `!item`; 异常 / errors `new AppError('插件市场正在关闭', 503)`; `new AppError('隔离插件执行队列已满', 429)`.
+   * 收尾：退出 try 区域时始终执行 `this.inFlight--;`; `active.delete(task);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.inFlight--;`; `active.delete(task);`; these steps also apply to exceptional exits.
+   */
   private async run(id: string, input: unknown) {
     if (this.closed) throw new AppError('插件市场正在关闭', 503);
     if (this.inFlight >= 4) throw new AppError('隔离插件执行队列已满', 429);
@@ -925,6 +1349,15 @@ export class CommunityPlugins {
       if (payload === undefined || Buffer.byteLength(payload) > 32 * 1024)
         throw new AppError('插件输入必须是小于 32 KiB 的 JSON', 400);
       const abort = new AbortController();
+      /**
+       * 入口 / Entry: CommunityPlugins.run.callback@938.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（computeRuntime.run）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (computeRuntime.run).
+       * 输入 / Inputs: signal
+       * 输出 / Returns: `{ source: workerSource, options: { eval: true, workerData: { wasm: bytes, input: JSON.parse(payload) }, resourceLimits: { max…`.
+       * 副作用 / Effects: `this.state.publishers.find`; `this.state.publishers.some`; `this.state.installed.some`.
+       * 拒绝 / Refusals: 条件 / conditions `sha256(bytes) !== item.sha256`; `!signer || !verify( null, signedPluginPayload(item), publicKey(signer.publicKey).key, Buffer.from(item.signature, 'base64'), …`; `this.closed`; 异常 / errors `new AppError('插件文件 SHA-256 不匹配', 409)`; `new AppError('插件签名或发布者信任无效', 409)`.
+       */
       const done = withPluginAuthority(instance, () =>
         computeRuntime.run<unknown>(
           {
@@ -935,6 +1368,12 @@ export class CommunityPlugins {
             signal: abort.signal,
             partition: { key: `community:${id}`, limit: 2 },
           },
+          /**
+           * 中文功能：读取 WASM 并验证 SHA-256、可信发布者签名和模块格式，再复核未关闭、信任未撤销且安装版本未变化，返回受限 worker 配置。
+           * English: Reads WASM, checks SHA-256, trusted-publisher signature and module format, rechecks closure/trust/installed-version state and returns resource-limited worker configuration.
+           * 所属 / Owner: CommunityPlugins.run.done.
+           * 输入 / Inputs: signal.
+           */
           async (signal) => {
             const bytes = await readFile(this.wasmFile(item), { signal });
             if (sha256(bytes) !== item.sha256) throw new AppError('插件文件 SHA-256 不匹配', 409);
@@ -991,6 +1430,19 @@ export class CommunityPlugins {
     }
   }
 
+  /**
+   * 入口 / Entry: CommunityPlugins.close.
+   * 功能：在校验、安装并执行社区 WASM 扩展中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`, `instance.phase`（`CommunityPlugins`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `CommunityPlugins`; the outcome is recorded in `this.closed`, `instance.phase`. Module context: Validates, installs and executes signed community WASM extensions, managing routes and recoverable cleanup ownership.
+   * 处理：通过 `work`, `failures.push`, `inline.flatMap`, `this.running.values` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `work`, `failures.push`, `inline.flatMap`, `this.running.values`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `failures.push`; `task.abort.abort`; 更新 / updates `this.closed`, `instance.phase`.
+   * 拒绝 / Refusals: 条件 / conditions `failures.length`; 异常 / errors `new AggregateError(failures, '社区插件清理未完成')`.
+   * 失败处理：catch 分支执行 `failures.push(error);`; `await this.pendingCleanup(instance.pluginId, error);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `failures.push(error);`; `await this.pendingCleanup(instance.pluginId, error);`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async close() {
     this.closed = true;
     const failures: unknown[] = [];

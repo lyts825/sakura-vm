@@ -1,5 +1,6 @@
 /**
  * 模块职责：维护见证节点的来源、目标与副本状态，依据隔离及退役证明协调接管。
+ * Module purpose: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
  */
 import { z } from 'zod';
 import { mkdir, open, writeFile } from 'node:fs/promises';
@@ -29,6 +30,15 @@ export const haWitnessIdentitySchema = z.object({
 }).strict();
 export type HaWitnessIdentity = z.infer<typeof haWitnessIdentitySchema>;
 const retirementSchema = haWitnessReplicaIdentitySchema.safeExtend({ retiredAt: z.iso.datetime() });
+/**
+ * 入口 / Entry: callback@39.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.object().strict().superRefine）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.object().strict().superRefine).
+ * 输入 / Inputs: value; context
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `context.addIssue`; `ids.add`; `transfers.add`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const haWitnessReplicaInventorySchema = z.object({
   version: z.literal(1), hostId: z.uuid(), sourceHostId: z.uuid(), sourceVmId: z.uuid(),
   complete: z.literal(true),
@@ -98,6 +108,17 @@ type Store = HaWitnessStore;
 export type HaWitnessVm = HaWitnessIdentity & { targetHostId: string;
   failureThreshold: number; sourceSystemUuid?: string; failbackBinding?: string };
 
+/**
+ * 入口 / Entry: haWitnessBinding.
+ * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `bindingSchema.parse({ sourceHostId: vm.sourceHostId, sourceVmId: vm.sourceVmId, targetHostId: vm.targetHostId, failureThresho…` 供上层消费（`ha-witness-core.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `ha-witness-core.ts`; this entry produces `bindingSchema.parse({ sourceHostId: vm.sourceHostId, sourceVmId: vm.sourceVmId, targetHostId: vm.targetHostId, failureThresho…` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+ * 处理：通过 `bindingSchema.parse`, `vm.sourceSystemUuid.toLowerCase` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `bindingSchema.parse`, `vm.sourceSystemUuid.toLowerCase`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: vm: HaWitnessVm
+ * 输出 / Returns: `bindingSchema.parse({ sourceHostId: vm.sourceHostId, sourceVmId: vm.sourceVmId, targetHostId: vm.targetHostId, failureThresho…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function haWitnessBinding(vm: HaWitnessVm) {
   return bindingSchema.parse({ sourceHostId: vm.sourceHostId,
     sourceVmId: vm.sourceVmId, targetHostId: vm.targetHostId,
@@ -108,6 +129,17 @@ export function haWitnessBinding(vm: HaWitnessVm) {
 const binding = haWitnessBinding;
 
 /** Validate authority without changing an unknown or interrupted phase. */
+/**
+ * 入口 / Entry: validateHaWitnessState.
+ * 功能：在维护见证节点的来源、目标与副本状态中，核对调用资格、输入或资源归属；本入口产生 `state` 供上层消费（`ha-witness-core.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `ha-witness-core.ts`; this entry produces `state` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+ * 处理：通过 `inline.safeParse`, `vms.map`, `inline.sort`, `known.keys` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `inline.safeParse`, `vms.map`, `inline.sort`, `known.keys`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: raw: unknown; vms: HaWitnessVm[]; legacy: default=false
+ * 输出 / Returns: `state`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!parsed.success`; `known.size !== vms.length || JSON.stringify(configured) !== JSON.stringify(Object.keys(state.bindings).sort()) || JSON.string…`; `(entry.phase !== 'source' && !entry.plan) || plans.some((plan) => plan!.sourceHostId !== vm.sourceHostId || plan!.sourceVmId …`; 异常 / errors `new AppError('见证状态版本或内容无效；须人工核对来源与目标后恢复', 503, 'HA_WITNESS_STATE_MISMATCH')`; `new AppError('见证实例配置与持久登记不一致；须人工核对后恢复', 503, 'HA_WITNESS_STATE_MISMATCH')`.
+ */
 export function validateHaWitnessState(raw: unknown, vms: HaWitnessVm[], legacy = false) {
   const parsed = (legacy ? haWitnessLegacyStoreSchema : storeSchema).safeParse(raw);
   if (!parsed.success)
@@ -116,6 +148,15 @@ export function validateHaWitnessState(raw: unknown, vms: HaWitnessVm[], legacy 
   const state = parsed.data;
   const known = new Map(vms.map((vm) => [vm.sourceVmId, vm]));
   const configured = [...known.keys()].sort();
+  /**
+   * 入口 / Entry: validateHaWitnessState.callback@122.
+   * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（configured.some）。
+   * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (configured.some).
+   * 输入 / Inputs: id
+   * 输出 / Returns: `!saved || Object.keys(current).some((key) => saved[key as keyof typeof saved] !== current[key as keyof typeof current]) || Ob…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   if (known.size !== vms.length ||
       JSON.stringify(configured) !== JSON.stringify(Object.keys(state.bindings).sort()) ||
       JSON.stringify(configured) !== JSON.stringify(Object.keys(state.entries).sort()) ||
@@ -161,24 +202,146 @@ export function validateHaWitnessState(raw: unknown, vms: HaWitnessVm[], legacy 
 }
 export type HaWitnessActions = {
   /** Must return only after an out-of-band power controller confirms Off. */
+  /**
+   * 签名 / Signature: HaWitnessActions.fence.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 fence 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for fence in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   fence: (vm: HaWitnessVm) => Promise<void>;
   /** Read-only recheck of both system identity and Off; a historical fence is insufficient. */
+  /**
+   * 签名 / Signature: HaWitnessActions.confirmFence.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 confirmFence 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for confirmFence in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   confirmFence: (vm: HaWitnessVm) => Promise<void>;
   /** Target inspection must validate the exact imported snapshot identity. */
+  /**
+   * 签名 / Signature: HaWitnessActions.targetStatus.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 targetStatus 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for targetStatus in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm; plan: HaWitnessPlan
+   * 输出 / Returns: Promise<'stopped' | 'starting' | 'running'>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   targetStatus: (vm: HaWitnessVm, plan: HaWitnessPlan) =>
     Promise<'stopped' | 'starting' | 'running'>;
+  /**
+   * 签名 / Signature: HaWitnessActions.activate.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 activate 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for activate in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm; plan: HaWitnessPlan
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   activate: (vm: HaWitnessVm, plan: HaWitnessPlan) => Promise<void>;
   /** Application readiness and traffic routing are independent of VM boot. */
+  /**
+   * 签名 / Signature: HaWitnessActions.applicationReady.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 applicationReady 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for applicationReady in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm; plan: HaWitnessPlan
+   * 输出 / Returns: Promise<boolean>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   applicationReady: (vm: HaWitnessVm, plan: HaWitnessPlan) => Promise<boolean>;
+  /**
+   * 签名 / Signature: HaWitnessActions.switchTraffic.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 switchTraffic 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for switchTraffic in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm; plan: HaWitnessPlan
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   switchTraffic: (vm: HaWitnessVm, plan: HaWitnessPlan) => Promise<void>;
+  /**
+   * 签名 / Signature: HaWitnessActions.trafficTarget.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 trafficTarget 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for trafficTarget in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm; plan: HaWitnessReplicaIdentity
+   * 输出 / Returns: Promise<string>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   trafficTarget: (vm: HaWitnessVm, plan: HaWitnessReplicaIdentity) => Promise<string>;
+  /**
+   * 签名 / Signature: HaWitnessActions.retire.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 retire 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for retire in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm; plan: HaWitnessReplicaIdentity
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   retire: (vm: HaWitnessVm, plan: HaWitnessReplicaIdentity) => Promise<void>;
+  /**
+   * 签名 / Signature: HaWitnessActions.sourceApplicationReady.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 sourceApplicationReady 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for sourceApplicationReady in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm; plan: HaWitnessReplicaIdentity
+   * 输出 / Returns: Promise<boolean>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   sourceApplicationReady?: (vm: HaWitnessVm, plan: HaWitnessReplicaIdentity) => Promise<boolean>;
+  /**
+   * 签名 / Signature: HaWitnessActions.restoreTraffic.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 restoreTraffic 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for restoreTraffic in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm; plan: HaWitnessReplicaIdentity
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   restoreTraffic?: (vm: HaWitnessVm, plan: HaWitnessReplicaIdentity) => Promise<void>;
+  /**
+   * 签名 / Signature: HaWitnessActions.inspectReplicas.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 inspectReplicas 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for inspectReplicas in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm
+   * 输出 / Returns: Promise<HaWitnessReplicaInventory>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   inspectReplicas?: (vm: HaWitnessVm) => Promise<HaWitnessReplicaInventory>;
+  /**
+   * 签名 / Signature: HaWitnessActions.recoveryTrafficTarget.
+   * 功能：为维护见证节点的来源、目标与副本状态声明 recoveryTrafficTarget 的输入与结果契约，所属容器为 HaWitnessActions。
+   * Purpose: Declares the input/result contract for recoveryTrafficTarget in HaWitnessActions. Module responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: vm: HaWitnessVm
+   * 输出 / Returns: Promise<string>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   recoveryTrafficTarget?: (vm: HaWitnessVm) => Promise<string>;
 };
 
+/**
+ * 入口 / Entry: syncHaWitnessDirectory.
+ * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`ha-witness-core.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `ha-witness-core.ts`; this entry produces `void` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+ * 处理：通过 `open`, `dirname`, `directory.sync`, `directory.close` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `open`, `dirname`, `directory.sync`, `directory.close`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `process.platform !== 'linux'`.
+ * 输入 / Inputs: file: string
+ * 输出 / Returns: `void`.
+ * 副作用 / Effects: `directory.close`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ * 收尾：退出 try 区域时始终执行 `await directory.close();`；这些步骤也适用于异常退出。
+ * Finalization: Leaving the try region always executes `await directory.close();`; these steps also apply to exceptional exits.
+ */
 export async function syncHaWitnessDirectory(file: string) {
   if (process.platform !== 'linux') return;
   const directory = await open(dirname(file), 'r');
@@ -187,6 +350,19 @@ export async function syncHaWitnessDirectory(file: string) {
 }
 const syncDirectory = syncHaWitnessDirectory;
 
+/**
+ * 入口 / Entry: persistHaWitnessState.
+ * 功能：在维护见证节点的来源、目标与副本状态中，校验并提交领域状态变更；完成下述调用及状态处理（`ha-witness-core.ts`）。
+ * Purpose: Validates and commits a domain state change in `ha-witness-core.ts`; the calls and state transitions below complete the operation. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+ * 处理：通过 `writeStore`, `inline.includes`, `syncDirectory` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `writeStore`, `inline.includes`, `syncDirectory`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: file: string; next: Store
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `writeStore`.
+ * 拒绝 / Refusals: 条件 / conditions `process.platform !== 'win32' || attempt >= 5 || !['EPERM', 'EACCES', 'EBUSY'].includes((error as NodeJS.ErrnoException).code …`; 异常 / errors `error`.
+ * 失败处理：catch 分支执行 `if (process.platform !== 'win32' || attempt >= 5 || !['EPERM', 'EACCES', 'EBUSY'].includes((error as NodeJS.ErrnoException).c…`; `await new Promise((done) => setTimeout(done, 25 * 2 ** attempt));`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `if (process.platform !== 'win32' || attempt >= 5 || !['EPERM', 'EACCES', 'EBUSY'].includes((error as NodeJS.ErrnoException).c…`; `await new Promise((done) => setTimeout(done, 25 * 2 ** attempt));`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function persistHaWitnessState(file: string, next: Store) {
   for (let attempt = 0; ; attempt++) {
     try { await writeStore(file, next); break; }
@@ -212,6 +388,15 @@ export class HaWitness {
   private vmWork = new Map<string, Promise<unknown>>();
   private storageUnavailable = false;
 
+  /**
+   * 入口 / Entry: HaWitness.constructor.
+   * 功能：建立 HaWitness 的维护见证节点的来源、目标与副本状态上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the HaWitness context for this module's responsibility: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: file: string; vms: HaWitnessVm[]; actions: HaWitnessActions; now: default=() => Date.now()
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: `this.known.set`.
+   * 拒绝 / Refusals: 条件 / conditions `vm.failbackBinding && (!actions.sourceApplicationReady || !actions.restoreTraffic)`; `this.known.has(vm.sourceVmId)`; 异常 / errors `new AppError('自动流量回切已登记，但回切接口不可用', 503)`; `new AppError('见证实例配置无效')`.
+   */
   constructor(private file: string, vms: HaWitnessVm[],
     private actions: HaWitnessActions, private now = () => Date.now()) {
     for (const vm of vms) {
@@ -224,6 +409,19 @@ export class HaWitness {
     }
   }
 
+  /**
+   * 入口 / Entry: HaWitness.initialize.
+   * 功能：在维护见证节点的来源、目标与副本状态中，初始化并核对当前领域状态；完成下述调用及状态处理（`HaWitness`）。
+   * Purpose: Initializes and verifies current domain state in `HaWitness`; the calls and state transitions below complete the operation. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `vms.map`, `mkdir`, `dirname`, `writeFile` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `vms.map`, `mkdir`, `dirname`, `writeFile`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: file: string; vms: HaWitnessVm[]
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `mkdir`; `writeFile`.
+   * 拒绝 / Refusals: 条件 / conditions `new Set(vms.map((vm) => vm.sourceVmId)).size !== vms.length`; `(error as NodeJS.ErrnoException).code === 'EEXIST'`; 异常 / errors `new AppError('见证实例 ID 重复', 409)`; `new AppError('见证状态文件已存在，不能重新初始化', 409)`.
+   * 失败处理：catch 分支执行 `if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new AppError('见证状态文件已存在，不能重新初始化', 409);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new AppError('见证状态文件已存在，不能重新初始化', 409);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   static async initialize(file: string, vms: HaWitnessVm[]) {
     if (new Set(vms.map((vm) => vm.sourceVmId)).size !== vms.length)
       throw new AppError('见证实例 ID 重复', 409);
@@ -242,6 +440,17 @@ export class HaWitness {
     }
   }
 
+  /**
+   * 入口 / Entry: HaWitness.init.
+   * 功能：在维护见证节点的来源、目标与副本状态中，初始化并核对当前领域状态；处理结果记录到 `this.state`（`HaWitness`）。
+   * Purpose: Initializes and verifies current domain state in `HaWitness`; the outcome is recorded in `this.state`. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `readStore`, `validateHaWitnessState`, `this.known.values` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `readStore`, `validateHaWitnessState`, `this.known.values`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.state`.
+   * 拒绝 / Refusals: 条件 / conditions `!loaded`; 异常 / errors `new AppError('见证状态文件缺失；为避免双主启动，须人工核对后初始化', 503, 'HA_WITNESS_STATE_MISSING')`.
+   */
   async init() {
     const loaded = await readStore(this.file, () => null);
     if (!loaded)
@@ -250,17 +459,52 @@ export class HaWitness {
     this.state = validateHaWitnessState(loaded, [...this.known.values()]) as Store;
   }
 
+  /**
+   * 入口 / Entry: HaWitness.enqueue.
+   * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `current` 供上层消费（`HaWitness`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; this entry produces `current` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `this.work.catch().then`, `this.work.catch`, `current.then` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.work.catch().then`, `this.work.catch`, `current.then`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: task: () => Promise<T>
+   * 输出 / Returns: Promise<T>；结果来自 / values from `current`.
+   * 副作用 / Effects: 更新 / updates `this.work`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const current = this.work.catch(() => {}).then(task);
     this.work = current.then(() => {}, () => {});
     return current;
   }
 
+  /**
+   * 入口 / Entry: HaWitness.runVm.
+   * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `Promise.resolve(undefined)` / `current` 供上层消费（`HaWitness`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; this entry produces `Promise.resolve(undefined)` / `current` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `this.vmWork.get`, `Promise.resolve`, `inline.catch().then`, `inline.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.vmWork.get`, `Promise.resolve`, `inline.catch().then`, `inline.catch`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `previous && skipBusy`.
+   * 输入 / Inputs: id: string; task: () => Promise<T>; skipBusy: default=false
+   * 输出 / Returns: Promise<T | undefined>；结果来自 / values from `Promise.resolve(undefined)`; `current`.
+   * 副作用 / Effects: `this.vmWork.set`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private runVm<T>(id: string, task: () => Promise<T>, skipBusy = false): Promise<T | undefined> {
     const previous = this.vmWork.get(id);
     if (previous && skipBusy) return Promise.resolve(undefined);
     const current = (previous || Promise.resolve()).catch(() => {}).then(task);
     this.vmWork.set(id, current);
+    /**
+     * 入口 / Entry: HaWitness.runVm.finished.
+     * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`HaWitness`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; the calls and state transitions below complete the operation. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+     * 处理：通过 `this.vmWork.get`, `this.vmWork.delete` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.vmWork.get`, `this.vmWork.delete`; the branches below determine continuation, return or refusal.
+     * 分支 / Branches: `this.vmWork.get(id) === current`.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.vmWork.delete`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const finished = () => {
       if (this.vmWork.get(id) === current) this.vmWork.delete(id);
     };
@@ -268,6 +512,17 @@ export class HaWitness {
     return current;
   }
 
+  /**
+   * 入口 / Entry: HaWitness.vm.
+   * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `vm` 供上层消费（`HaWitness`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; this entry produces `vm` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `haWitnessIdentitySchema.parse`, `this.known.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `haWitnessIdentitySchema.parse`, `this.known.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: raw: HaWitnessIdentity
+   * 输出 / Returns: `vm`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!vm || vm.sourceHostId !== identity.sourceHostId`; 异常 / errors `new AppError('未登记此来源实例', 404)`.
+   */
   private vm(raw: HaWitnessIdentity) {
     const identity = haWitnessIdentitySchema.parse(raw);
     const vm = this.known.get(identity.sourceVmId);
@@ -276,6 +531,15 @@ export class HaWitness {
     return vm;
   }
 
+  /**
+   * 入口 / Entry: HaWitness.entry.
+   * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `entry` 供上层消费（`HaWitness`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; this entry produces `entry` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Entry；结果来自 / values from `entry`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!entry`; 异常 / errors `new AppError('见证状态缺少已登记实例', 503, 'HA_WITNESS_STATE_MISMATCH')`.
+   */
   private entry(id: string): Entry {
     const entry = this.state.entries[id];
     if (!entry) throw new AppError('见证状态缺少已登记实例',
@@ -283,6 +547,19 @@ export class HaWitness {
     return entry;
   }
 
+  /**
+   * 入口 / Entry: HaWitness.save.
+   * 功能：在维护见证节点的来源、目标与副本状态中，校验并提交领域状态变更；处理结果记录到 `this.storageUnavailable`, `this.state`（`HaWitness`）。
+   * Purpose: Validates and commits a domain state change in `HaWitness`; the outcome is recorded in `this.storageUnavailable`, `this.state`. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `storeSchema.parse`, `entrySchema.parse`, `persistState` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `storeSchema.parse`, `entrySchema.parse`, `persistState`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; entry: Entry
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `persistState`; 更新 / updates `this.storageUnavailable`, `this.state`.
+   * 拒绝 / Refusals: 异常 / errors `error`.
+   * 失败处理：catch 分支执行 `this.storageUnavailable = true;`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.storageUnavailable = true;`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async save(id: string, entry: Entry) {
     const next = storeSchema.parse({ ...this.state,
       entries: { ...this.state.entries, [id]: entrySchema.parse(entry) } });
@@ -291,13 +568,40 @@ export class HaWitness {
     this.state = next;
   }
 
+  /**
+   * 入口 / Entry: HaWitness.requireStorage.
+   * 功能：在维护见证节点的来源、目标与副本状态中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`HaWitness`）。
+   * Purpose: Checks admission, input or resource ownership in `HaWitness`; the calls and state transitions below complete the operation. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `this.storageUnavailable`; 异常 / errors `new AppError('见证持久存储写入失败；须恢复存储并重启后核对状态', 503, 'HA_WITNESS_STORAGE_UNAVAILABLE')`.
+   */
   private requireStorage() {
     if (this.storageUnavailable)
       throw new AppError('见证持久存储写入失败；须恢复存储并重启后核对状态',
         503, 'HA_WITNESS_STORAGE_UNAVAILABLE');
   }
 
+  /**
+   * 入口 / Entry: HaWitness.heartbeat.
+   * 功能：把本层请求转交 `this.enqueue`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.enqueue` and propagates the provider result or rejection.
+   * 输入 / Inputs: raw: unknown
+   * 输出 / Returns: `this.enqueue(async () => { this.requireStorage(); const input = haWitnessHeartbeatSchema.parse(raw), vm = this.vm({ sourceHos…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   heartbeat(raw: unknown) {
+    /**
+     * 入口 / Entry: HaWitness.heartbeat.callback@301.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.enqueue）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.enqueue).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ armed: !!plan, phase: 'source' as const, failback: !plan ? entry.failback?.phase || null : null }`.
+     * 副作用 / Effects: `this.save`.
+     * 拒绝 / Refusals: 条件 / conditions `input.failureThreshold !== vm.failureThreshold`; `entry.recoveryHold`; `entry.phase !== 'source'`; 异常 / errors `new AppError('见证节点与来源的故障阈值配置不一致', 409)`; `new AppError('见证状态已恢复并保持封锁；须核对全部副本后受控退出', 409, 'HA_WITNESS_RECOVERY_HOLD')`.
+     */
     return this.enqueue(async () => {
       this.requireStorage();
       const input = haWitnessHeartbeatSchema.parse(raw), vm = this.vm({
@@ -334,7 +638,25 @@ export class HaWitness {
     });
   }
 
+  /**
+   * 入口 / Entry: HaWitness.authorizeStart.
+   * 功能：把本层请求转交 `this.enqueue`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.enqueue` and propagates the provider result or rejection.
+   * 输入 / Inputs: raw: unknown
+   * 输出 / Returns: `this.enqueue(async () => { this.requireStorage(); const vm = this.vm(haWitnessIdentitySchema.parse(raw)); const entry = this.…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   authorizeStart(raw: unknown) {
+    /**
+     * 入口 / Entry: HaWitness.authorizeStart.callback@338.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.enqueue）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.enqueue).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ allowed: true as const, phase: entry.phase }`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `entry.phase !== 'source' || entry.recoveryHold`; 异常 / errors `new AppError('见证节点已隔离来源，不能启动', 409, 'HA_WITNESS_FENCED')`.
+     */
     return this.enqueue(async () => {
       this.requireStorage();
       const vm = this.vm(haWitnessIdentitySchema.parse(raw));
@@ -345,7 +667,25 @@ export class HaWitness {
     });
   }
 
+  /**
+   * 入口 / Entry: HaWitness.status.
+   * 功能：把本层请求转交 `this.enqueue`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.enqueue` and propagates the provider result or rejection.
+   * 输入 / Inputs: raw: unknown
+   * 输出 / Returns: `this.enqueue(async () => { const vm = this.vm(haWitnessIdentitySchema.parse(raw)); const entry = this.entry(vm.sourceVmId); r…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   status(raw: unknown) {
+    /**
+     * 入口 / Entry: HaWitness.status.callback@349.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.enqueue）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.enqueue).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ phase: entry.phase, armed: !!entry.plan && !entry.recoveryHold, targetHostId: vm.targetHostId, failureThreshold: vm.failure…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     return this.enqueue(async () => {
       const vm = this.vm(haWitnessIdentitySchema.parse(raw));
       const entry = this.entry(vm.sourceVmId);
@@ -367,6 +707,15 @@ export class HaWitness {
   }
 
   /** Local, read-only deployment inspection; never exposed through the witness HTTP API. */
+  /**
+   * 入口 / Entry: HaWitness.deploymentState.
+   * 功能：把本层请求转交 `this.enqueue`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.enqueue` and propagates the provider result or rejection.
+   * 输入 / Inputs: raw: unknown
+   * 输出 / Returns: `this.enqueue(async () => { const vm = this.vm(haWitnessIdentitySchema.parse(raw)); const entry = this.entry(vm.sourceVmId); r…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   deploymentState(raw: unknown) {
     return this.enqueue(async () => {
       const vm = this.vm(haWitnessIdentitySchema.parse(raw));
@@ -379,16 +728,52 @@ export class HaWitness {
   }
 
   /** Let a witness process finish fencing and durable writes before it exits. */
+  /**
+   * 入口 / Entry: HaWitness.drain.
+   * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`HaWitness`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; the calls and state transitions below complete the operation. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `Promise.allSettled`, `this.vmWork.values` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.allSettled`, `this.vmWork.values`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async drain() {
     await Promise.allSettled([...this.vmWork.values()]);
     await this.work;
   }
 
+  /**
+   * 入口 / Entry: HaWitness.sample.
+   * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `Promise.all([...this.known.values()].map((vm) => this.runVm(vm.sourceVmId, () => this.sampleVm(vm), true)))` 供上层消费（`HaWitness`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; this entry produces `Promise.all([...this.known.values()].map((vm) => this.runVm(vm.sourceVmId, () => this.sampleVm(vm), true)))` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `Promise.all`, `inline.map`, `this.known.values` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.all`, `inline.map`, `this.known.values`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `Promise.all([...this.known.values()].map((vm) => this.runVm(vm.sourceVmId, () => this.sampleVm(vm), true)))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   sample() {
     return Promise.all([...this.known.values()].map((vm) =>
       this.runVm(vm.sourceVmId, () => this.sampleVm(vm), true)));
   }
 
+  /**
+   * 入口 / Entry: HaWitness.sampleVm.
+   * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` / `this.sampleFailback(vm)` 供上层消费（`HaWitness`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; this entry produces `void` / `this.sampleFailback(vm)` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `this.enqueue`, `this.sampleFailback`, `this.actions.fence`, `this.actions.confirmFence` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.enqueue`, `this.sampleFailback`, `this.actions.fence`, `this.actions.confirmFence`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `transition.held`; `transition.returning`; `!entry?.plan`.
+   * 输入 / Inputs: vm: HaWitnessVm
+   * 输出 / Returns: `void`; `this.sampleFailback(vm)`.
+   * 副作用 / Effects: 更新 / updates `entry`.
+   * 拒绝 / Refusals: 条件 / conditions `target !== 'starting' && target !== 'running'`; `await this.actions.targetStatus(vm, plan) !== 'running'`; `!await this.actions.applicationReady(vm, plan)`; 异常 / errors `new AppError(`目标副本处于 ${target}，不能接管`, 409)`; `new AppError('目标副本仍在启动，保持来源隔离', 409)`.
+   * 失败处理：catch 分支执行 `await this.enqueue(async () => { const current = this.entry(vm.sourceVmId); const detail = (error instanceof Error ? error.me…`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `await this.enqueue(async () => { const current = this.entry(vm.sourceVmId); const detail = (error instanceof Error ? error.me…`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async sampleVm(vm: HaWitnessVm) {
     const transition = await this.enqueue(async () => {
       this.requireStorage();
@@ -397,6 +782,15 @@ export class HaWitness {
     });
     if (transition.held) return;
     if (transition.returning) return this.sampleFailback(vm);
+    /**
+     * 入口 / Entry: HaWitness.sampleVm.callback@400.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.enqueue）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.enqueue).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `null`; `current`; `fencing`.
+     * 副作用 / Effects: `this.save`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     let entry = await this.enqueue(async () => {
       this.requireStorage();
       const current = this.entry(vm.sourceVmId);
@@ -420,6 +814,15 @@ export class HaWitness {
     try {
       if (entry.phase === 'fencing') {
         await this.actions.fence(vm);
+        /**
+         * 入口 / Entry: HaWitness.sampleVm.callback@423.
+         * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.enqueue）。
+         * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.enqueue).
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `fenced`.
+         * 副作用 / Effects: `this.save`.
+         * 拒绝 / Refusals: 条件 / conditions `current.phase !== 'fencing' || current.plan?.transferId !== plan.transferId`; 异常 / errors `new AppError('隔离期间见证计划发生变化', 503)`.
+         */
         entry = await this.enqueue(async () => {
           const current = this.entry(vm.sourceVmId);
           if (current.phase !== 'fencing' || current.plan?.transferId !== plan.transferId)
@@ -448,6 +851,15 @@ export class HaWitness {
         await this.actions.switchTraffic(vm, plan);
       if (await this.actions.trafficTarget(vm, plan) !== plan.remoteVmId)
         throw new AppError('流量入口没有确认目标实例', 409);
+      /**
+       * 入口 / Entry: HaWitness.sampleVm.callback@451.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.enqueue）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.enqueue).
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `void`.
+       * 副作用 / Effects: `this.save`.
+       * 拒绝 / Refusals: 条件 / conditions `(current.phase !== 'fenced' && current.phase !== 'promoted') || current.plan?.transferId !== plan.transferId`; 异常 / errors `new AppError('切流期间见证计划发生变化', 503)`.
+       */
       await this.enqueue(async () => {
         const current = this.entry(vm.sourceVmId);
         if ((current.phase !== 'fenced' && current.phase !== 'promoted') ||
@@ -469,6 +881,20 @@ export class HaWitness {
     }
   }
 
+  /**
+   * 入口 / Entry: HaWitness.sampleFailback.
+   * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`HaWitness`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; this entry produces `void` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `this.enqueue`, `this.now`, `this.actions.retire`, `inline` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.enqueue`, `this.now`, `this.actions.retire`, `inline`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `entry.phase !== 'source' || entry.recoveryHold || returning?.phase !== 'pending'`; `activeVmId !== vm.sourceVmId`.
+   * 输入 / Inputs: vm: HaWitnessVm
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!entry.lastHeartbeatAt || this.now() - entry.lastHeartbeatAt >= vm.failureThreshold * 15_000`; `!await this.actions.sourceApplicationReady!(vm, returning.plan)`; `activeVmId !== vm.sourceVmId && activeVmId !== returning.plan.remoteVmId`; 异常 / errors `new AppError('等待来源恢复并续报存活心跳后回切流量', 409)`; `new AppError('来源应用尚未通过健康检查，保持待回切状态', 409)`.
+   * 失败处理：catch 分支执行 `await this.enqueue(async () => { const current = this.entry(vm.sourceVmId); if (current.failback?.phase === 'pending' && curr…`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `await this.enqueue(async () => { const current = this.entry(vm.sourceVmId); if (current.failback?.phase === 'pending' && curr…`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async sampleFailback(vm: HaWitnessVm) {
     const entry = await this.enqueue(async () => {
       this.requireStorage();
@@ -513,12 +939,32 @@ export class HaWitness {
     }
   }
 
+  /**
+   * 入口 / Entry: HaWitness.rejoin.
+   * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.runVm(vm.sourceVmId, async () => { const entry = await this.enqueue(async () => { this.requireStorage(); return this.ent…` 供上层消费（`HaWitness`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; this entry produces `this.runVm(vm.sourceVmId, async () => { const entry = await this.enqueue(async () => { this.requireStorage(); return this.ent…` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `haWitnessIdentitySchema.safeExtend().parse`, `haWitnessIdentitySchema.safeExtend`, `z.literal`, `this.vm` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `haWitnessIdentitySchema.safeExtend().parse`, `haWitnessIdentitySchema.safeExtend`, `z.literal`, `this.vm`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: raw: unknown
+   * 输出 / Returns: `this.runVm(vm.sourceVmId, async () => { const entry = await this.enqueue(async () => { this.requireStorage(); return this.ent…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async rejoin(raw: unknown) {
     const input = haWitnessIdentitySchema.safeExtend({
       dataReconciled: z.literal(true),
     }).parse(raw);
     const vm = this.vm({ sourceHostId: input.sourceHostId,
       sourceVmId: input.sourceVmId });
+    /**
+     * 入口 / Entry: HaWitness.rejoin.callback@522.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.runVm）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.runVm).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.releaseRecovery(vm, entry)`; `{ released: true as const, recovered: true as const, retiredVmIds: entry.recoveryReceipt.replicas.map((item) => item.remoteVm…`; `{ released: true as const, retiredRemoteVmId: entry.retiredRemoteVmId, ...(entry.failback ? { failback: entry.failback.phase …`；另有分支返回 / additional branch-specific returns.
+     * 副作用 / Effects: `this.releaseRecovery`.
+     * 拒绝 / Refusals: 条件 / conditions `entry.phase === 'source' || !entry.plan`; 异常 / errors `new AppError('见证节点没有待退出的隔离或接管记录', 409)`.
+     */
     return this.runVm(vm.sourceVmId, async () => {
       const entry = await this.enqueue(async () => {
         this.requireStorage();
@@ -552,9 +998,31 @@ export class HaWitness {
     });
   }
 
+  /**
+   * 入口 / Entry: HaWitness.releaseRecovery.
+   * 功能：在维护见证节点的来源、目标与副本状态中，结束、撤销或清理本次拥有的领域资源；本入口产生 `{ released: true as const, recovered: true as const, retiredVmIds: after.replicas.map((item) => item.identity.remoteVmId), ..…` 供上层消费（`HaWitness`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `HaWitness`; this entry produces `{ released: true as const, recovered: true as const, retiredVmIds: after.replicas.map((item) => item.identity.remoteVmId), ..…` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+   * 处理：通过 `inventory`, `inline.filter`, `expected.some`, `before.replicas.some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `inventory`, `inline.filter`, `expected.some`, `before.replicas.some`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vm: HaWitnessVm; entry: Entry
+   * 输出 / Returns: `{ released: true as const, recovered: true as const, retiredVmIds: after.replicas.map((item) => item.identity.remoteVmId), ..…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!this.actions.inspectReplicas || !this.actions.recoveryTrafficTarget`; `expected.some((identity) => !before.replicas.some((item) => same(identity, item.identity))) || (entry.retiredRemoteVmId && !b…`; `before.replicas.some((item) => item.status !== 'stopped')`; 异常 / errors `new AppError('目标未提供完整副本清单，保持恢复封锁', 503)`; `new AppError('历史副本或完整退役证据缺失，保持恢复封锁', 409)`.
+   */
   private async releaseRecovery(vm: HaWitnessVm, entry: Entry) {
     if (!this.actions.inspectReplicas || !this.actions.recoveryTrafficTarget)
       throw new AppError('目标未提供完整副本清单，保持恢复封锁', 503);
+    /**
+     * 入口 / Entry: HaWitness.releaseRecovery.inventory.
+     * 功能：在维护见证节点的来源、目标与副本状态中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result` 供上层消费（`HaWitness`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `HaWitness`; this entry produces `result` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+     * 处理：通过 `haWitnessReplicaInventorySchema.parse`, `inline` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `haWitnessReplicaInventorySchema.parse`, `inline`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `result`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `result.hostId !== vm.targetHostId || result.sourceHostId !== vm.sourceHostId || result.sourceVmId !== vm.sourceVmId`; 异常 / errors `new AppError('完整副本清单的来源或目标身份不一致，保持恢复封锁', 409)`.
+     */
     const inventory = async () => {
       const result = haWitnessReplicaInventorySchema.parse(await this.actions.inspectReplicas!(vm));
       if (result.hostId !== vm.targetHostId || result.sourceHostId !== vm.sourceHostId ||
@@ -563,6 +1031,15 @@ export class HaWitness {
       return result;
     };
     const before = await inventory();
+    /**
+     * 入口 / Entry: HaWitness.releaseRecovery.same.
+     * 功能：从当前输入或状态计算 `Object.entries(haWitnessReplicaIdentitySchema.parse({ sourceHostId: left.sourceHostId, sourceVmId: left.sourceVmId, targetHos…`，供调用方后续验证或使用。
+     * Purpose: Computes `Object.entries(haWitnessReplicaIdentitySchema.parse({ sourceHostId: left.sourceHostId, sourceVmId: left.sourceVmId, targetHos…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: left: HaWitnessReplicaIdentity; right: HaWitnessReplicaIdentity
+     * 输出 / Returns: `Object.entries(haWitnessReplicaIdentitySchema.parse({ sourceHostId: left.sourceHostId, sourceVmId: left.sourceVmId, targetHos…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const same = (left: HaWitnessReplicaIdentity, right: HaWitnessReplicaIdentity) =>
       Object.entries(haWitnessReplicaIdentitySchema.parse({ sourceHostId: left.sourceHostId,
         sourceVmId: left.sourceVmId, targetHostId: left.targetHostId,
@@ -577,6 +1054,17 @@ export class HaWitness {
       throw new AppError('历史副本或完整退役证据缺失，保持恢复封锁', 409);
     if (before.replicas.some((item) => item.status !== 'stopped'))
       throw new AppError('所有历史故障副本须先停止，保持恢复封锁', 409);
+    /**
+     * 入口 / Entry: HaWitness.releaseRecovery.readTraffic.
+     * 功能：在维护见证节点的来源、目标与副本状态中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `activeVmId` 供上层消费（`HaWitness`）。
+     * Purpose: Reads/verifies domain state and constructs a caller-facing result in `HaWitness`; this entry produces `activeVmId` for its caller. Module context: Owns witness source/target/replica state and coordinates promotion from fencing and retirement evidence.
+     * 处理：通过 `inline`, `before.replicas.some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `inline`, `before.replicas.some`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `activeVmId`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `activeVmId !== vm.sourceVmId && !before.replicas.some((item) => item.identity.remoteVmId === activeVmId)`; 异常 / errors `new AppError('流量入口指向未知实例，保持恢复封锁', 409)`.
+     */
     const readTraffic = async () => {
       const activeVmId = await this.actions.recoveryTrafficTarget!(vm);
       if (activeVmId !== vm.sourceVmId && !before.replicas.some((item) =>

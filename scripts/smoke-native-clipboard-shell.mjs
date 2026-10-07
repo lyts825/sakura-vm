@@ -1,4 +1,9 @@
-/** 烟雾验收：验证Shell 常规创建路径的来源、后代握手、精确句柄退出及证据。 */
+/**
+ * 模块职责：验证真实 Shell 子创建来源、暂停接纳和拒绝路径，并核对原参数、环境、目录与句柄语义。
+ * Module: Verify real Shell child-creation provenance, suspended adoption and rejection while checking original parameters, environment, directory and handle semantics.
+ * 设计思路：编译并驱动自有夹具，在私有 station、独立状态文件与精确出生身份范围内检查实际回执；本脚本会产生临时进程/资产，执行平台及编译器要求由入口校验定义。
+ * Design: Compile/drive owned fixtures and check actual receipts within private stations, separate state files and exact process-birth identities. This script creates temporary processes/assets; entry checks define platform/compiler requirements.
+ */
 import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -18,7 +23,15 @@ const root = resolve(process.env.SAKURA_NATIVE_CLIPBOARD_TEST_BASE || '.data/nat
 await mkdir(root, { recursive: true });
 process.env.TEMP = process.env.TMP = root;
 console.log('Shell private fixture: ' + root);
-const execute = promisify(execFile), hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const execute = promisify(execFile), /**
+ * 中文功能：计算输入字节的 SHA-256，用于将配置和资产身份绑定到实际内容。
+ * English: Compute SHA-256 over input bytes to bind configuration and asset identities to actual content.
+ * 输入 / Inputs: bytes。
+ * 结果：返回分支计算值（`createHash('sha256').update(bytes).digest('hex')`）。
+ * Result: Return the branch-computed value (`createHash('sha256').update(bytes).digest('hex')`).
+ * 协作入口 / Collaborators: `createHash('sha256').update(bytes).digest`, `createHash('sha256').update`, `createHash`.
+ */
+hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const sources = [
   'native/windows-clipboard/protocol.h', 'native/windows-clipboard/early-import.h',
   'native/windows-clipboard/control-system.h', 'native/windows-clipboard/descendant.h',
@@ -47,12 +60,51 @@ const assets = join(root, 'assets'), file = join(root, 'native.json');
 const channels = [], parents = [], children = [], gates = [], nativeCalls = [], bareFixtures = [];
 let service, station, holder, holderClosure, fault, held, brokerHeld;
 const rule = { copy: false, paste: false, files: false, sensitive: true, maxTextBytes: 8192 };
+/**
+ * 中文功能：同时比较 PID 和创建时间，区分原进程、PID 复用者与邻居。
+ * English: Compare both PID and creation time to distinguish the original process from PID reuse and neighbors.
+ * 输入 / Inputs: a; b。
+ * 结果：返回分支计算值（`a.pid === b.pid && a.created === b.created`）。
+ * Result: Return the branch-computed value (`a.pid === b.pid && a.created === b.created`).
+ */
 const same = (a, b) => a.pid === b.pid && a.created === b.created;
+/**
+ * 中文功能：创建可显式进入和释放的异步门闩，用于在创建或接纳边界安排状态变化。
+ * English: Create an explicitly enterable/releasable asynchronous gate to arrange state changes at creation/adoption boundaries.
+ * 输入 / Inputs: stage。
+ * 结果：返回分支计算值（`point`）。
+ * Result: Return the branch-computed value (`point`).
+ * 协作入口 / Collaborators: `gates.push`.
+ */
 function gate(stage) {
   let enter, release;
-  const point = { stage, ready: new Promise((yes) => { enter = yes; }), waiting: new Promise((yes) => { release = yes; }), enter: (value) => enter(value), release: () => release() };
+  const point = { stage, ready: new Promise((yes) => { enter = yes; }), waiting: new Promise((yes) => { release = yes; }), /**
+   * 中文功能：提交门闩进入证据，并沿本实现等待用例的放行信号。
+   * English: Submit gate-entry evidence and follow this implementation in awaiting case release.
+   * 输入 / Inputs: value。
+   * 结果：返回分支计算值（`enter(value)`）。
+   * Result: Return the branch-computed value (`enter(value)`).
+   * 协作入口 / Collaborators: `enter`.
+   */
+  enter: (value) => enter(value), /**
+   * 中文功能：完成预先保存的门闩 Promise，使等待创建流程继续。
+   * English: Settle the retained gate Promise so a waiting creation flow can continue.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`release()`）。
+   * Result: Return the branch-computed value (`release()`).
+   * 协作入口 / Collaborators: `release`.
+   */
+  release: () => release() };
   gates.push(point); return point;
 }
+/**
+ * 中文功能：建立本轮自有命名管道，解析夹具逐行 JSON 回执，暴露写入、等待与关闭入口。
+ * English: Create an owned named pipe, parse line-delimited fixture JSON receipts, and expose write/wait/close operations.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`point`），以 Promise 交付。
+ * Result: Return the branch-computed value (`point`) through a Promise.
+ * 协作入口 / Collaborators: `randomUUID`, `createServer`, `server.on`, `channels.push`.
+ */
 async function channel() {
   const pipe = '\\\\.\\pipe\\SakuraShellFixture.' + randomUUID(), server = createServer();
   let socket, reader, ended = false;
@@ -66,19 +118,82 @@ async function channel() {
   });
   await new Promise((yes, no) => { server.once('error', no); server.listen(pipe, yes); });
   const point = {
-    pipe, write: (text) => !ended && socket?.write(text),
+    pipe, /**
+     * 中文功能：向当前夹具管道写入命令；连接未建立或已结束时按本表达式处理。
+     * English: Write a command to the fixture pipe; this expression handles absent or ended connections.
+     * 输入 / Inputs: text。
+     * 结果：返回分支计算值（`!ended && socket?.write(text)`）。
+     * Result: Return the branch-computed value (`!ended && socket?.write(text)`).
+     * 协作入口 / Collaborators: `socket?.write`.
+     */
+    write: (text) => !ended && socket?.write(text),
+    /**
+     * 中文功能：优先取已排队回执，否则登记等待者；关闭或超时通过本分支的拒绝路径结束等待。
+     * English: Consume a queued receipt first or register a waiter; the implemented closure/timeout rejection path ends pending waits.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`queued.length ? Promise.resolve(queued.shift()) : ended ? Promise.reject(new Err…`）。
+     * Result: Return the branch-computed value (`queued.length ? Promise.resolve(queued.shift()) : ended ? Promise.reject(new Err…`).
+     * 协作入口 / Collaborators: `Promise.resolve`, `queued.shift`, `Promise.reject`.
+     */
     next: () => queued.length ? Promise.resolve(queued.shift()) : ended ? Promise.reject(new Error('owned Shell fixture ended')) : new Promise((resolve, reject) => {
       const timer = setTimeout(() => { const index = waiting.indexOf(item); if (index >= 0) waiting.splice(index, 1); reject(new Error('owned Shell fixture timeout: ' + pipe)); }, 30000);
-      const item = { resolve: (value) => { clearTimeout(timer); resolve(value); }, reject: (error) => { clearTimeout(timer); reject(error); } }; waiting.push(item);
+      const item = { /**
+       * 中文功能：清除本等待者的超时定时器并完成其成功结果。
+       * English: Clear this waiter's timeout and settle its successful result.
+       * 输入 / Inputs: value。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 协作入口 / Collaborators: `clearTimeout`, `resolve`.
+       */
+      resolve: (value) => { clearTimeout(timer); resolve(value); }, /**
+       * 中文功能：清除本等待者的超时定时器并交付失败原因。
+       * English: Clear this waiter's timeout and deliver its rejection reason.
+       * 输入 / Inputs: error。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 协作入口 / Collaborators: `clearTimeout`, `reject`.
+       */
+      reject: (error) => { clearTimeout(timer); reject(error); } }; waiting.push(item);
     }),
+    /**
+     * 中文功能：关闭本夹具拥有的进程、流或管道；具体等待期限和强制终止条件以本函数分支为准。
+     * English: Close processes, streams or pipes owned by this fixture; its branches define wait deadlines and forced-termination conditions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `socket?.destroy`, `reader?.close`.
+     */
     close: async () => { socket?.destroy(); reader?.close(); await new Promise((yes) => server.close(yes)); },
+    /**
+     * 中文功能：读取本管道是否已有连接，供入口未执行的断言观察。
+     * English: Read whether this pipe has a connection for assertions that an entry did not execute.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`!!socket`）。
+     * Result: Return the branch-computed value (`!!socket`).
+     */
     get connected() { return !!socket; },
   };
   channels.push(point); return point;
 }
 const options = {
   file, assets, interval: 0,
+  /**
+   * 中文功能：调用真实原生控制器并保留本轮命令或回执记录，供后续生命周期断言使用。
+   * English: Invoke the real native controller and retain command/receipt records for later lifecycle assertions.
+   * 输入 / Inputs: helper; args。
+   * 结果：返回分支计算值（`nativeCommand(helper, args)`），以 Promise 交付。
+   * Result: Return the branch-computed value (`nativeCommand(helper, args)`) through a Promise.
+   * 协作入口 / Collaborators: `nativeCalls.push`, `nativeCommand`.
+   */
   run: async (helper, args) => { nativeCalls.push([...args]); return nativeCommand(helper, args); },
+  /**
+   * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+   * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+   * 输入 / Inputs: helper; owner; receive; failed。
+   * 结果：返回受控对象，公开字段包括 `alive, close`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `alive, close`; the actual branch determines its shape.
+   * 协作入口 / Collaborators: `nativeClipboardDescendants`.
+   */
   descendants: async (helper, owner, receive, failed) => {
     const broker = await nativeClipboardDescendants(helper, owner, async (request, identity) => {
       const beforeAdoption = await nativeCommand(join(dirname(helper), 'sakura-clipboard-controller.exe'), ['status', owner, String(request.process.pid), request.process.created]);
@@ -87,9 +202,44 @@ const options = {
       if (point && !point.used) { point.used = true; point.enter(request); await point.waiting; }
       return receive(request, identity);
     }, (error) => { proof.channelErrors.push({ message: error.message, at: new Date().toISOString() }); failed(error); });
-    return { get alive() { return broker.alive; }, close: async () => { await broker.close(); assert.ok(broker.closure); proof.channelClosures.push({ process: broker.process, ...broker.closure }); } };
+    return { /**
+     * 中文功能：计算本轮原生验收的辅助值；输入与分支结果如下，供相邻创建或断言步骤使用。
+     * English: Compute a helper value for this native smoke; inputs and branch results below serve adjacent creation/assertion steps.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`broker.alive`）。
+     * Result: Return the branch-computed value (`broker.alive`).
+     */
+    get alive() { return broker.alive; }, /**
+     * 中文功能：关闭本夹具拥有的进程、流或管道；具体等待期限和强制终止条件以本函数分支为准。
+     * English: Close processes, streams or pipes owned by this fixture; its branches define wait deadlines and forced-termination conditions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `broker.close`, `assert.ok`, `proof.channelClosures.push`.
+     * 检查边界 / Checked boundaries: `assert.ok(broker.closure)`.
+     */
+    close: async () => { await broker.close(); assert.ok(broker.closure); proof.channelClosures.push({ process: broker.process, ...broker.closure }); } };
   },
+  /**
+   * 中文功能：协调本脚本的真实 Windows 创建或附着阶段，返回下述回执供身份与策略断言核对。
+   * English: Coordinate this script's real Windows creation/attachment stage, returning the receipt below for identity/policy assertions.
+   * 输入 / Inputs: helper; args; hooks; signal。
+   * 结果：返回分支计算值（`nativeLaunch(helper, args, { prepared: async (process) => { await hooks.prepared…`）。
+   * Result: Return the branch-computed value (`nativeLaunch(helper, args, { prepared: async (process) => { await hooks.prepared…`).
+   * 协作入口 / Collaborators: `nativeLaunch`.
+   */
   launch: (helper, args, hooks, signal) => nativeLaunch(helper, args, {
+    /**
+     * 中文功能：协调本脚本的真实 Windows 创建或附着阶段，返回下述回执供身份与策略断言核对。
+     * English: Coordinate this script's real Windows creation/attachment stage, returning the receipt below for identity/policy assertions.
+     * 输入 / Inputs: process。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 失败 / Failure: `new Error('owned Shell prepared-stage refusal')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `hooks.prepared`, `proof.adoptionStages.push`, `point.enter`.
+     * 设计思路：根据受控条件分别注入拒绝或结果，保持分支证据可观察，供调用者失败恢复用例复用。
+     * Design: Inject rejection or results under controlled conditions while keeping branch evidence observable for caller recovery tests.
+     */
     prepared: async (process) => {
       await hooks.prepared(process); if (args[0] !== 'adopt') return;
       proof.adoptionStages.push({ stage: 'prepared', process });
@@ -97,9 +247,26 @@ const options = {
       const point = held;
       if (point?.stage === 'prepared') {
         point.enter(process);
-        await new Promise((yes, no) => { const stop = () => no(new Error('owned Shell generation retired')); if (signal?.aborted) stop(); else signal?.addEventListener('abort', stop, { once: true }); point.waiting.then(yes); });
+        await new Promise((yes, no) => { /**
+         * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+         * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+         * 输入 / Inputs: 无 / none。
+         * 结果：返回分支计算值（`no(new Error('owned Shell generation retired'))`）。
+         * Result: Return the branch-computed value (`no(new Error('owned Shell generation retired'))`).
+         * 协作入口 / Collaborators: `no`.
+         */
+        const stop = () => no(new Error('owned Shell generation retired')); if (signal?.aborted) stop(); else signal?.addEventListener('abort', stop, { once: true }); point.waiting.then(yes); });
       }
     },
+    /**
+     * 中文功能：协调本脚本的真实 Windows 创建或附着阶段，返回下述回执供身份与策略断言核对。
+     * English: Coordinate this script's real Windows creation/attachment stage, returning the receipt below for identity/policy assertions.
+     * 输入 / Inputs: process; state。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 失败 / Failure: `new Error('owned Shell attached-stage refusal')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `hooks.attached`, `proof.adoptionStages.push`.
+     */
     attached: async (process, state) => {
       await hooks.attached(process, state); if (args[0] !== 'adopt') return;
       proof.adoptionStages.push({ stage: 'attached', process, state });
@@ -108,31 +275,114 @@ const options = {
   }, signal),
 };
 const standardFiles = ['stdin', 'stdout', 'stderr'].map((name) => join(root, 'owned-standard-' + name + '-' + randomUUID()));
+/**
+ * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+ * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`standardFiles.map((name, index) => '--shell-' + ['stdin', 'stdout', 'stderr'][in…`）。
+ * Result: Return the branch-computed value (`standardFiles.map((name, index) => '--shell-' + ['stdin', 'stdout', 'stderr'][in…`).
+ * 协作入口 / Collaborators: `standardFiles.map`.
+ */
 const standardArgs = () => standardFiles.map((name, index) => '--shell-' + ['stdin', 'stdout', 'stderr'][index] + '=' + name);
+/**
+ * 中文功能：通过原生控制器读取实时进程清单，供精确 PID/出生时间断言使用。
+ * English: Read live process inventory through the native controller for exact PID/birth-time assertions.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`JSON.parse((await execute(join(assets, 'sakura-clipboard-controller.exe'), ['lis…`），以 Promise 交付。
+ * Result: Return the branch-computed value (`JSON.parse((await execute(join(assets, 'sakura-clipboard-controller.exe'), ['lis…`) through a Promise.
+ * 协作入口 / Collaborators: `JSON.parse`, `execute`, `join`.
+ */
 async function inventory() { return JSON.parse((await execute(join(assets, 'sakura-clipboard-controller.exe'), ['list'], { windowsHide: true, timeout: 10000 })).stdout).processes; }
+/**
+ * 中文功能：在限定时间内轮询原进程身份消失；匹配完整身份而不只依据 PID。
+ * English: Poll within a fixed deadline for the original process identity to disappear, matching complete identity rather than only PID.
+ * 输入 / Inputs: process。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 失败 / Failure: `new Error('owned exact process still alive: ' + JSON.stringify(process))`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `Date.now`, `(await inventory()).some`, `inventory`, `delay`.
+ */
 async function gone(process) {
   const until = Date.now() + 10000;
   while (Date.now() < until) { if (!(await inventory()).some((item) => same(item, process))) return; await delay(100); }
   throw new Error('owned exact process still alive: ' + JSON.stringify(process));
 }
+/**
+ * 中文功能：读取持久状态文件中的 owner 标识，供原生控制器核对本服务的归属。
+ * English: Read the owner identifier from persisted state for native-controller ownership checks.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`JSON.parse(await readFile(file, 'utf8')).owner`），以 Promise 交付。
+ * Result: Return the branch-computed value (`JSON.parse(await readFile(file, 'utf8')).owner`) through a Promise.
+ * 协作入口 / Collaborators: `JSON.parse`, `readFile`.
+ */
 async function owner() { return JSON.parse(await readFile(file, 'utf8')).owner; }
+/**
+ * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+ * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+ * 输入 / Inputs: text。
+ * 结果：返回分支计算值（`'"' + text.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1') + '"'`）。
+ * Result: Return the branch-computed value (`'"' + text.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1') + '"'`).
+ * 协作入口 / Collaborators: `text.replace(/(\\*)"/g, '$1$1\\"').replace`, `text.replace`.
+ */
 function quote(text) { return '"' + text.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1') + '"'; }
+/**
+ * 中文功能：使用本轮选定编译器和固定构建选项生成自有夹具，供后续真实原生调用验收。
+ * English: Build an owned fixture with the selected compiler and fixed build options for subsequent real native-call acceptance.
+ * 输入 / Inputs: compiler; args; label。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 失败 / Failure: `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `execute`, `writeFile`, `join`, `String`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function compile(compiler, args, label) {
   try { const result = await execute(compiler, args, { windowsHide: true, timeout: 60000 }); await writeFile(join(root, label + '.compile.log'), result.stdout + result.stderr); }
   catch (error) { await writeFile(join(root, label + '.compile.log'), String(error.stdout || '') + String(error.stderr || '') + '\n' + error.message); throw error; }
 }
+/**
+ * 中文功能：检查本轮真实原生回执和状态，以下断言摘录给出本函数具体核对的边界。
+ * English: Check real native receipts/state from this run; assertion excerpts below identify the boundaries checked by this function.
+ * 输入 / Inputs: image; com = 'sta'。
+ * 结果：返回分支计算值（`parent`），以 Promise 交付。
+ * Result: Return the branch-computed value (`parent`) through a Promise.
+ * 协作入口 / Collaborators: `channel`, `service.view().settings.applications.find`, `service.view`, `service.action`.
+ * 检查边界 / Checked boundaries: `assert.equal(entry.entryReady, true)`; `assert.equal(entry.active, true)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function parentLaunch(image, com = 'sta') {
   const point = await channel(), binding = service.view().settings.applications.find((item) => item.image === image);
   const result = await service.action({ action: 'launch', version: service.view().version, image, sha256: binding.sha256, args: ['--shell-station=' + station.station, '--shell-owner=' + await owner(), '--shell-pipe=' + point.pipe, '--shell-com=' + com, ...standardArgs()] });
   const entry = await point.next(); assert.equal(entry.entryReady, true); assert.equal(entry.active, true); assert.equal(entry.station, station.station); assert.equal(entry.comResult, 0);
   const parent = { process: result.process, socket: point, entry, com }; parents.push(parent); return parent;
 }
+/**
+ * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+ * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+ * 输入 / Inputs: image。
+ * 结果：返回受控对象，公开字段包括 `point, marker, firstMarker, literal, parameters, image`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `point, marker, firstMarker, literal, parameters, image`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `channel`, `join`, `randomUUID`, `['--shell-station=' + station.station, '--shell-owner=' + await owner(), '-…`.
+ */
 async function childSpec(image) {
   const point = await channel(), marker = join(root, 'main-' + randomUUID()), firstMarker = join(root, 'tls-' + randomUUID());
   const literal = 'empty space 中文 \\ trailing\\ "quoted"';
   const parameters = ['--shell-station=' + station.station, '--shell-owner=' + await owner(), '--shell-pipe=' + point.pipe, '--shell-marker=' + marker, '--shell-first-marker=' + firstMarker, '--shell-literal=' + literal, ''].map(quote).join(' ');
   return { point, marker, firstMarker, literal, parameters, image };
 }
+/**
+ * 中文功能：让父夹具调用指定 Shell API，必要时在创建前修改边界条件，分别记录拒绝或接纳证据。
+ * English: Ask the parent fixture to call the selected Shell API, optionally mutate boundary conditions before creation, and record rejection/adoption evidence.
+ * 输入 / Inputs: parent; image; api; expected; mutate; spec。
+ * 结果：返回分支计算值（`evidence / acceptChild(parent, image, result, evidence, spec, requestOffset, callOffset)`），以 Promise 交付。
+ * Result: Return the branch-computed value (`evidence / acceptChild(parent, image, result, evidence, spec, requestOffset, callOffset)`) through a Promise.
+ * 状态影响 / State effects: `spec`, `result`, `evidence.mainAbsent`, `evidence.firstAbsent`, `evidence.clientConnected`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `childSpec`, `parent.socket.write`, `['spawn', api, image, parameters, dirname(image)].join`, `dirname`.
+ * 检查边界 / Checked boundaries: `assert.ok(mutate)`; `assert.equal(result.started, expected, api + ' must preserve an accurate Shell result')`.
+ * 设计思路：在请求前截取 broker 与原生命令序列起点，拒绝时检查主入口标记和管道连接均未出现；成功转交 acceptChild 核对完整身份，保留 Shell 自身返回语义。
+ * Design: Capture broker/native-call offsets before requesting. Rejection checks absence of entry markers and pipe connection; success delegates full identity checks to acceptChild while preserving Shell result semantics.
+ */
 async function spawnChild(parent, image, api, expected, mutate, spec) {
   spec ||= await childSpec(image);
   const { point, marker, firstMarker, literal, parameters } = spec;
@@ -149,6 +399,18 @@ async function spawnChild(parent, image, api, expected, mutate, spec) {
   }
   return acceptChild(parent, image, result, evidence, spec, requestOffset, callOffset);
 }
+/**
+ * 中文功能：核对 Shell 孩子的真实身份、原启动上下文与接纳记录，区分受管继承和普通未接纳创建。
+ * English: Check a Shell child's actual identity, original startup context and adoption record, distinguishing managed inheritance from ordinary unadopted creation.
+ * 输入 / Inputs: parent; image; result; evidence; spec; requestOffset; callOffset。
+ * 结果：返回分支计算值（`evidence`），以 Promise 交付。
+ * Result: Return the branch-computed value (`evidence`) through a Promise.
+ * 状态影响 / State effects: `evidence.child`, `evidence.fixture`, `evidence.standardObjects`, `evidence.exactLiveIdentity`, `evidence.requests`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `point.next`, `children.push`, `assert.equal`, `child.image.toLowerCase`.
+ * 检查边界 / Checked boundaries: `assert.equal(child.image.toLowerCase(), image.toLowerCase())`; `assert.equal(child.cwd.toLowerCase(), dirname(image).toLowerCase())`.
+ * 设计思路：关联暂停创建请求、journal 与孩子各入口阶段，要求接纳先有预留且没有普通 apply 扫描；最终报告移除活管道/fixture 函数，仅保留可序列化进程证据。
+ * Design: Correlate suspended creation requests, journal and child entry phases, requiring reservation before adoption and no ordinary apply scan. Remove live pipe/fixture functions from final receipts, retaining serializable process evidence.
+ */
 async function acceptChild(parent, image, result, evidence, spec, requestOffset, callOffset) {
   const { point, marker, firstMarker, literal } = spec;
   const child = await point.next(); evidence.child = child;
@@ -176,6 +438,14 @@ async function acceptChild(parent, image, result, evidence, spec, requestOffset,
   const receipt = { ...evidence }; delete receipt.fixture;
   proof.cases.push(receipt); console.log(JSON.stringify({ api: evidence.api, bits: parent.process.bits, started: true, childBits: child.bits, phases: child.phases.map((item) => item.ready), adopted: !!evidence.journal })); return evidence;
 }
+/**
+ * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+ * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+ * 输入 / Inputs: image; args。
+ * 结果：返回分支计算值（`owned`），以 Promise 交付。
+ * Result: Return the branch-computed value (`owned`) through a Promise.
+ * 协作入口 / Collaborators: `spawn`, `args.map`, `fixture.stdout.resume`, `fixture.stderr.resume`.
+ */
 async function bareLaunch(image, args) {
   const fixture = spawn(image, args.map(quote), { windowsHide: true, windowsVerbatimArguments: true, stdio: ['ignore', 'pipe', 'pipe'] });
   fixture.stdout.resume(); fixture.stderr.resume();

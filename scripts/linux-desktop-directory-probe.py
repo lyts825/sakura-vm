@@ -1,4 +1,5 @@
 # 在自有 Linux 桌面夹具中观察目录可见性、访问权限和映射身份，用于核实项目目录隔离。
+# Observe directory visibility, access rights and mapped identity inside the owned Linux desktop fixture to verify project isolation.
 """Owned Wayland smoke application, launched by the real public controller.
 
 The project task copies Python to its own 0700 ELF; the public controller

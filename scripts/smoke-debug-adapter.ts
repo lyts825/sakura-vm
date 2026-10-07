@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实项目 UID 下 debugpy DAP 的断点、步进、栈帧、变量和输出。 */
+/** 烟雾验收：验证真实项目 UID 下 debugpy DAP 的断点、步进、栈帧、变量和输出。
+ * Smoke acceptance for real project-UID debugpy DAP breakpoints, steps, stacks, variables and output. */
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { withOwnedProtocolSmoke, protocolSmokeObserver, protocolDapProbe, protocolDapBreakpoints } from './project-protocol-smoke-support.ts';
@@ -6,7 +7,8 @@ if (process.argv.includes('--validate-only')) {
   console.log(JSON.stringify({ kind: 'dap', vmStarted: false, observerBytes: Buffer.byteLength(protocolSmokeObserver),
     uidProbeBytes: Buffer.byteLength(protocolDapProbe), breakpoints: protocolDapBreakpoints,
     migration: 'explicit preview/apply', fixture: 'fresh owned and retained' }));
-} else await withOwnedProtocolSmoke('dap', async ({ features, machines, vmId, directory, prove, stopped, frameEnv }) => {
+} else await withOwnedProtocolSmoke('dap', /** 通过真实 debugpy DAP 检查断点、单步、变量、栈和带 NUL/保护环境的输出；每状态有限等待并核验 UID 入场与最终全域关闭。
+ * Verify real debugpy DAP breakpoints, stepping, variables, frames and NUL/protected-environment output with bounded state waits, proving UID admission and final whole-domain closure. */ async ({ features, machines, vmId, directory, prove, stopped, frameEnv }) => {
   const distro = machines.get(vmId).distro, isolated = process.env.SAKURA_DAP_PRIVATE === '1';
   if (!(await features.debugger.status(vmId)).installed) await features.debugger.install(vmId);
   assert.equal((await features.debugger.status(vmId)).installed, true);

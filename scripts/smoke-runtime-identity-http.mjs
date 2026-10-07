@@ -1,4 +1,5 @@
-/** 烟雾验收：验证编译运行时 HTTP 的项目身份与精确进程清理；保留历史证据归属。 */
+/** 烟雾验收：验证编译运行时 HTTP 的项目身份与精确进程清理；保留历史证据归属。
+ * Smoke acceptance for compiled runtime HTTP identity/exact-process cleanup while retaining historical evidence ownership. */
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -30,11 +31,17 @@ for (const key of ['sandbox', 'storagePoolId', 'haPromotion', 'haRetirement', 'l
 const machineDirectory = await realpath(join(data, 'machines', vmId));
 assert.equal(dirname(machineDirectory), await realpath(join(data, 'machines')));
 assert.equal(dirname(await realpath(join(machineDirectory, 'disk.qcow2'))), machineDirectory);
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const digest = value => createHash('sha256').update(value).digest('hex');
+/** 按 QEMU 可执行文件名和本夹具根目录/实例参数精确筛选主机进程，返回观测数量；该数量是残留证据，不赋予终止其他进程的权限。
+ * Count host processes matching QEMU executable names and this fixture’s root/VM arguments; the count is residue evidence and grants no authority to terminate other processes. */
 const exactQemu = () => Number(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
   "$r='" + data.replaceAll("'", "''") + "';$v='" + vmId + "';@(" +
   "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(sakura-qemu|qemu-system[^.]*)\\.exe$' -and $_.CommandLine -and $_.CommandLine.Contains($r) -and $_.CommandLine.Contains($v) }).Count"
 ], { encoding: 'utf8', windowsHide: true, timeout: 15_000 }).trim());
+/** 按自有数据根/实例参数要求唯一 Windows QEMU，取得 PID/出生时间/argv 摘要及唯一回环 SSH 转发端口。
+ * Require one Windows QEMU matching owned state/VM arguments and capture PID/birth/argv hash/the unique loopback SSH-forward port. */
 const qemuIdentity = () => {
   const value = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
     "$r='" + data.replaceAll("'", "''") + "';$v='" + vmId + "';$p=@(" +
@@ -112,52 +119,82 @@ const proof = { version: 1, invocation, passed: false, phase: 'initializing', fi
   cases: [], cleanup: {}, officialNode: { version: '22.12.0', source: 'https://nodejs.org/dist/v22.12.0/' } };
 // This must precede settings changes, native module initialization and VM start.
 await writeFile(proofFile, JSON.stringify(proof, null, 2) + '\n', { flag: 'wx' });
+/** 将当前完整验收证据写入专用 proofFile，返回写入 Promise；失败传播，避免只在内存中标记通过。
+ * Write the complete current verification evidence to its dedicated proofFile and return the write promise; failures propagate rather than mark an in-memory-only pass. */
 const persist = () => writeFile(proofFile, JSON.stringify(proof, null, 2) + '\n');
 const saved = new Map(), protectedHostFiles = [], createdMarkers = new Map();
 let server, exited, output = '', sdk, Client, started = false, stopped = true, previousActive, project, identity,
   oldGuestState, rootMarker, unknownPrefix, unknownIdentity, hostSettingsRestored = false, activeRestored = false, shutDownCleanly = false,
   observer, observerIdentity;
+/** 将输入编码成单个 POSIX shell 字面参数，嵌入单引号用结束/转义/重开方式保留原值；调用方仍负责命令和路径授权。
+ * Encode input as one literal POSIX shell argument, preserving embedded quotes by closing/escaping/reopening; callers still authorize the command/path. */
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const python = source => '/usr/bin/python3 -I -S -c ' + quote(source);
+/** 把值编码为 Python json.loads 的字面参数，保留嵌套 JSON 而不插入可执行表达式。
+ * Encode a value as a literal Python json.loads argument, preserving nested JSON without inserting executable expressions. */
 const pythonJson = value => 'json.loads(' + JSON.stringify(JSON.stringify(value)) + ')';
 const apiPath = { vmId }, requests = [];
+/** 通过 SDK 向固定实例/项目接口发送方法与正文，默认九十秒期限，允许场景替换 client/取消信号。
+ * Send method/body via SDK to fixed VM/project endpoints with default ninety-second deadline and optional alternate client/cancellation. */
 const route = (name, method = 'GET', body, client = sdk, signal) => client.request('/api/vms/' + vmId + '/' + name,
   { method, query: { project: project.id }, ...(body === undefined ? {} : { body }), signal: signal || AbortSignal.timeout(90_000) });
+/** 用一次计时器为已有 Promise 增加等待期限，finally 清除计时器；超时不声称底层操作已取消。
+ * Bound an existing promise with one timer/clear it in finally; timeout does not claim the underlying operation was cancelled. */
 function bounded(promise, timeoutMs, message) {
   let timer;
   return Promise.race([promise, new Promise((_done, fail) => { timer = setTimeout(() => fail(Error(message)), timeoutMs); })])
     .finally(() => clearTimeout(timer));
 }
+/** 要求自有进程 IPC 仍连接，发送本轮 SIGINT 桥请求并等发送确认，再限定期限等待生产清理完成。
+ * Require owned-process IPC connected, deliver this invocation’s SIGINT bridge request/await send acknowledgement and bound waiting for production cleanup. */
 async function requestSigint(child, completion, timeoutMs) {
   assert.equal(child.connected, true, 'Owned test process IPC must still be connected.');
   await bounded(new Promise((done, fail) => child.send({ type: 'owned-runtime-http-sigint', requestId: invocation },
     error => error ? fail(error) : done())), 5_000, 'Owned SIGINT delivery acknowledgement timed out.');
   return bounded(completion, timeoutMs, 'Production SIGINT handler did not finish cleanup.');
 }
+/** 按精确 PID 找到已观测信号回执，核对 invocation、服务文件和实际监听数量，拒绝未递交证据。
+ * Find the signal receipt by exact PID and verify invocation/server file/actual listener count, rejecting undelivered evidence. */
 function signalReceipt(pid) {
   const receipt = proof.signalBridge.deliveries.find(value => value.pid === pid);
   assert.ok(receipt); assert.equal(receipt.requestId, invocation); assert.equal(receipt.server, serverFile);
   assert.ok(Number.isInteger(receipt.listeners) && receipt.listeners >= 1); return receipt;
 }
+/** 经 SDK 实例 exec 执行自有命令，受取消/六十秒默认期限约束，要求零退出并返回 stdout。
+ * Execute owned commands through SDK instance exec under cancellation/default sixty-second deadline, requiring zero exit and returning stdout. */
 async function guest(command, signal = AbortSignal.timeout(60_000)) {
   const value = await sdk.call('core.vms.exec', { path: apiPath, body: { scope: 'instance', command }, signal });
   assert.equal(value.code, 0, value.stderr + value.stdout); return value.stdout.trim();
 }
+/** 经正式项目 exec 执行隔离 Python，要求返回 scope/projectId 精确一致及零退出，证明实际非 root 项目执行。
+ * Run isolated Python through production project exec and require exact scope/projectId/zero exit as evidence of real nonroot project execution. */
 async function uid(source) {
   const value = await sdk.call('core.vms.exec', { path: apiPath, query: { project: project.id },
     body: { command: python(source), timeoutSeconds: 30 }, signal: AbortSignal.timeout(45_000) });
   assert.equal(value.scope, 'project'); assert.equal(value.projectId, project.id);
   assert.equal(value.code, 0, value.stderr + value.stdout); return value.stdout.trim();
 }
+/** 将源码封成隔离 Python 字面命令并传递取消信号给实例观察入口。
+ * Wrap source as a literal isolated-Python command and forward cancellation to instance observations. */
 const guestPython = (source, signal) => guest(python(source), signal);
+/** 只使用预认证只读 SSH observer 执行元数据源码，十五秒/256 KiB 限制，要求零退出后返回 stdout；不走项目执行入口建立新票据。
+ * Use only the preauthenticated read-only SSH observer for metadata under fifteen-second/256-KiB limits, requiring zero exit before returning stdout without creating project-execution receipts. */
 async function observe(source) {
   assert.ok(observer, 'Owned read-only observer must already be authenticated.');
-  return new Promise((done, fail) => {
+  return new Promise(/** 把独立只读 SSH 观察器结果转换为一次性 Promise，合计 stdout/stderr 限 256 KiB、15 秒截止；超限/超时销毁通道，finish 只结算一次并清计时器。
+ * Bridge the independent read-only SSH observer into a single-settlement promise with 256-KiB combined stdout/stderr and fifteen-second limits; destroy on overflow/timeout and clear the timer through guarded finish. */ (done, fail) => {
     let channel, total = 0, stdout = '', stderr = '', finished = false;
     const timer = setTimeout(() => { channel?.destroy(); finish(Error('Bounded observer read timed out.')); }, 15_000);
+    /** 只结束观测 Promise 一次，清理计时器后兑现或拒绝，避免 close/error/timeout 多事件竞态。
+     * Settle the observation promise once and clear its timer before resolving/rejecting to avoid close/error/timeout races. */
     const finish = (error, value) => { if (finished) return; finished = true; clearTimeout(timer); error ? fail(error) : done(value); };
-    observer.exec('/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C ' + python(source), (error, stream) => {
+    observer.exec('/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C ' + python(source), /** 成功创建 observer channel 后统一计量双流字节并等待真实 close；非零退出附有限 stderr 失败，成功仅返回裁剪的 stdout 元数据。
+ * After observer-channel creation meter both output streams and await actual close; reject nonzero exit with bounded stderr, returning trimmed stdout metadata only on success. */ (error, stream) => {
       if (error) return finish(error); channel = stream;
+      /** 累计两路原始字节预算，超 256 KiB 销毁通道并拒绝；否则按流类别解码 UTF-8 到对应输出。
+       * Track the combined raw-byte budget, destroy/reject above 256 KiB or decode UTF-8 into the corresponding output stream. */
       const consume = (bytes, standard) => {
         total += bytes.length;
         if (total > 256 * 1024) { stream.destroy(); finish(Error('Observer output exceeded its metadata budget.')); return; }
@@ -171,6 +208,8 @@ async function observe(source) {
     });
   });
 }
+/** 从真实来宾读取有界 root 主机公钥与 bootId，核验唯一自有 QEMU/私钥物理对象与 Windows owner，然后建立 pin 的观察 SSH；返回身份用于后续只读核查。
+ * Read bounded root guest host keys/bootId, validate unique owned QEMU/physical private-key object/Windows owner and establish pinned observer SSH, retaining identity for read-only checks. */
 async function initializeObserver() {
   const metadata = JSON.parse(await guestPython('import base64,hashlib,json,os,stat\nkeys=[]\n' +
     'for kind in ("ed25519","rsa","ecdsa"):\n p="/etc/ssh/ssh_host_"+kind+"_key.pub"\n' +
@@ -192,7 +231,8 @@ async function initializeObserver() {
     await new Promise((done, fail) => {
       observer.once('ready', done); observer.once('error', fail);
       observer.connect({ host: '127.0.0.1', port: qemu.sshPort, username: 'root', privateKey,
-        readyTimeout: 15000, hostHash: 'sha256', hostVerifier: fingerprint => metadata.hostKeys.includes(fingerprint) });
+        readyTimeout: 15000, hostHash: 'sha256', /** 只接受从原来宾安全读取的主机公钥指纹集合，不接受陌生替代端点。
+ * Accept only fingerprints securely read from the original guest, rejecting replacement endpoints. */ hostVerifier: fingerprint => metadata.hostKeys.includes(fingerprint) });
     });
   } finally { privateKey.fill(0); }
   assert.deepEqual(qemuIdentity(), qemu);
@@ -203,6 +243,8 @@ async function initializeObserver() {
     scope: 'Read-only system Python metadata observer for this exact fixture; application execution remains the compiled API.' };
   proof.observer = observerIdentity;
 }
+/** 无链接读取 root 单硬链接有界原生票据并摘要，限制最多 1024，供 GET 前后无执行副作用比较。
+ * Read/hash bounded root single-link native receipts without following links, capped at 1024 for GET-before-after no-execution comparisons. */
 async function guestTickets() {
   return JSON.parse(await guestPython("import hashlib,json,os,stat\np='/run/sakura-project-identities/runs';r={}\n" +
     "if os.path.lexists(p):\n assert stat.S_ISDIR(os.lstat(p).st_mode) and not stat.S_ISLNK(os.lstat(p).st_mode)\n" +
@@ -211,7 +253,11 @@ async function guestTickets() {
     "  try:\n   assert stat.S_ISREG(i.st_mode) and i.st_uid==0 and i.st_nlink==1 and i.st_size<=16384\n   b=os.read(f,16385);assert len(b)==i.st_size;r[name]=hashlib.sha256(b).hexdigest()\n" +
     "  finally:os.close(f)\nprint(json.dumps(r))"));
 }
+/** 读取本夹具指定项目的落盘身份日志并解析 JSON，供精确运行票据和关闭阶段核对；缺失或损坏直接失败。
+ * Read/parse the fixture project’s persisted identity journal for exact-run receipts/closure-phase comparison; missing/corrupt records fail directly. */
 async function journal() { return JSON.parse(await readFile(join(machineDirectory, 'project-identities', project.id + '.json'), 'utf8')); }
+/** 要求所有主机与原生运行日志 closed，核对 UUID 后确认 cgroup 和任务控制目录全部消失，返回汇总证据。
+ * Require all host/native runs closed, validate UUIDs and confirm absent cgroups/task-control directories, returning summarized evidence. */
 async function closed() {
   const value = await journal();
   for (const run of value.runs) { assert.equal(run.phase, 'closed'); if (run.run) assert.equal(run.run.phase, 'closed'); }
@@ -221,6 +267,8 @@ async function closed() {
     ' assert not os.path.lexists("/sys/fs/cgroup/sakura-task-"+ident)\n assert not os.path.lexists("/run/sakura-guest-tasks/"+ident)');
   return { runs: value.runs.length, allClosed: true, controlDirectoriesAbsent: true, cgroupsAbsent: true };
 }
+/** NOFOLLOW 打开项目 UID 的 0600 单链接有界 JSON，记录 dev/inode 供精确清理，返回实际标记。
+ * Open project-UID 0600 single-link bounded JSON with NOFOLLOW, retain dev-inode for exact cleanup and return actual markers. */
 async function readMarker(file) {
   const value = JSON.parse(await observe('import json,os,stat\np=' + JSON.stringify(file) +
     '\nf=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK);i=os.fstat(f)\n' +
@@ -228,6 +276,8 @@ async function readMarker(file) {
     ' b=os.read(f,16385);assert len(b)==i.st_size;print(json.dumps({"value":json.loads(b),"device":str(i.st_dev),"inode":str(i.st_ino)}))\nfinally:os.close(f)'));
   createdMarkers.set(file, { device: value.device, inode: value.inode, uid: identity.uid }); return value.value;
 }
+/** 九十秒内只读等待非空普通标记，出现后通过 readMarker 强校验；不创建新项目运行。
+ * Read-only wait at most ninety seconds for a nonempty regular marker, validate via readMarker and avoid creating new project runs. */
 async function waitMarker(file) {
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
@@ -237,6 +287,8 @@ async function waitMarker(file) {
   }
   throw Error('Project version process did not publish its owned marker.');
 }
+/** 把报告 runId 绑定主机活动日志/current boot，再用只读 observer 核验 PID+ticks、UID、网络/cgroup inode 与固定 SKIDR001 票据字段，证明原运行仍活跃。
+ * Bind report runId to active host/current-boot journals, then read-only verify PID-ticks/UID/network-cgroup inodes/fixed SKIDR001 fields to prove the original run remains active. */
 async function observeActive(report) {
   const runId = report.cgroup.split('sakura-task-')[1]; assert.match(runId, /^[a-f0-9-]{36}$/);
   const entry = (await journal()).runs.find(value => value.runId === runId); assert.ok(entry && entry.phase !== 'closed');
@@ -259,6 +311,8 @@ async function observeActive(report) {
     'print(json.dumps({"runId":run_id,"guestTicketPhase":"active","bootId":strings[4],"pid":report["pid"],"ticks":fields[19],"cgroupDevice":str(info.st_dev),"cgroupInode":str(info.st_ino),"networkInode":str(ns.st_ino)}))'));
   assert.deepEqual(qemuIdentity(), observerIdentity.qemu); return actual;
 }
+/** 检查项目账号/Home/cwd、零组/能力、NNP、正文与 root 写拒绝，要求任务 cgroup 和不同 root 网络 inode。
+ * Check project account/home-cwd/empty groups-capabilities/NNP/body/root-write denial and require task cgroup/network inode distinct from root. */
 function validateReport(value) {
   assert.equal(value.uid, identity.uid); assert.equal(value.euid, identity.uid); assert.equal(value.gid, identity.gid);
   assert.deepEqual(value.groups, []); assert.equal(value.home, identity.home); assert.equal(value.cwd, project.directory);
@@ -266,22 +320,30 @@ function validateReport(value) {
   assert.equal(value.bodyPresent, true); assert.equal(value.rootWriteDenied, true);
   assert.match(value.cgroup, /^0::\/sakura-task-[a-f0-9-]{36}$/); assert.notEqual(value.networkInode, proof.rootNetworkInode);
 }
+/** 以项目 UID 改变版本探针模式并删除自有旧报告，撤销该标记追踪，避免新场景复用旧输出。
+ * Change version-probe mode/delete the owned old report as project UID and retire marker tracking so new cases cannot reuse stale output. */
 async function mode(value) {
   await uid('import os\np=' + JSON.stringify(project.directory) + '\nopen(p+"/mode","w").write(' + JSON.stringify(value) + ')\n' +
     'try:os.unlink(p+"/version-report.json")\nexcept FileNotFoundError:pass');
   createdMarkers.delete(project.directory + '/version-report.json');
 }
+/** 先保存当前场景阶段，再执行异步断言，成功后记录返回证据并落盘；异常直接传播，不记录通过。
+ * Persist the active case/phase, then run asynchronous assertions and retain returned evidence on success with persistence; propagate errors without recording a pass. */
 async function check(name, action) {
   proof.phase = name; await persist();
   const began = Date.now(), detail = await action();
   proof.cases.push({ name, passed: true, elapsedMs: Date.now() - began, ...(detail === undefined ? {} : { detail }) }); await persist();
 }
+/** 运行实际分发 CLI 的 runtimes 命令，九十秒/128 KiB 总预算，等待物理 close 并要求零退出后解析 JSON，记录实际 argv/runtime。
+ * Run released CLI runtimes with ninety-second/128-KiB limits, await physical close/zero exit and parse JSON while recording actual argv/runtime. */
 async function runCli(action) {
   const child = spawn(process.execPath, [join(serverRoot, 'scripts/cli.mjs'), 'runtimes', records[0].name, action],
     { cwd: serverRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, SAKURA_PORT: String(proof.port), SAKURA_TOKEN: '' } });
   let stdout = '', stderr = '', failure, total = 0;
   const timer = setTimeout(() => { failure = Error('Released CLI exceeded its deadline.'); child.kill('SIGKILL'); }, 90_000);
+  /** 为 CLI 流登记数据监听，共享总输出预算；超限强杀自有 child，否则传递解码文本给调用方累积。
+   * Observe CLI data under a shared output budget, killing only the owned child on overflow or forwarding decoded text for accumulation. */
   const collect = (stream, append) => stream.on('data', bytes => {
     total += bytes.length;
     if (total > 131072) { failure = Error('Released CLI output limit.'); child.kill('SIGKILL'); return; }
@@ -296,6 +358,8 @@ async function runCli(action) {
   return { value: JSON.parse(stdout), executable: process.execPath, runtime: process.version,
     argv: [join(serverRoot, 'scripts/cli.mjs'), 'runtimes', records[0].name, action], defaultNodeOptions: true, ...result };
 }
+/** 只读摘要 root 身份绑定/UID 保留及账号 Home 物理元数据，限制对象数量/大小，供验收后历史不变性检查。
+ * Read-only hash root identity bindings/UID reservations/account-home physical metadata under count/size limits for final history-preservation checks. */
 async function guestPreservation() {
   return JSON.parse(await guestPython("import hashlib,json,os,pwd,stat\nr={'bindings':{},'uids':{},'accounts':{}}\n" +
     "for label,p in (('bindings','/var/lib/sakura/project-identities/projects'),('uids','/var/lib/sakura/project-identities/uids')):\n" +
@@ -341,6 +405,8 @@ try {
   assert.equal(generated.status, 200);
   const generatedSdk = await generated.json(); proof.sdkSha256 = digest(generatedSdk.content);
   Client = (await import('data:text/javascript;base64,' + Buffer.from(generatedSdk.content).toString('base64'))).SakuraClient;
+  /** 转发真实 fetch 并只记录 runtimes 接口的方法/响应状态，返回原 Response 不改变解析或认证。
+   * Forward real fetch and record only runtimes method/status, returning the original Response without altering parsing/authentication. */
   const fetcher = async (url, options) => { const response = await fetch(url, options), parsed = new URL(url);
     if (parsed.pathname.endsWith('/runtimes')) requests.push({ method: options.method || 'GET', status: response.status }); return response; };
   sdk = new Client({ baseUrl: origin, fetcher });
@@ -371,7 +437,8 @@ try {
   oldGuestState = await guestPreservation();
   await initializeObserver();
   proof.rootNetworkInode = await guestPython('import os\nprint(os.stat("/proc/self/ns/net").st_ino)');
-  await check('new-reviewed-project-directory-and-account', async () => {
+  await check('new-reviewed-project-directory-and-account', /** 经公开 HTTP 创建私有项目并按 preview 的 planId/sha256 apply 目录迁移；确认预览不改 root 归属，applied 后 UID/GID/0700 才与激活身份一致。
+ * Create a private project through public HTTP and apply directory migration by preview planId/digest; prove preview leaves root ownership unchanged and applied UID/GID/0700 matches activated identity. */ async () => {
     const directory = '/srv/projects/runtime-http-' + invocation;
     await guest('mkdir -m 700 -- ' + quote(directory));
     const config = { directory, template: 'none', networkIsolation: 'private',
@@ -431,7 +498,8 @@ try {
       await assert.rejects(route('runtimes', 'POST', body), error => error.status === 400);
     assert.deepEqual(await guestTickets(), before);
   });
-  await check('http-probe-cancellation-settles-complete-ticket', async () => {
+  await check('http-probe-cancellation-settles-complete-ticket', /** 公开 HTTP 取消 live probe 后分别验证客户端 AbortError、服务端采样退出和原 PID+ticks 消失；等待正式清理后恢复正常工具，不能以客户端断开代替域关闭。
+ * After cancelling a live HTTP probe separately verify client AbortError, server-side sampling exit and original PID-plus-ticks disappearance; await formal cleanup before restoring normal tools rather than equating disconnect with domain closure. */ async () => {
     await mode('loop'); const controller = new AbortController();
     const pending = route('runtimes', 'POST', { action: 'probe' }, sdk, controller.signal);
     const settled = pending.then(() => ({ status: 'fulfilled' }), error => ({ status: 'rejected', name: error.name }));
@@ -445,7 +513,8 @@ try {
     const alive = JSON.parse(await observe('import json,os\np="/proc/' + report.pid + '/stat"\ntry:\n f=open(p).read().rsplit(") ",1)[1].split();v=f[0] not in ("Z","X") and f[19]==' + JSON.stringify(report.ticks) + '\nexcept FileNotFoundError:v=False\nprint(json.dumps(v))'));
     assert.equal(alive, false); await mode('normal'); return { report, admitted, outcome, cleanup, markerProcessExited: true };
   });
-  await check('clear-selection-and-unknown-prefix-remain-guarded', async () => {
+  await check('clear-selection-and-unknown-prefix-remain-guarded', /** 构造 root 私有未知运行时路径但不发正式 ready receipt，选择必须 409 且配置/票据无变化；用于区分磁盘存在与可信安装完成。
+ * Create a root-private unknown runtime path without a formal ready receipt and require selection 409 with unchanged configuration/receipts, distinguishing disk existence from trusted installation completion. */ async () => {
     const cleared = await route('runtimes', 'POST', { action: 'select' }); assert.deepEqual(cleared.runtimes, {});
     const suffix = parseInt(invocation.slice(0, 4), 16), version = '99.' + (100 + suffix % 800) + '.' + (100 + Math.floor(suffix / 800));
     unknownPrefix = '/opt/sakura-runtimes/node-' + version;
@@ -461,7 +530,8 @@ try {
     assert.deepEqual((await route('project')).project, configuration.project); assert.deepEqual(await guestTickets(), tickets);
     return { unknownVersion: version, unchangedConfigVersion: configuration.version };
   });
-  await check('real-api-official-node-install-ready-and-uid-selection', async () => {
+  await check('real-api-official-node-install-ready-and-uid-selection', /** 公开 HTTP 安装须先 202 并持续查询同 jobId，成功后核验 root ready receipt、目录/可执行 inode与哈希以及 stage/工具域清空；再选择/探测并以项目 UID 运行真实 Node 证明权限隔离。
+ * Require HTTP installation to return 202 and poll the same jobId; verify root-ready receipt, directory/executable inode/hash and empty stage/tool domains, then select/probe and run real Node as project UID to prove isolation. */ async () => {
     const before = requests.length;
     const job = await route('runtimes', 'POST', { action: 'install', tool: 'node', version: '22.12.0' });
     assert.equal(requests[before].status, 202); assert.equal(job.status, 'running'); assert.ok(job.id);
@@ -501,7 +571,8 @@ try {
     return { inspect: { runtime: inspected.runtime, executable: inspected.executable, argv: inspected.argv,
       defaultNodeOptions: inspected.defaultNodeOptions }, probe: { ...probed.value.probe, argv: probed.argv }, cleanup: await closed() };
   });
-  await check('account-mode-owner-only-runtimes-with-readable-project-control', async () => {
+  await check('account-mode-owner-only-runtimes-with-readable-project-control', /** 给成员项目 read/write/execute 权限后，运行时查看/探测/选择/安装仍必须 owner 权限；逐项 403 且 guest 票据不变，验证拒绝发生在发运行之前。
+ * Grant a member project read/write/execute yet require owner authority for runtime view/probe/select/install; assert 403 for each and unchanged guest receipts, proving refusal precedes run issuance. */ async () => {
     const ownerPassword = 'owned-runtime-' + randomUUID();
     await sdk.request('/api/access/enable', { method: 'POST', body: { password: ownerPassword } }); await sdk.login('owner', ownerPassword);
     const memberPassword = 'owned-member-' + randomUUID(), memberUsername = 'runtime_http_' + invocation.slice(0, 8),
@@ -552,7 +623,8 @@ try {
     const file = join(data, name), bytes = saved.get(file);
     if (bytes) await writeFile(file, bytes); else await rm(file, { force: true });
   }
-  await check('service-restart-observes-stopped-live-zero-and-restored-active-project', async () => {
+  await check('service-restart-observes-stopped-live-zero-and-restored-active-project', /** 真实重启生产服务而不启动 guest，核验公开 VM 仍 stopped、采样为 unprobed、活动项目和 journal 保留；确认信号桥 SIGINT 完整关闭服务且精确 QEMU 为零。
+ * Restart the real production service without booting the guest; prove public VM stopped, unprobed sampling and retained active project/journal, then verify bridged SIGINT closes the service with zero exact QEMU processes. */ async () => {
     assert.equal(exactQemu(), 0);
     const listener = createServer();
     await new Promise((done, fail) => listener.once('error', fail).listen(0, '127.0.0.1', done));
@@ -595,6 +667,8 @@ try {
   proof.error = (error instanceof Error ? error.message : String(error)).slice(0, 8192); console.error(proof.error);
 } finally {
   const cleanupFailures = [];
+  /** 执行命名清理并返回结果，失败保存最多 2048 字符诊断以继续其余清理，最终报告据此失败。
+   * Run/return named cleanup and retain at most 2048 diagnostic characters on failure while continuing other teardown, reflected in final failure. */
   const cleanupCheck = async (name, action) => {
     try { return await action(); }
     catch (error) { cleanupFailures.push({ name, error: String(error).slice(0, 2048) }); }

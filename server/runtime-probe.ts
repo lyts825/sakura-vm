@@ -1,5 +1,6 @@
 /**
  * 模块职责：生成有期限、有限输出的运行时版本探测命令，拒绝不完整或无效的回执。
+ * Module purpose: Builds deadline/output-bounded version probes, rejecting incomplete or invalid receipts.
  */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
@@ -21,6 +22,19 @@ const reply = z.discriminatedUnion('ok', [
   z.object({ version: z.literal(1), ok: z.literal(false), code: z.enum(runtimeProbeFailureCodes) }).strict(),
 ]);
 export type RuntimeProbeSample = { bootId: string; declared: z.infer<typeof declared>; actual: z.infer<typeof actual> };
+/**
+ * 入口 / Entry: parseRuntimeProbe.
+ * 功能：在生成有期限、有限输出的运行时版本探测命令中，转换协议或持久数据表示并保持调用边界；本入口产生 `{ bootId: value.bootId, declared: value.declared, actual: value.actual }` 供上层消费（`runtime-probe.ts`）。
+ * Purpose: Converts protocol or durable data representations at the call boundary in `runtime-probe.ts`; this entry produces `{ bootId: value.bootId, declared: value.declared, actual: value.actual }` for its caller. Module context: Builds deadline/output-bounded version probes, rejecting incomplete or invalid receipts.
+ * 处理：通过 `reply.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `reply.parse`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: result: { code: number; stdout: string; stderr: string }
+ * 输出 / Returns: RuntimeProbeSample；结果来自 / values from `{ bootId: value.bootId, declared: value.declared, actual: value.actual }`.
+ * 副作用 / Effects: 更新 / updates `value`.
+ * 拒绝 / Refusals: 条件 / conditions `Buffer.byteLength(result.stdout) > runtimeProbeOutputBytes || result.stderr !== ''`; `!value.ok`; `result.code !== 0`; 异常 / errors `new AppError('运行时探测未返回完整、受限的版本回执', 502, 'RUNTIME_PROBE_REPLY')`; `new AppError('运行时探测回执无效', 502, 'RUNTIME_PROBE_REPLY')`.
+ * 失败处理：catch 分支执行 `throw new AppError('运行时探测回执无效', 502, 'RUNTIME_PROBE_REPLY');`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `throw new AppError('运行时探测回执无效', 502, 'RUNTIME_PROBE_REPLY');`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export function parseRuntimeProbe(result: { code: number; stdout: string; stderr: string }): RuntimeProbeSample {
   if (Buffer.byteLength(result.stdout) > runtimeProbeOutputBytes || result.stderr !== '')
     throw new AppError('运行时探测未返回完整、受限的版本回执', 502, 'RUNTIME_PROBE_REPLY');
@@ -124,6 +138,15 @@ except Exception: response={'version':1,'ok':False,'code':'PROBE_INTERNAL'}
 print(json.dumps(response,separators=(',',':'),ensure_ascii=True))
 `;
 
+/**
+ * 入口 / Entry: runtimeProbeCommand.
+ * 功能：从当前输入或状态计算 ``exec /usr/bin/python3 -I -S - <<'SAKURA_RUNTIME_PROBE'\nREQUEST=${JSON.stringify({ executables })}\n${helper}SAKURA_RUNTIME_…`，供调用方后续验证或使用。
+ * Purpose: Computes ``exec /usr/bin/python3 -I -S - <<'SAKURA_RUNTIME_PROBE'\nREQUEST=${JSON.stringify({ executables })}\n${helper}SAKURA_RUNTIME_…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: pins: { node?: string; python?: string } default={}
+ * 输出 / Returns: ``exec /usr/bin/python3 -I -S - <<'SAKURA_RUNTIME_PROBE'\nREQUEST=${JSON.stringify({ executables })}\n${helper}SAKURA_RUNTIME_…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function runtimeProbeCommand(pins: { node?: string; python?: string } = {}) {
   const executables = { node: pins.node ? `/opt/sakura-runtimes/node-${version.parse(pins.node)}/bin/node` : 'node',
     python: pins.python ? `/opt/sakura-runtimes/python-${version.parse(pins.python)}/bin/python3` : 'python3' };

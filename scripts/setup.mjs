@@ -1,4 +1,5 @@
-/** 准备固定版本 PosixLoom、QEMU 与基础镜像，核对下载摘要并构建本机运行依赖。 */
+/** 准备固定版本 PosixLoom、QEMU 与基础镜像，核对下载摘要并构建本机运行依赖。
+ * Prepare pinned PosixLoom/QEMU/base images, verify download hashes and build local runtime dependencies. */
 import { networkFor } from './network-client.mjs';
 const setupNetwork = networkFor('tool:setup');
 const { fetch } = setupNetwork;
@@ -15,6 +16,8 @@ import { patchPosixLoomProcess } from './patch-posixloom-process.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 process.chdir(root);
+/** 启动准备工具时注入受管代理环境，等待零退出并总在 finally 关闭本轮代理租约。
+ * Inject managed proxy environment into setup tools, await zero exit and always close this proxy lease in finally. */
 const run = async (exe, args, cwd = root) => {
   const proxy = await setupNetwork.proxyEnvironment();
   try {
@@ -32,17 +35,23 @@ const run = async (exe, args, cwd = root) => {
     await proxy.close();
   }
 };
+/** 按平台选择 npm 启动方式并委托统一工具执行，Windows 使用固定 cmd 参数处理 npm shim。
+ * Choose the platform npm launcher and delegate to common execution, using fixed Windows cmd arguments for the npm shim. */
 const npm = (args, cwd) =>
   run(
     process.platform === 'win32' ? process.env.ComSpec || 'cmd.exe' : 'npm',
     process.platform === 'win32' ? ['/d', '/s', '/c', `npm ${args.join(' ')}`] : args,
     cwd,
   );
+/** 流式计算文件 SHA-512，避免将大镜像全部读入内存。
+ * Stream SHA-512 over files without loading large images into memory. */
 async function hash(path) {
   const h = createHash('sha512');
   for await (const chunk of createReadStream(path)) h.update(chunk);
   return h.digest('hex');
 }
+/** 仅复用匹配摘要的既有文件，下载到 .part 后校验 SHA-512 再 rename，摘要失败删除本次临时文件。
+ * Reuse only hash-matching files, download to .part and verify SHA-512 before rename, removing the temporary on mismatch. */
 async function download(url, path, digest) {
   if (existsSync(path) && (!digest || (await hash(path)) === digest)) return;
   console.log(`Downloading ${url}`);

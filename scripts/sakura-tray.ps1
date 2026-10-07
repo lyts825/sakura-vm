@@ -1,4 +1,5 @@
 # Windows 托盘界面，读取本机实例状态、保存偏好并按既定策略启动隐藏 Sakura 服务。
+# Maintain the Windows tray UI, persist local settings, read service state and launch the hidden owned Sakura server.
 param(
   [ValidateRange(1, 65535)][int]$Port = 7337,
   [string]$ConfigPath = '',
@@ -33,6 +34,8 @@ if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
 }
 if ($PSBoundParameters.ContainsKey('Port')) { $settings.port = $Port }
 
+# 把当前端口和自启动偏好写入同目录 PID 临时文件，再替换配置；UTF-8 无 BOM，失败也清理本次临时文件。
+# Write port/autostart preferences to a sibling PID temporary file and replace the configuration; use BOM-free UTF-8 and clean this temporary file even on failure.
 function Save-Settings {
   $folder = Split-Path -Parent $ConfigPath
   New-Item -ItemType Directory -Path $folder -Force | Out-Null
@@ -46,6 +49,8 @@ function Save-Settings {
   }
 }
 
+# 以两秒、禁止重定向的 IPv4 回环请求区分在线、锁定、离线与非预期服务；只有通过布尔字段结构检查的响应可判为 Sakura。
+# Use a two-second, nonredirecting IPv4 loopback request to distinguish running, locked, offline and unexpected services; recognize Sakura only after validating boolean response fields.
 function Read-SakuraState {
   $url = "http://127.0.0.1:$($settings.port)/api/access/status"
   try {
@@ -59,6 +64,8 @@ function Read-SakuraState {
   } catch { return 'offline' }
 }
 
+# 已运行或锁定时返回未启动，非预期响应拒绝占用端口；临时设置端口并隐藏启动 Node，finally 恢复环境。返回 PID 只证明进程已启动，就绪由调用方轮询。
+# Return without launching for running/locked services and reject unexpected port occupants; temporarily set the port, launch Node hidden and restore the environment in finally. The returned PID proves launch only; callers poll readiness.
 function Start-SakuraServer {
   $state = Read-SakuraState
   if ($state -in @('running', 'locked')) {

@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：自有导入 DLL 在最早 TLS/DllMain 独立核验私有 station 后调用真实 Win32/OLE，记录策略就绪、拒绝计数及系统依赖来源，不触及交互剪贴板。
+ * Module responsibilities (English): An owned import DLL independently verifies private station before real Win32/OLE at earliest TLS/DllMain, recording readiness/denial counters/system provenance without touching interactive clipboard.
+ */
 /** 自有导入 DLL 的 TLS/DllMain 剪贴板探针，先核实私有 window station，再验证原应用初始化前的策略覆盖。 */
 // An owned application import DLL deliberately calls clipboard APIs from its
 // first TLS and DllMain initialization code. All calls require a verified private
@@ -9,6 +13,7 @@
 #include <cwchar>
 
 static SakuraEarlyEvidence evidence[4]{};
+/** 中文：核对已加载模块的完整系统目录路径，失败返回 false，不接受同名私有 DLL。 English: Verify the loaded module's complete system-directory path, returning false on failure and refusing same-named private DLLs. 参数声明 / Declared parameters: const wchar_t* name. */
 static bool systemModule(const wchar_t* name) {
   wchar_t actual[MAX_PATH]{},system[MAX_PATH]{};
   const HMODULE module=GetModuleHandleW(name);
@@ -17,6 +22,7 @@ static bool systemModule(const wchar_t* name) {
   return CompareStringOrdinal(actual,int(length),system,int(length),TRUE)==CSTR_EQUAL && actual[length]==L'\\' &&
     CompareStringOrdinal(actual+length+1,-1,name,-1,TRUE)==CSTR_EQUAL;
 }
+/** 中文：在给定初始化阶段核验私有 station 并记录真实 Win32/OLE 调用和共享策略证据，存储由探针 DLL 持有。 English: Validate private station and record actual Win32/OLE/shared-policy evidence at the requested initialization phase in probe-DLL-owned storage. 参数声明 / Declared parameters: unsigned phase. */
 extern "C" __declspec(dllexport) void WINAPI SakuraEarlyRecord(unsigned phase) {
   if(phase>=4)return;
   auto& value=evidence[phase];value.phase=phase;value.pid=GetCurrentProcessId();value.thread=GetCurrentThreadId();
@@ -65,14 +71,17 @@ extern "C" __declspec(dllexport) void WINAPI SakuraEarlyRecord(unsigned phase) {
   // The test keeps station/desktop handles alive through all initialization
   // callbacks, then the owned process exit reclaims them.
 }
+/** 中文：返回 0–3 阶段的稳定证据指针，越界返回空，调用者不释放 DLL 静态存储。 English: Return a stable evidence pointer for phases 0–3 or null outside the range; callers do not free DLL static storage. 参数声明 / Declared parameters: unsigned phase. */
 extern "C" __declspec(dllexport) const SakuraEarlyEvidence* WINAPI SakuraEarlyEvidenceAt(unsigned phase) {
   return phase<4?evidence+phase:nullptr;
 }
+/** 中文：DLL 最早进程附加 TLS 阶段记录阶段 0 的真实策略调用证据。 English: Record phase-0 actual policy-call evidence at the DLL's earliest process-attach TLS stage. 参数声明 / Declared parameters: PVOID,DWORD reason,PVOID. */
 static void NTAPI earlyDllTls(PVOID,DWORD reason,PVOID) {
   if(reason==DLL_PROCESS_ATTACH)SakuraEarlyRecord(0);
 }
 // MinGW linker retains the CRT's TLS directory and this actual callback slot.
 PIMAGE_TLS_CALLBACK earlyDllCallback __attribute__((section(".CRT$XLB"),used))=earlyDllTls;
+/** 中文：DLL 进程附加时记录阶段 1 证据，其他原因直接成功返回。 English: Record phase-1 evidence on DLL process attach and return success for other reasons. 参数声明 / Declared parameters: HINSTANCE,DWORD reason,LPVOID. */
 BOOL WINAPI DllMain(HINSTANCE,DWORD reason,LPVOID) {
   if(reason==DLL_PROCESS_ATTACH)SakuraEarlyRecord(1);
   return TRUE;

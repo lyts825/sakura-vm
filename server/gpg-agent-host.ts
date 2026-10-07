@@ -1,5 +1,6 @@
 /**
  * 模块职责：捕获并核验宿主 GPG 来源与转发租约，物理连接关闭未确认时保留原归属。
+ * Module purpose: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
  */
 import {
   type ChildProcessWithoutNullStreams,
@@ -25,11 +26,34 @@ const processPin=z.object({pid:z.number().int().min(1).max(0xffffffff),creationT
 const sourcePins=z.object({kind:z.literal('w32'),anchorPath:localPath,relativePath:z.string().min(1).max(2048).refine(value=>!value.startsWith('\\')&&value.split('\\').every(part=>!!part&&part!=='.'&&part!=='..'&&!/[\x00-\x1f\/:*?"<>|]/.test(part)&&!/[ .]$/.test(part))),
   anchor:filePin,ancestors:z.array(filePin).min(1).max(65),descendants:z.array(filePin).min(1).max(8),sourceFileSha256:digest,port:z.number().int().min(1).max(65535),process:processPin}).strict();
 const snapshotBody=z.object({version:z.literal(1),pins:sourcePins,hostHelperSha256:digest}).strict();
+/**
+ * 入口 / Entry: canonicalGpgMetadata.
+ * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'['+value.map(canonicalGpgMetadata).join(',')+']'` / `'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonicalGpgMetadata((value as Record<string,unknown>)[key])).…` 供上层消费（`gpg-agent-host.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-host.ts`; this entry produces `'['+value.map(canonicalGpgMetadata).join(',')+']'` / `'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonicalGpgMetadata((value as Record<string,unknown>)[key])).…` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+ * 处理：通过 `value.map().join`, `value.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `value.map().join`, `value.map`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `Array.isArray(value)`; `value&&typeof value==='object'`.
+ * 输入 / Inputs: value: unknown
+ * 输出 / Returns: string；结果来自 / values from `'['+value.map(canonicalGpgMetadata).join(',')+']'`; `'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonicalGpgMetadata((value as Record<string,unknown>)[key])).…`; `JSON.stringify(value)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function canonicalGpgMetadata(value:unknown):string {
   if(Array.isArray(value))return '['+value.map(canonicalGpgMetadata).join(',')+']';
   if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonicalGpgMetadata((value as Record<string,unknown>)[key])).join(',')+'}';
   return JSON.stringify(value);
 }
+/**
+ * 入口 / Entry: gpgHostSnapshotSha256.
+ * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(canonicalGpgMetadata(snapshotBody.parse(value))).digest('hex')` 供上层消费（`gpg-agent-host.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-host.ts`; this entry produces `createHash('sha256').update(canonicalGpgMetadata(snapshotBody.parse(value))).digest('hex')` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash`, `canonicalGpgMetadata` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`, `canonicalGpgMetadata`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: z.infer<typeof snapshotBody>
+ * 输出 / Returns: `createHash('sha256').update(canonicalGpgMetadata(snapshotBody.parse(value))).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function gpgHostSnapshotSha256(value:z.infer<typeof snapshotBody>){return createHash('sha256').update(canonicalGpgMetadata(snapshotBody.parse(value))).digest('hex');}
 export const gpgHostSnapshotSchema=snapshotBody.extend({hostSourceSha256:digest}).strict().superRefine((value,ctx)=>{
   const {hostSourceSha256,...body}=value;
@@ -38,12 +62,57 @@ export const gpgHostSnapshotSchema=snapshotBody.extend({hostSourceSha256:digest}
     ctx.addIssue({code:'custom',message:'Captured GPG source object layout differs'});
 });
 export type GpgHostSnapshot=z.infer<typeof gpgHostSnapshotSchema>;
+/**
+ * 签名 / Signature: SpawnHost.SpawnHost.
+ * 功能：为捕获并核验宿主 GPG 来源与转发租约声明 SpawnHost 的输入与结果契约，所属容器为 SpawnHost。
+ * Purpose: Declares the input/result contract for SpawnHost in SpawnHost. Module responsibility: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+ * 输入 / Inputs: file: string; args: readonly string[]; options: SpawnOptionsWithoutStdio
+ * 输出 / Returns: ChildProcessWithoutNullStreams.
+ * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+ * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+ */
 type SpawnHost=(file:string,args:readonly string[],options:SpawnOptionsWithoutStdio)=>ChildProcessWithoutNullStreams;
 export type GpgHostOptions={sourceDirectory?:string;spawn?:SpawnHost;closeTimeoutMs?:number;platform?:NodeJS.Platform};
 const manifestSchema=z.object({version:z.literal(1),platform:z.literal('win32'),architecture:z.literal('x64'),protocol:z.literal(1),file:z.literal('relay.exe'),size:z.number().int().min(1).max(16777216),sha256:digest,sourceSha256:digest,compilerSha256:digest}).strict();
+/**
+ * 入口 / Entry: cleanupFailure.
+ * 功能：从当前输入或状态计算 `new AppError('本次 GPG 宿主连接的物理关闭尚未确认',503,'PROJECT_IDENTITY_CLEANUP_FAILED')`，供调用方后续验证或使用。
+ * Purpose: Computes `new AppError('本次 GPG 宿主连接的物理关闭尚未确认',503,'PROJECT_IDENTITY_CLEANUP_FAILED')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `new AppError('本次 GPG 宿主连接的物理关闭尚未确认',503,'PROJECT_IDENTITY_CLEANUP_FAILED')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const cleanupFailure=()=>new AppError('本次 GPG 宿主连接的物理关闭尚未确认',503,'PROJECT_IDENTITY_CLEANUP_FAILED');
+/**
+ * 入口 / Entry: unavailable.
+ * 功能：从当前输入或状态计算 `new AppError(message,409,code)`，供调用方后续验证或使用。
+ * Purpose: Computes `new AppError(message,409,code)` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: code: string; message: default='宿主 GPG Agent 受限 extra socket 无法完成身份验证'
+ * 输出 / Returns: `new AppError(message,409,code)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const unavailable=(code:string,message='宿主 GPG Agent 受限 extra socket 无法完成身份验证')=>new AppError(message,409,code);
+/**
+ * 入口 / Entry: frozen.
+ * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value` 供上层消费（`gpg-agent-host.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-host.ts`; this entry produces `value` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+ * 处理：通过 `frozen` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `frozen`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `value&&typeof value==='object'`.
+ * 输入 / Inputs: value: T
+ * 输出 / Returns: T；结果来自 / values from `value`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function frozen<T>(value:T):T {if(value&&typeof value==='object'){for(const item of Object.values(value))frozen(item);Object.freeze(value);}return value;}
+/**
+ * 入口 / Entry: boundedWait.
+ * 功能：从当前输入或状态计算 `new Promise((yes,no)=>{const timer=setTimeout(()=>no(error()),milliseconds);promise.then(value=>{clearTimeout(timer);yes(valu…`，供调用方后续验证或使用。
+ * Purpose: Computes `new Promise((yes,no)=>{const timer=setTimeout(()=>no(error()),milliseconds);promise.then(value=>{clearTimeout(timer);yes(valu…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: promise: Promise<T>; milliseconds: number; error: ()=>Error
+ * 输出 / Returns: Promise<T>；结果来自 / values from `new Promise((yes,no)=>{const timer=setTimeout(()=>no(error()),milliseconds);promise.then(value=>{clearTimeout(timer);yes(valu…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 function boundedWait<T>(promise:Promise<T>,milliseconds:number,error:()=>Error):Promise<T>{return new Promise((yes,no)=>{const timer=setTimeout(()=>no(error()),milliseconds);promise.then(value=>{clearTimeout(timer);yes(value);},reason=>{clearTimeout(timer);no(reason);});});}
 
 // Fixed read-only native asset guard. Ancestors and both asset files stay open
@@ -175,13 +244,49 @@ type ChildResult={code:number|null;signal:NodeJS.Signals|null};
 class ProcessOwner {
   accounting?:ObservedHostProcess;
   readonly closed:Promise<ChildResult>;actual?:ChildResult;failed?:Error;
+  /**
+   * 入口 / Entry: ProcessOwner.constructor.
+   * 功能：建立 ProcessOwner 的捕获并核验宿主 GPG 来源与转发租约上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the ProcessOwner context for this module's responsibility: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: child: ChildProcessWithoutNullStreams
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   constructor(readonly child:ChildProcessWithoutNullStreams){
     child.stdin.on('error',()=>{});child.stdout.on('error',()=>{});child.stderr.on('error',()=>{});
     this.closed=new Promise(resolve=>{child.once('error',error=>{this.failed=error;});child.once('close',(code,signal)=>{this.actual={code,signal};resolve(this.actual);});});
   }
+  /**
+   * 入口 / Entry: ProcessOwner.close.
+   * 功能：在捕获并核验宿主 GPG 来源与转发租约中，结束、撤销或清理本次拥有的领域资源；本入口产生 `void` 供上层消费（`ProcessOwner`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `ProcessOwner`; this entry produces `void` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 处理：通过 `this.child.stdin.destroy`, `this.child.stdout.resume`, `boundedWait`, `this.accounting.cleanupPending` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.child.stdin.destroy`, `this.child.stdout.resume`, `boundedWait`, `this.accounting.cleanupPending`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.actual`.
+   * 输入 / Inputs: timeout: number
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.child.stdin.destroy`.
+   * 拒绝 / Refusals: 异常 / errors `error`.
+   * 失败处理：catch 分支执行 `this.accounting?.cleanupPending(error);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.accounting?.cleanupPending(error);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async close(timeout:number){if(this.actual)return;this.child.stdin.destroy();this.child.stdout.resume();
     try{await boundedWait(this.closed,timeout,cleanupFailure);}catch(error){this.accounting?.cleanupPending(error);throw error;}}
 }
+/**
+ * 入口 / Entry: closeGuardAfterHelper.
+ * 功能：在捕获并核验宿主 GPG 来源与转发租约中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`gpg-agent-host.ts`）。
+ * Purpose: Ends, revokes or cleans resources owned by this domain action in `gpg-agent-host.ts`; the calls and state transitions below complete the operation. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+ * 处理：通过 `helper.close`, `guard.accounting.cleanupPending`, `inline.closed.then().catch`, `inline.closed.then` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `helper.close`, `guard.accounting.cleanupPending`, `inline.closed.then().catch`, `inline.closed.then`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: helper: ProcessOwner|undefined; guard: ProcessOwner; timeout: number
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `helper.close`; `inline.closed.then().catch`; `inline.closed.then`; `guard.close`.
+ * 拒绝 / Refusals: 异常 / errors `error`.
+ * 失败处理：catch 分支执行 `guard.accounting?.cleanupPending(error);`; `void helper!.closed.then(()=>guard.close(timeout)).catch(()=>{});`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `guard.accounting?.cleanupPending(error);`; `void helper!.closed.then(()=>guard.close(timeout)).catch(()=>{});`; these statements determine whether a failure is absorbed or rejected again.
+ */
 async function closeGuardAfterHelper(helper:ProcessOwner|undefined,guard:ProcessOwner,timeout:number){
   try{await helper?.close(timeout);}
   catch(error){
@@ -195,6 +300,17 @@ async function closeGuardAfterHelper(helper:ProcessOwner|undefined,guard:Process
 }
 type GuardAsset={manifest:z.infer<typeof manifestSchema>;path:string;id:string;birthRoot:string;birthRootId:string};
 class AssetGuard extends ProcessOwner {
+  /**
+   * 入口 / Entry: AssetGuard.create.
+   * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `guard` 供上层消费（`AssetGuard`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `AssetGuard`; this entry produces `guard` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 处理：通过 `processSupervisor.observe` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `processSupervisor.observe`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: options: GpgHostOptions; signal: AbortSignal optional; context: GpgAgentContext optional; recoveryContext: GpgAgentContext optional
+   * 输出 / Returns: `guard`.
+   * 副作用 / Effects: `processSupervisor.observe`; 更新 / updates `guard.accounting`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   static async create(options:GpgHostOptions,signal?:AbortSignal,context?:GpgAgentContext,recoveryContext?:GpgAgentContext){
     let guard!:AssetGuard;
     const owned=await processSupervisor.observe('gpg-asset-guard',()=>{
@@ -202,8 +318,37 @@ class AssetGuard extends ProcessOwner {
     },{signal,...(context?{owner:`gpg:${context.owner.runId}`}:{ }),...(recoveryContext?{lane:'control' as const}:{})});
     guard.accounting=owned;return guard;
   }
-  private requests=new Map<string,{resolve:(value:any)=>void;reject:(error:Error)=>void}>();
+  private requests=new Map<string,{
+  /**
+   * 签名 / Signature: AssetGuard.resolve.
+   * 功能：为捕获并核验宿主 GPG 来源与转发租约声明 resolve 的输入与结果契约，所属容器为 AssetGuard。
+   * Purpose: Declares the input/result contract for resolve in AssetGuard. Module responsibility: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 输入 / Inputs: value: any
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
+  resolve:(value:any)=>void;
+  /**
+   * 签名 / Signature: AssetGuard.reject.
+   * 功能：为捕获并核验宿主 GPG 来源与转发租约声明 reject 的输入与结果契约，所属容器为 AssetGuard。
+   * Purpose: Declares the input/result contract for reject in AssetGuard. Module responsibility: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 输入 / Inputs: error: Error
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
+  reject:(error:Error)=>void}>();
   readonly asset:Promise<GuardAsset>;private cancelled=false;
+  /**
+   * 入口 / Entry: AssetGuard.constructor.
+   * 功能：建立 AssetGuard 的捕获并核验宿主 GPG 来源与转发租约上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the AssetGuard context for this module's responsibility: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: options: GpgHostOptions; signal: AbortSignal optional; context: GpgAgentContext optional; recoveryContext: GpgAgentContext optional
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: `create`; `this.closed.then`; `child.stdin.write`; `signal.addEventListener`; `abort`; 更新 / updates `this.asset`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   constructor(options:GpgHostOptions,signal?:AbortSignal,context?:GpgAgentContext,recoveryContext?:GpgAgentContext){
     const shell=join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
     const create=options.spawn||spawn as SpawnHost;
@@ -212,24 +357,104 @@ class AssetGuard extends ProcessOwner {
     // enters the private controller pipe before any caller metadata or frames.
     const bootstrap="$ErrorActionPreference='Stop';[Console]::InputEncoding=[Text.UTF8Encoding]::new($false,$true);[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$program=[Console]::In.ReadLine();if($null -eq $program -or $program.Length -gt 65536){throw 'GPG_GUARD_PROGRAM_SIZE'};& ([ScriptBlock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($program))))";
     const child=create(shell,['-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(bootstrap,'utf16le').toString('base64')],{windowsHide:true,stdio:'pipe',env:{...process.env,PSModulePath:join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','Modules'),PSModuleAnalysisCachePath:'NUL'}});
-    super(child);let readyResolve!:(value:GuardAsset)=>void,readyReject!:(reason:unknown)=>void;
+    super(child);let readyResolve!:
+    /**
+     * 中文功能：完成 AssetGuard.readyResolve 所属异步等待或资源阶段；结果按本声明参数交付。
+     * English: Completes the asynchronous wait/resource phase owned by AssetGuard.readyResolve using the declared result parameters.
+     * 所属 / Owner: AssetGuard.readyResolve.
+     * 输入 / Inputs: value:GuardAsset.
+     * 结果 / Result: `void`.
+     */
+    (value:GuardAsset)=>void,readyReject!:
+    /**
+     * 中文功能：向 AssetGuard.readyReject 所属异步等待传递失败原因，使该次等待拒绝。
+     * English: Delivers a failure reason to the asynchronous wait owned by AssetGuard.readyReject, rejecting that wait.
+     * 所属 / Owner: AssetGuard.readyReject.
+     * 输入 / Inputs: reason:unknown.
+     * 结果 / Result: `void`.
+     */
+    (reason:unknown)=>void;
     this.asset=new Promise((yes,no)=>{readyResolve=yes;readyReject=no;});this.asset.catch(()=>{});
     let pending='',total=0;
+    /**
+     * 入口 / Entry: AssetGuard.constructor.fail.
+     * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`AssetGuard`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `AssetGuard`; the calls and state transitions below complete the operation. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+     * 处理：通过 `readyReject`, `this.requests.values`, `request.reject`, `this.requests.clear` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `readyReject`, `this.requests.values`, `request.reject`, `this.requests.clear`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: reason: Error
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.requests.values`; `request.reject`; `this.requests.clear`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const fail=(reason:Error)=>{readyReject(reason);for(const request of this.requests.values())request.reject(reason);this.requests.clear();};
     child.stderr.on('data',(bytes:Buffer)=>{total+=bytes.length;if(total>32768)child.stdin.destroy();});
+    /**
+     * 入口 / Entry: AssetGuard.constructor.callback@220.
+     * 功能：响应登记事件，按下述条件处理当前连接或资源的数据（child.stdout.on / data）。
+     * Purpose: Handles the registered event and processes current connection/resource data under the conditions below (child.stdout.on / data).
+     * 输入 / Inputs: bytes: Buffer
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: `child.stdin.destroy`; `this.requests.get`; `this.requests.delete`; `request.resolve`; 更新 / updates `total`, `pending`, `lf`.
+     * 拒绝 / Refusals: 条件 / conditions `value.event==='ASSET_READY'`; `value.sha256!==manifest.sha256||value.size!==manifest.size||!filePin.shape.id.safeParse(value.helperId).success||value.direct…`; `value.birthRoot!==birthRoot||!filePin.shape.id.safeParse(value.birthRootId).success`; 异常 / errors `new Error('asset mismatch')`; `new Error('birth root')`.
+     * 失败处理：catch 分支执行 `fail(unavailable('GPG_HOST_ASSET_INVALID'));`; `child.stdin.destroy();`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `fail(unavailable('GPG_HOST_ASSET_INVALID'));`; `child.stdin.destroy();`; these statements determine whether a failure is absorbed or rejected again.
+     */
     child.stdout.on('data',(bytes:Buffer)=>{total+=bytes.length;if(total>131072){fail(unavailable('GPG_HOST_ASSET_INVALID'));child.stdin.destroy();return;}pending+=bytes.toString('utf8');let lf;while((lf=pending.indexOf('\n'))>=0){const line=pending.slice(0,lf);pending=pending.slice(lf+1);try{const value=JSON.parse(line);if(value.event==='ASSET_READY'){
         const manifest=manifestSchema.parse(JSON.parse(value.manifest));if(value.sha256!==manifest.sha256||value.size!==manifest.size||!filePin.shape.id.safeParse(value.helperId).success||value.directory!==resolve(options.sourceDirectory||join(ROOT,'.sakura-server/assets/gpg-agent-host')))throw new Error('asset mismatch');
         if(value.birthRoot!==birthRoot||!filePin.shape.id.safeParse(value.birthRootId).success)throw new Error('birth root');readyResolve({manifest,path:join(value.directory,manifest.file),id:value.helperId,birthRoot:value.birthRoot,birthRootId:value.birthRootId});
       }else{const request=this.requests.get(value.id);if(!request)throw new Error('unexpected asset response');this.requests.delete(value.id);request.resolve(value);}}catch{fail(unavailable('GPG_HOST_ASSET_INVALID'));child.stdin.destroy();}}});
     child.once('error',()=>fail(unavailable('GPG_HOST_ASSET_INVALID')));void this.closed.then(()=>{fail(unavailable('GPG_HOST_ASSET_INVALID'));});
     child.stdin.write(Buffer.from(assetGuardScript,'utf8').toString('base64')+'\n'+JSON.stringify({directory:resolve(options.sourceDirectory||join(ROOT,'.sakura-server/assets/gpg-agent-host')),birthRoot,ledgerRoot:context?hostLedgerPath(context):recoveryContext?hostLedgerPath(recoveryContext):undefined,context,parentPid:process.pid,parentImage:process.execPath})+'\n');
+    /**
+     * 入口 / Entry: AssetGuard.constructor.abort.
+     * 功能：在捕获并核验宿主 GPG 来源与转发租约中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.cancelled`（`AssetGuard`）。
+     * Purpose: Ends, revokes or cleans resources owned by this domain action in `AssetGuard`; the outcome is recorded in `this.cancelled`. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+     * 处理：通过 `child.stdin.destroy` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `child.stdin.destroy`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `child.stdin.destroy`; 更新 / updates `this.cancelled`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const abort=()=>{this.cancelled=true;child.stdin.destroy();};signal?.addEventListener('abort',abort,{once:true});void this.closed.then(()=>signal?.removeEventListener('abort',abort));if(signal?.aborted)abort();
   }
+  /**
+   * 入口 / Entry: AssetGuard.command.
+   * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `boundedWait(response,5000,()=>unavailable('GPG_HOST_ASSET_INVALID'))` 供上层消费（`AssetGuard`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `AssetGuard`; this entry produces `boundedWait(response,5000,()=>unavailable('GPG_HOST_ASSET_INVALID'))` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 处理：通过 `unavailable`, `randomUUID`, `this.child.stdin.write`, `boundedWait` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `unavailable`, `randomUUID`, `this.child.stdin.write`, `boundedWait`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: action: 'check'|'birth'|'lease'|'closed'; receipt: unknown optional
+   * 输出 / Returns: `boundedWait(response,5000,()=>unavailable('GPG_HOST_ASSET_INVALID'))`.
+   * 副作用 / Effects: `this.child.stdin.write`.
+   * 拒绝 / Refusals: 条件 / conditions `this.actual||this.cancelled`; 异常 / errors `unavailable('GPG_HOST_ASSET_INVALID')`.
+   */
   async command(action:'check'|'birth'|'lease'|'closed',receipt?:unknown){if(this.actual||this.cancelled)throw unavailable('GPG_HOST_ASSET_INVALID');const id=randomUUID();const response=new Promise<any>((resolve,reject)=>this.requests.set(id,{resolve,reject}));this.child.stdin.write(JSON.stringify({action,id,receipt})+'\n');return boundedWait(response,5000,()=>unavailable('GPG_HOST_ASSET_INVALID'));}
 }
 export type GpgHostHelperReceipt=z.infer<typeof processPin>&{hostHelperSha256:string;hostSourceSha256:string;birth?:{path:string;fileId:string;sha256:string};actualClose:boolean;exitCode:number|null;signal:NodeJS.Signals|null;physicalSocketClose:boolean|null};
+/**
+ * 入口 / Entry: hostLedgerPath.
+ * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `join(DATA,`gpg-agent-host-owner-${z.uuid().parse(context.resource.leaseId)}-${z.uuid().parse(context.owner.runId)}`)` 供上层消费（`gpg-agent-host.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-host.ts`; this entry produces `join(DATA,`gpg-agent-host-owner-${z.uuid().parse(context.resource.leaseId)}-${z.uuid().parse(context.owner.runId)}`)` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+ * 处理：通过 `join`, `z.uuid().parse`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `join`, `z.uuid().parse`, `z.uuid`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: context: GpgAgentContext
+ * 输出 / Returns: `join(DATA,`gpg-agent-host-owner-${z.uuid().parse(context.resource.leaseId)}-${z.uuid().parse(context.owner.runId)}`)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const hostLedgerPath=(context:GpgAgentContext)=>join(DATA,`gpg-agent-host-owner-${z.uuid().parse(context.resource.leaseId)}-${z.uuid().parse(context.owner.runId)}`);
 type ListenerClosure={listenerClosure:'not-started'|'unforward-acknowledged'|'ssh-transport-closed';originalListenerCreated:boolean|null;actualSshClose:boolean;actualUnforward:boolean};
+/**
+ * 入口 / Entry: validListenerClosure.
+ * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `false` / `value.originalListenerCreated===false&&value.actualUnforward===false` 供上层消费（`gpg-agent-host.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-host.ts`; this entry produces `false` / `value.originalListenerCreated===false&&value.actualUnforward===false` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+ * 分支 / Branches: `typeof value.actualSshClose!=='boolean'||typeof value.actualUnforward!=='boolean'`; `value.listenerClosure==='not-started'`; `value.listenerClosure==='unforward-acknowledged'`.
+ * 输入 / Inputs: value: ListenerClosure
+ * 输出 / Returns: `false`; `value.originalListenerCreated===false&&value.actualUnforward===false`; `value.originalListenerCreated===true&&value.actualUnforward===true&&value.actualSshClose===true`；另有分支返回 / additional branch-specific returns.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 function validListenerClosure(value:ListenerClosure){
   if(typeof value.actualSshClose!=='boolean'||typeof value.actualUnforward!=='boolean')return false;
   if(value.listenerClosure==='not-started')return value.originalListenerCreated===false&&value.actualUnforward===false;
@@ -237,6 +462,17 @@ function validListenerClosure(value:ListenerClosure){
   return value.listenerClosure==='ssh-transport-closed'&&(value.originalListenerCreated===true||value.originalListenerCreated===null)&&value.actualSshClose===true&&value.actualUnforward===false;
 }
 class NativeRelay extends ProcessOwner {
+  /**
+   * 入口 / Entry: NativeRelay.create.
+   * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `relay` 供上层消费（`NativeRelay`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeRelay`; this entry produces `relay` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 处理：通过 `processSupervisor.observe` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `processSupervisor.observe`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: asset: GuardAsset; operation: 'capture'|'relay'|'identity'|'dead-check'; body: Record<string,unknown>; options: GpgHostOptions
+   * 输出 / Returns: `relay`.
+   * 副作用 / Effects: `processSupervisor.observe`; 更新 / updates `relay.accounting`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   static async create(asset:GuardAsset,operation:'capture'|'relay'|'identity'|'dead-check',body:Record<string,unknown>,options:GpgHostOptions){
     let relay!:NativeRelay;
     const owned=await processSupervisor.observe('gpg-native-relay',()=>{
@@ -245,16 +481,97 @@ class NativeRelay extends ProcessOwner {
     relay.accounting=owned;return relay;
   }
   readonly ready:Promise<void>;readonly captured:Promise<z.infer<typeof sourcePins>>;readonly identified:Promise<z.infer<typeof processPin>>;identity?:z.infer<typeof processPin>;physicalClose=false;private events:Record<string,unknown>[]=[];
+  /**
+   * 入口 / Entry: NativeRelay.constructor.
+   * 功能：建立 NativeRelay 的捕获并核验宿主 GPG 来源与转发租约上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the NativeRelay context for this module's responsibility: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: asset: GuardAsset; operation: 'capture'|'relay'|'identity'|'dead-check'; body: Record<string,unknown>; options: GpgHostOptions
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: `create`; `this.closed.then`; `child.stdin.destroy`; `header.writeUInt32BE`; `child.stdin.write`; 更新 / updates `this.ready`, `this.captured`, `this.identified`.
+   * 拒绝 / Refusals: 条件 / conditions `request.length>65536`; 异常 / errors `error`; `unavailable('GPG_HOST_PROTOCOL_INVALID')`.
+   * 失败处理：catch 分支执行 `child.stdin.destroy();`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `child.stdin.destroy();`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   constructor(asset:GuardAsset,operation:'capture'|'relay'|'identity'|'dead-check',body:Record<string,unknown>,options:GpgHostOptions){
     const create=options.spawn||spawn as SpawnHost;const child=create(asset.path,[operation],{windowsHide:true,stdio:'pipe'});super(child);
     try {
       const release = networkRuntime.nativeLease({ owner: 'core:gpg-agent', purpose: operation }, () => child.stdin.destroy());
       void this.closed.then(release, release);
     } catch (error) { child.stdin.destroy(); throw error; }
-    let readyResolve!:()=>void,readyReject!:(reason:unknown)=>void,captureResolve!:(pins:z.infer<typeof sourcePins>)=>void,captureReject!:(reason:unknown)=>void,identityResolve!:(pin:z.infer<typeof processPin>)=>void,identityReject!:(error:unknown)=>void;
+    let readyResolve!:
+    /**
+     * 中文功能：完成 NativeRelay.readyResolve 所属异步等待或资源阶段；结果按本声明参数交付。
+     * English: Completes the asynchronous wait/resource phase owned by NativeRelay.readyResolve using the declared result parameters.
+     * 所属 / Owner: NativeRelay.readyResolve.
+     * 输入 / Inputs: 无显式参数 / no explicit parameters.
+     * 结果 / Result: `void`.
+     */
+    ()=>void,readyReject!:
+    /**
+     * 中文功能：向 NativeRelay.readyReject 所属异步等待传递失败原因，使该次等待拒绝。
+     * English: Delivers a failure reason to the asynchronous wait owned by NativeRelay.readyReject, rejecting that wait.
+     * 所属 / Owner: NativeRelay.readyReject.
+     * 输入 / Inputs: reason:unknown.
+     * 结果 / Result: `void`.
+     */
+    (reason:unknown)=>void,captureResolve!:
+    /**
+     * 中文功能：完成 NativeRelay.captureResolve 所属异步等待或资源阶段；结果按本声明参数交付。
+     * English: Completes the asynchronous wait/resource phase owned by NativeRelay.captureResolve using the declared result parameters.
+     * 所属 / Owner: NativeRelay.captureResolve.
+     * 输入 / Inputs: pins:z.infer<typeof sourcePins>.
+     * 结果 / Result: `void`.
+     */
+    (pins:z.infer<typeof sourcePins>)=>void,captureReject!:
+    /**
+     * 中文功能：向 NativeRelay.captureReject 所属异步等待传递失败原因，使该次等待拒绝。
+     * English: Delivers a failure reason to the asynchronous wait owned by NativeRelay.captureReject, rejecting that wait.
+     * 所属 / Owner: NativeRelay.captureReject.
+     * 输入 / Inputs: reason:unknown.
+     * 结果 / Result: `void`.
+     */
+    (reason:unknown)=>void,identityResolve!:
+    /**
+     * 中文功能：完成 NativeRelay.identityResolve 所属异步等待或资源阶段；结果按本声明参数交付。
+     * English: Completes the asynchronous wait/resource phase owned by NativeRelay.identityResolve using the declared result parameters.
+     * 所属 / Owner: NativeRelay.identityResolve.
+     * 输入 / Inputs: pin:z.infer<typeof processPin>.
+     * 结果 / Result: `void`.
+     */
+    (pin:z.infer<typeof processPin>)=>void,identityReject!:
+    /**
+     * 中文功能：向 NativeRelay.identityReject 所属异步等待传递失败原因，使该次等待拒绝。
+     * English: Delivers a failure reason to the asynchronous wait owned by NativeRelay.identityReject, rejecting that wait.
+     * 所属 / Owner: NativeRelay.identityReject.
+     * 输入 / Inputs: error:unknown.
+     * 结果 / Result: `void`.
+     */
+    (error:unknown)=>void;
     this.ready=new Promise((yes,no)=>{readyResolve=yes;readyReject=no;});this.captured=new Promise((yes,no)=>{captureResolve=yes;captureReject=no;});this.ready.catch(()=>{});this.captured.catch(()=>{});
     this.identified=new Promise((yes,no)=>{identityResolve=yes;identityReject=no;});this.identified.catch(()=>{});let pending='',total=0;
+    /**
+     * 入口 / Entry: NativeRelay.constructor.fail.
+     * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`NativeRelay`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `NativeRelay`; the calls and state transitions below complete the operation. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+     * 处理：通过 `identityReject`, `readyReject`, `captureReject`, `child.stdin.destroy` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `identityReject`, `readyReject`, `captureReject`, `child.stdin.destroy`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: error: Error
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `child.stdin.destroy`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const fail=(error:Error)=>{identityReject(error);readyReject(error);captureReject(error);child.stdin.destroy();};
+    /**
+     * 入口 / Entry: NativeRelay.constructor.callback@258.
+     * 功能：响应登记事件，按下述条件处理当前连接或资源的数据（child.stderr.on / data）。
+     * Purpose: Handles the registered event and processes current connection/resource data under the conditions below (child.stderr.on / data).
+     * 输入 / Inputs: bytes: Buffer
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: `this.events.push`; 更新 / updates `total`, `pending`, `lf`, `this.identity`.
+     * 拒绝 / Refusals: 条件 / conditions `this.events.length>64`; `value.event==='IDENTITY'`; `identity.pid!==child.pid||identity.image!==asset.path||value.asset?.sha256!==asset.manifest.sha256||value.asset?.size!==asset…`; 异常 / errors `new Error('event budget')`; `new Error('helper identity')`.
+     * 失败处理：catch 分支执行 `fail(unavailable('GPG_HOST_PROTOCOL_INVALID'));`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `fail(unavailable('GPG_HOST_PROTOCOL_INVALID'));`; these statements determine whether a failure is absorbed or rejected again.
+     */
     child.stderr.on('data',(bytes:Buffer)=>{total+=bytes.length;if(total>131072){fail(unavailable('GPG_HOST_PROTOCOL_INVALID'));return;}pending+=bytes.toString('utf8');let lf;while((lf=pending.indexOf('\n'))>=0){const line=pending.slice(0,lf);pending=pending.slice(lf+1);try{const value=JSON.parse(line);this.events.push(value);if(this.events.length>64)throw new Error('event budget');if(value.event==='IDENTITY'){
         const identity=processPin.parse(value.helper);if(identity.pid!==child.pid||identity.image!==asset.path||value.asset?.sha256!==asset.manifest.sha256||value.asset?.size!==asset.manifest.size||value.asset?.file?.id!==asset.id||value.parent?.pid!==process.pid||value.parent?.image!==process.execPath)throw new Error('helper identity');this.identity=identity;identityResolve(identity);
       }else if(value.event==='READY'){if(!this.identity||value.restricted!==true)throw new Error('unattested helper');readyResolve();}
@@ -265,14 +582,56 @@ class NativeRelay extends ProcessOwner {
     const request=Buffer.from(JSON.stringify({version:1,parentPid:process.pid,parentImage:process.execPath,helperSha256:asset.manifest.sha256,helperSize:asset.manifest.size,...body}));if(request.length>65536)throw unavailable('GPG_HOST_PROTOCOL_INVALID');const header=Buffer.alloc(4);header.writeUInt32BE(request.length);child.stdin.write(Buffer.concat([header,request]));
     if(operation!=='relay')child.stdout.resume();if(operation==='identity'||operation==='dead-check')child.stdin.end();
   }
+  /**
+   * 入口 / Entry: NativeRelay.authorize.
+   * 功能：在捕获并核验宿主 GPG 来源与转发租约中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`NativeRelay`）。
+   * Purpose: Checks admission, input or resource ownership in `NativeRelay`; the calls and state transitions below complete the operation. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 处理：通过 `unavailable`, `header.writeUInt32BE`, `this.child.stdin.write` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `unavailable`, `header.writeUInt32BE`, `this.child.stdin.write`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: birth: Record<string,unknown>
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `header.writeUInt32BE`; `this.child.stdin.write`.
+   * 拒绝 / Refusals: 条件 / conditions `bytes.length>65536`; 异常 / errors `unavailable('GPG_HOST_PROTOCOL_INVALID')`.
+   */
   authorize(birth:Record<string,unknown>){const bytes=Buffer.from(JSON.stringify(birth));if(bytes.length>65536)throw unavailable('GPG_HOST_PROTOCOL_INVALID');const header=Buffer.alloc(4);header.writeUInt32BE(bytes.length);this.child.stdin.write(Buffer.concat([header,bytes]));}
+  /**
+   * 入口 / Entry: NativeRelay.metadata.
+   * 功能：向调用者提供 `this.events` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.events` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.events`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get metadata(){return this.events;}
 }
+/**
+ * 入口 / Entry: captureHostGpgSource.
+ * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `frozen(gpgHostSnapshotSchema.parse({...body,hostSourceSha256:gpgHostSnapshotSha256(body)}))` 供上层消费（`gpg-agent-host.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-host.ts`; this entry produces `frozen(gpgHostSnapshotSchema.parse({...body,hostSourceSha256:gpgHostSnapshotSha256(body)}))` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+ * 处理：通过 `signal.throwIfAborted`, `unavailable`, `localPath.safeParse`, `AssetGuard.create` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `signal.throwIfAborted`, `unavailable`, `localPath.safeParse`, `AssetGuard.create`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: path: string optional; signal: AbortSignal optional; options: GpgHostOptions default={}
+ * 输出 / Returns: Promise<GpgHostSnapshot>；结果来自 / values from `frozen(gpgHostSnapshotSchema.parse({...body,hostSourceSha256:gpgHostSnapshotSha256(body)}))`.
+ * 副作用 / Effects: `AssetGuard.create`; `NativeRelay.create`; `signal.addEventListener`; `closeGuardAfterHelper`; 更新 / updates `path`, `helper`.
+ * 拒绝 / Refusals: 条件 / conditions `(options.platform||process.platform)!=='win32'`; `!path`; `!parsedPath.success`; 异常 / errors `unavailable('GPG_HOST_FORMAT_UNSUPPORTED','当前宿主平台不支持可核实的 GPG Agent 转发')`; `unavailable('GPG_HOST_SOURCE_UNAVAILABLE')`.
+ * 收尾：退出 try 区域时始终执行 `await closeGuardAfterHelper(helper,guard,options.closeTimeoutMs||5000);`; `signal?.removeEventListener('abort',abort);`；这些步骤也适用于异常退出。
+ * Finalization: Leaving the try region always executes `await closeGuardAfterHelper(helper,guard,options.closeTimeoutMs||5000);`; `signal?.removeEventListener('abort',abort);`; these steps also apply to exceptional exits.
+ */
 export async function captureHostGpgSource(path?:string,signal?:AbortSignal,options:GpgHostOptions={}):Promise<GpgHostSnapshot>{
   signal?.throwIfAborted();if((options.platform||process.platform)!=='win32')throw unavailable('GPG_HOST_FORMAT_UNSUPPORTED','当前宿主平台不支持可核实的 GPG Agent 转发');
   if(!path)throw unavailable('GPG_HOST_SOURCE_UNAVAILABLE');const parsedPath=localPath.safeParse(path);if(!parsedPath.success)throw unavailable('GPG_HOST_FORMAT_UNSUPPORTED');path=parsedPath.data;
   const guard=await AssetGuard.create(options,signal);let helper:NativeRelay|undefined;
-  try{const asset=await boundedWait(guard.asset,10000,()=>unavailable('GPG_HOST_ASSET_INVALID'));await guard.command('check');signal?.throwIfAborted();helper=await NativeRelay.create(asset,'capture',{path,timeoutSeconds:60},options);const abort=()=>helper?.child.stdin.destroy();signal?.addEventListener('abort',abort,{once:true});
+  try{const asset=await boundedWait(guard.asset,10000,()=>unavailable('GPG_HOST_ASSET_INVALID'));await guard.command('check');signal?.throwIfAborted();helper=await NativeRelay.create(asset,'capture',{path,timeoutSeconds:60},options);
+  /**
+   * 入口 / Entry: captureHostGpgSource.abort.
+   * 功能：把本层请求转交 `helper.child.stdin.destroy`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `helper.child.stdin.destroy` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `helper?.child.stdin.destroy()`.
+   * 副作用 / Effects: `helper.child.stdin.destroy`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
+  const abort=()=>helper?.child.stdin.destroy();signal?.addEventListener('abort',abort,{once:true});
     try{const pins=await boundedWait(helper.captured,13000,()=>unavailable('GPG_HOST_SOURCE_UNAVAILABLE'));const exit=await boundedWait(helper.closed,5000,cleanupFailure);signal?.throwIfAborted();if(exit.code!==0||exit.signal||!helper.physicalClose)throw unavailable('GPG_HOST_SOURCE_REFUSED');const body={version:1 as const,pins,hostHelperSha256:asset.manifest.sha256};return frozen(gpgHostSnapshotSchema.parse({...body,hostSourceSha256:gpgHostSnapshotSha256(body)}));}finally{signal?.removeEventListener('abort',abort);}
   }finally{await closeGuardAfterHelper(helper,guard,options.closeTimeoutMs||5000);}
 }
@@ -282,15 +641,125 @@ export class OwnedGpgForward {
   private readonly snapshot:GpgHostSnapshot;private revoked=false;private binding?:{context:GpgAgentContext;live:object};
   private client?:Client;private clientClosed=false;private listener=false;private listenerRequested=false;private originalListenerCreated=false;private unforwardAcknowledged=false;private remote?:string;private guard?:AssetGuard;
   private helpers=new Set<NativeRelay>();private channels=new Set<Duplex>();private work=new Set<Promise<unknown>>();private closing?:Promise<void>;private started=false;
-  private receipts:GpgHostHelperReceipt[]=[];private readonly abort:()=>void;private onConnection?:(_:unknown,accept:()=>Duplex,reject:()=>void)=>void;private admissions=0;private recordedClosed=false;private runTimer?:ReturnType<typeof setTimeout>;private admission?:Promise<void>;private preparedAdmission=false;
+  private receipts:GpgHostHelperReceipt[]=[];
+  /**
+   * 签名 / Signature: OwnedGpgForward.abort.
+   * 功能：为捕获并核验宿主 GPG 来源与转发租约声明 abort 的输入与结果契约，所属容器为 OwnedGpgForward。
+   * Purpose: Declares the input/result contract for abort in OwnedGpgForward. Module responsibility: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
+  private readonly abort:()=>void;
+  /**
+   * 签名 / Signature: OwnedGpgForward.onConnection.
+   * 功能：为捕获并核验宿主 GPG 来源与转发租约声明 onConnection 的输入与结果契约，所属容器为 OwnedGpgForward。
+   * Purpose: Declares the input/result contract for onConnection in OwnedGpgForward. Module responsibility: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 输入 / Inputs: _: unknown; accept: ()=>Duplex; reject: ()=>void
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
+  private onConnection?:(_:unknown,accept:
+  /**
+   * 中文功能：接纳当前连接请求并交付 Duplex 传输流的能力输入。
+   * English: Capability input accepting the current connection request and delivering its Duplex stream.
+   * 所属 / Owner: OwnedGpgForward.onConnection.accept.
+   * 输入 / Inputs: 无显式参数 / no explicit parameters.
+   * 结果 / Result: `Duplex`.
+   */
+  ()=>Duplex,reject:
+  /**
+   * 中文功能：拒绝当前尚未结算连接请求的能力输入。
+   * English: Capability input refusing the current unsettled connection request.
+   * 所属 / Owner: OwnedGpgForward.onConnection.reject.
+   * 输入 / Inputs: 无显式参数 / no explicit parameters.
+   * 结果 / Result: `void`.
+   */
+  ()=>void)=>void;private admissions=0;private recordedClosed=false;private runTimer?:ReturnType<typeof setTimeout>;private admission?:Promise<void>;private preparedAdmission=false;
+  /**
+   * 入口 / Entry: OwnedGpgForward.constructor.
+   * 功能：建立 OwnedGpgForward 的捕获并核验宿主 GPG 来源与转发租约上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the OwnedGpgForward context for this module's responsibility: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: snapshot: GpgHostSnapshot; signal: AbortSignal; options: GpgHostOptions default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: `signal.addEventListener`; `this.abort`; 更新 / updates `this.snapshot`, `this.abort`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   constructor(snapshot:GpgHostSnapshot,private signal:AbortSignal,private options:GpgHostOptions={}){
-    this.snapshot=frozen(gpgHostSnapshotSchema.parse(structuredClone(snapshot)));this.abort=()=>{void this.close().catch(()=>{});};signal.addEventListener('abort',this.abort,{once:true});if(signal.aborted)this.abort();
+    this.snapshot=frozen(gpgHostSnapshotSchema.parse(structuredClone(snapshot)));
+    /**
+     * 入口 / Entry: OwnedGpgForward.constructor.this.abort.
+     * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`OwnedGpgForward`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `OwnedGpgForward`; the calls and state transitions below complete the operation. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+     * 处理：通过 `this.close().catch`, `this.close` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.close().catch`, `this.close`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.close().catch`; `this.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    this.abort=()=>{void this.close().catch(()=>{});};signal.addEventListener('abort',this.abort,{once:true});if(signal.aborted)this.abort();
   }
+  /**
+   * 入口 / Entry: OwnedGpgForward.hostSourceSha256.
+   * 功能：向调用者提供 `this.snapshot.hostSourceSha256` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.snapshot.hostSourceSha256` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.snapshot.hostSourceSha256`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get hostSourceSha256(){return this.snapshot.hostSourceSha256;}
+  /**
+   * 入口 / Entry: OwnedGpgForward.hostHelperSha256.
+   * 功能：向调用者提供 `this.snapshot.hostHelperSha256` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.snapshot.hostHelperSha256` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.snapshot.hostHelperSha256`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get hostHelperSha256(){return this.snapshot.hostHelperSha256;}
+  /**
+   * 入口 / Entry: OwnedGpgForward.helperCount.
+   * 功能：向调用者提供 `this.helpers.size` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.helpers.size` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.helpers.size`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get helperCount(){return this.helpers.size;}
+  /**
+   * 入口 / Entry: OwnedGpgForward.streamCount.
+   * 功能：向调用者提供 `this.channels.size` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `this.channels.size` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.channels.size`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   get streamCount(){return this.channels.size;}
+  /**
+   * 入口 / Entry: OwnedGpgForward.helperReceipts.
+   * 功能：把本层请求转交 `structuredClone`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `structuredClone` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `structuredClone(this.receipts)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   get helperReceipts(){return structuredClone(this.receipts);}
+  /**
+   * 入口 / Entry: OwnedGpgForward.bind.
+   * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`OwnedGpgForward`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `OwnedGpgForward`; this entry produces `void` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 处理：通过 `unavailable`, `canonicalGpgMetadata`, `frozen`, `structuredClone` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `unavailable`, `canonicalGpgMetadata`, `frozen`, `structuredClone`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.binding.live===live&&canonicalGpgMetadata(this.binding.context)===canonicalGpgMetadata(context)`.
+   * 输入 / Inputs: context: GpgAgentContext; live: object
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 更新 / updates `this.binding`.
+   * 拒绝 / Refusals: 条件 / conditions `this.revoked||context.resource.hostSourceSha256!==this.hostSourceSha256||context.resource.hostHelperSha256!==this.hostHelperS…`; `this.binding`; `this.started`; 异常 / errors `unavailable('PROJECT_IDENTITY_HOST_CHANGED')`.
+   */
   bind(context:GpgAgentContext,live:object){
     if(this.revoked||context.resource.hostSourceSha256!==this.hostSourceSha256||context.resource.hostHelperSha256!==this.hostHelperSha256)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
     if(this.binding){if(this.binding.live===live&&canonicalGpgMetadata(this.binding.context)===canonicalGpgMetadata(context))return;throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');}
@@ -298,10 +767,33 @@ export class OwnedGpgForward {
     this.binding={context:frozen(structuredClone(context)),live};
   }
   /** Durable intent is established before the project run journal admits it. */
+  /**
+   * 入口 / Entry: OwnedGpgForward.prepareAdmission.
+   * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.admission` 供上层消费（`OwnedGpgForward`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `OwnedGpgForward`; this entry produces `this.admission` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 处理：通过 `this.bind`, `this.signal.throwIfAborted`, `signal.throwIfAborted`, `unavailable` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.bind`, `this.signal.throwIfAborted`, `signal.throwIfAborted`, `unavailable`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.admission`.
+   * 输入 / Inputs: context: GpgAgentContext; live: object; signal: AbortSignal optional
+   * 输出 / Returns: `this.admission`.
+   * 副作用 / Effects: `this.work.add`; `signal.addEventListener`; `this.work.delete`; 更新 / updates `this.admission`.
+   * 拒绝 / Refusals: 条件 / conditions `(this.options.platform||process.platform)!=='win32'`; 异常 / errors `unavailable('GPG_HOST_FORMAT_UNSUPPORTED')`.
+   * 收尾：退出 try 区域时始终执行 `this.work.delete(operation);`; `signal?.removeEventListener('abort',abort);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.work.delete(operation);`; `signal?.removeEventListener('abort',abort);`; these steps also apply to exceptional exits.
+   */
   async prepareAdmission(context:GpgAgentContext,live:object,signal?:AbortSignal){
     this.bind(context,live);this.signal.throwIfAborted();signal?.throwIfAborted();
     if((this.options.platform||process.platform)!=='win32')throw unavailable('GPG_HOST_FORMAT_UNSUPPORTED');
     if(this.admission)return this.admission;
+    /**
+     * 入口 / Entry: OwnedGpgForward.prepareAdmission.callback@305.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `AssetGuard.create`; 更新 / updates `this.guard`, `this.preparedAdmission`.
+     * 拒绝 / Refusals: 条件 / conditions `asset.manifest.sha256!==this.hostHelperSha256||this.revoked`; `this.revoked`; 异常 / errors `unavailable('PROJECT_IDENTITY_HOST_CHANGED')`.
+     */
     const operation=(async()=>{
       this.guard=await AssetGuard.create(this.options,undefined,this.binding!.context);
       const asset=await boundedWait(this.guard.asset,10000,()=>unavailable('GPG_HOST_ASSET_INVALID'));
@@ -309,23 +801,82 @@ export class OwnedGpgForward {
       await this.guard.command('check');this.signal.throwIfAborted();signal?.throwIfAborted();
       if(this.revoked)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');this.preparedAdmission=true;
     })();
-    this.admission=operation;this.work.add(operation);const abort=()=>{void this.close().catch(()=>{});};signal?.addEventListener('abort',abort,{once:true});
+    this.admission=operation;this.work.add(operation);
+    /**
+     * 入口 / Entry: OwnedGpgForward.prepareAdmission.abort.
+     * 功能：在捕获并核验宿主 GPG 来源与转发租约中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`OwnedGpgForward`）。
+     * Purpose: Ends, revokes or cleans resources owned by this domain action in `OwnedGpgForward`; the calls and state transitions below complete the operation. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+     * 处理：通过 `this.close().catch`, `this.close` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.close().catch`, `this.close`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.close().catch`; `this.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    const abort=()=>{void this.close().catch(()=>{});};signal?.addEventListener('abort',abort,{once:true});
     try{await operation;}finally{this.work.delete(operation);signal?.removeEventListener('abort',abort);}
   }
+  /**
+   * 入口 / Entry: OwnedGpgForward.start.
+   * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.started`, `this.remote`, `this.runTimer`（`OwnedGpgForward`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `OwnedGpgForward`; the outcome is recorded in `this.started`, `this.remote`, `this.runTimer`. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 处理：通过 `machines.live.get`, `canonicalGpgMetadata`, `z.uuid().parse`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `machines.live.get`, `canonicalGpgMetadata`, `z.uuid().parse`, `z.uuid`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: machines: Machines; vmId: string; context: GpgAgentContext; remoteSourcePath: string; signal: AbortSignal optional
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `setTimeout`; `this.work.add`; `this.work.delete`; 更新 / updates `this.started`, `this.remote`, `this.runTimer`.
+   * 拒绝 / Refusals: 条件 / conditions `this.revoked||this.started||!this.binding||!this.preparedAdmission||this.binding.live!==machines.live.get(vmId)||canonicalGpg…`; 异常 / errors `unavailable('PROJECT_IDENTITY_HOST_CHANGED')`; `error`.
+   * 收尾：退出 try 区域时始终执行 `this.work.delete(operation);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.work.delete(operation);`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async start(machines:Machines,vmId:string,context:GpgAgentContext,remoteSourcePath:string,signal?:AbortSignal){
     if(this.revoked||this.started||!this.binding||!this.preparedAdmission||this.binding.live!==machines.live.get(vmId)||canonicalGpgMetadata(context)!==canonicalGpgMetadata(this.binding.context)||remoteSourcePath!==`/run/sakura-gpg-forwards/sources/${z.uuid().parse(context.resource.leaseId)}/agent`)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
     this.signal.throwIfAborted();signal?.throwIfAborted();this.started=true;this.remote=remoteSourcePath;
     const seconds=z.number().int().min(1).max(300).parse(context.resource.timeoutSeconds);const deadline=performance.now()+seconds*1000;
     this.runTimer=setTimeout(()=>{void this.close().catch(()=>{});},seconds*1000);
+    /**
+     * 入口 / Entry: OwnedGpgForward.start.callback@320.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `machines.connect`; 更新 / updates `this.client`, `this.onConnection`.
+     * 拒绝 / Refusals: 条件 / conditions `asset.manifest.sha256!==this.hostHelperSha256||this.revoked`; `this.revoked||machines.live.get(vmId)!==this.binding!.live`; `this.revoked`; 异常 / errors `unavailable('PROJECT_IDENTITY_HOST_CHANGED')`.
+     */
     const operation=(async()=>{
       const asset=await this.guard!.asset;if(asset.manifest.sha256!==this.hostHelperSha256||this.revoked)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');await this.guard!.command('check');
       const client=await machines.connect(vmId,10000,signal||this.signal);this.client=client;client.once('close',()=>{this.clientClosed=true;for(const channel of this.channels)channel.destroy();for(const helper of this.helpers)helper.child.stdin.destroy();});client.on('error',()=>{});
       if(this.revoked||machines.live.get(vmId)!==this.binding!.live)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
+      /**
+       * 入口 / Entry: OwnedGpgForward.start.this.onConnection.
+       * 功能：在捕获并核验宿主 GPG 来源与转发租约中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`OwnedGpgForward`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `OwnedGpgForward`; this entry produces `void` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+       * 处理：通过 `performance.now`, `reject`, `inline`, `this.work.add` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `performance.now`, `reject`, `inline`, `this.work.add`; the branches below determine continuation, return or refusal.
+       * 分支 / Branches: `this.revoked||this.admissions>=8||performance.now()>=deadline||info.socketPath!==remoteSourcePath`.
+       * 输入 / Inputs: raw; accept; reject
+       * 输出 / Returns: `void`.
+       * 副作用 / Effects: `this.work.add`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       * 失败处理：catch 分支执行 ，是否吞掉错误或重新拒绝由这些语句决定。
+       * Failure handling: Catch paths execute ; these statements determine whether a failure is absorbed or rejected again.
+       */
       this.onConnection=(raw,accept,reject)=>{
         const info=raw as {socketPath?:string};if(this.revoked||this.admissions>=8||performance.now()>=deadline||info.socketPath!==remoteSourcePath){try{reject();}catch{}return;}this.admissions++;
         let channel:Duplex|undefined,helper:NativeRelay|undefined;
         const open=(async()=>{try{await this.guard!.command('check');if(this.revoked)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');helper=await NativeRelay.create(asset,'relay',{pins:this.snapshot.pins,context:this.binding!.context,timeoutSeconds:Math.max(1,Math.min(300,Math.ceil((deadline-performance.now())/1000)))},this.options);this.helpers.add(helper);void helper.closed.then(()=>this.helpers.delete(helper!));await boundedWait(helper.identified,5000,()=>unavailable('GPG_HOST_SOURCE_UNAVAILABLE'));if(this.revoked||machines.live.get(vmId)!==this.binding!.live||performance.now()>=deadline)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
-          const birthIdentity={...helper.identity!,hostHelperSha256:this.hostHelperSha256,hostSourceSha256:this.hostSourceSha256};const receipt:GpgHostHelperReceipt={...birthIdentity,actualClose:false,exitCode:null,signal:null,physicalSocketClose:null};this.receipts.push(receipt);const observed=helper;void helper.closed.then(result=>{receipt.actualClose=true;receipt.exitCode=result.code;receipt.signal=result.signal;receipt.physicalSocketClose=observed.physicalClose;});
+          const birthIdentity={...helper.identity!,hostHelperSha256:this.hostHelperSha256,hostSourceSha256:this.hostSourceSha256};const receipt:GpgHostHelperReceipt={...birthIdentity,actualClose:false,exitCode:null,signal:null,physicalSocketClose:null};this.receipts.push(receipt);const observed=helper;
+          /**
+           * 入口 / Entry: OwnedGpgForward.start.callback@328.
+           * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（helper.closed.then）。
+           * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (helper.closed.then).
+           * 输入 / Inputs: result
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: 更新 / updates `receipt.actualClose`, `receipt.exitCode`, `receipt.signal`, `receipt.physicalSocketClose`.
+           */
+          void helper.closed.then(result=>{receipt.actualClose=true;receipt.exitCode=result.code;receipt.signal=result.signal;receipt.physicalSocketClose=observed.physicalClose;});
           const born=await this.guard!.command('birth',{...birthIdentity,context:this.binding!.context});if(born.event!=='BIRTH_RECORDED'||!filePin.shape.id.safeParse(born.fileId).success||!digest.safeParse(born.sha256).success||born.path!==join(asset.birthRoot,born.id+'.json'))throw unavailable('GPG_HOST_PROTOCOL_INVALID');receipt.birth={path:born.path,fileId:born.fileId,sha256:born.sha256};
           if(this.revoked||performance.now()>=deadline)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');helper.authorize({birthRoot:asset.birthRoot,birthRootId:asset.birthRootId,relative:born.id+'.json',fileId:born.fileId,sha256:born.sha256,context:this.binding!.context,hostSourceSha256:this.hostSourceSha256,hostHelperSha256:this.hostHelperSha256});await boundedWait(helper.ready,9000,()=>unavailable('GPG_HOST_SOURCE_UNAVAILABLE'));if(this.revoked||machines.live.get(vmId)!==this.binding!.live||performance.now()>=deadline)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
           if(this.revoked)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');channel=accept();this.channels.add(channel);const source=helper;
@@ -336,10 +887,31 @@ export class OwnedGpgForward {
       if(this.revoked)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
     })();this.work.add(operation);try{await operation;}catch(error){throw error;}finally{this.work.delete(operation);}
   }
+  /**
+   * 入口 / Entry: OwnedGpgForward.close.
+   * 功能：在捕获并核验宿主 GPG 来源与转发租约中，结束、撤销或清理本次拥有的领域资源；本入口产生 `this.closing` 供上层消费（`OwnedGpgForward`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `OwnedGpgForward`; this entry produces `this.closing` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+   * 处理：通过 `clearTimeout`, `this.signal.removeEventListener`, `this.client.off`, `channel.destroy` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `clearTimeout`, `this.signal.removeEventListener`, `this.client.off`, `channel.destroy`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.client&&this.onConnection`; `this.closing`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.closing`.
+   * 副作用 / Effects: `clearTimeout`; `channel.destroy`; `helper.child.stdin.destroy`; 更新 / updates `this.revoked`, `this.closing`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   close(){
     this.revoked=true;clearTimeout(this.runTimer);this.signal.removeEventListener('abort',this.abort);if(this.client&&this.onConnection)this.client.off('unix connection',this.onConnection);
     for(const channel of this.channels)channel.destroy();for(const helper of this.helpers){helper.child.stdin.destroy();helper.child.stdout.resume();}
     if(this.closing)return this.closing;const timeout=this.options.closeTimeoutMs||5000;
+    /**
+     * 入口 / Entry: OwnedGpgForward.close.callback@343.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `channel.destroy`; `helper.child.stdin.destroy`; `this.guard.close`; 更新 / updates `this.recordedClosed`.
+     * 拒绝 / Refusals: 条件 / conditions `this.guard&&!this.recordedClosed`; `!this.binding||this.guard.actual`; `!validListenerClosure(closure)`; 异常 / errors `cleanupFailure()`.
+     */
     const operation=(async()=>{
       await boundedWait(Promise.allSettled([...this.work]),timeout,cleanupFailure);
       for(const channel of this.channels)channel.destroy();for(const helper of this.helpers){helper.child.stdin.destroy();helper.child.stdout.resume();}
@@ -354,6 +926,22 @@ export class OwnedGpgForward {
 }
 
 /** Recovery examines the original durable lease; a lost JS registry is not proof. */
+/**
+ * 入口 / Entry: closeGpgHostLease.
+ * 功能：在捕获并核验宿主 GPG 来源与转发租约中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`gpg-agent-host.ts`）。
+ * Purpose: Ends, revokes or cleans resources owned by this domain action in `gpg-agent-host.ts`; the calls and state transitions below complete the operation. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+ * 处理：通过 `cleanupFailure`, `AssetGuard.create`, `boundedWait`, `inspect` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `cleanupFailure`, `AssetGuard.create`, `boundedWait`, `inspect`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!observation.originalDead`; `allDead`.
+ * 输入 / Inputs: context: GpgAgentContext; options: GpgHostOptions default={}
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `AssetGuard.create`; `NativeRelay.create`; `closeGuardAfterHelper`; 更新 / updates `active`, `allDead`, `ledger`.
+ * 拒绝 / Refusals: 条件 / conditions `(options.platform||process.platform)!=='win32'`; `asset.manifest.sha256!==context.resource.hostHelperSha256`; `result.code!==0||result.signal`; 异常 / errors `cleanupFailure()`.
+ * 收尾：退出 try 区域时始终执行 `await closeGuardAfterHelper(active,guard,timeout);`；这些步骤也适用于异常退出。
+ * Finalization: Leaving the try region always executes `await closeGuardAfterHelper(active,guard,timeout);`; these steps also apply to exceptional exits.
+ * 失败处理：catch 分支执行 `throw cleanupFailure();`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `throw cleanupFailure();`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function closeGpgHostLease(context:GpgAgentContext,options:GpgHostOptions={}){
   const timeout=options.closeTimeoutMs||5000;
   if((options.platform||process.platform)!=='win32')throw cleanupFailure();
@@ -361,6 +949,17 @@ export async function closeGpgHostLease(context:GpgAgentContext,options:GpgHostO
   try{
     const asset=await boundedWait(guard.asset,10000,cleanupFailure);
     if(asset.manifest.sha256!==context.resource.hostHelperSha256)throw cleanupFailure();
+    /**
+     * 入口 / Entry: closeGpgHostLease.inspect.
+     * 功能：在捕获并核验宿主 GPG 来源与转发租约中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `value` 供上层消费（`gpg-agent-host.ts`）。
+     * Purpose: Reads/verifies domain state and constructs a caller-facing result in `gpg-agent-host.ts`; this entry produces `value` for its caller. Module context: Captures/verifies host GPG sources and forwarding leases, retaining ownership until physical connection closure is confirmed.
+     * 处理：通过 `guard.command`, `hostLedgerPath`, `filePin.shape.id.safeParse`, `canonicalGpgMetadata` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `guard.command`, `hostLedgerPath`, `filePin.shape.id.safeParse`, `canonicalGpgMetadata`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `value`.
+     * 副作用 / Effects: `seen.add`.
+     * 拒绝 / Refusals: 条件 / conditions `value.event!=='LEASE_READ'||value.root!==hostLedgerPath(context)||!filePin.shape.id.safeParse(value.rootId).success||!Array.i…`; `value.closed`; `closed?.version!==1||closed.phase!=='closed'||!validListenerClosure(closed)||closed.originalIntentSha256!==value.intent.sha25…`; 异常 / errors `cleanupFailure()`.
+     */
     const inspect=async()=>{
       const value=await guard.command('lease',{root:hostLedgerPath(context),context});
       if(value.event!=='LEASE_READ'||value.root!==hostLedgerPath(context)||!filePin.shape.id.safeParse(value.rootId).success||!Array.isArray(value.births)||value.births.length>8||value.intent?.record?.version!==1||canonicalGpgMetadata(value.intent.record.context)!==canonicalGpgMetadata(context)||value.intent.record.hostHelperSha256!==asset.manifest.sha256)throw cleanupFailure();

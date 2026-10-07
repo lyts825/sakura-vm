@@ -1,5 +1,8 @@
 /**
- * 模块职责：在线迁移目标准备回执和状态契约，校验迁移身份、资源及完成状态。
+ * 模块职责（中文）：在线迁移目标准备回执和状态契约，校验迁移身份、资源及完成状态。
+ * Module responsibility (English): live-migration target prepare receipts and state.
+ * 详细范围（中文）：公开入口包括 liveMigrationPrepareReceiptSchema, LiveMigrationPrepareReceipt, liveMigrationTargetStatusSchema, LiveMigrationTargetStatus；职责覆盖在线迁移目标准备回执和状态，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include liveMigrationPrepareReceiptSchema, LiveMigrationPrepareReceipt, liveMigrationTargetStatusSchema, LiveMigrationTargetStatus. The scope covers live-migration target prepare receipts and state. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 

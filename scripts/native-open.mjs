@@ -1,10 +1,13 @@
-/** 本机文件关联打开助手，解析路径参数并向本机服务提交打开票据，再启动浏览器展示结果。 */
+/** 本机文件关联打开助手，解析路径参数并向本机服务提交打开票据，再启动浏览器展示结果。
+ * Handle local file-association arguments through bounded loopback authentication/ticket requests and open a locally constructed control URL. */
 import { networkFor } from './network-client.mjs';
 const { fetch } = networkFor('tool:native-open');
 import { spawn } from 'node:child_process';
 import { join, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+/** 解析固定文件关联协议参数并验证本机端口、路径与动作，拒绝额外或非法输入。
+ * Parse fixed file-association protocol arguments and validate local port/path/action, refusing extra/invalid inputs. */
 export function parseNativeArguments(args) {
   let port = 7337,
     extension,
@@ -35,8 +38,12 @@ export function parseNativeArguments(args) {
   return { port, extension, path, print };
 }
 
+/** 仅请求回环控制入口，限制十秒、重定向与响应大小，核对 bootstrap token/打开 ticket 后返回已校验结果。
+ * Request only loopback control with ten-second/redirect/response bounds, validating bootstrap token/open ticket before returning. */
 export async function requestNativeOpen(options, transport = fetch) {
   const origin = `http://127.0.0.1:${options.port}`;
+  /** 执行有界本机 JSON 请求并解析成功响应，网络或 HTTP 失败抛错，不缓存凭据。
+   * Issue bounded local JSON requests and parse successful replies; network/HTTP failures throw without caching credentials. */
   const send = async (path, init = {}) => {
     const response = await transport(origin + path, {
       ...init,
@@ -64,9 +71,12 @@ export async function requestNativeOpen(options, transport = fetch) {
   // Ignore any server-supplied URL. The browser destination is always local.
   return `${origin}/#native=${ticket}`;
 }
+/** 用平台已有浏览器打开本机构造的控制 URL，Windows 隐藏启动且禁用 shell，忽略服务提供的外部 URL。
+ * Open the locally constructed control URL with the platform browser; Windows launch is hidden/shell-free and ignores external server-supplied URLs. */
 async function browser(url) {
   if (process.platform !== 'win32') throw new Error('此打开助手仅支持 Windows');
-  await new Promise((resolve, reject) => {
+  await new Promise(/** 直接启动 explorer.exe 打开已校验 URL，禁用 shell 且忽略输出；spawn 成功即 unref 并兑现，不等待浏览器生命周期，启动错误拒绝。
+ * Launch explorer.exe directly for the validated URL with shell disabled and output ignored; unref/resolve after spawn without waiting for browser lifetime, rejecting launch errors. */ (resolve, reject) => {
     const child = spawn(join(process.env.SystemRoot || 'C:\\Windows', 'explorer.exe'), [url], {
       shell: false,
       windowsHide: true,
@@ -80,6 +90,8 @@ async function browser(url) {
     });
   });
 }
+/** 解析关联输入、取得本机打开票据并启动对应控制页面，失败设置非零退出供关联入口诊断。
+ * Parse association input, obtain the local open ticket and show the control page; failures set nonzero exit for diagnostics. */
 export async function main(args) {
   const options = parseNativeArguments(args);
   try {

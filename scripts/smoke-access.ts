@@ -1,4 +1,5 @@
-/** 烟雾验收：验证账户模式 HTTP、WebSocket、浏览器访问、凭据撤销和重启后的授权状态。 */
+/** 烟雾验收：验证账户模式 HTTP、WebSocket、浏览器访问、凭据撤销和重启后的授权状态。
+ * Smoke acceptance for account-mode HTTP/WebSocket/browser authorization, revocation and post-restart state. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { generateKeyPairSync, sign } from 'node:crypto';
@@ -21,7 +22,8 @@ await new Promise<void>((done) => listener.listen(0, '127.0.0.1', done));
 const port = (listener.address() as { port: number }).port;
 await new Promise<void>((done) => listener.close(() => done()));
 const auditObjects = new Map<string, { body: string; versionId: string; until: string }>();
-const auditS3 = createHttpServer(async (req, res) => {
+const auditS3 = createHttpServer(/** 模拟审计 S3 的 Object Lock：PUT 校验合规模式和摘要并冻结版本，GET/HEAD 必须指定已记录版本；只用于验证公开访问审计写入与保留校验。
+ * Model audit S3 Object Lock: PUT validates compliance mode/digest and freezes a version, while GET/HEAD require that recorded version; this verifies formal access-audit writes and retention checks. */ async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
   if (req.method === 'GET' && url.searchParams.has('object-lock')) {
     res.setHeader('content-type', 'application/xml');
@@ -55,6 +57,8 @@ const auditS3Port = (auditS3.address() as { port: number }).port;
 const origin = `http://127.0.0.1:${port}`;
 const passkeyOrigin = `http://localhost:${port}`;
 const password = 'a long administrator password';
+/** 递归规范化 JSON，数组保持顺序、对象键排序，供审计链签名比较；不改变原对象。
+ * Recursively canonicalize JSON with ordered arrays/sorted object keys for audit-chain signature comparison without mutating input. */
 const canonical = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.entries(value)
@@ -64,6 +68,8 @@ const canonical = (value: unknown): string => {
 };
 let server: ReturnType<typeof spawn> | undefined;
 let output = '';
+/** 在独立账户测试目录启动真实服务，保存输出并在三十秒内等待 access/status；提前退出或期限届满报告日志。
+ * Start the real service in isolated account-test state, retaining output and awaiting access/status for thirty seconds; early exit/expiry reports logs. */
 const start = async () => {
   server = spawn(process.execPath, ['.sakura-server/index.js'], {
     cwd: resolve('.'),
@@ -86,6 +92,8 @@ const start = async () => {
   }
   throw new Error('账户测试服务未启动：' + output);
 };
+/** 终止本次服务句柄，十秒后升级 SIGKILL 并等待实际退出，再清除引用。
+ * Terminate this service handle, escalate to SIGKILL after ten seconds, await actual exit and clear the reference. */
 const stop = async () => {
   if (!server || server.exitCode !== null) return;
   const exited = new Promise<void>((done) => server!.once('exit', () => done()));
@@ -95,6 +103,8 @@ const stop = async () => {
   await exited;
   server = undefined;
 };
+/** 发送有期限的可选令牌/JSON HTTP 请求，返回状态和解析正文供成功/拒绝断言；网络失败附方法与路径。
+ * Send deadline-bound optional-token/JSON HTTP requests and return status/parsed body for acceptance/denial assertions; network failures identify method/path. */
 const request = async (path: string, method = 'GET', token?: string, body?: unknown,
   base = origin, timeoutMs = 20_000) => {
   try {
@@ -107,6 +117,8 @@ const request = async (path: string, method = 'GET', token?: string, body?: unkn
     return { status: response.status, body: await response.json() as any };
   } catch (error) { throw new Error(`${method} ${path}: ${String(error)}`); }
 };
+/** 尝试带指定令牌的 WebSocket 握手，返回 101 或拒绝 HTTP 状态；消耗拒绝响应并关闭自有连接。
+ * Attempt a token-bearing WebSocket handshake, returning 101 or denial HTTP status; consume rejected responses and close the owned connection. */
 const wsStatus = async (token: string, path = '/ws/events') => {
   const socket = new WebSocket(origin.replace('http:', 'ws:') + path +
     (path.includes('?') ? '&' : '?') + 'token=' + token,
@@ -553,6 +565,8 @@ try {
 
   assert.equal((await request('/api/access/sso/saml', 'PUT', ownerToken,
     { metadataXml: ssoMetadata })).status, 200);
+  /** 构造绑定请求 ID、回调地址、受众和短有效期的 SAML 响应，用本夹具证书签名，供真实 SSO 回调验证。
+   * Build a SAML response bound to request ID/callback/audience/short lifetime and sign with the fixture certificate for real SSO callback verification. */
   const signedSamlResponse = (requestId: string) => {
     const issued = new Date().toISOString();
     const before = new Date(Date.now() - 60_000).toISOString();
@@ -589,6 +603,8 @@ try {
     await page.getByText('access-fixture').first().waitFor();
     assert.equal(await page.getByText('终端', { exact: true }).count(), 0);
     const desktopSocket = page.waitForEvent('websocket', {
+      /** 只匹配本次实例的 desktop-view WebSocket，防止浏览器事件等待误接收其他传输。
+       * Match only this VM’s desktop-view WebSocket so browser-event waiting cannot accept unrelated transports. */
       predicate: (socket) => socket.url().includes('/ws/' + vmId + '/desktop-view?'),
     });
     await page.getByRole('button', { name: '只读查看桌面' }).click();
@@ -743,6 +759,8 @@ try {
     assert.ok(Date.now() < bootDeadline, '共享终端测试实例启动超时');
     await delay(250);
   }
+  /** 经所有者令牌调用实例级 exec，断言 HTTP 成功并保留来宾退出码和两路输出，由场景检查命令结果。
+   * Call instance-level exec with the owner token, assert HTTP success and retain guest exit code/both outputs for scenario assertions. */
   const guest = async (command: string) => {
     const result = await request('/api/vms/' + vmId + '/exec', 'POST', ownerToken,
       { command, scope: 'instance' }, origin, 45_000);
@@ -800,6 +818,8 @@ try {
   } finally { await sharedBrowser.close(); }
   const terminalUrl = origin.replace('http:', 'ws:') + '/ws/' + vmId +
     '/terminal-view?session=sharetest&project=default&token=' + viewerToken;
+  /** 打开自有终端 WebSocket 并收集 JSON 消息，等待握手和十秒内 ready；未就绪拒绝并附已有消息。
+   * Open the owned terminal WebSocket/collect JSON messages, awaiting handshake and ready within ten seconds; reject unready sessions with collected messages. */
   const openTerminal = async () => {
     const socket = new WebSocket(terminalUrl, { handshakeTimeout: 5000 });
     const messages: { type: string; data: unknown }[] = [];

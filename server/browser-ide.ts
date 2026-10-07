@@ -1,5 +1,6 @@
 /**
  * 模块职责：安装并运行绑定项目账户的浏览器 IDE；连接与停止都核对原会话的完整运行归属。
+ * Module purpose: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
@@ -77,16 +78,70 @@ export const browserIdeSessionSchema = z.object({
 });
 type Session = z.infer<typeof browserIdeSessionSchema>;
 const storeSchema = z.object({ version: z.literal(1), sessions: z.array(browserIdeSessionSchema).max(128) }).strict();
+/**
+ * 入口 / Entry: keyOf.
+ * 功能：从当前输入或状态计算 ``${session.vmId}:${session.projectId}``，供调用方后续验证或使用。
+ * Purpose: Computes ``${session.vmId}:${session.projectId}`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: session: Session
+ * 输出 / Returns: ``${session.vmId}:${session.projectId}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const keyOf = (session: Session) => `${session.vmId}:${session.projectId}`;
+/**
+ * 入口 / Entry: same.
+ * 功能：把本层请求转交 `isDeepStrictEqual`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `isDeepStrictEqual` and propagates the provider result or rejection.
+ * 输入 / Inputs: left: unknown; right: unknown
+ * 输出 / Returns: `isDeepStrictEqual(left, right)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const same = (left: unknown, right: unknown) => isDeepStrictEqual(left, right);
+/**
+ * 入口 / Entry: scopeChanged.
+ * 功能：从当前输入或状态计算 `new AppError('浏览器 IDE 原账号、boot、进程或运行域无法核对，请先停止原会话', 409, 'BROWSER_IDE_SCOPE_CHANGED')`，供调用方后续验证或使用。
+ * Purpose: Computes `new AppError('浏览器 IDE 原账号、boot、进程或运行域无法核对，请先停止原会话', 409, 'BROWSER_IDE_SCOPE_CHANGED')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `new AppError('浏览器 IDE 原账号、boot、进程或运行域无法核对，请先停止原会话', 409, 'BROWSER_IDE_SCOPE_CHANGED')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const scopeChanged = () => new AppError('浏览器 IDE 原账号、boot、进程或运行域无法核对，请先停止原会话', 409, 'BROWSER_IDE_SCOPE_CHANGED');
+/**
+ * 入口 / Entry: legacy.
+ * 功能：从当前输入或状态计算 `new AppError('旧浏览器 IDE 尚未接入项目账号；请管理员确认关闭原 root 会话及全部后代，并明确迁移项目目录后重建，原记录继续保留', 409, 'BROWSER_IDE_IDENTITY_REQUIRED')`，供调用方后续验证或使用。
+ * Purpose: Computes `new AppError('旧浏览器 IDE 尚未接入项目账号；请管理员确认关闭原 root 会话及全部后代，并明确迁移项目目录后重建，原记录继续保留', 409, 'BROWSER_IDE_IDENTITY_REQUIRED')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `new AppError('旧浏览器 IDE 尚未接入项目账号；请管理员确认关闭原 root 会话及全部后代，并明确迁移项目目录后重建，原记录继续保留', 409, 'BROWSER_IDE_IDENTITY_REQUIRED')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const legacy = () => new AppError('旧浏览器 IDE 尚未接入项目账号；请管理员确认关闭原 root 会话及全部后代，并明确迁移项目目录后重建，原记录继续保留', 409, 'BROWSER_IDE_IDENTITY_REQUIRED');
+/**
+ * 入口 / Entry: nativeMatches.
+ * 功能：从当前输入或状态计算 `run.phase === 'active' && run.mode === 'inherit-current' && run.projectId === identity.projectId && run.registryId === identi…`，供调用方后续验证或使用。
+ * Purpose: Computes `run.phase === 'active' && run.mode === 'inherit-current' && run.projectId === identity.projectId && run.registryId === identi…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: run: ProjectIdentityRun; identity: z.infer<typeof projectIdentitySchema>; record: ProjectBrowserIdeRecord
+ * 输出 / Returns: `run.phase === 'active' && run.mode === 'inherit-current' && run.projectId === identity.projectId && run.registryId === identi…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 function nativeMatches(run: ProjectIdentityRun, identity: z.infer<typeof projectIdentitySchema>, record: ProjectBrowserIdeRecord) {
   return run.phase === 'active' && run.mode === 'inherit-current' && run.projectId === identity.projectId &&
     run.registryId === identity.registryId && run.identityId === identity.identityId && run.revision === identity.revision &&
     run.runId === record.runId && run.bootId === record.bootId && run.cgroupName === record.scopeName &&
     record.inode !== null && run.cgroupInode === record.inode && run.namespace === (identity.networkIsolation === 'private' ? 'sk-' + identity.projectId : '');
 }
+/**
+ * 入口 / Entry: httpReady.
+ * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `response.ok` / `false` 供上层消费（`browser-ide.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `browser-ide.ts`; this entry produces `response.ok` / `false` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+ * 处理：通过 `fetch`, `AbortSignal.timeout`, `response.body.cancel` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `fetch`, `AbortSignal.timeout`, `response.body.cancel`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: session: Session
+ * 输出 / Returns: `response.ok`; `false`.
+ * 副作用 / Effects: `fetch`; `AbortSignal.timeout`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ * 失败处理：catch 分支执行 `return false;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `return false;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 async function httpReady(session: Session) {
   try {
     const response = await fetch(`http://127.0.0.1:${session.hostPort}/healthz`,
@@ -98,12 +153,41 @@ type Scope = Pick<ProjectBrowserIdeScope, 'status' | 'newIntent' | 'persistInten
 type Options = {
   scopes?: Pick<ProjectRunScopes, 'identity' | 'inherited' | 'active' | 'readonlyActive'>;
   identities?: Pick<ProjectIdentities, 'runReadonly'>;
+  /**
+   * 签名 / Signature: Options.processScope.
+   * 功能：为安装并运行绑定项目账户的浏览器 IDE声明 processScope 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for processScope in Options. Module responsibility: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 输入 / Inputs: id: string; project: Project; expiresAt: string optional
+   * 输出 / Returns: Scope.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   processScope?: (id: string, project: Project, expiresAt?: string) => Scope;
   bridges?: Pick<ProjectNetworkBridges, 'open' | 'stop' | 'close'>;
+  /**
+   * 签名 / Signature: Options.listener.
+   * 功能：为安装并运行绑定项目账户的浏览器 IDE声明 listener 的输入与结果契约，所属容器为 Options。
+   * Purpose: Declares the input/result contract for listener in Options. Module responsibility: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 输入 / Inputs: session: Session; signal: AbortSignal optional
+   * 输出 / Returns: Promise<boolean>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   listener?: (session: Session, signal?: AbortSignal) => Promise<boolean>;
 };
 
 /** Read kernel ownership only: no project file, command or environment is interpreted by root. */
+/**
+ * 入口 / Entry: browserIdeListenerCommand.
+ * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'# SAKURA_BROWSER_IDE_LISTENER\nenv -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' …` 供上层消费（`browser-ide.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `browser-ide.ts`; this entry produces `'# SAKURA_BROWSER_IDE_LISTENER\nenv -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' …` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+ * 处理：通过 `nativeMatches`, `scopeChanged`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `nativeMatches`, `scopeChanged`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: session: Session
+ * 输出 / Returns: `'# SAKURA_BROWSER_IDE_LISTENER\nenv -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' …`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!execution?.run || !nativeMatches(execution.run, execution.identity, execution.record)`; 异常 / errors `scopeChanged()`.
+ */
 export function browserIdeListenerCommand(session: Session) {
   const execution = session.execution;
   if (!execution?.run || !nativeMatches(execution.run, execution.identity, execution.record)) throw scopeChanged();
@@ -186,6 +270,14 @@ export class BrowserIde {
   private bridges: Pick<ProjectNetworkBridges, 'open' | 'stop' | 'close'>;
   private scopes: NonNullable<Options['scopes']>;
   private identities: NonNullable<Options['identities']>;
+  /**
+   * 入口 / Entry: BrowserIde.constructor.
+   * 功能：建立 BrowserIde 的安装并运行绑定项目账户的浏览器 IDE上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the BrowserIde context for this module's responsibility: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; file: default=join(DATA, 'browser-ide.json'); probeHttp: (session: Session) => Promise<boolean> default=httpReady; options: Options default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.scopes`, `this.identities`, `this.bridges`.
+   */
   constructor(private machines: Machines, private workspaces: WorkspacesV1,
     private file = join(DATA, 'browser-ide.json'), private probeHttp: (session: Session) => Promise<boolean> = httpReady,
     private options: Options = {}) {
@@ -196,22 +288,72 @@ export class BrowserIde {
       if (!session || !await this.prove(session, project, signal)) throw scopeChanged();
     });
   }
+  /**
+   * 入口 / Entry: BrowserIde.scope.
+   * 功能：从当前输入或状态计算 `this.options.processScope?.(session.vmId, project, session.expiresAt) || new ProjectBrowserIdeScope(this.machines, session.vm…`，供调用方后续验证或使用。
+   * Purpose: Computes `this.options.processScope?.(session.vmId, project, session.expiresAt) || new ProjectBrowserIdeScope(this.machines, session.vm…` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: session: Session
+   * 输出 / Returns: Scope；结果来自 / values from `this.options.processScope?.(session.vmId, project, session.expiresAt) || new ProjectBrowserIdeScope(this.machines, session.vm…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private scope(session: Session): Scope {
     const project = { _workspace: session.projectId, directory: session.directory, networkIsolation: session.networkIsolation } as Project;
     return this.options.processScope?.(session.vmId, project, session.expiresAt) ||
       new ProjectBrowserIdeScope(this.machines, session.vmId, project, session.expiresAt);
   }
+  /**
+   * 入口 / Entry: BrowserIde.current.
+   * 功能：把本层请求转交 `this.state.sessions.find`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.state.sessions.find` and propagates the provider result or rejection.
+   * 输入 / Inputs: session: Session
+   * 输出 / Returns: `this.state?.sessions.find(item => keyOf(item) === keyOf(session) && item.startedAt === session.startedAt && item.password ===…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private current(session: Session) {
     return this.state?.sessions.find(item => keyOf(item) === keyOf(session) && item.startedAt === session.startedAt &&
       item.password === session.password && same(item.execution, session.execution));
   }
+  /**
+   * 入口 / Entry: BrowserIde.change.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `operation` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `operation` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `this.writes.catch().then`, `this.writes.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.writes.catch().then`, `this.writes.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: edit: (state: z.infer<typeof storeSchema>) => T
+   * 输出 / Returns: `operation`.
+   * 副作用 / Effects: `this.writes.catch().then`; `this.writes.catch`; 更新 / updates `this.writes`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async change<T>(edit: (state: z.infer<typeof storeSchema>) => T) {
+    /**
+     * 入口 / Entry: BrowserIde.change.callback@209.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.writes.catch().then）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.writes.catch().then).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `result`.
+     * 副作用 / Effects: `writeStore`; 更新 / updates `this.state`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const operation = this.writes.catch(() => {}).then(async () => {
       const next = structuredClone(this.state!); const result = edit(next);
       storeSchema.parse(next); await writeStore(this.file, next); this.state = next; return result;
     });
     this.writes = operation; return operation;
   }
+  /**
+   * 入口 / Entry: BrowserIde.init.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，初始化并核对当前领域状态；处理结果记录到 `this.state`（`BrowserIde`）。
+   * Purpose: Initializes and verifies current domain state in `BrowserIde`; the outcome is recorded in `this.state`. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `storeSchema.parse`, `readStore`, `this.state.sessions.some`, `this.change` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `storeSchema.parse`, `readStore`, `this.state.sessions.some`, `this.change`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.state.sessions.some(item => item.status === 'starting')`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 更新 / updates `this.state`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async init() {
     this.state = storeSchema.parse(await readStore(this.file, () => ({ version: 1, sessions: [] })));
     // Existing owner records remain recoverable, including deleted/unavailable VMs.
@@ -219,19 +361,67 @@ export class BrowserIde {
       await this.change(state => { for (const item of state.sessions) if (item.status === 'starting') item.status = 'review'; });
     for (const session of this.state.sessions) this.schedule(session);
   }
+  /**
+   * 入口 / Entry: BrowserIde.close.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`BrowserIde`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `BrowserIde`; the outcome is recorded in `this.closed`. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `this.timers.values`, `clearTimeout`, `this.timers.clear`, `this.bridges.close` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.timers.values`, `clearTimeout`, `this.timers.clear`, `this.bridges.close`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `clearTimeout`; `this.timers.clear`; `this.bridges.close`; 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true; for (const timer of this.timers.values()) clearTimeout(timer); this.timers.clear();
     await this.bridges.close(); await Promise.allSettled(this.controls.values()); await this.writes;
   }
+  /**
+   * 入口 / Entry: BrowserIde.context.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ vm, projectId, session: this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId) }` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `{ vm, projectId, session: this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId) }` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `this.machines.get`, `this.workspaces.projects.current`, `inline.sessions.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `this.workspaces.projects.current`, `inline.sessions.find`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ vm, projectId, session: this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId) }`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private context(id: string) {
     const vm = this.machines.get(id), projectId = this.workspaces.projects.current(id);
     return { vm, projectId, session: this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId) };
   }
+  /**
+   * 入口 / Entry: BrowserIde.control.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `await pending` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `await pending` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `keyOf`, `inline.catch().then`, `inline.catch`, `this.controls.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `keyOf`, `inline.catch().then`, `inline.catch`, `this.controls.get`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.controls.get(key) === pending`.
+   * 输入 / Inputs: session: Session; work: () => Promise<T>
+   * 输出 / Returns: `await pending`.
+   * 副作用 / Effects: `this.controls.set`; `this.controls.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `if (this.controls.get(key) === pending) this.controls.delete(key);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `if (this.controls.get(key) === pending) this.controls.delete(key);`; these steps also apply to exceptional exits.
+   */
   private async control<T>(session: Session, work: () => Promise<T>) {
     const key = keyOf(session), pending = (this.controls.get(key) || Promise.resolve()).catch(() => {}).then(work);
     this.controls.set(key, pending);
     try { return await pending; } finally { if (this.controls.get(key) === pending) this.controls.delete(key); }
   }
+  /**
+   * 入口 / Entry: BrowserIde.schedule.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `void` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `keyOf`, `this.timers.get`, `clearTimeout`, `setTimeout` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `keyOf`, `this.timers.get`, `clearTimeout`, `setTimeout`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed || !session.execution`; `previous`.
+   * 输入 / Inputs: session: Session; retryMs: number optional
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `clearTimeout`; `setTimeout`; `this.timers.set`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private schedule(session: Session, retryMs?: number) {
     if (this.closed || !session.execution) return;
     const key = keyOf(session), previous = this.timers.get(key); if (previous) clearTimeout(previous);
@@ -239,6 +429,22 @@ export class BrowserIde {
       retryMs ?? Math.max(0, Date.parse(session.expiresAt) - Date.now()));
     timer.unref?.(); this.timers.set(key, timer);
   }
+  /**
+   * 入口 / Entry: BrowserIde.expire.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `void` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `keyOf`, `this.current`, `this.schedule`, `this.active.has` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `keyOf`, `this.current`, `this.schedule`, `this.active.has`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed`; `!current`; `Date.now() < Date.parse(current.expiresAt)`.
+   * 输入 / Inputs: session: Session
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.active.add`; `this.active.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `this.active.delete(key);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.active.delete(key);`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `this.schedule(current, 1000);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.schedule(current, 1000);`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async expire(session: Session) {
     if (this.closed) return; const key = keyOf(session), current = this.current(session);
     if (!current) return;
@@ -249,10 +455,30 @@ export class BrowserIde {
     catch { this.schedule(current, 1000); }
     finally { this.active.delete(key); }
   }
+  /**
+   * 入口 / Entry: BrowserIde.matchesProject.
+   * 功能：从当前输入或状态计算 `session.projectId === (project._workspace || 'default') && session.directory === project.directory && session.networkIsolatio…`，供调用方后续验证或使用。
+   * Purpose: Computes `session.projectId === (project._workspace || 'default') && session.directory === project.directory && session.networkIsolatio…` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: session: Session; project: Project
+   * 输出 / Returns: `session.projectId === (project._workspace || 'default') && session.directory === project.directory && session.networkIsolatio…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private matchesProject(session: Session, project: Project) {
     return session.projectId === (project._workspace || 'default') && session.directory === project.directory &&
       session.networkIsolation === (project.networkIsolation || 'host');
   }
+  /**
+   * 入口 / Entry: BrowserIde.prove.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `false` / `listener && this.machines.live.get(session.vmId) === instance && !!unchanged && unchanged.status !== 'review'` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `false` / `listener && this.machines.live.get(session.vmId) === instance && !!unchanged && unchanged.status !== 'review'` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `this.current`, `this.matchesProject`, `this.machines.state`, `this.machines.live.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.current`, `this.matchesProject`, `this.machines.state`, `this.machines.live.get`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed || !current || current.status === 'review' || !this.matchesProject(session, project) || …`; `!instance`; `status.status !== 'running' || !status.record || !same(status.record, execution.record) || status.bo…`.
+   * 输入 / Inputs: session: Session; project: Project; signal: AbortSignal optional
+   * 输出 / Returns: `false`; `listener && this.machines.live.get(session.vmId) === instance && !!unchanged && unchanged.status !== 'review'`.
+   * 副作用 / Effects: `this.options.listener`; `this.machines.exec`; 更新 / updates `listener`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async prove(session: Session, project: Project, signal?: AbortSignal) {
     const current = this.current(session);
     if (this.closed || !current || current.status === 'review' || !this.matchesProject(session, project) ||
@@ -273,10 +499,31 @@ export class BrowserIde {
     const unchanged = this.current(session);
     return listener && this.machines.live.get(session.vmId) === instance && !!unchanged && unchanged.status !== 'review';
   }
+  /**
+   * 入口 / Entry: BrowserIde.installed.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `false` / `result.code === 0` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `false` / `result.code === 0` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `this.machines.state`, `this.machines.exec`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.state`, `this.machines.exec`, `quote`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.machines.state(id) !== 'running'`.
+   * 输入 / Inputs: id: string; signal: AbortSignal optional
+   * 输出 / Returns: `false`; `result.code === 0`.
+   * 副作用 / Effects: `this.machines.exec`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async installed(id: string, signal?: AbortSignal) {
     if (this.machines.state(id) !== 'running') return false;
     const result = await this.machines.exec(id, `test -x ${quote(binary)}`, 5000, signal); return result.code === 0;
   }
+  /**
+   * 入口 / Entry: BrowserIde.restoreBridge.
+   * 功能：把本层请求转交 `this.control`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.control` and propagates the provider result or rejection.
+   * 输入 / Inputs: session: Session; project: Project; signal: AbortSignal optional
+   * 输出 / Returns: `this.control(session, async () => { if (!await this.prove(session, project, signal)) throw scopeChanged(); await this.bridges…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private restoreBridge(session: Session, project: Project, signal?: AbortSignal) {
     return this.control(session, async () => {
       if (!await this.prove(session, project, signal)) throw scopeChanged();
@@ -284,6 +531,20 @@ export class BrowserIde {
       if (!this.current(session)) { await this.bridges.stop(session.vmId, session.projectId); throw scopeChanged(); }
     });
   }
+  /**
+   * 入口 / Entry: BrowserIde.view.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ ready: supported && running, executed: false, supported, installed, projectId, session: session ? { directory: session.dire…` 供上层消费（`BrowserIde`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `BrowserIde`; this entry produces `{ ready: supported && running, executed: false, supported, installed, projectId, session: session ? { directory: session.dire…` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `browserIdeInput.parse`, `this.context`, `this.workspaces.config`, `this.machines.state` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `browserIdeInput.parse`, `this.context`, `this.workspaces.config`, `this.machines.state`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `session && !expired && session.execution`; `session`.
+   * 输入 / Inputs: id: string; input: unknown default={}; signal: AbortSignal optional
+   * 输出 / Returns: `{ ready: supported && running, executed: false, supported, installed, projectId, session: session ? { directory: session.dire…`.
+   * 副作用 / Effects: `this.installed`; `this.bridges.stop`; 更新 / updates `reachable`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; 异常 / errors `new AppError('浏览器 IDE 服务已关闭', 409)`.
+   * 失败处理：catch 分支执行 `signal?.throwIfAborted();`; `await this.bridges.stop(id, projectId);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `signal?.throwIfAborted();`; `await this.bridges.stop(id, projectId);`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async view(id: string, input: unknown = {}, signal?: AbortSignal) {
     if (this.closed) throw new AppError('浏览器 IDE 服务已关闭', 409); browserIdeInput.parse(input);
     const { vm, projectId, session } = this.context(id), project = await this.workspaces.config(id);
@@ -302,13 +563,51 @@ export class BrowserIde {
       message: !supported ? '浏览器 IDE 目前支持 Debian 和 Ubuntu 客户机。' : !running ? '请先启动实例。' :
         !session?.execution && session ? legacy().message : '浏览器 IDE 使用项目账号与独立 home，通过本机回环桥接访问。' };
   }
+  /**
+   * 入口 / Entry: BrowserIde.removeForward.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，结束、撤销或清理本次拥有的领域资源；本入口产生 `void` 供上层消费（`BrowserIde`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `BrowserIde`; this entry produces `void` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `this.machines.get`, `forwards.some`, `this.machines.setForwards`, `forwards.filter` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `forwards.some`, `this.machines.setForwards`, `forwards.filter`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!session.createdForward`; `forwards.some(owns)`.
+   * 输入 / Inputs: id: string; session: Session
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.machines.setForwards`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async removeForward(id: string, session: Session) {
     if (!session.createdForward) return;
     const forwards = this.machines.get(id).forwards;
+    /**
+     * 入口 / Entry: BrowserIde.removeForward.owns.
+     * 功能：从当前输入或状态计算 `item.host === session.hostPort && item.guest === session.guestPort && item.name === 'browser-ide'`，供调用方后续验证或使用。
+     * Purpose: Computes `item.host === session.hostPort && item.guest === session.guestPort && item.name === 'browser-ide'` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: item: typeof forwards[number]
+     * 输出 / Returns: `item.host === session.hostPort && item.guest === session.guestPort && item.name === 'browser-ide'`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     const owns = (item: typeof forwards[number]) => item.host === session.hostPort && item.guest === session.guestPort && item.name === 'browser-ide';
     if (forwards.some(owns)) await this.machines.setForwards(id, forwards.filter(item => !owns(item)), forwards);
   }
+  /**
+   * 入口 / Entry: BrowserIde.stop.
+   * 功能：把本层请求转交 `this.control`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.control` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; session: Session; signal: AbortSignal
+   * 输出 / Returns: `this.control(session, async () => { signal.throwIfAborted(); if (!this.current(session)) throw scopeChanged(); if (!session.e…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private stop(id: string, session: Session, signal: AbortSignal) {
+    /**
+     * 入口 / Entry: BrowserIde.stop.callback@312.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.control）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.control).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.bridges.stop`; `this.scope().stop`; `clearTimeout`; `this.timers.delete`.
+     * 拒绝 / Refusals: 条件 / conditions `!this.current(session)`; `!session.execution`; `this.machines.state(id) !== 'running'`; 异常 / errors `scopeChanged()`; `legacy()`.
+     */
     return this.control(session, async () => {
       signal.throwIfAborted(); if (!this.current(session)) throw scopeChanged();
       if (!session.execution) throw legacy();
@@ -329,11 +628,35 @@ export class BrowserIde {
       const timer = this.timers.get(keyOf(session)); if (timer) clearTimeout(timer); this.timers.delete(keyOf(session));
     });
   }
+  /**
+   * 入口 / Entry: BrowserIde.prepareNetwork.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; the calls and state transitions below complete the operation. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `ensureProjectNetworkScript`, `this.machines.get`, `guestTask` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `ensureProjectNetworkScript`, `this.machines.get`, `guestTask`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; project: Project; signal: AbortSignal
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; 异常 / errors `new AppError(result.stderr || '浏览器 IDE 项目网络准备失败', 409)`.
+   */
   private async prepareNetwork(id: string, project: Project, signal: AbortSignal) {
     const script = 'set -eu\ncd /\n' + ensureProjectNetworkScript(project, this.machines.get(id).distro || 'debian');
     const result = await guestTask(this.machines, id, script, signal);
     if (result.code !== 0) throw new AppError(result.stderr || '浏览器 IDE 项目网络准备失败', 409);
   }
+  /**
+   * 入口 / Entry: BrowserIde.start.
+   * 功能：准备项目账户与固定 IDE 包，持久化服务意图并建立可核验的 IDE 监听会话。
+   * Purpose: Prepares the project account and pinned IDE package, persists service intent and opens a verifiable IDE listener.
+   * 设计：原配置和客户机身份在准备后重查；完整运行票据先固定，再发布连接入口，失败通过原会话停止协议回滚。
+   * Design: Configuration/guest identity are rechecked after preparation; complete tickets precede connection publication and original stop protocols handle rollback.
+   * 输入 / Inputs: id: string; input: Input; signal: AbortSignal; log: (line: string) => void
+   * 输出 / Returns: `{ ready: true, executed: true, session: { status: 'running', hostPort: prior.hostPort, guestPort: prior.guestPort, expiresAt:…`; `{ ready: true, executed: true, session: { status: 'running', hostPort: session.hostPort, guestPort: session.guestPort, expire…`.
+   * 副作用 / Effects: `this.stop`; `this.install`; `createHash().update().digest`; `createHash().update`; `createHash`; 更新 / updates `session`.
+   * 拒绝 / Refusals: 条件 / conditions `vm.distro !== 'debian' && vm.distro !== 'ubuntu'`; `this.machines.state(id) !== 'running'`; `!instance || (project._workspace || 'default') !== projectId`; 异常 / errors `new AppError('浏览器 IDE 目前支持 Debian 和 Ubuntu 客户机', 409)`; `new AppError('请先启动实例', 409)`.
+   * 失败处理：catch 分支执行 `try { if (session && this.current(session)) await this.stop(id, session, new AbortController().signal); else await process.st…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `try { if (session && this.current(session)) await this.stop(id, session, new AbortController().signal); else await process.st…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async start(id: string, input: Input, signal: AbortSignal, log: (line: string) => void) {
     const { vm, projectId, session: prior } = this.context(id);
     if (vm.distro !== 'debian' && vm.distro !== 'ubuntu') throw new AppError('浏览器 IDE 目前支持 Debian 和 Ubuntu 客户机', 409);
@@ -385,6 +708,15 @@ export class BrowserIde {
         { kind: 'service', runId: intent.runId, bootId: intent.bootId }, signal);
       if (!same(payload.identity, identity) || payload.sha256 !== sha256) throw scopeChanged();
       const started = await process.start(intent, payload, signal);
+      /**
+       * 入口 / Entry: BrowserIde.start.callback@388.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.change）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.change).
+       * 输入 / Inputs: state
+       * 输出 / Returns: `row`.
+       * 副作用 / Effects: 更新 / updates `row.execution!.record`.
+       * 拒绝 / Refusals: 条件 / conditions `!same(row.execution!.record, intent)`; 异常 / errors `scopeChanged()`.
+       */
       session = await this.change(state => { const row = state.sessions.find(item => keyOf(item) === keyOf(session!))!;
         if (!same(row.execution!.record, intent)) throw scopeChanged(); row.execution!.record = started; return row; });
       const deadline = Date.now() + 90000;
@@ -419,6 +751,20 @@ export class BrowserIde {
       throw error;
     }
   }
+  /**
+   * 入口 / Entry: BrowserIde.run.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.view(id, options, signal)` / `await this.machines.locked(id, async () => { if (this.workspaces.projects.current(id) !== projectId) throw scopeChanged(); if…` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `this.view(id, options, signal)` / `await this.machines.locked(id, async () => { if (this.workspaces.projects.current(id) !== projectId) throw scopeChanged(); if…` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `browserIdeInput.parse`, `this.context`, `this.active.has`, `this.active.add` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `browserIdeInput.parse`, `this.context`, `this.active.has`, `this.active.add`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `options.mode === 'status'`.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal; log: (line: string) => void
+   * 输出 / Returns: `this.view(id, options, signal)`; `await this.machines.locked(id, async () => { if (this.workspaces.projects.current(id) !== projectId) throw scopeChanged(); if…`.
+   * 副作用 / Effects: `this.active.add`; `this.active.delete`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `this.active.has(key)`; 异常 / errors `new AppError('浏览器 IDE 服务已关闭', 409)`; `new AppError('此项目的浏览器 IDE 操作仍在进行', 409)`.
+   * 收尾：退出 try 区域时始终执行 `this.active.delete(key);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.active.delete(key);`; these steps also apply to exceptional exits.
+   */
   async run(id: string, input: unknown, signal: AbortSignal, log: (line: string) => void) {
     if (this.closed) throw new AppError('浏览器 IDE 服务已关闭', 409);
     const options = browserIdeInput.parse(input), { vm, projectId } = this.context(id), key = `${id}:${projectId}`;
@@ -426,6 +772,15 @@ export class BrowserIde {
     this.active.add(key);
     try {
       signal.throwIfAborted(); if (options.mode === 'status') return this.view(id, options, signal);
+      /**
+       * 入口 / Entry: BrowserIde.run.callback@429.
+       * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.machines.locked）。
+       * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.machines.locked).
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `this.start(id, options, signal, log)`; `{ ready: true, executed: true, installed: true, message: '浏览器 IDE 已安装；现在可启动会话。' }`; `{ ready: true, executed: true, session: null, message: '浏览器 IDE 会话已停止。' }`.
+       * 副作用 / Effects: `this.start`; `this.install`; `this.stop`.
+       * 拒绝 / Refusals: 条件 / conditions `this.workspaces.projects.current(id) !== projectId`; `options.mode === 'install'`; `vm.distro !== 'debian' && vm.distro !== 'ubuntu'`; 异常 / errors `scopeChanged()`; `new AppError('浏览器 IDE 目前支持 Debian 和 Ubuntu 客户机', 409)`.
+       */
       return await this.machines.locked(id, async () => {
         if (this.workspaces.projects.current(id) !== projectId) throw scopeChanged();
         if (options.mode === 'start') return this.start(id, options, signal, log);
@@ -439,6 +794,19 @@ export class BrowserIde {
       });
     } finally { this.active.delete(key); }
   }
+  /**
+   * 入口 / Entry: BrowserIde.link.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ url: `http://127.0.0.1:${session.hostPort}/`, password: session.password, expiresAt: session.expiresAt }` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `{ url: `http://127.0.0.1:${session.hostPort}/`, password: session.password, expiresAt: session.expiresAt }` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `this.context`, `legacy`, `scopeChanged`, `this.restoreBridge` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.context`, `legacy`, `scopeChanged`, `this.restoreBridge`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ url: `http://127.0.0.1:${session.hostPort}/`, password: session.password, expiresAt: session.expiresAt }`.
+   * 副作用 / Effects: `this.bridges.stop`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `!session || !session.execution`; `!await this.probeHttp(session) || !this.current(session) || Date.now() >= Date.parse(session.expiresAt)`; 异常 / errors `new AppError('浏览器 IDE 服务已关闭', 409)`; `session ? legacy() : scopeChanged()`.
+   * 失败处理：catch 分支执行 `await this.bridges.stop(id, session.projectId);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `await this.bridges.stop(id, session.projectId);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async link(id: string) {
     if (this.closed) throw new AppError('浏览器 IDE 服务已关闭', 409);
     const { session } = this.context(id); if (!session || !session.execution) throw session ? legacy() : scopeChanged();
@@ -448,10 +816,33 @@ export class BrowserIde {
       return { url: `http://127.0.0.1:${session.hostPort}/`, password: session.password, expiresAt: session.expiresAt };
     } catch (error) { await this.bridges.stop(id, session.projectId); throw error; }
   }
+  /**
+   * 入口 / Entry: BrowserIde.install.
+   * 功能：在安装并运行绑定项目账户的浏览器 IDE中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`BrowserIde`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `BrowserIde`; this entry produces `void` for its caller. Module context: Installs and runs a project-account browser IDE; connections and stops verify the original session's complete ownership.
+   * 处理：通过 `this.installed`, `this.installs.get`, `inline`, `this.installs.set` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.installed`, `this.installs.get`, `inline`, `this.installs.set`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `await this.installed(id, signal)`; `existing`.
+   * 输入 / Inputs: id: string; signal: AbortSignal; log: (line: string) => void
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.installed`; `this.installs.get`; `this.installs.set`; `this.installs.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `this.installs.delete(id);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.installs.delete(id);`; these steps also apply to exceptional exits.
+   */
   private async install(id: string, signal: AbortSignal, log: (line: string) => void) {
     if (await this.installed(id, signal)) return;
     const existing = this.installs.get(id);
     if (existing) { await existing; return; }
+    /**
+     * 入口 / Entry: BrowserIde.install.callback@455.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `vm.distro !== 'debian' && vm.distro !== 'ubuntu'`; `result.code !== 0`; 异常 / errors `new AppError('浏览器 IDE 目前支持 Debian 和 Ubuntu 客户机', 409)`; `new AppError(`浏览器 IDE 安装失败：${result.stderr.slice(-1000) || result.code}`)`.
+     */
     const promise = (async () => {
       const vm = this.machines.get(id);
       if (vm.distro !== 'debian' && vm.distro !== 'ubuntu')

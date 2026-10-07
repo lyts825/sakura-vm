@@ -1,4 +1,5 @@
-/** 验证版本服务接口的独立性和历史兼容性，从类型检查器提取公开成员并生成服务能力目录。 */
+/** 验证版本服务接口的独立性和历史兼容性，从类型检查器提取公开成员并生成服务能力目录。
+ * Verify versioned interface independence/history compatibility and derive the public service-member capability catalog from checked types. */
 import { readFile, writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { isBuiltin } from 'node:module';
@@ -16,12 +17,16 @@ const checker = program.getTypeChecker();
 const source = program.getSourceFile(sourcePath)!;
 const contractRoot = realpathSync(resolve('server/service-contracts'));
 const sharedRoot = realpathSync(resolve('shared'));
+/** 按相对路径核对目录包含关系，兼顾 Windows 路径分隔和绝对路径逃逸。
+ * Check containment through relative paths, covering Windows separators and absolute-path escape. */
 const inside = (root: string, path: string) => {
   const pathFromRoot = relative(root, path);
   return !isAbsolute(pathFromRoot) && pathFromRoot !== '..' && !pathFromRoot.startsWith('..' + win32.sep) &&
     !pathFromRoot.startsWith('../');
 };
 /** Contract imports use owned declarations, shared DTOs, or public package entry points. */
+/** 只允许独立声明、共享 DTO、builtin 或公开包入口，解析真实路径后拒绝实现导入/目录逃逸。
+ * Allow only independent declarations/shared DTOs/builtins/public package entries, resolving real paths before excluding implementations/escape. */
 export function assertServiceContractImport(specifier: string, containingFile = sourcePath): string | undefined {
   if (isAbsolute(specifier) || win32.isAbsolute(specifier) || /^[a-z]:/i.test(specifier) || specifier.includes('\\'))
     throw new Error('Public service contracts cannot use absolute paths: ' + specifier);
@@ -41,8 +46,12 @@ export function assertServiceContractImport(specifier: string, containingFile = 
     throw new Error('Public service contracts cannot import implementations or escape their directory: ' + specifier);
   return path;
 }
+/** 递归遍历契约导入与引用闭包，保持 visited 防环，确保生成输入不被实现能力隐式扩大。
+ * Walk contract imports/references with cycle tracking so implementation code cannot implicitly enlarge generated capabilities. */
 export function assertIndependentServiceContracts(entry: ts.SourceFile, inputs = program) {
   const inspected = new Set<ts.SourceFile>();
+  /** 验证单个 specifier 的独立来源，加载其 program 源并继续闭包检查，缺失依赖抛错。
+   * Validate one specifier’s independent provenance, locate its program source and continue closure checks, throwing on absent dependencies. */
   const inspectImport = (specifier: string, file: ts.SourceFile) => {
     const path = assertServiceContractImport(specifier, file.fileName);
     if (path && (inside(contractRoot, path) || inside(sharedRoot, path))) {
@@ -51,6 +60,8 @@ export function assertIndependentServiceContracts(entry: ts.SourceFile, inputs =
       independentSource(dependency);
     }
   };
+  /** 每个源只检查一次，扫描 AST 和 triple-slash 文件引用，防止引用绕开导入边界。
+   * Inspect each source once across AST and triple-slash references so references cannot bypass import boundaries. */
   function independentSource(file: ts.SourceFile) {
     if (inspected.has(file)) return;
     inspected.add(file);
@@ -61,6 +72,8 @@ export function assertIndependentServiceContracts(entry: ts.SourceFile, inputs =
         ? specifier : './' + specifier, file);
     }
   }
+  /** 识别静态/类型/动态 import 与 require 并统一核对，再递归子节点。
+   * Recognize static/type/dynamic imports and require for common validation, then traverse child nodes. */
   function independent(node: ts.Node, file: ts.SourceFile) {
     const specifier = ts.isImportDeclaration(node) || ts.isExportDeclaration(node)
       ? node.moduleSpecifier
@@ -80,10 +93,14 @@ assertSystemServiceFactories(parsed.fileNames, parsed.options);
 const descriptors: Record<string, { id: string; version: number; members: string[]; optional?: string[]; methods?: string[]; properties?: Record<string, string>; returns?: Record<string, string> }> = {};
 const known = new Map<ts.Type, string>();
 const assigned = new Map<ts.Type, string>();
+/** 从版本接口名生成稳定 sakura.service.*.v1 ID，保持名称与公开能力关系可追踪。
+ * Derive stable sakura.service.*.v1 IDs from versioned interface names for traceable capability relations. */
 const idFor = (name: string) => 'sakura.service.' + name.replace(/V1$/, '').replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase() + '.v1';
 for (const node of source.statements)
   if (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node))
     known.set(checker.getTypeAtLocation(node), idFor(node.name.text));
+/** 剥离唯一非空联合、Promise 和数组/tuple 包装；多种有效联合无法唯一描述时返回 undefined。
+ * Unwrap sole nonnull unions, Promise and array/tuple wrappers; return undefined when alternatives are ambiguous. */
 function underlying(type: ts.Type): ts.Type | undefined {
   if (type.isUnion()) {
     const choices = type.types.filter((item) => !(item.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null | ts.TypeFlags.Void)));
@@ -98,6 +115,8 @@ function underlying(type: ts.Type): ts.Type | undefined {
   }
   return type;
 }
+/** 仅从独立已知服务形状递归生成字符串成员/可选项/方法及嵌套返回关系；先登记类型防环，过滤进程局部 unique-symbol 键。
+ * Recursively derive string members/optional/method/nested-return relations only from independent known service shapes, preregistering against cycles and excluding process-local symbol keys. */
 function shape(raw: ts.Type, suggested: string, force = false): string | undefined {
   const type = underlying(raw);
   if (!type || !(type.flags & ts.TypeFlags.Object) || type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.TypeParameter)) return;
@@ -137,7 +156,10 @@ for (const node of source.statements) {
 }
 const content = '// Generated from independent versioned interfaces by scripts/service-contracts.ts.\n' +
   '// 公开服务能力目录：仅由独立版本接口生成成员、方法及嵌套返回关系，供服务代理校验能力边界。\n' +
+  '// Public service capabilities: derive members/methods/nested returns only from independent versioned interfaces for broker capability checks.\n' +
   "import type { ServiceContract } from './service-ref.ts';\n\n" +
+  '/** 以稳定服务 ID 索引能力描述；members/optional/methods 限制公开访问，properties/returns 指向嵌套服务关系，描述数据不直接执行方法。\n' +
+  ' * Index capabilities by stable service ID; members/optional/methods bound public access and properties/returns identify nested services. Descriptor data does not execute methods. */\n' +
   'export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<any>>> = ' +
   JSON.stringify(Object.fromEntries(Object.entries(descriptors).sort(([a], [b]) => a.localeCompare(b))), null, 2) + ';\n';
 const target = 'server/public-service-members.ts';

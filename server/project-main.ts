@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理项目主命令会话与日志；旧 tmux 会话缺少可验证归属时保留记录等待人工核查。
+ * Module purpose: Owns project main-command sessions/logs; unverified legacy tmux ownership retains records for explicit inspection.
  */
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
@@ -16,8 +17,37 @@ import {
 } from './project-service-scope.ts';
 import { writeStore } from './local-store.ts';
 
+/**
+ * 入口 / Entry: mainSession.
+ * 功能：从当前输入或状态计算 `projectMainScopePaths(project).session`，供调用方后续验证或使用。
+ * Purpose: Computes `projectMainScopePaths(project).session` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: project: Project
+ * 输出 / Returns: `projectMainScopePaths(project).session`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const mainSession = (project: Project) => projectMainScopePaths(project).session;
+/**
+ * 入口 / Entry: mainLog.
+ * 功能：从当前输入或状态计算 ``/tmp/${mainSession(project)}.log``，供调用方后续验证或使用。
+ * Purpose: Computes ``/tmp/${mainSession(project)}.log`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: project: Project
+ * 输出 / Returns: ``/tmp/${mainSession(project)}.log``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const mainLog = (project: Project) => `/tmp/${mainSession(project)}.log`;
+/**
+ * 入口 / Entry: legacyMainStatus.
+ * 功能：在管理项目主命令会话与日志中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result.stdout.trim() as 'unmanaged' | 'absent'` 供上层消费（`project-main.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-main.ts`; this entry produces `result.stdout.trim() as 'unmanaged' | 'absent'` for its caller. Module context: Owns project main-command sessions/logs; unverified legacy tmux ownership retains records for explicit inspection.
+ * 处理：通过 `machines.exec`, `mainSession`, `inline.includes`, `result.stdout.trim` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `machines.exec`, `mainSession`, `inline.includes`, `result.stdout.trim`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: machines: Machines; id: string; project: Project; signal: AbortSignal optional
+ * 输出 / Returns: `result.stdout.trim() as 'unmanaged' | 'absent'`.
+ * 副作用 / Effects: `machines.exec`.
+ * 拒绝 / Refusals: 条件 / conditions `result.code !== 0 || !['unmanaged', 'absent'].includes(result.stdout.trim())`; 异常 / errors `new AppError('项目主命令旧会话状态未确认', 409, 'PROJECT_MAIN_SCOPE_CHANGED')`.
+ */
 export async function legacyMainStatus(machines: Machines, id: string, project: Project, signal?: AbortSignal) {
   const result = await machines.exec(id, `# SAKURA_PROJECT_MAIN_LEGACY_STATUS\n` +
     `if command -v tmux >/dev/null && tmux has-session -t =${mainSession(project)} 2>/dev/null; then echo unmanaged; else echo absent; fi`,
@@ -26,15 +56,48 @@ export async function legacyMainStatus(machines: Machines, id: string, project: 
     throw new AppError('项目主命令旧会话状态未确认', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
   return result.stdout.trim() as 'unmanaged' | 'absent';
 }
+/**
+ * 入口 / Entry: unmanaged.
+ * 功能：从当前输入或状态计算 `new AppError('旧项目主命令 tmux 缺少可验证归属；请管理员检查并关闭旧会话及其实际后代后重新启动，未自动停止任何进程', 409, 'PROJECT_MAIN_SCOPE_UNMANAGED')`，供调用方后续验证或使用。
+ * Purpose: Computes `new AppError('旧项目主命令 tmux 缺少可验证归属；请管理员检查并关闭旧会话及其实际后代后重新启动，未自动停止任何进程', 409, 'PROJECT_MAIN_SCOPE_UNMANAGED')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `new AppError('旧项目主命令 tmux 缺少可验证归属；请管理员检查并关闭旧会话及其实际后代后重新启动，未自动停止任何进程', 409, 'PROJECT_MAIN_SCOPE_UNMANAGED')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const unmanaged = () => new AppError('旧项目主命令 tmux 缺少可验证归属；请管理员检查并关闭旧会话及其实际后代后重新启动，未自动停止任何进程',
   409, 'PROJECT_MAIN_SCOPE_UNMANAGED');
 
+/**
+ * 入口 / Entry: runProjectMain.
+ * 功能：在管理项目主命令会话与日志中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`project-main.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-main.ts`; this entry produces `void` for its caller. Module context: Owns project main-command sessions/logs; unverified legacy tmux ownership retains records for explicit inspection.
+ * 处理：通过 `project.command.trim`, `prepareProjectScopeTools`, `inline`, `precheck` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `project.command.trim`, `prepareProjectScopeTools`, `inline`, `precheck`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!await precheck()`; `!state`; `await identities.active(id, intent.projectId, intent.runId, signal)`.
+ * 输入 / Inputs: machines: Machines; id: string; project: Project; log: (text: string) => void; signal: AbortSignal; prepare: () => Promise<void>
+ * 输出 / Returns: `void`.
+ * 副作用 / Effects: `scope.persistIntent`; `scope.start`; `scope.stop`.
+ * 拒绝 / Refusals: 条件 / conditions `!project.command.trim()`; `(await scope.status(signal)).status !== 'running'`; `Date.now() >= deadline`; 异常 / errors `new AppError('请先保存项目启动命令')`; `new AppError('项目启动命令已退出，请检查日志', 409, 'PROJECT_MAIN_SCOPE_CHANGED')`.
+ * 失败处理：catch 分支执行 `try { await scope.stop(intent, log); } catch (cleanupError) { throw new AppError(`项目主命令启动失败：${error instanceof Error ? error.…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `try { await scope.stop(intent, log); } catch (cleanupError) { throw new AppError(`项目主命令启动失败：${error instanceof Error ? error.…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function runProjectMain(machines: Machines, id: string, project: Project,
   log: (text: string) => void, signal: AbortSignal, prepare: () => Promise<void>) {
   if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
   await prepareProjectScopeTools(machines, id, signal, 'main');
   const scope = new ProjectMainScope(machines, id, project);
   const identities = new (await import('./project-run-scope.ts')).ProjectRunScopes(machines);
+  /**
+   * 入口 / Entry: runProjectMain.precheck.
+   * 功能：在管理项目主命令会话与日志中，执行此领域的具体处理步骤并返回其结果；本入口产生 `null` / `state` 供上层消费（`project-main.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-main.ts`; this entry produces `null` / `state` for its caller. Module context: Owns project main-command sessions/logs; unverified legacy tmux ownership retains records for explicit inspection.
+   * 处理：通过 `scope.status`, `identities.hasRun`, `identities.active`, `projectMainBinding` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `scope.status`, `identities.hasRun`, `identities.active`, `projectMainBinding`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `null`; `state`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `state.status === 'running'`; `!state.record || !await identities.hasRun(id, state.record.projectId, state.record.runId)`; `!await identities.active(id, state.record.projectId, state.record.runId, signal)`; 异常 / errors `new AppError('旧项目主命令尚未接入项目账号，请先确认停止全部后代再重新启动', 409, 'PROJECT_MAIN_IDENTITY_REQUIRED')`; `new AppError('项目主命令的账号启动回执尚未确认，请先停止并核对', 409, 'PROJECT_MAIN_SCOPE_CHANGED')`.
+   */
   const precheck = async () => {
     const state = await scope.status(signal);
     if (state.status === 'running') {
@@ -86,6 +149,17 @@ export async function runProjectMain(machines: Machines, id: string, project: Pr
     throw error;
   }
 }
+/**
+ * 入口 / Entry: rebootStopProbe.
+ * 功能：在管理项目主命令会话与日志中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'# SAKURA_PROJECT_MAIN_REBOOT_STOP\n' + '# SAKURA_PROJECT_MAIN_REQUEST=' + Buffer.from(JSON.stringify(request)).toString('bas…` 供上层消费（`project-main.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-main.ts`; this entry produces `'# SAKURA_PROJECT_MAIN_REBOOT_STOP\n' + '# SAKURA_PROJECT_MAIN_REQUEST=' + Buffer.from(JSON.stringify(request)).toString('bas…` for its caller. Module context: Owns project main-command sessions/logs; unverified legacy tmux ownership retains records for explicit inspection.
+ * 处理：通过 `projectMainScopePaths`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectMainScopePaths`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project; record: ProjectMainRecord
+ * 输出 / Returns: `'# SAKURA_PROJECT_MAIN_REBOOT_STOP\n' + '# SAKURA_PROJECT_MAIN_REQUEST=' + Buffer.from(JSON.stringify(request)).toString('bas…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function rebootStopProbe(project: Project, record: ProjectMainRecord) {
   const request = { op: 'probe-reboot', ...projectMainScopePaths(project), record };
   // This probe never signals a process. The per-project lock also belongs to
@@ -118,8 +192,33 @@ else:
     '# SAKURA_PROJECT_MAIN_REQUEST=' + Buffer.from(JSON.stringify(request)).toString('base64') + '\n' +
     `/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ${quote(source)}`;
 }
+/**
+ * 入口 / Entry: confirmRebootedMainStop.
+ * 功能：在管理项目主命令会话与日志中，执行此领域的具体处理步骤并返回其结果；本入口产生 `false` / `true` 供上层消费（`project-main.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-main.ts`; this entry produces `false` / `true` for its caller. Module context: Owns project main-command sessions/logs; unverified legacy tmux ownership retains records for explicit inspection.
+ * 处理：通过 `unchanged`, `machines.exec`, `rebootStopProbe`, `result.stderr.trim` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `unchanged`, `machines.exec`, `rebootStopProbe`, `result.stderr.trim`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!response.retired`; `saved.phase !== 'stopped'`; `await identities.hasRun(id, record.projectId, record.runId)`.
+ * 输入 / Inputs: machines: Machines; id: string; project: Project; scope: ProjectMainScope; record: ProjectMainRecord; log: (text: string) => void; instance: object | undefined
+ * 输出 / Returns: `false`; `true`.
+ * 副作用 / Effects: `machines.exec`; `writeStore`; `identities.closeAfterScopeStopped`; 更新 / updates `failure`.
+ * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; `response.retired !== (response.bootId !== record.bootId)`; 异常 / errors `new Error(result.stderr.trim() || '项目主命令重启归属回执未确认')`; `new Error('项目主命令重启归属回执的 boot 状态不符')`.
+ * 失败处理：catch 分支执行 `failure = error;`; `log(`项目主命令重启归属核对第 ${attempt + 1} 次未确认：${error instanceof Error ? error.message : String(error)}\n`);`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `failure = error;`; `log(`项目主命令重启归属核对第 ${attempt + 1} 次未确认：${error instanceof Error ? error.message : String(error)}\n`);`; these statements determine whether a failure is absorbed or rejected again.
+ */
 async function confirmRebootedMainStop(machines: Machines, id: string, project: Project,
   scope: ProjectMainScope, record: ProjectMainRecord, log: (text: string) => void, instance: object | undefined) {
+  /**
+   * 入口 / Entry: confirmRebootedMainStop.unchanged.
+   * 功能：在管理项目主命令会话与日志中，执行此领域的具体处理步骤并返回其结果；本入口产生 `saved` 供上层消费（`project-main.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-main.ts`; this entry produces `saved` for its caller. Module context: Owns project main-command sessions/logs; unverified legacy tmux ownership retains records for explicit inspection.
+   * 处理：通过 `machines.live.get`, `scope.metadata` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `machines.live.get`, `scope.metadata`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `saved`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!instance || machines.live.get(id) !== instance`; `machines.live.get(id) !== instance`; `!saved || JSON.stringify({ ...saved, phase: record.phase }) !== JSON.stringify(record) || (saved.phase !== record.phase && sa…`; 异常 / errors `new AppError('客户机 live 实例已改变，拒绝旧项目主命令操作', 409, 'PROJECT_MAIN_SCOPE_CHANGED')`; `new AppError('主机项目主命令完整归属已改变，拒绝旧运行停止', 409, 'PROJECT_MAIN_SCOPE_CHANGED')`.
+   */
   const unchanged = async () => {
     if (!instance || machines.live.get(id) !== instance)
       throw new AppError('客户机 live 实例已改变，拒绝旧项目主命令操作', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
@@ -160,6 +259,18 @@ async function confirmRebootedMainStop(machines: Machines, id: string, project: 
   throw new AppError(`项目主命令清理未确认：${failure instanceof Error ? failure.message : String(failure)}；` +
     `已保留运行记录 ${scope.receipt()}`, 503, 'PROJECT_MAIN_CLEANUP_FAILED');
 }
+/**
+ * 入口 / Entry: stopProjectMain.
+ * 功能：在管理项目主命令会话与日志中，结束、撤销或清理本次拥有的领域资源；本入口产生 `void` 供上层消费（`project-main.ts`）。
+ * Purpose: Ends, revokes or cleans resources owned by this domain action in `project-main.ts`; this entry produces `void` for its caller. Module context: Owns project main-command sessions/logs; unverified legacy tmux ownership retains records for explicit inspection.
+ * 处理：通过 `machines.live.get`, `scope.hasReceipt`, `legacyMainStatus`, `unmanaged` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `machines.live.get`, `scope.hasReceipt`, `legacyMainStatus`, `unmanaged`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!rebooted`.
+ * 输入 / Inputs: machines: Machines; id: string; project: Project; log: (text: string) => void; signal: AbortSignal optional
+ * 输出 / Returns: `void`.
+ * 副作用 / Effects: `scope.stop`.
+ * 拒绝 / Refusals: 条件 / conditions `!await scope.hasReceipt()`; `await legacyMainStatus(machines, id, project, signal) === 'unmanaged'`; `!record`; 异常 / errors `unmanaged()`; `new AppError('项目主命令归属记录已缺失，停止未确认', 409, 'PROJECT_MAIN_SCOPE_CHANGED')`.
+ */
 export async function stopProjectMain(machines: Machines, id: string, project: Project,
   log: (text: string) => void, signal?: AbortSignal) {
   const instance = machines.live.get(id);

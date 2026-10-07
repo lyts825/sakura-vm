@@ -1,4 +1,5 @@
-/** 烟雾验收：验证持久项目账户、原生运行票据、目录/网络身份及关闭证据。 */
+/** 烟雾验收：验证持久项目账户、原生运行票据、目录/网络身份及关闭证据。
+ * Smoke acceptance for persistent project accounts, native tickets, directory/network identity and shutdown evidence. */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -57,17 +58,25 @@ let verifiedLegacyBuild = '';
 const projectRoot = '/srv/sakura-identity-fixture';
 const betaId = '1111111111111111';
 console.log(JSON.stringify({ fixture: directory, distro, build: source.manifest.build }));
+/** 运行具名异步断言，成功才保存并输出 PASS；异常向外传播，不记录通过。
+ * Run named asynchronous assertions, retaining/printing PASS only on success and propagating failures. */
 async function check(name: string, work: () => Promise<void>) {
   await work(); checks.push(name); console.log('PASS ' + name);
 }
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function guest(command: string, timeout = 30000) {
   const result = await machines!.exec(vmId, command, timeout);
   assert.equal(result.code, 0, result.stderr || result.stdout);
   return result.stdout.trim();
 }
+/** 以清空环境的隔离 Python 执行固定 heredoc 源码，使用调用方期限，避免用户 site 和环境干扰权限观测。
+ * Run fixed heredoc source with clean-environment isolated Python under the caller’s deadline, excluding user site/environment interference. */
 async function python(script: string, timeout = 30000) {
   return await guest(`env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /usr/bin/python3 -I -S - <<'SAKURA_IDENTITY_FIXTURE'\n${script}\nSAKURA_IDENTITY_FIXTURE`, timeout);
 }
+/** 五分钟内等待原自有实例运行，失败保留启动日志并报告 lastError。
+ * Await the original owned VM within five minutes, preserving boot logs/lastError on failure. */
 async function ready() {
   const deadline = Date.now() + 300000;
   while (machines!.state(vmId) === 'starting' && Date.now() < deadline) await delay(200);
@@ -98,6 +107,8 @@ try {
   await guest('/bin/sync');
   const identities = new ProjectIdentities(machines, { sourceDirectory });
   const payloadFixture = projectRoot + '/payload-fixture.py';
+  /** 用生产 identity.input 生成命令与分离正文，再经真实 execInput 返回完整结果，供畸形帧/票据拒绝核验。
+   * Build command/separate body through production identity.input and return real execInput results for malformed-frame/receipt denial checks. */
   async function raw(identity: Parameters<typeof identities.input>[0], run: Parameters<typeof identities.input>[1], execution: Parameters<typeof identities.input>[2]) {
     const plan = identities.input(identity, run, execution);
     return await machines!.execInput(vmId, plan.command, plan.input);
@@ -124,7 +135,8 @@ try {
     await python(`import os,stat\ni=os.lstat(${JSON.stringify(projectRoot + '/alpha')});assert stat.S_ISDIR(i.st_mode) and i.st_uid==${alpha.uid} and i.st_gid==${alpha.gid}`);
     alpha = await identities.rebind(vmId, alpha, { directory: projectRoot + '/alpha', networkIsolation: alpha.networkIsolation });
   }
-  await check('account intent blocks launch and preserves directory permissions', async () => {
+  await check('account intent blocks launch and preserves directory permissions', /** 验证 ensure 先固定账户 intent 且不擅自迁移 root 目录，未完整身份不能 prepare；仅在自有夹具显式调整目录后重试，UID/identityId 保持原预留并转 active。
+ * Prove ensure fixes account intent without silently migrating a root-owned directory and incomplete identity cannot prepare; after explicit owned-fixture directory changes, retry retains reserved UID/identityId and becomes active. */ async () => {
     if (!alpha) {
       await assert.rejects(identities.ensure(vmId, { projectId: 'default', directory: projectRoot + '/alpha', networkIsolation: 'private' }), /DIRECTORY_MIGRATION_REQUIRED/);
       alpha = await identities.inspect(vmId, 'default');
@@ -156,9 +168,12 @@ try {
     await assert.rejects(identities.ensure(vmId, { projectId: 'default', directory: alpha!.directory, networkIsolation: 'private' },
       { registryId: alpha!.registryId, identityId: randomUUID(), revision: alpha!.revision }), /IDENTITY_STALE/);
   });
-  await check('readonly ticket query makes no installation or authority writes and rejects missing images absent and old-build receipts', async () => {
+  await check('readonly ticket query makes no installation or authority writes and rejects missing images absent and old-build receipts', /** 以树摘要证明 runReadonly 不写状态、不安装缺失 controller，也拒绝陌生 runId/其他 build；恢复所有注入后关闭原票据并确认邻项目未变。
+ * Use tree digests to prove runReadonly does not write state/install missing controllers and rejects unknown runIds/foreign builds; restore injected changes, close the original receipt and verify the neighbor unchanged. */ async () => {
     const run = await identities.prepare(vmId, alpha!);
     const controller = source.directory + '/controller.py', parked = controller + '.owned-' + randomUUID();
+    /** 摘要身份状态树的路径/权限/所有者/inode/时间和内容，并列出暂存目录，用于拒绝操作无副作用比较。
+     * Hash identity-state paths/permissions/owners/inodes/timestamps/content and enumerate staging directories for denial-side-effect comparisons. */
     const snapshot = async () => await python(`import hashlib,json,os,stat\nh=hashlib.sha256()\nfor root in ['/var/lib/sakura/project-identities','/run/sakura-project-identities',${JSON.stringify(source.directory)}]:\n for p,dirs,files in os.walk(root):\n  for name in sorted(dirs+files):\n   path=p+'/'+name;i=os.lstat(path);h.update(json.dumps([path,i.st_mode,i.st_uid,i.st_gid,i.st_ino,i.st_size,i.st_mtime_ns],separators=(',',':')).encode())\n   if stat.S_ISREG(i.st_mode): h.update(open(path,'rb').read())\nprint(json.dumps({'hash':h.hexdigest(),'stages':sorted(n for n in os.listdir('/tmp') if n.startswith('.sakura-project-identity-'))}))`);
     const before = await snapshot();
     assert.deepEqual(await identities.runReadonly(vmId, alpha!, run.runId), run);
@@ -170,6 +185,8 @@ try {
       await assert.rejects(identities.runReadonly(vmId, alpha!, run.runId), /未返回可核对回执/);
       assert.equal(await python(`import os\nprint(os.path.exists(${JSON.stringify(controller)}))`), 'False');
     } finally { await python(`import os\nos.rename(${JSON.stringify(parked)},${JSON.stringify(controller)})`); }
+    /** 在正式控制器锁内修改本夹具运行的 build 字段，制造旧版本票据场景，finally 释放锁描述符。
+     * Modify the fixture run build under the production controller lock to create stale-build receipts, releasing the lock descriptor in finally. */
     const writeBuild = async (build: string) => await python(`import importlib.util,os\nspec=importlib.util.spec_from_file_location('owned',${JSON.stringify(controller)});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);m.sources();lock=m.initialize()\ntry:\n r=m.run_read(${JSON.stringify(run.runId)});r['build']=${JSON.stringify(build)};m.run_write(r)\nfinally: os.close(lock)`);
     try {
       await writeBuild('f'.repeat(64));
@@ -177,10 +194,13 @@ try {
     } finally { await writeBuild(run.build); await identities.stop(vmId, alpha!, run); }
     assert.deepEqual(await identities.inspect(vmId, betaId), beta);
   });
-  await check('migration latch blocks fresh inherited and retried runs until the full current identity is applied', async () => {
+  await check('migration latch blocks fresh inherited and retried runs until the full current identity is applied', /** 逐迁移 latch 阶段和非法形状/权限/身份验证 native prepare 与继承正文均拒绝；精确 applied 才放行，停止既有票据仍允许，finally 清理自有 latch。
+ * Test pending latch phases and invalid shape/permissions/identity against native prepare/inherited body rejection; allow only exact applied state, retain existing-ticket stop access and clean the owned latch in finally. */ async () => {
     const latchDirectory = '/var/lib/sakura/project-directory-migrations/default';
     const latch = { version: 1, projectId: 'default', planId: randomUUID(), sha256: 'a'.repeat(64), phase: 'applying', identity: alpha! };
     const saved = await identities.prepare(vmId, alpha!);
+    /** 在控制器初始化锁内发布本场景迁移 latch，绑定指定阶段/身份或显式正文，用于门控拒绝；finally 释放锁。
+     * Publish the scenario migration latch under the controller initialization lock with supplied phase/identity or explicit body for gate-denial checks, releasing the lock in finally. */
     const writeLatch = async (value: unknown) => await python(`import importlib.util,json,os\nspec=importlib.util.spec_from_file_location('owned',${JSON.stringify(source.directory + '/controller.py')});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);m.sources()\nlock=m.initialize()\ntry:\n m.make_directory(m.MIGRATIONS);m.make_directory(${JSON.stringify(latchDirectory)});m.json_write(${JSON.stringify(latchDirectory + '/latch.json')},json.loads(${JSON.stringify(JSON.stringify(value))}))\nfinally: os.close(lock)`);
     try {
       for (const phase of ['applying', 'failed', 'directory-applied']) {
@@ -215,9 +235,12 @@ try {
       await python(`import importlib.util,os\nspec=importlib.util.spec_from_file_location('owned',${JSON.stringify(source.directory + '/controller.py')});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);m.sources()\nlock=m.initialize()\ntry:\n p=${JSON.stringify(latchDirectory)};m.trusted(os.lstat(p),True,0o700);m.trusted(os.lstat(p+'/latch.json'),mode=0o600);os.unlink(p+'/latch.json');os.rmdir(p)\nfinally: os.close(lock)`);
     }
   });
-  await check('legal rebind retires only an exact applied migration gate while incomplete and stale gates continue to refuse execution', async () => {
+  await check('legal rebind retires only an exact applied migration gate while incomplete and stale gates continue to refuse execution', /** 验证 pending latch 下 rebind 可更新修订但不能放行正文或删除旧 latch；精确 applied 身份才能释放并迁移模式/目录，陈旧修订拒绝且邻项目保持原状态。
+ * Prove rebind under pending latches may advance revision but cannot admit bodies/delete old latches; only exact applied identity releases and changes mode/directory, rejecting stale revisions and preserving the neighbor. */ async () => {
     const latchDirectory = '/var/lib/sakura/project-directory-migrations/default', latchPath = latchDirectory + '/latch.json';
     const originalDirectory = alpha!.directory;
+    /** 在控制器初始化锁内发布本场景迁移 latch，绑定指定阶段/身份或显式正文，用于门控拒绝；finally 释放锁。
+     * Publish the scenario migration latch under the controller initialization lock with supplied phase/identity or explicit body for gate-denial checks, releasing the lock in finally. */
     const writeLatch = async (phase: string, identity = alpha!) => await python(`import importlib.util,json,os\nspec=importlib.util.spec_from_file_location('owned',${JSON.stringify(source.directory + '/controller.py')});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);m.sources();lock=m.initialize()\ntry:\n m.make_directory(m.MIGRATIONS);m.make_directory(${JSON.stringify(latchDirectory)});m.json_write(${JSON.stringify(latchPath)},json.loads(${JSON.stringify(JSON.stringify({ version: 1, projectId: 'default', planId: randomUUID(), sha256: 'b'.repeat(64), phase, identity }))}))\nfinally: os.close(lock)`);
     try {
       for (const phase of ['applying', 'failed', 'directory-applied']) {
@@ -260,7 +283,8 @@ try {
       await python(`import importlib.util,os\nspec=importlib.util.spec_from_file_location('owned',${JSON.stringify(source.directory + '/controller.py')});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);lock=m.initialize()\ntry:\n m.durable_unlink(${JSON.stringify(latchPath)});os.rmdir(${JSON.stringify(latchDirectory)})\nfinally: os.close(lock)`);
     }
   });
-  await check('upgrade refuses an active real legacy ticket strict stop remains reachable and the legacy setuid entry cannot reuse new tickets', async () => {
+  await check('upgrade refuses an active real legacy ticket strict stop remains reachable and the legacy setuid entry cannot reuse new tickets', /** 从可信权限、manifest 和内容摘要定位真实历史 argv launcher，活旧票据阻止升级入场；关旧运行后旧 launcher 不得接受新 build 票据，finally 精确清理。
+ * Locate a real historical argv launcher through trusted permissions/manifest/content digests; active old receipts block upgrade admission and the old launcher cannot accept a new-build receipt after closure, with exact cleanup in finally. */ async () => {
     const legacyBuild = await python(`import hashlib,json,os,re,stat\nroot='/usr/local/lib/sakura-project-identity';names=['protocol.h','launcher.c','controller.py'];found=[]\nfor build in sorted(os.listdir(root)):\n if not re.fullmatch('[a-f0-9]{64}',build): continue\n path=root+'/'+build;info=os.lstat(path)\n if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022: continue\n try: manifest=json.load(open(path+'/manifest.json'))\n except (OSError,ValueError): continue\n if set(manifest)!={'version','build','files'} or manifest['version']!=1 or manifest['build']!=build or len(manifest['files'])!=3: continue\n h=hashlib.sha256();valid=True;files={}\n for name,entry in zip(names,manifest['files']):\n  try: info=os.lstat(path+'/'+name);data=open(path+'/'+name,'rb').read()\n  except OSError: valid=False;break\n  if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_nlink!=1 or stat.S_IMODE(info.st_mode)!=0o600 or entry!={'name':name,'size':len(data),'sha256':hashlib.sha256(data).hexdigest()}: valid=False;break\n  h.update(name.encode());h.update(data);files[name]=data\n if not valid or h.hexdigest()!=build or b'"--env"' not in files['launcher.c'] or b'SK_PAYLOAD' in files['launcher.c']: continue\n info=os.lstat(path+'/launch')\n if stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_nlink==1 and stat.S_IMODE(info.st_mode)==0o4755: found.append(build)\nassert found,'owned fixture must retain an actual verified historical argv launcher'\nprint(found[0])`);
     assert.match(legacyBuild, /^[a-f0-9]{64}$/);
     verifiedLegacyBuild = legacyBuild;
@@ -294,7 +318,8 @@ try {
       console.log(JSON.stringify({ verifiedLegacyBuild: legacyBuild, oldTicketClosed: true, newBuild: source.manifest.build }));
     } finally { await identities.stop(vmId, alpha!, old); }
   });
-  await check('upgrade refuses a real closed legacy inherited ticket while its pinned upper cgroup remains populated', async () => {
+  await check('upgrade refuses a real closed legacy inherited ticket while its pinned upper cgroup remains populated', /** 历史 inherit-current 票据即使标 closed，上层域仍有脱离子进程也必须阻止升级；只在核实原设备/inode 后清空自有上层域，再验证新 build 入场。
+ * Require upgrade blocking when a historical inherit-current receipt is closed but its upper domain still contains detached descendants; empty the owned upper domain only after device/inode checks, then prove new-build admission. */ async () => {
     const upper = 'sakura-task-' + randomUUID(), runId = randomUUID(), pidPath = alpha!.directory + '/legacy-upper-' + randomUUID() + '.pid';
     // This historical compatibility fixture uses only its own non-secret test
     // program in the legacy argv protocol, never a product execution payload.
@@ -323,7 +348,8 @@ try {
     await guest('test ! -e ' + quote(alpha!.directory + '/closed-upgrade-must-not-run'));
     assert.deepEqual(await identities.inspect(vmId, betaId), beta);
   });
-  await check('TERM and KILL during reserved account creation preserve identity and never activate partial UID', async () => {
+  await check('TERM and KILL during reserved account creation preserve identity and never activate partial UID', /** 对账户创建真实工具注入 SIGTERM/SIGKILL，证明留下固定 intent 而非可执行身份；显式补目录归属后重试沿用原 UID/identityId，不发第二账户。
+ * Inject SIGTERM/SIGKILL during real account creation and prove fixed intent remains nonexecutable; after explicit directory ownership repair, retry reuses original UID/identityId instead of issuing another account. */ async () => {
     const helper = projectRoot + '/fixture.py';
     await machines!.writeGuestFile(vmId, helper, await readFile(resolve('native/project-identity/fixture.py'), 'utf8'));
     for (const signum of [15, 9]) {
@@ -358,7 +384,8 @@ try {
   const identityInfo = `import os,json\nstatus={}\nfor line in open('/proc/self/status'):\n key,_,value=line.partition(':')\n if key in ['CapInh','CapPrm','CapEff','CapBnd','CapAmb','NoNewPrivs']: status[key]=value.strip()\nprint(json.dumps({'uid':os.getresuid(),'gid':os.getresgid(),'groups':os.getgroups(),'cwd':os.getcwd(),'home':os.environ.get('HOME'),'net':os.readlink('/proc/self/ns/net'),'cgroup':open('/proc/self/cgroup').read().strip(),'status':status,'marker':os.environ.get('IDENTITY_MARKER')}))`;
   let first = await identities.prepare(vmId, alpha!);
   bootId = first.bootId;
-  await check('private UID caps supplementary groups namespace cwd and environment', async () => {
+  await check('private UID caps supplementary groups namespace cwd and environment', /** 核验项目 UID/GID、Home/cwd、网络/cgroup、空附属组、零能力及 NoNewPrivs；环境中的 shell 语法必须按字面保留，执行后旧票据不能再次启动正文。
+ * Verify project UID/GID, Home/cwd, network/cgroup, empty supplementary groups, zero capabilities and NoNewPrivs; shell syntax in environment stays literal and completed receipts cannot launch another body. */ async () => {
     const result = await identities.exec(vmId, alpha!, first, { command: '/usr/bin/python3 -c ' + quote(identityInfo),
       environment: { IDENTITY_MARKER: '$(touch /tmp/sakura-identity-root-escape)' } });
     assert.equal(result.code, 0, result.stderr);
@@ -375,7 +402,8 @@ try {
     const stale = await raw(alpha!, first, { command: 'touch should-not-exist' });
     assert.equal(stale.code, 126); assert.match(stale.stderr, /RUN_CLOSED_OR_INVALID/);
   });
-  await check('protected script and environment remain usable by the same UID and hidden from the other project UID', async () => {
+  await check('protected script and environment remain usable by the same UID and hidden from the other project UID', /** 真实运行保护正文并分别以本项目/邻 UID 观察 argv、环境与密封只读 memfd 权限；邻 UID 不可读，finally 取消并证明域关闭，错误文本不得含正文/密钥。
+ * Run protected body and inspect argv/environment/sealed read-only memfd as own/neighbor UID; deny neighbor reads, cancel in finally and prove domain closure with body/secret-free error text. */ async () => {
     const run = await identities.prepare(vmId, alpha!), abort = new AbortController();
     const marker = 'OWNED_BODY_' + randomUUID(), secret = 'OWNED_ENV_' + randomUUID();
     const pidPath = alpha!.directory + '/payload-' + randomUUID() + '.pid';
@@ -395,6 +423,8 @@ try {
         await delay(100);
       }
       assert.ok(pid > 1, 'payload did not reach the protected script');
+      /** 通过分离 stdin 传入秘密/正文标记，观察指定 UID/GID 与原 PID，要求执行成功后解析凭据证据。
+       * Pass secret/body markers through separate stdin to observe specified UID/GID/original PID, require success and parse credential evidence. */
       const inspect = async (uid: number, gid: number) => {
         const result = await machines!.execInput(vmId, `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /usr/bin/python3 -I -S ${quote(payloadFixture)} inspect ${uid} ${gid} ${pid}`,
           Buffer.from(JSON.stringify([marker, secret])));
@@ -415,12 +445,16 @@ try {
     assert.equal(status.run.phase, 'closed'); assert.equal(status.populated, false);
     assert.deepEqual(await identities.inspect(vmId, betaId), beta);
   });
-  await check('native payload rejects malformed framing digest NUL UTF8 duplicate environment and legacy argv before any script executes', async () => {
+  await check('native payload rejects malformed framing digest NUL UTF8 duplicate environment and legacy argv before any script executes', /** 逐个构造帧头、预算、长度、UTF-8、重复环境、尾部及摘要故障，保持测试摘要策略可区分错误来源；所有错误须在正文标记前拒绝，旧 argv 环境入口也拒绝。
+ * Construct header/budget/length/UTF-8/duplicate-environment/trailing/digest faults with controlled digest handling to distinguish causes; all must reject before body markers, including legacy argv-environment entry. */ async () => {
     const file = alpha!.directory + '/invalid-payload-must-not-run';
     const run = await identities.prepare(vmId, alpha!);
     const plan = identities.input(alpha!, run, { command: 'touch ' + quote(file), environment: { TOKEN: 'utf8-文本' } });
     const malformed: Array<[Buffer, RegExp, boolean?]> = [];
-    const change = (modify: (bytes: Buffer) => void, expected: RegExp) => { const bytes = Buffer.from(plan.input); modify(bytes); malformed.push([bytes, expected]); };
+    /** 复制合法帧后应用指定字节变异，并记录预期错误模式，保留原帧供其他负例。
+     * Copy a valid frame/apply the requested byte mutation and retain its expected error pattern, preserving the original for other negative cases. */
+    const change = (modify: /** 原地修改新复制的 Buffer 以构造单项非法帧；调用方保留原有效帧，并将预期拒绝码与修改副本成对登记。
+ * Mutate a freshly copied Buffer in place to construct one invalid frame; the caller retains the valid original and records expected refusal codes with each mutated copy. */ (bytes: Buffer) => void, expected: RegExp) => { const bytes = Buffer.from(plan.input); modify(bytes); malformed.push([bytes, expected]); };
     change(bytes => { bytes[0] ^= 1; }, /PAYLOAD_HEADER/);
     change(bytes => bytes.writeUInt32LE(1, 12), /PAYLOAD_HEADER/);
     change(bytes => bytes.writeUInt32LE(129, 20), /PAYLOAD_BOUND/);
@@ -447,7 +481,8 @@ try {
       await guest('test ! -e ' + quote(file));
     } finally { await identities.stop(vmId, alpha!, run); }
   });
-  await check('UTF8 exact text boundary works and missing EOF overlimit or cancelled pending input publishes no script', async () => {
+  await check('UTF8 exact text boundary works and missing EOF overlimit or cancelled pending input publishes no script', /** 先验证 UTF-8 正文边界可执行，再通过无 EOF、额外字节和待读取消模拟流边界；要求有界超时/拒绝、无正文标记且每次原运行清空。
+ * First prove the UTF-8 body boundary executes, then model no-EOF, extra-byte and pending-read cancellation; require bounded timeout/refusal, absent body markers and original-run cleanup each time. */ async () => {
     const exact = '#' + 'é'.repeat(32766) + '\n:';
     assert.equal(Buffer.byteLength(exact), 65535);
     const complete = await identities.prepare(vmId, alpha!);
@@ -474,10 +509,13 @@ try {
       await guest('test ! -e ' + quote(path));
     }
   });
-  await check('real UID mapped setuid entry and foreign UID ticket rejection', async () => {
+  await check('real UID mapped setuid entry and foreign UID ticket rejection', /** 以 self 入口运行本项目和邻项目凭据，只有本 UID/GID 可使用原 run 票据，邻身份应 RUN_IDENTITY；finally 关闭票据。
+ * Exercise self entry with own/neighbor credentials; only original UID/GID may use the run receipt while the neighbor gets RUN_IDENTITY, then close it in finally. */ async () => {
     const run = await identities.prepare(vmId, alpha!);
     try {
       const plan = identities.selfInput(run, { command: '/usr/bin/python3 -c ' + quote(identityInfo) });
+      /** 构造实际 UID/GID 的自检启动命令，原命令单独 base64 参数传递，供身份不符的拒绝路径验证。
+       * Build a real-UID/GID self-check entry with the original command as a separate base64 argument for identity-mismatch denial tests. */
       const entry = (uid: number, gid: number) => `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /usr/bin/python3 -I -S ${quote(payloadFixture)} self ${uid} ${gid} ${quote(Buffer.from(plan.command).toString('base64'))}`;
       const reply = await machines!.execInput(vmId, entry(alpha!.uid, alpha!.gid), plan.input);
       assert.equal(reply.code, 0, reply.stderr);
@@ -488,7 +526,8 @@ try {
       assert.equal(JSON.parse(foreign.stdout).code, 126); assert.match(JSON.parse(foreign.stdout).stderr, /RUN_IDENTITY/);
     } finally { await identities.stop(vmId, alpha!, run); }
   });
-  await check('a replaced account home or supplementary group rejects without changing the neighbor', async () => {
+  await check('a replaced account home or supplementary group rejects without changing the neighbor', /** 暂改自有账户 Home 和附属组，分别要求 ACCOUNT_REPLACED 与 SUPPLEMENTARY_GROUP_CHANGED；finally 恢复账户并关票据，邻账户始终不变。
+ * Temporarily alter the owned account’s Home/supplementary groups, requiring ACCOUNT_REPLACED and SUPPLEMENTARY_GROUP_CHANGED; restore/close in finally and preserve the neighbor throughout. */ async () => {
     const run = await identities.prepare(vmId, alpha!);
     const neighbor = await identities.inspect(vmId, betaId);
     await guest(`/usr/sbin/usermod -d ${quote(beta!.home)} ${alpha!.account}`);
@@ -508,7 +547,8 @@ try {
     }
     assert.deepEqual(await identities.inspect(vmId, betaId), neighbor);
   });
-  await check('UID index absence cannot authorize an active binding', async () => {
+  await check('UID index absence cannot authorize an active binding', /** 移走原 UID 索引后 launcher 必须拒绝缺失记录；ensure 修复索引沿用原 UID/identityId，finally 删除自有备份并关闭原票据。
+ * Remove the original UID index and require launcher refusal; ensure repairs it with original UID/identityId, then remove the owned backup and close the receipt in finally. */ async () => {
     const path = '/var/lib/sakura/project-identities/uids/' + alpha!.uid + '.bin';
     const run = await identities.prepare(vmId, alpha!);
     await python(`import os\nos.rename(${JSON.stringify(path)},${JSON.stringify(path + '.fixture-backup')})`);
@@ -522,7 +562,8 @@ try {
       await identities.stop(vmId, alpha!, run);
     }
   });
-  await check('directory symlink and inode substitution reject before command', async () => {
+  await check('directory symlink and inode substitution reject before command', /** 将自有项目目录先替为 symlink 再替为同名新目录，分别拒绝迁移缺失和 inode 替换；finally 恢复原目录，不能按路径名信任替代对象。
+ * Replace the owned project directory first with a symlink, then a same-name new directory, requiring migration/inode-replacement refusal; restore the original in finally instead of trusting a pathname. */ async () => {
     const run = await identities.prepare(vmId, alpha!);
     const path = alpha!.directory, old = path + '-original';
     await python(`import os\nos.rename(${JSON.stringify(path)},${JSON.stringify(old)})\nos.symlink(${JSON.stringify(old)},${JSON.stringify(path)})`);
@@ -537,8 +578,11 @@ try {
       await identities.stop(vmId, alpha!, run);
     }
   });
+  /** 生成双 fork/setsid 且关闭标准流的自有后代，发布 PID 后持续存活，验证完整 cgroup 清理不会漏掉脱离会话进程。
+   * Generate owned double-fork/setsid descendants closing standard streams, publishing PID then surviving to verify full-cgroup cleanup covers detached sessions. */
   const detached = (file: string) => `import os,time\nif os.fork(): os._exit(0)\nos.setsid()\nif os.fork(): os._exit(0)\nopen(${JSON.stringify(file)},'w').write(str(os.getpid()))\nfor fd in [0,1,2]:\n try: os.close(fd)\n except OSError: pass\ntime.sleep(300)`;
-  await check('independent cancellation contains detached descendants and preserves neighbor', async () => {
+  await check('independent cancellation contains detached descendants and preserves neighbor', /** 两个项目各创建脱离会话子进程，停止 alpha 须清空其固定 run cgroup 且 beta 原 run 仍有人口；finally 精确停止两者，验证这两个运行域在 SSH 通道之外独立存在。
+ * Create detached descendants in two projects; stopping alpha empties its pinned run cgroup while beta’s original run remains populated, then stop both exactly in finally to verify these two run domains remain independent beyond SSH-channel lifetime. */ async () => {
     const a = await identities.prepare(vmId, alpha!), b = await identities.prepare(vmId, beta!);
     try {
       assert.equal((await raw(alpha!, a, { command: '/usr/bin/python3 -c ' + quote(detached(alpha!.directory + '/detached.pid')) })).code, 0);
@@ -551,7 +595,8 @@ try {
       assert.equal((await identities.status(vmId, beta!, b)).populated, true);
     } finally { await identities.stop(vmId, alpha!, a); await identities.stop(vmId, beta!, b); }
   });
-  await check('replaced cgroup is rejected without killing its new occupant', async () => {
+  await check('replaced cgroup is rejected without killing its new occupant', /** 替换原 cgroup 后放入自有无关进程，launcher/stop 必须 CGROUP_REPLACED 且替代进程仍活；finally 只按替代 inode 清理该夹具。
+ * Replace the original cgroup with an owned unrelated process; launcher/stop must return CGROUP_REPLACED while the replacement lives, then clean only the verified replacement inode in finally. */ async () => {
     const run = await identities.prepare(vmId, alpha!);
     const result = JSON.parse(await python(`import os,subprocess,json\np='/sys/fs/cgroup/'+${JSON.stringify(run.cgroupName)}\nos.rmdir(p); os.mkdir(p)\nfd=os.open(p,os.O_RDONLY|os.O_DIRECTORY); inode=os.fstat(fd).st_ino\ndef enter():\n with open(p+'/cgroup.procs','w') as f: f.write(str(os.getpid()))\nchild=subprocess.Popen(['/bin/sleep','300'],preexec_fn=enter,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,stdin=subprocess.DEVNULL)\nprint(json.dumps({'pid':child.pid,'inode':str(inode)})); os.close(fd)`));
     assert.notEqual(result.inode, run.cgroupInode);
@@ -564,7 +609,8 @@ try {
       await python(`import os,time\np='/sys/fs/cgroup/'+${JSON.stringify(run.cgroupName)}\nassert str(os.stat(p).st_ino)==${JSON.stringify(result.inode)}\nwith open(p+'/cgroup.kill','w') as f: f.write('1')\nfor _ in range(250):\n try: os.rmdir(p); break\n except OSError: time.sleep(.02)\nelse: raise RuntimeError('owned replacement did not clear')`);
     }
   });
-  await check('inherit-current closes root authority FDs preserves the upper cgroup and upper stop contains descendants', async () => {
+  await check('inherit-current closes root authority FDs preserves the upper cgroup and upper stop contains descendants', /** 核验继承票据记录原上层 cgroup、三个权威描述符不泄漏；关闭身份票据应保留仍运行的上层域，其生命周期由拥有上层域的夹具单独清理。
+ * Verify inherited receipts bind the original upper cgroup and leak none of three authority descriptors; identity-ticket closure preserves the populated upper domain for separate cleanup by its owner. */ async () => {
     const upper = 'sakura-task-' + randomUUID(), runId = randomUUID();
     const plan = await identities.inheritedInput(alpha!, { command: '/usr/bin/python3 -c ' + quote(detached(alpha!.directory + '/inherited.pid')) }, { runId });
     const wrapped = await machines!.execInput(vmId, `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /usr/bin/python3 -I -S ${quote(payloadFixture)} inherit ${upper} ${quote(Buffer.from(plan.command).toString('base64'))} ${quote(alpha!.directory + '/inherited.pid')}`, plan.input);
@@ -579,7 +625,8 @@ try {
       'closing an inherited identity ticket must preserve its upper domain');
     await python(`import os,time\np='/sys/fs/cgroup/'+${JSON.stringify(upper)}\nwith open(p+'/cgroup.kill','w') as f: f.write('1')\nfor _ in range(250):\n try: os.rmdir(p); break\n except OSError: time.sleep(.02)\nelse: raise RuntimeError('owned upper did not clear')`);
   });
-  await check('same boot network replacement refuses new and old tickets; explicit rebind advances revision', async () => {
+  await check('same boot network replacement refuses new and old tickets; explicit rebind advances revision', /** 替换私有 netns 后拒绝原票据与 prepare，正式 rebind 保留账户但增修订并接纳新网络；旧身份对象随后必须 IDENTITY_STALE。
+ * Replace private netns and reject old receipts/prepare; formal rebind retains the account, advances revision and accepts the new network, after which old identity objects must be IDENTITY_STALE. */ async () => {
     const run = await identities.prepare(vmId, alpha!);
     await guest('ip netns del sk-default; ip netns add sk-default; ip -n sk-default link set lo up');
     try {
@@ -594,7 +641,8 @@ try {
     assert.notEqual(first.networkInode, run.networkInode); await identities.stop(vmId, alpha, first);
     await assert.rejects(identities.prepare(vmId, old), /IDENTITY_STALE/);
   });
-  await check('network release intent freezes existing tickets and new payloads while cleanup and neighboring project remain available', async () => {
+  await check('network release intent freezes existing tickets and new payloads while cleanup and neighboring project remain available', /** 验证网络释放租约按 bootId/releaseId 固定原网络且阻止所有新入场，仍有原运行时不能删除；释放可幂等重试但旧租约不得删除新 generation，邻项目仍可执行。
+ * Prove network-release leases bind original bootId/releaseId/network and block all new admission, refusing deletion while original runs remain; retries are idempotent but old leases cannot delete new generations, and neighbors remain executable. */ async () => {
     const run = await identities.prepare(vmId, alpha!), neighbor = await identities.prepare(vmId, beta!);
     const fixed = await identities.network(vmId, alpha!); assert.ok(fixed);
     await assert.rejects(identities.beginNetworkRelease(vmId, alpha!, { releaseId: randomUUID(), bootId: randomUUID() }), /BOOT_CHANGED/);
@@ -632,7 +680,8 @@ try {
     const working = await identities.exec(vmId, alpha!, restarted, { command: '/usr/bin/id -u' });
     assert.equal(working.code, 0); assert.equal(Number(working.stdout.trim()), alpha!.uid);
   });
-  await check('reserved intent account can release its strictly pinned namespace without directory permission migration', async () => {
+  await check('reserved intent account can release its strictly pinned namespace without directory permission migration', /** intent 阶段也可安全释放其已固定的私有网络，不完成账户或改目录元数据；释放后 intent 身份与原目录证据不变。
+ * Safely release a fixed private network even for intent identity without completing the account/changing directory metadata; retain original intent and directory evidence afterward. */ async () => {
     const id = randomUUID().replaceAll('-', '').slice(0, 16), path = projectRoot + '/intent-network-' + id;
     await python(`import os\nos.mkdir(${JSON.stringify(path)},0o700)`);
     await assert.rejects(identities.ensure(vmId, { projectId: id, directory: path, networkIsolation: 'private' }), /DIRECTORY_MIGRATION_REQUIRED/);
@@ -645,7 +694,8 @@ try {
     assert.equal(await python(`import json,os\ni=os.stat(${JSON.stringify(path)});print(json.dumps([i.st_uid,i.st_gid,i.st_mode]))`), before);
     assert.deepEqual(await identities.inspect(vmId, id), intent);
   });
-  await check('closed inherited ticket with populated pinned cgroup prevents namespace retirement until upper cleanup', async () => {
+  await check('closed inherited ticket with populated pinned cgroup prevents namespace retirement until upper cleanup', /** 关闭继承身份票据后若上层域仍有人口，网络释放仍须拒绝；夹具清空自有上层域后同租约才可释放，防止 closed 状态掩盖活进程。
+ * Require network-release refusal while an inherited upper domain remains populated even after identity-ticket closure; release the same lease only after the fixture empties its owned domain, so closed labels cannot hide live processes. */ async () => {
     const upper = 'sakura-task-' + randomUUID(), runId = randomUUID(), pidPath = alpha!.directory + '/release-upper-' + randomUUID() + '.pid';
     const plan = await identities.inheritedInput(alpha!, { command: '/usr/bin/python3 -c ' + quote(detached(pidPath)) }, { runId });
     const wrapped = await machines!.execInput(vmId, `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /usr/bin/python3 -I -S ${quote(payloadFixture)} inherit ${upper} ${quote(Buffer.from(plan.command).toString('base64'))} ${quote(pidPath)}`, plan.input);
@@ -663,7 +713,8 @@ try {
     await identities.releaseNetwork(vmId, alpha!, lease);
     await guest('ip netns add sk-default; ip -n sk-default link set lo up');
   });
-  await check('failed interrupted and killed namespace deletion keeps the fixed receipt recoverable before and after actual unlink', async () => {
+  await check('failed interrupted and killed namespace deletion keeps the fixed receipt recoverable before and after actual unlink', /** 在网络删除工具创建、入 cgroup、删除前/后注入失败或控制器死亡，要求 durable deleting guard 保留原租约并阻止 prepare；同租约恢复后才允许重建网络。
+ * Inject failure/controller death during network-tool creation, cgroup admission and before/after deletion; require a durable deleting guard retaining the original lease/blocking prepare until same-lease recovery permits network recreation. */ async () => {
     for (const mode of ['failure', 'cancel', 'kill-create', 'kill-cgroup', 'kill-before', 'kill-after']) {
       const lease = await identities.beginNetworkRelease(vmId, alpha!, { releaseId: randomUUID(), bootId }); assert.ok(lease);
       const body = `import importlib.util,json,os,signal\nspec=importlib.util.spec_from_file_location('owned',${JSON.stringify(source.directory + '/controller.py')});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);m.sources();lock=m.initialize()\nvalue=m.binding_read('default');request=json.loads(${JSON.stringify(JSON.stringify({ releaseId: lease.releaseId, network: lease.network }))});real=m.execute;write=m.json_write;mode=${JSON.stringify(mode)}\ndef injected(argv,*args,**kwargs):\n if argv[1:3]==['netns','delete']:\n  if mode=='failure': m.refuse('SYSTEM_TOOL_FAILED')\n  if mode=='cancel': os.kill(os.getpid(),signal.SIGTERM)\n  if mode=='kill-before': os.kill(os.getpid(),signal.SIGKILL)\n  result=real(argv,*args,**kwargs)\n  if mode=='kill-after': os.kill(os.getpid(),signal.SIGKILL)\n  return result\n return real(argv,*args,**kwargs)\ndef injected_write(path,record):\n if path.endswith('.tool.json') and mode=='kill-cgroup' and record['phase']=='running': os.kill(os.getpid(),signal.SIGKILL)\n write(path,record)\n if path.endswith('.tool.json') and mode=='kill-create' and record['phase']=='creating': os.kill(os.getpid(),signal.SIGKILL)\nsignal.signal(signal.SIGTERM,lambda _s,_f:m.refuse('CONTROL_CANCELLED'));m.execute=injected;m.json_write=injected_write\ntry: m.release_network(value,request,${JSON.stringify(bootId)},lock)\nexcept m.Refusal as e: print(e.code);raise SystemExit(1)\nfinally: os.close(lock)`;
@@ -678,7 +729,8 @@ try {
       await guest('ip netns add sk-default; ip -n sk-default link set lo up');
     }
   });
-  await check('a live pinned deletion child survives controller KILL without deleting a fresh namespace after recovery even when it closes the inherited lock', async () => {
+  await check('a live pinned deletion child survives controller KILL without deleting a fresh namespace after recovery even when it closes the inherited lock', /** 让真实删除子进程杀控制器后延迟工作，核实原工具域仍活并恢复时完整停止它；重建新网络后等旧延迟窗口过去，旧租约仍不得影响新 generation。
+ * Let a real delete child kill its controller and delay work, prove the original tool domain populated and stop it completely on recovery; after recreating the network outwait the old delay and prove old leases cannot affect the new generation. */ async () => {
     const lease = await identities.beginNetworkRelease(vmId, alpha!, { releaseId: randomUUID(), bootId }); assert.ok(lease);
     const marker = '/run/sakura-owned-network-delete-' + randomUUID() + '.json';
     const child = `import json,os,signal,time\nos.closerange(3,65536)\npid=os.getpid();created=open('/proc/'+str(pid)+'/stat').read().rsplit(')',1)[1].split()[19];cg=open('/proc/self/cgroup').read().strip()\nfd=os.open(${JSON.stringify(marker)},os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600);os.write(fd,json.dumps({'pid':pid,'created':created,'cgroup':cg}).encode());os.close(fd)\nos.kill(os.getppid(),signal.SIGKILL);time.sleep(5)\nos.execve('/usr/sbin/ip' if os.path.exists('/usr/sbin/ip') else '/sbin/ip',['ip','netns','delete','sk-default'],{'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','HOME':'/','LANG':'C'})`;
@@ -699,9 +751,12 @@ try {
       assert.deepEqual(await identities.network(vmId, alpha!), fresh);
     } finally { await python(`import os\nos.unlink(${JSON.stringify(marker)})`); }
   });
-  await check('release refuses unknown namespace replacement and keeps the later instance intact', async () => {
+  await check('release refuses unknown namespace replacement and keeps the later instance intact', /** 保存原 netns 描述符并测试同名替代网络不得被旧租约删除；再把同 inode 重挂，generation 仍应变化，旧释放回包不能覆盖新租约，finally 核实 PID+ticks 再收夹具。
+ * Hold the original netns descriptor and prove an old lease cannot delete same-name replacements; remounting the same inode still advances generation, and old release replies cannot override a new lease, with PID-plus-ticks cleanup in finally. */ async () => {
     const lease = await identities.beginNetworkRelease(vmId, alpha!, { releaseId: randomUUID(), bootId }); assert.ok(lease);
     const hold = JSON.parse(await python(`import json,os,subprocess,sys\nfd=os.open('/run/netns/sk-default',os.O_RDONLY);p=subprocess.Popen([sys.executable,'-I','-S','-c','import time;time.sleep(120)'],pass_fds=(fd,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);ticks=open('/proc/'+str(p.pid)+'/stat').read().rsplit(')',1)[1].split()[19];print(json.dumps({'pid':p.pid,'fd':fd,'created':ticks}));os.close(fd)`));
+    /** 核验持有进程出生 ticks、namespace FD 类型与 inode 后，将精确保留网络域重新绑定；排他创建目标并在 finally 回原域、释放描述符。
+     * Verify holder birth ticks/namespace-FD type/inode before rebinding that retained domain; create the target exclusively and restore the original namespace/release descriptors in finally. */
     const bindHeld = async () => await python(`import ctypes,fcntl,os,stat\npid=${hold.pid};fd=${hold.fd};ticks=open('/proc/'+str(pid)+'/stat').read().rsplit(')',1)[1].split()[19];assert ticks==${JSON.stringify(hold.created)}\nsource='/proc/'+str(pid)+'/fd/'+str(fd);descriptor=os.open(source,os.O_RDONLY);assert fcntl.ioctl(descriptor,0xb703)==0x40000000;assert str(os.fstat(descriptor).st_ino)==${JSON.stringify(lease.network.networkInode)}\ntarget='/run/netns/sk-default';file=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600);os.close(file);libc=ctypes.CDLL(None,use_errno=True);libc.mount.argtypes=(ctypes.c_char_p,ctypes.c_char_p,ctypes.c_char_p,ctypes.c_ulong,ctypes.c_void_p);libc.mount.restype=ctypes.c_int;libc.setns.argtypes=(ctypes.c_int,ctypes.c_int);libc.setns.restype=ctypes.c_int;original=os.open('/proc/self/ns/net',os.O_RDONLY);assert libc.setns(descriptor,0x40000000)==0,ctypes.get_errno()\ntry:\n result=libc.mount(b'/proc/self/ns/net',target.encode(),None,4096,None);assert result==0,ctypes.get_errno()\nfinally:\n assert libc.setns(original,0x40000000)==0,ctypes.get_errno();os.close(original);os.close(descriptor)`);
     try {
       await guest('ip netns delete sk-default; ip netns add sk-default; ip -n sk-default link set lo up');
@@ -727,7 +782,8 @@ try {
     } finally { await python(`import os,signal\npid=${hold.pid}\ntry: ticks=open('/proc/'+str(pid)+'/stat').read().rsplit(')',1)[1].split()[19]\nexcept FileNotFoundError: raise SystemExit(0)\nassert ticks==${JSON.stringify(hold.created)}\nos.kill(pid,signal.SIGTERM)`); }
     await guest('ip netns add sk-default; ip -n sk-default link set lo up');
   });
-  await check('binding and account persist across a real VM reboot; old boot tickets refuse', async () => {
+  await check('binding and account persist across a real VM reboot; old boot tickets refuse', /** 真实 VM 重启后旧 boot 释放请求和旧运行均拒绝，存在新网络时不得删除；原对象已不存在可记录退役，重复旧释放不得改变新运行网络。
+ * After real VM reboot reject old-boot release requests/old runs and never delete a new network; record retirement only when the old object is absent, with repeated old release leaving fresh-run networks unchanged. */ async () => {
     const prior = alpha!, oldRun = await identities.prepare(vmId, prior);
     await identities.stop(vmId, prior, oldRun);
     const oldLease = await identities.beginNetworkRelease(vmId, prior, { releaseId: randomUUID(), bootId: oldRun.bootId }); assert.ok(oldLease);
@@ -752,7 +808,8 @@ try {
     const result = await identities.exec(vmId, after!, run, { command: '/usr/bin/id -u' });
     assert.equal(result.code, 0, result.stderr); assert.equal(Number(result.stdout.trim()), after!.uid);
   });
-  await check('disk snapshot restore preserves the complete registry and rejects the newer revision', async () => {
+  await check('disk snapshot restore preserves the complete registry and rejects the newer revision', /** 停机快照记录原身份，再推进修订并恢复快照，验证账户/邻项目回到原值；快照之后的身份对象必须 stale，恢复身份能正常运行且 UID 不变。
+ * Snapshot original identity while stopped, advance revision and restore the snapshot to prove account/neighbor rollback; post-snapshot identity objects must be stale while restored identity executes with unchanged UID. */ async () => {
     const prior = (await identities.inspect(vmId, 'default'))!;
     await guest('/bin/sync');
     await machines!.stop(vmId, true); assert.equal(machines!.state(vmId), 'stopped');

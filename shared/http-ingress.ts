@@ -1,5 +1,8 @@
 /**
- * 模块职责：HTTP 入口、健康检查与客户端认证契约，校验域名、路径和路由动作。
+ * 模块职责（中文）：HTTP 入口、健康检查与客户端认证契约，校验域名、路径和路由动作。
+ * Module responsibility (English): Validating ingress routes, authentication and health-check configuration.
+ * 详细范围（中文）：公开入口包括 ingressClientAuthSchema, ingressInputSchema, ingressEntrySchema, ingressActionSchema, ingressHealthSchema, ingressViewSchema, IngressInput, IngressEntry, IngressAction, IngressHealth, IngressView, IngressClientAuth, ingressAlias；职责覆盖校验入口路由、认证与健康检查配置，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ingressClientAuthSchema, ingressInputSchema, ingressEntrySchema, ingressActionSchema, ingressHealthSchema, ingressViewSchema, IngressInput, IngressEntry, IngressAction, IngressHealth, IngressView, IngressClientAuth, ingressAlias. The scope covers Validating ingress routes, authentication and health-check configuration. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 
@@ -83,6 +86,12 @@ export type IngressHealth = z.infer<typeof ingressHealthSchema>;
 export type IngressView = z.infer<typeof ingressViewSchema>;
 export type IngressClientAuth = z.infer<typeof ingressClientAuthSchema>;
 
+/**
+ * 中文：移除入口 ID 中的连字符并转小写，生成固定 sakura.localhost 应用别名，供本地入口访问。
+ * English: Remove hyphens from the ingress ID, lowercase it and produce the fixed sakura.localhost application alias for local access.
+ * 中文：输入：id：目标资源标识
+ * English: Inputs: id: target resource identifier
+ */
 export function ingressAlias(id: string) {
   return `app-${id.replace(/-/g, '').toLowerCase()}.sakura.localhost`;
 }

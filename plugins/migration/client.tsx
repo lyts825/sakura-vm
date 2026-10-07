@@ -1,5 +1,8 @@
 /**
- * 模块职责：“数据目录迁移”插件的主机数据目录迁移预检、执行和结果面板，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“数据目录迁移”插件的主机数据目录迁移预检、执行和结果面板，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for host data-directory migration.
+ * 详细范围（中文）：公开入口包括 MigrationPanel；职责覆盖主机数据目录迁移的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include MigrationPanel. The scope covers UI interaction and state presentation for host data-directory migration. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useState } from 'react';
 import type { JobView } from '../../shared/contracts/jobs.ts';
@@ -8,6 +11,12 @@ import type { Request } from '../../src/feature-shared';
 import { Feedback, formatBytes, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
 
+/**
+ * 中文：呈现主机数据目录迁移的界面交互与状态呈现中的 MigrationPanel 界面，订阅 /migration，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the MigrationPanel surface for UI interaction and state presentation for host data-directory migration, subscribing to /migration. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ */
 export function MigrationPanel({ request }: { request: Request }) {
   const remote = useRemote<{
       source: string;
@@ -54,7 +63,7 @@ export function MigrationPanel({ request }: { request: Request }) {
         className="secondary compact"
         disabled={busy || !target.trim()}
         onClick={() =>
-          void action.run(async (signal) => {
+          void action.run(/** 中文：提交 POST /migration，完成主机数据目录迁移的界面交互与状态呈现的数据交互并更新plan 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /migration for UI interaction and state presentation for host data-directory migration and update plan state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
             setPlan(await request('/migration', 'POST', { action: 'preview', target }, signal));
           })
         }
@@ -73,7 +82,7 @@ export function MigrationPanel({ request }: { request: Request }) {
             className="primary compact"
             disabled={busy}
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：提交 POST /migration，完成主机数据目录迁移的界面交互与状态呈现的数据交互并更新plan 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /migration for UI interaction and state presentation for host data-directory migration and update plan state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 await request(
                   '/migration',
                   'POST',
@@ -110,7 +119,7 @@ export function MigrationPanel({ request }: { request: Request }) {
             className="text-button"
             disabled={action.busy}
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：提交 POST /migration，完成主机数据目录迁移的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /migration for UI interaction and state presentation for host data-directory migration. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 await request('/migration', 'POST', { action: 'cancel-activation' }, signal);
                 remote.reload();
               })

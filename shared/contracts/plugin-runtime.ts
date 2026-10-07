@@ -1,5 +1,8 @@
 /**
- * 模块职责：插件安装身份、运行代次、权限和贡献的公共快照类型，区分启用意图与实际生命周期阶段。
+ * 模块职责（中文）：插件安装身份、运行代次、权限和贡献的公共快照类型，区分启用意图与实际生命周期阶段。
+ * Module responsibility (English): plugin installation identities, permissions, activation generations and contributions.
+ * 详细范围（中文）：公开入口包括 PluginSource, PluginPhase, PluginContributionKind, PluginInstanceView；职责覆盖插件安装身份、权限、激活代次和贡献视图，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include PluginSource, PluginPhase, PluginContributionKind, PluginInstanceView. The scope covers plugin installation identities, permissions, activation generations and contributions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 export type PluginSource = 'official' | 'community' | 'system';
 export type PluginPhase = 'activating' | 'running' | 'draining' | 'inactive' | 'failed' | 'cleanup-pending' | 'skipped';

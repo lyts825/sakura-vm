@@ -1,4 +1,5 @@
 # 自有 Git HTTP 源夹具，以固定凭据提供仓库请求并保存认证和传输记录。
+# Serve owned Git repositories through a controlled smart-HTTP backend with authentication/redirect scenarios and sanitized evidence.
 """Disposable VM-only smart-HTTP Git server with separately supplied fixture token."""
 import json
 import os
@@ -17,6 +18,8 @@ environment = {'PATH': '/usr/bin:/bin', 'HOME': root, 'GIT_CONFIG_NOSYSTEM': '1'
                'LANG': 'C', 'LC_ALL': 'C'}
 
 
+# 在固定环境中调用系统 Git 并禁用 hooks，要求成功退出，返回规范文本输出。
+# Run system Git with fixed environment/hooks disabled, require success and return normalized text.
 def git(*args):
     result = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', *args], env=environment,
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
@@ -41,15 +44,23 @@ lock = threading.Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
+    # 关闭默认请求日志，认证票据只用于核对，不写入诊断输出。
+    # Disable default request logging so authentication tickets remain validation inputs only.
     def log_message(self, *args):
         pass
 
+    # 将 Git 智能 HTTP 查询交给统一认证/响应处理。
+    # Delegate Git smart-HTTP queries to common authentication/response handling.
     def do_GET(self):
         self.respond('GET')
 
+    # 将 Git 智能 HTTP 上传交给统一认证/响应处理。
+    # Delegate Git smart-HTTP uploads to common authentication/response handling.
     def do_POST(self):
         self.respond('POST')
 
+    # 记录方法/路径/授权布尔值，模拟固定重定向和认证拒绝，再转交自有 Git HTTP backend。
+    # Record method/path/auth boolean, model fixed redirects/refusals and delegate to the owned Git HTTP backend.
     def respond(self, method):
         parsed = urllib.parse.urlsplit(self.path)
         authorized = self.headers.get('Authorization') == 'Bearer ' + token

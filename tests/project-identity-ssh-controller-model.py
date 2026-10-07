@@ -1,3 +1,7 @@
+# 模块职责：项目 SSH 权威及传输模型，执行生产定义并模拟进程、账户、文件系统与描述符证据。
+# Module: Project SSH authority and transport models that execute production definitions with simulated process, account, filesystem and descriptor evidence.
+# 阅读方式：按初始化、具名辅助函数与测试情景阅读；便携模型与模拟接口不能证明真实 Linux 隔离。
+# Reading guide: Follow initialization, named helpers and cases; portable models and substituted interfaces do not attest real Linux isolation.
 # 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
 """Portable SSH authority/transport checks against production definitions.
 
@@ -35,6 +39,13 @@ definitions = ast.Module(body=[node for node in tree.body if isinstance(node, (a
 guard = ast.Module(body=[tree.body[-1]], type_ignores=[])
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: 无 / none。
+# 结果：返回分支计算值（`(ns, value, run, daemon, snapshot, raw, request, receipt, records)`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`(ns, value, run, daemon, snapshot, raw, request, receipt, records)`); its implementation and call sites define the actual type.
+# 状态影响 / State effects: `value['account']`, `value['home']`, `ns['read']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `dict`, `exec`, `compile`, `str`.
 def fixture():
     ns = dict(base64=base64, ctypes=ctypes, errno=errno, hashlib=hashlib, json=json, os=os, re=re,
               selectors=selectors, signal=signal, stat=stat, struct=struct, subprocess=subprocess,
@@ -61,6 +72,12 @@ def fixture():
     receipt = dict(version=1, run=copy.deepcopy(run), daemon=copy.deepcopy(daemon), snapshotSha256=digest)
     records = {ns['ssh_snapshot_path']('default'): raw,
                ns['ssh_receipt_path'](run_id): json.dumps(receipt).encode('utf-8')}
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: path, limit = 262144, missing = False。
+    # 结果：返回分支计算值（`None / data`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`None / data`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `ns['refuse']`, `len`.
     def read(path, limit=262144, missing=False):
         if path not in records:
             if missing:
@@ -74,6 +91,14 @@ def fixture():
     return ns, value, run, daemon, snapshot, raw, request, receipt, records
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: ns, call, expected = None。
+# 结果：返回分支计算值（`error.code`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`error.code`); its implementation and call sites define the actual type.
+# 失败 / Failure: `AssertionError('expected authority refusal')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `call`, `AssertionError`.
+# 检查边界 / Checked boundaries: `error.code == expected`.
 def refuses(ns, call, expected=None):
     try:
         call()
@@ -87,6 +112,13 @@ def refuses(ns, call, expected=None):
 checks = []
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 协作入口 / Collaborators: `fixture`, `ns['ssh_snapshot_decode']`, `refuses`, `raw.replace`.
+# 检查边界 / Checked boundaries: `ns['ssh_snapshot_decode'](raw, value, run['runId'], request['snapshotSha256']) == snapshot`; `ns['ssh_environment'](reserved) > 0`.
 def snapshot_and_environment_bounds():
     ns, value, run, daemon, snapshot, raw, request, receipt, records = fixture()
     assert ns['ssh_snapshot_decode'](raw, value, run['runId'], request['snapshotSha256']) == snapshot
@@ -114,6 +146,14 @@ def snapshot_and_environment_bounds():
     refuses(ns, lambda: ns['ssh_request'](dict(request, command='root command')), 'REQUEST_SCHEMA')
 
 
+# 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+# English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `decoded[key]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `ns['ssh_payload']`, `struct.unpack`, `len`.
+# 检查边界 / Checked boundaries: `(magic, version, flags, reserved) == (b'SKIDP001', 1, 2, 0)`; `body_size == len(payload) - 32`.
 def command_frame_and_identity_environment():
     ns, value, run, daemon, snapshot, raw, request, receipt, records = fixture()
     command = "printf '%s\\n' '客户端' ; printf 'binary input stays on fd0'"
@@ -150,6 +190,14 @@ def command_frame_and_identity_environment():
     refuses(ns, lambda: ns['ssh_payload'](value, {}, "'" * 20000, None), 'SSH_PAYLOAD_BOUND')
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['open']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `dict`, `ns['run_decode']`, `ns['run_bytes']`.
+# 检查边界 / Checked boundaries: `ns['run_decode'](run['runId'], ns['run_bytes'](ticket)) == ticket`; `ns['current_cgroup'](name) == name`.
 def service_cgroups_and_daemon_arguments():
     ns, value, run, daemon, snapshot, raw, request, receipt, records = fixture()
     for name in ('openrc.sakura-ssh-default', 'system.slice/sakura-ssh-default.service'):
@@ -175,6 +223,13 @@ def service_cgroups_and_daemon_arguments():
 
 
 class AuthorityFilesystem:
+    # 中文功能：初始化测试夹具实例并保存构造输入，供后续方法复用其状态。
+    # English: Initialize a test-fixture instance and retain constructor inputs for subsequent stateful methods.
+    # 输入 / Inputs: self, ns, run, daemon。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `self.after_read`, `self.os`, `self.nodes[ns['CGROUP'] + '/' + run['cgroupName']]['inode']`, `self.nodes['/proc/1001/ns/net']['inode']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `getattr`, `enumerate`, `types.SimpleNamespace`, `self.add`.
     def __init__(self, ns, run, daemon):
         self.nodes, self.fds, self.events, self.next_fd = {}, {}, [], 100
         self.after_read = None
@@ -201,11 +256,25 @@ class AuthorityFilesystem:
         ns['os'], ns['fcntl'] = self.os, types.SimpleNamespace(ioctl=lambda fd, command: 0x40000000)
         ns['cgroup_available'] = lambda *_args: None
 
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self, path, data = b'', directory = False, mode = None。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `self.nodes[path]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `dict`, `bytes`, `len`.
     def add(self, path, data=b'', directory=False, mode=None):
         self.nodes[path] = dict(data=bytes(data), mode=(stat.S_IFDIR if directory else stat.S_IFREG) |
             (mode if mode is not None else (0o700 if directory else 0o600)),
             uid=0, gid=0, inode=400 + len(self.nodes), links=1)
 
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: self, path, parent = None。
+    # 结果：返回分支计算值（`path / self.fds[parent][0]`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`path / self.fds[parent][0]`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `path.startswith`, `self.fds[parent][0].rstrip`.
+    # 检查边界 / Checked boundaries: `parent in self.fds and '/' not in path`.
     def path(self, path, parent=None):
         if path.startswith('/'):
             return path
@@ -214,6 +283,14 @@ class AuthorityFilesystem:
             return self.fds[parent][0]
         return self.fds[parent][0].rstrip('/') + '/' + path
 
+    # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+    # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+    # 输入 / Inputs: self, path, flags, mode = None, dir_fd = None。
+    # 结果：返回分支计算值（`self.next_fd`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.next_fd`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `self.next_fd`, `self.fds[self.next_fd]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 失败 / Failure: `FileExistsError(path)`; `FileNotFoundError(path)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `self.path`, `FileExistsError`, `self.add`, `FileNotFoundError`.
     def open(self, path, flags, mode=None, dir_fd=None):
         path = self.path(path, dir_fd)
         if flags & self.os.O_CREAT:
@@ -233,16 +310,42 @@ class AuthorityFilesystem:
         self.events.append(('open', path))
         return self.next_fd
 
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: self, fd。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 检查边界 / Checked boundaries: `fd in self.fds`.
     def close(self, fd):
         assert fd in self.fds, ('unknown descriptor', fd)
         del self.fds[fd]
 
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: self, node。
+    # 结果：返回分支计算值（`types.SimpleNamespace(st_dev=11, st_ino=node['inode'], st_mode=node['mode'], st_uid=node['uid'], st_…`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`types.SimpleNamespace(st_dev=11, st_ino=node['inode'], st_mode=node['mode'], st_uid=node['uid'], st_…`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `types.SimpleNamespace`, `len`.
     def info(self, node):
         return types.SimpleNamespace(st_dev=11, st_ino=node['inode'], st_mode=node['mode'],
             st_uid=node['uid'], st_gid=node['gid'], st_nlink=node['links'], st_size=len(node['data']))
 
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: self, fd。
+    # 结果：返回分支计算值（`self.info(self.fds[fd][2])`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.info(self.fds[fd][2])`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `self.info`.
     def fstat(self, fd): return self.info(self.fds[fd][2])
 
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: self, path, dir_fd = None, follow_symlinks = False。
+    # 结果：返回分支计算值（`self.info(self.nodes[path])`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.info(self.nodes[path])`); its implementation and call sites define the actual type.
+    # 失败 / Failure: `FileNotFoundError(path)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `self.path`, `FileNotFoundError`, `self.info`.
+    # 检查边界 / Checked boundaries: `not follow_symlinks`.
     def stat(self, path, dir_fd=None, follow_symlinks=False):
         assert not follow_symlinks
         path = self.path(path, dir_fd)
@@ -250,6 +353,13 @@ class AuthorityFilesystem:
             raise FileNotFoundError(path)
         return self.info(self.nodes[path])
 
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: self, fd, count。
+    # 结果：返回分支计算值（`data`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`data`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `self.fds[fd][1]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `len`, `self.after_read`.
     def read(self, fd, count):
         path, position, node = self.fds[fd]
         data = node['data'][position:position + count]
@@ -258,31 +368,74 @@ class AuthorityFilesystem:
             self.after_read(path)
         return data
 
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, path, dir_fd = None。
+    # 结果：返回分支计算值（`self.exe`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`self.exe`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `self.path`.
+    # 检查边界 / Checked boundaries: `self.path(path, dir_fd) == '/proc/1001/exe'`.
     def readlink(self, path, dir_fd=None):
         assert self.path(path, dir_fd) == '/proc/1001/exe'
         return self.exe
 
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, fd, data。
+    # 结果：返回分支计算值（`len(data)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`len(data)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `node['data']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `bytes`, `len`.
     def write(self, fd, data):
         node = self.fds[fd][2]
         node['data'] += bytes(data)
         return len(data)
 
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, fd, mode。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `node['mode']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `stat.S_IFMT`.
     def fchmod(self, fd, mode):
         node = self.fds[fd][2]
         node['mode'] = stat.S_IFMT(node['mode']) | mode
 
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, old, new, src_dir_fd = None, dst_dir_fd = None。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `self.nodes[new_path]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `stat.S_ISDIR`, `self.fstat`, `self.path`, `self.nodes.pop`.
+    # 检查边界 / Checked boundaries: `src_dir_fd == dst_dir_fd and stat.S_ISDIR(self.fstat(src_dir_fd).st_mode)`.
     def replace(self, old, new, src_dir_fd=None, dst_dir_fd=None):
         assert src_dir_fd == dst_dir_fd and stat.S_ISDIR(self.fstat(src_dir_fd).st_mode)
         old_path, new_path = self.path(old, src_dir_fd), self.path(new, dst_dir_fd)
         self.nodes[new_path] = self.nodes.pop(old_path)
         self.events.append(('atomic-replace', new_path))
 
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: self, path, dir_fd = None。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 失败 / Failure: `FileNotFoundError(path)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `self.path`, `FileNotFoundError`.
     def unlink(self, path, dir_fd=None):
         path = self.path(path, dir_fd)
         if path not in self.nodes:
             raise FileNotFoundError(path)
         del self.nodes[path]
 
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, path, mode, dir_fd = None。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 失败 / Failure: `FileExistsError(path)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `self.path`, `FileExistsError`, `self.add`.
     def mkdir(self, path, mode, dir_fd=None):
         path = self.path(path, dir_fd)
         if path in self.nodes:
@@ -290,7 +443,23 @@ class AuthorityFilesystem:
         self.add(path, directory=True, mode=mode)
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `fs.after_read`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `setup`, `ns['ssh_daemon_check']`, `modification`, `refuses`.
+# 检查边界 / Checked boundaries: `ns['ssh_daemon_check'](value, daemon, run['bootId'], run).st_ino == 300`; `not fs.fds`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def daemon_process_and_protected_atomic_paths():
+    # 中文功能：准备本用例的独立目录与状态，使用例之间的输入和失败注入相互隔离。
+    # English: Prepare a private directory and state for this case so inputs and injected failures are isolated between cases.
+    # 输入 / Inputs: 无 / none。
+    # 结果：返回分支计算值（`(ns, value, run, daemon, raw, fs)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`(ns, value, run, daemon, raw, fs)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `fixture`, `AuthorityFilesystem`.
     def setup():
         ns, value, run, daemon, snapshot, raw, request, receipt, records = fixture()
         fs = AuthorityFilesystem(ns, run, daemon)
@@ -309,6 +478,13 @@ def daemon_process_and_protected_atomic_paths():
         refuses(ns, lambda: ns['ssh_daemon_check'](value, daemon, run['bootId'], run), expected)
         assert not fs.fds
     ns, value, run, daemon, raw, fs = setup()
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: path。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `node['data']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `path.endswith`, `node['data'].replace`.
     def reuse(path):
         if path.endswith('/cmdline'):
             node = fs.nodes['/proc/1001/stat']
@@ -341,6 +517,17 @@ def daemon_process_and_protected_atomic_paths():
     assert path not in fs.nodes and not fs.fds
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `invalid['run']['revision']`, `records[ns['ssh_receipt_path'](run['runId'])]`, `ns['ssh_daemon_check']`, `ns['ssh_atomic']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('modeled interruption did not happen')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `fixture`, `ns['ssh_receipt_read']`, `refuses`, `dict`.
+# 检查边界 / Checked boundaries: `ns['ssh_receipt_read'](run['runId'], run) == receipt`; `ns['ssh_receipt_read'](run['runId'], dict(run, phase='closed'), closed=True) == receipt`.
+# 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+# Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
 def receipts_and_interrupted_prepare():
     ns, value, run, daemon, snapshot, raw, request, receipt, records = fixture()
     assert ns['ssh_receipt_read'](run['runId'], run) == receipt
@@ -353,6 +540,13 @@ def receipts_and_interrupted_prepare():
     del records[ns['ssh_receipt_path'](run['runId'])]
     events, interrupt = [], [True]
     info = types.SimpleNamespace(st_dev=11, st_ino=300)
+    # 中文功能：核对模型证据或测试条件，按实现返回判定或拒绝不符合要求的输入。
+    # English: Check model evidence or test conditions, returning a decision or rejecting inputs as specified by the implementation.
+    # 输入 / Inputs: _value, actual, boot, ticket = None。
+    # 结果：返回分支计算值（`info`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`info`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `events.append`.
+    # 检查边界 / Checked boundaries: `actual == daemon and boot == run['bootId']`; `ticket == run`.
     def daemon_check(_value, actual, boot, ticket=None):
         assert actual == daemon and boot == run['bootId']
         if ticket is not None:
@@ -360,11 +554,28 @@ def receipts_and_interrupted_prepare():
         events.append('daemon-proof')
         return info
     ns['ssh_daemon_check'] = daemon_check
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: path, data。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `records[path]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `ns['ssh_receipt_path']`, `events.append`, `bytes`.
+    # 检查边界 / Checked boundaries: `path == ns['ssh_receipt_path'](run['runId'])`.
     def atomic(path, data):
         assert path == ns['ssh_receipt_path'](run['runId'])
         events.append('receipt-publish')
         records[path] = bytes(data)
     ns['ssh_atomic'] = atomic
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: _value, _request, boot, build, inherit, name, scope_info, publish。
+    # 结果：返回分支计算值（`copy.deepcopy(run)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`copy.deepcopy(run)`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `interrupt[0]`, `records[ns['run_path'](run['runId'])]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 失败 / Failure: `OSError('modeled ticket publication failure')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `publish`, `copy.deepcopy`, `OSError`, `events.append`.
+    # 检查边界 / Checked boundaries: `inherit and name == daemon['cgroupName'] and (scope_info is info)`; `'receipt-publish' in events`.
     def prepare(_value, _request, boot, build, inherit, name, scope_info, publish):
         assert inherit and name == daemon['cgroupName'] and scope_info is info
         publish(copy.deepcopy(run))
@@ -397,6 +608,14 @@ def receipts_and_interrupted_prepare():
     refuses(ns, lambda: ns['ssh_prepare'](value, options, run['bootId'], run['build']), 'SSH_RECEIPT_ABSENT')
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['fcntl']`, `ns['os']`, `ns['selectors']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `bytearray`, `types.SimpleNamespace`, `refuses`.
+# 检查边界 / Checked boundaries: `ns['ssh_snapshot_input']() == content`; `flag_events[-1] == (0, 4, (0,))`.
 def snapshot_stdin_deadline_and_eof():
     for content, eof, expected in ((b'{}', True, None), (b'x' * 131073, True, 'SSH_SNAPSHOT_BOUND'),
                                     (b'{}', False, 'SSH_SNAPSHOT_TIMEOUT')):
@@ -404,6 +623,13 @@ def snapshot_stdin_deadline_and_eof():
         pending, flag_events = bytearray(content), []
         ns['fcntl'] = types.SimpleNamespace(F_GETFL=3, F_SETFL=4,
             fcntl=lambda fd, op, *args: flag_events.append((fd, op, args)) or 0)
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: fd, count。
+        # 结果：返回分支计算值（`data`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`data`); its implementation and call sites define the actual type.
+        # 协作入口 / Collaborators: `bytes`.
+        # 检查边界 / Checked boundaries: `fd == 0 and count > 0`.
         def read(fd, count):
             assert fd == 0 and count > 0
             data = bytes(pending[:count])
@@ -411,9 +637,31 @@ def snapshot_stdin_deadline_and_eof():
             return data
         ns['os'] = types.SimpleNamespace(O_ACCMODE=3, O_WRONLY=1, O_NONBLOCK=2048, read=read)
         class Selector:
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: self。
+            # 结果：返回分支计算值（`self`），实际类型由实现及使用处约定。
+            # Result: Return the branch-computed value (`self`); its implementation and call sites define the actual type.
             def __enter__(self): return self
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: self, *_。
+            # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+            # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
             def __exit__(self, *_): pass
+            # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+            # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+            # 输入 / Inputs: self, fd, event。
+            # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+            # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+            # 检查边界 / Checked boundaries: `fd == 0`.
             def register(self, fd, event): assert fd == 0
+            # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+            # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+            # 输入 / Inputs: self, remaining。
+            # 结果：返回分支计算值（`[(None, None)] if pending or eof else []`），实际类型由实现及使用处约定。
+            # Result: Return the branch-computed value (`[(None, None)] if pending or eof else []`); its implementation and call sites define the actual type.
+            # 检查边界 / Checked boundaries: `0 < remaining <= 8`.
             def select(self, remaining):
                 assert 0 < remaining <= 8
                 return [(None, None)] if pending or eof else []
@@ -425,6 +673,15 @@ def snapshot_stdin_deadline_and_eof():
         assert flag_events[-1] == (0, 4, (0,)), 'input flags must be restored on every exit'
 
 
+# 中文功能：构造本组边界验证所需的模型对象或输入材料。
+# English: Construct model objects or input material required by this boundary-verification group.
+# 输入 / Inputs: action = 'ssh-session', original = "printf 'client command marker'", term = 'screen'。
+# 结果：返回分支计算值（`(ns, value, run, daemon, records, events, written)`），实际类型由实现及使用处约定。
+# Result: Return the branch-computed value (`(ns, value, run, daemon, records, events, written)`); its implementation and call sites define the actual type.
+# 状态影响 / State effects: `request['action']`, `stdin.close`, `ns['subprocess']`, `ns['os']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `fixture`, `request.pop`, `set`, `bytearray`.
+# 设计思路：记录元数据权威 FD、载荷管道、客户机 FD3 与信号状态；启动断言要求权威先关闭且孩子不继承父进程忽略策略，原命令与快照不进入 argv。
+# Design: Track metadata-authority descriptors, the payload pipe, client FD3 and signal state. Spawn assertions require authority closure first and prevent inherited parent signal-ignore policy; the original command and snapshot stay out of argv.
 def session_fixture(action='ssh-session', original="printf 'client command marker'", term='screen'):
     ns, value, run, daemon, snapshot, raw, request, receipt, records = fixture()
     if action != 'ssh-session':
@@ -432,12 +689,32 @@ def session_fixture(action='ssh-session', original="printf 'client command marke
     request['action'] = action
     events, authority, written, handlers = [], set(), bytearray(), {}
     stdin = types.SimpleNamespace(closed=False, fileno=lambda: 40)
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: 无 / none。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `stdin.closed`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `events.append`.
     def close_stdin():
         stdin.closed = True
         events.append('frame-eof')
     stdin.close = close_stdin
     class Child:
+        # 中文功能：初始化测试夹具实例并保存构造输入，供后续方法复用其状态。
+        # English: Initialize a test-fixture instance and retain constructor inputs for subsequent stateful methods.
+        # 输入 / Inputs: self。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
         def __init__(self): self.stdin, self.returncode = stdin, None
+        # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+        # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+        # 输入 / Inputs: self, timeout = None。
+        # 结果：返回分支计算值（`0`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`0`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `self.returncode`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `callable`, `events.append`.
+        # 检查边界 / Checked boundaries: `stdin.closed`; `handlers[2] == 1 and handlers[3] == 1`.
         def wait(self, timeout=None):
             assert stdin.closed
             assert handlers[2] == 1 and handlers[3] == 1
@@ -445,11 +722,43 @@ def session_fixture(action='ssh-session', original="printf 'client command marke
             events.append('wait')
             self.returncode = 0
             return 0
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: self。
+        # 结果：返回分支计算值（`self.returncode`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`self.returncode`); its implementation and call sites define the actual type.
         def poll(self): return self.returncode
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: self, signum。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 协作入口 / Collaborators: `events.append`.
         def send_signal(self, signum): events.append(('child-signal', signum))
+        # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+        # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+        # 输入 / Inputs: self。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 状态影响 / State effects: `self.returncode`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `events.append`.
         def terminate(self): events.append('child-terminate'); self.returncode = -15
+        # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+        # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+        # 输入 / Inputs: self。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 状态影响 / State effects: `self.returncode`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `events.append`.
         def kill(self): events.append('child-kill'); self.returncode = -9
     child = Child()
+    # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+    # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+    # 输入 / Inputs: arguments, **options。
+    # 结果：返回分支计算值（`child`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`child`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `handlers.get`, `dict`, `' '.join`, `events.append`.
+    # 检查边界 / Checked boundaries: `not authority`; `handlers[2] != 1 and handlers.get(3, 0) != 1`.
     def spawn(arguments, **options):
         assert not authority, 'metadata/registry authority must be closed before Popen'
         assert handlers[2] != 1 and handlers.get(3, 0) != 1, 'child must not inherit parent SIGINT/SIGQUIT ignores'
@@ -459,22 +768,56 @@ def session_fixture(action='ssh-session', original="printf 'client command marke
         events.append(('spawn', arguments))
         return child
     ns['subprocess'] = types.SimpleNamespace(Popen=spawn, PIPE=subprocess.PIPE, TimeoutExpired=subprocess.TimeoutExpired)
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: fd。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `events.append`, `authority.discard`.
     def close(fd):
         events.append(('close', fd))
         authority.discard(fd)
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: source_fd, target_fd。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `events.append`.
+    # 检查边界 / Checked boundaries: `(source_fd, target_fd) == (0, 3) and (not authority)`.
     def dup(source_fd, target_fd):
         assert (source_fd, target_fd) == (0, 3) and not authority
         events.append('client-fd3')
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: fd, data。
+    # 结果：返回分支计算值（`len(data)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`len(data)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `written.extend`, `len`.
+    # 检查边界 / Checked boundaries: `fd == 40`.
     def write(fd, data):
         assert fd == 40, 'root only writes the payload pipe'
         written.extend(data)
         return len(data)
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: *_args。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 失败 / Failure: `AssertionError('root must never read client session stdin')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `AssertionError`.
     def client_read(*_args): raise AssertionError('root must never read client session stdin')
     ns['os'] = types.SimpleNamespace(environ={'SSH_ORIGINAL_COMMAND': original, 'TERM': term, 'IGNORED_CLIENT_ENV': 'injection'},
         getuid=lambda: 0, geteuid=lambda: 0, path=os.path, close=close, dup2=dup, read=client_read,
         write=write, fstat=lambda fd: types.SimpleNamespace(st_mode=stat.S_IFIFO), O_ACCMODE=3, O_WRONLY=1,
         isatty=lambda fd: False, set_blocking=lambda fd, blocking: events.append(('blocking', fd, blocking)))
     ns['fcntl'] = types.SimpleNamespace(F_GETFL=3, fcntl=lambda *_args: 0)
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: signum, handler。
+    # 结果：返回分支计算值（`old`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`old`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `handlers[signum]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `handlers.get`.
     def set_signal(signum, handler):
         old = handlers.get(signum, 0)
         handlers[signum] = handler
@@ -482,20 +825,69 @@ def session_fixture(action='ssh-session', original="printf 'client command marke
     ns['signal'] = types.SimpleNamespace(SIGINT=2, SIGQUIT=3, SIGHUP=1, SIGTERM=15, SIG_IGN=1,
                                        signal=set_signal, getsignal=lambda signum: handlers.get(signum, 0))
     class Selector:
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: self。
+        # 结果：返回分支计算值（`self`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`self`); its implementation and call sites define the actual type.
         def __enter__(self): return self
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: self, *_。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
         def __exit__(self, *_): pass
+        # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+        # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+        # 输入 / Inputs: self, stream, event。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 检查边界 / Checked boundaries: `stream is stdin and event == 2`.
         def register(self, stream, event): assert stream is stdin and event == 2
+        # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+        # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+        # 输入 / Inputs: self, remaining。
+        # 结果：返回分支计算值（`[(None, None)]`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`[(None, None)]`); its implementation and call sites define the actual type.
+        # 检查边界 / Checked boundaries: `remaining > 0`.
         def select(self, remaining): assert remaining > 0; return [(None, None)]
     ns['selectors'] = types.SimpleNamespace(DefaultSelector=Selector, EVENT_WRITE=2)
+    # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+    # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+    # 输入 / Inputs: 无 / none。
+    # 结果：返回分支计算值（`90`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`90`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `events.append`, `authority.add`.
     def readonly():
         events.append('registry-shared')
         authority.add(90)
         return 90
+    # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+    # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+    # 输入 / Inputs: 无 / none。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 失败 / Failure: `AssertionError('SSH session must not initialize or take an EX lock')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `AssertionError`.
     def exclusive(): raise AssertionError('SSH session must not initialize or take an EX lock')
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: readonly。
+    # 结果：返回分支计算值（`{'registryId': value['registryId'], 'reserved': {str(value['uid']): {'projectId': value['projectId']…`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`{'registryId': value['registryId'], 'reserved': {str(value['uid']): {'projectId': value['projectId']…`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `str`.
+    # 检查边界 / Checked boundaries: `readonly is True`.
     def registry(readonly):
         assert readonly is True
         return {'registryId': value['registryId'], 'reserved': {str(value['uid']):
             {'projectId': value['projectId'], 'identityId': value['identityId']}}}
+    # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+    # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+    # 输入 / Inputs: _value, boot, readonly = False。
+    # 结果：返回分支计算值（`(91, types.SimpleNamespace(st_dev=11, st_ino=200), '')`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`(91, types.SimpleNamespace(st_dev=11, st_ino=200), '')`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `authority.add`, `types.SimpleNamespace`.
+    # 检查边界 / Checked boundaries: `readonly is True and boot == run['bootId']`.
     def network(_value, boot, readonly=False):
         assert readonly is True and boot == run['bootId']
         authority.add(91)
@@ -510,6 +902,15 @@ def session_fixture(action='ssh-session', original="printf 'client command marke
     return ns, value, run, daemon, records, events, written
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['__name__']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('session must exit with child status')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `session_fixture`, `contextlib.redirect_stdout`, `io.StringIO`, `ns['main']`.
+# 检查边界 / Checked boundaries: `result.code == 0`; `not output.getvalue()`.
 def session_descriptor_order_and_stdout():
     ns, value, run, daemon, records, events, written = session_fixture()
     with contextlib.redirect_stdout(io.StringIO()) as output:
@@ -544,6 +945,14 @@ def session_descriptor_order_and_stdout():
     assert 'client command marker' not in ns['sys'].stderr.getvalue() and not written
 
 
+# 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+# English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `ns['os'].fstat`, `ns['socket']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 协作入口 / Collaborators: `session_fixture`, `types.SimpleNamespace`, `ns['signal'].signal`, `ns['ssh_launch']`.
+# 检查边界 / Checked boundaries: `ns['ssh_launch'](value, run, run['build'], b'frame') == 0`; `written == b'frame' and 'client-fd3' in events`.
 def session_network_descriptors_are_rejected():
     # Model the authoritative Linux SO_DOMAIN query, including network families
     # other than IP. Python's fromfd family hint must never authorize a socket.
@@ -551,11 +960,35 @@ def session_network_descriptors_are_rejected():
         ns, value, run, daemon, records, events, written = session_fixture()
         ns['os'].fstat = lambda fd: types.SimpleNamespace(st_mode=stat.S_IFSOCK | 0o600)
         class Channel:
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: self。
+            # 结果：返回分支计算值（`self`），实际类型由实现及使用处约定。
+            # Result: Return the branch-computed value (`self`); its implementation and call sites define the actual type.
             def __enter__(self): return self
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: self, *_。
+            # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+            # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+            # 协作入口 / Collaborators: `events.append`.
             def __exit__(self, *_): events.append('channel-copy-closed')
+            # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+            # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+            # 输入 / Inputs: self, level, option。
+            # 结果：返回分支计算值（`family`），实际类型由实现及使用处约定。
+            # Result: Return the branch-computed value (`family`); its implementation and call sites define the actual type.
+            # 检查边界 / Checked boundaries: `(level, option) == (1, 39)`.
             def getsockopt(self, level, option):
                 assert (level, option) == (1, 39)
                 return family
+        # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+        # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+        # 输入 / Inputs: fd, hint, kind。
+        # 结果：返回分支计算值（`Channel()`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`Channel()`); its implementation and call sites define the actual type.
+        # 协作入口 / Collaborators: `events.append`, `Channel`.
+        # 检查边界 / Checked boundaries: `(fd, hint, kind) == (0, 1, 1)`.
         def fromfd(fd, hint, kind):
             assert (fd, hint, kind) == (0, 1, 1)
             events.append('channel-copy-opened')
@@ -574,6 +1007,15 @@ def session_network_descriptors_are_rejected():
         assert events.index('channel-copy-opened') < events.index('channel-copy-closed')
 
 
+# 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+# English: Read or resolve observable model data for adapted production-definition calls or assertions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `records[ns['ssh_snapshot_path']('default')]`, `ns['run_write']`, `ns['ssh_receipt_retire']`, `ns['os']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('receipt retirement failure must propagate')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `session_fixture`, `contextlib.redirect_stdout`, `io.StringIO`, `ns['main']`.
+# 检查边界 / Checked boundaries: `json.loads(output.getvalue())['result'] == run and 'daemon-proof' in events and (not written)`; `not written`.
 def readonly_probe_and_stop_authority():
     ns, value, run, daemon, records, events, written = session_fixture('run-readonly')
     with contextlib.redirect_stdout(io.StringIO()) as output:
@@ -592,6 +1034,13 @@ def readonly_probe_and_stop_authority():
     refuses(ns, lambda: ns['stop'](value, run, run['bootId']), 'PROJECT_IDENTITY_CLEANUP_FAILED')
     assert run['phase'] == 'active' and not published and not removed and closed == [99]
     ns['cgroup_fd'] = lambda *_args: None
+    # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+    # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+    # 输入 / Inputs: _run_id。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 失败 / Failure: `OSError('modeled unlink/directory fsync failure')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+    # 协作入口 / Collaborators: `OSError`.
     def failed_retirement(_run_id):
         raise OSError('modeled unlink/directory fsync failure')
     ns['ssh_receipt_retire'] = failed_retirement
@@ -607,7 +1056,26 @@ def readonly_probe_and_stop_authority():
     assert published[0]['phase'] == 'closed' and removed == [ns['ssh_receipt_path'](run['runId'])]
 
 
+# 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+# English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+# 输入 / Inputs: 无 / none。
+# 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+# Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+# 状态影响 / State effects: `invalid['daemon']['pid']`, `fs.nodes[ns['ssh_receipt_path'](run['runId'])]['data']`, `archives[run['runId']]`, `fs.os.fsync`. Follow the actual model assignments / 以模型中的实际赋值为准。
+# 失败 / Failure: `AssertionError('modeled failure did not happen: ' + failure)`；由调用者或用例断言观察 / Observed by callers or case assertions.
+# 协作入口 / Collaborators: `setup`, `refuses`, `ns['ssh_cleanup_receipt']`, `control`.
+# 检查边界 / Checked boundaries: `ns['ssh_cleanup_receipt'](value, run['runId'], run['bootId']) == run`; `control(ns, value, run, 'run') == run and (not writes) and (not actions)`.
+# 设计思路：按同步原证明、发布原记录、退役部分回执、发布 closed 状态的提交顺序逐点注入故障；每次中断后检查原权威可恢复，并验证归档墓碑与冲突记录阻止覆盖。
+# Design: Inject faults at each commit stage: sync the original proof, publish its record, retire the partial receipt, then publish closed state. After interruption, assert recoverable original authority and verify that archive tombstones or conflicting records prevent overwrites.
 def partial_receipt_cleanup_recovery():
+    # 中文功能：准备本用例的独立目录与状态，使用例之间的输入和失败注入相互隔离。
+    # English: Prepare a private directory and state for this case so inputs and injected failures are isolated between cases.
+    # 输入 / Inputs: group_present = False。
+    # 结果：返回分支计算值（`(ns, value, run, daemon, receipt, fs, archives, writes, actions)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`(ns, value, run, daemon, receipt, fs, archives, writes, actions)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `fixture`, `AuthorityFilesystem`, `fs.add`, `ns['ssh_receipt_path']`.
+    # 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+    # Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
     def setup(group_present=False):
         ns, value, run, daemon, snapshot, raw, request, receipt, records = fixture()
         fs = AuthorityFilesystem(ns, run, daemon)
@@ -615,6 +1083,12 @@ def partial_receipt_cleanup_recovery():
             del fs.nodes[ns['CGROUP'] + '/' + run['cgroupName']]
         fs.add(ns['ssh_receipt_path'](run['runId']), json.dumps(receipt).encode())
         archives, writes, actions = {}, [], []
+        # 中文功能：读取或解析测试夹具的可观察数据，供生产定义的适配调用或断言使用。
+        # English: Read or resolve observable model data for adapted production-definition calls or assertions.
+        # 输入 / Inputs: path, limit = 262144, missing = False。
+        # 结果：返回分支计算值（`None / node['data']`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`None / node['data']`); its implementation and call sites define the actual type.
+        # 协作入口 / Collaborators: `ns['refuse']`, `ns['trusted']`, `fs.info`, `len`.
         def read(path, limit=262144, missing=False):
             if path not in fs.nodes:
                 if missing:
@@ -625,12 +1099,27 @@ def partial_receipt_cleanup_recovery():
             if len(node['data']) > limit:
                 ns['refuse']('RECORD_BOUND')
             return node['data']
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: parent, temporary, destination。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 状态影响 / State effects: `fs.nodes[new_path]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `fs.path`, `ns['refuse']`, `fs.nodes.pop`, `actions.append`.
         def publish(parent, temporary, destination):
             old_path, new_path = fs.path(temporary, parent), fs.path(destination, parent)
             if new_path in fs.nodes:
                 ns['refuse']('RUN_ARCHIVE_CONFLICT')
             fs.nodes[new_path] = fs.nodes.pop(old_path)
             actions.append(('publish-original', bytes(fs.nodes[new_path]['data'])))
+        # 中文功能：安排并核对本辅助步骤的实际条件与调用结果；以下断言摘录指出本步骤观察的边界。
+        # English: Arrange and check actual conditions and call results for this helper; the assertion excerpts below identify its observed boundaries.
+        # 输入 / Inputs: path, data。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 状态影响 / State effects: `fs.nodes[path]['data']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `ns['run_path']`, `writes.append`, `ns['run_decode']`, `bytes`.
+        # 检查边界 / Checked boundaries: `path == ns['run_path'](run['runId'])`.
         def atomic(path, data):
             assert path == ns['run_path'](run['runId'])
             writes.append(ns['run_decode'](run['runId'], bytes(data)))
@@ -641,17 +1130,36 @@ def partial_receipt_cleanup_recovery():
                 if path.startswith(ns['RUNTIME'] + '/runs/') and path.endswith('.bin')],
             run_archive_publish=publish, atomic=atomic)
         real_unlink, real_fsync = fs.os.unlink, fs.os.fsync
+        # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+        # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+        # 输入 / Inputs: path, dir_fd = None。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 协作入口 / Collaborators: `fs.path`, `ns['ssh_receipt_path']`, `actions.append`, `real_unlink`.
         def unlink(path, dir_fd=None):
             full = fs.path(path, dir_fd)
             if full == ns['ssh_receipt_path'](run['runId']):
                 actions.append('retire-receipt')
             real_unlink(path, dir_fd)
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: fd。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 协作入口 / Collaborators: `actions.append`, `real_fsync`.
         def fsync(fd):
             actions.append(('sync', fs.fds[fd][0]))
             real_fsync(fd)
         fs.os.unlink, fs.os.fsync = unlink, fsync
         return ns, value, run, daemon, receipt, fs, archives, writes, actions
 
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: ns, value, run, action。
+    # 结果：返回分支计算值（`json.loads(output.getvalue())['result']`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`json.loads(output.getvalue())['result']`); its implementation and call sites define the actual type.
+    # 状态影响 / State effects: `request['snapshotSha256']`, `ns['os'].environ`, `ns['os'].getuid`, `ns['os'].geteuid`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `dict`, `types.SimpleNamespace`, `base64.b64encode(json.dumps(request).encode()).decode`, `base64.b64encode`.
     def control(ns, value, run, action):
         request = dict(action=action, projectId=value['projectId'],
             expected={key: value[key] for key in ('registryId', 'identityId', 'revision')}, runId=run['runId'])
@@ -712,6 +1220,13 @@ def partial_receipt_cleanup_recovery():
     for failure in ('file-fsync', 'run-dir-fsync', 'receipt-unlink', 'receipt-dir-fsync', 'closed-write'):
         ns, value, run, daemon, receipt, fs, archives, writes, actions = setup()
         good_fsync, good_unlink, good_atomic = fs.os.fsync, fs.os.unlink, ns['atomic']
+        # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+        # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+        # 输入 / Inputs: fd。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 失败 / Failure: `OSError('modeled durable write failure')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+        # 协作入口 / Collaborators: `OSError`, `good_fsync`.
         def fsync(fd):
             path = fs.fds[fd][0]
             if (failure == 'file-fsync' and '/runs/.record-' in path) or \
@@ -719,10 +1234,24 @@ def partial_receipt_cleanup_recovery():
                (failure == 'receipt-dir-fsync' and path == ns['RUNTIME'] + '/ssh'):
                 raise OSError('modeled durable write failure')
             good_fsync(fd)
+        # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+        # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+        # 输入 / Inputs: path, dir_fd = None。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 失败 / Failure: `OSError('modeled receipt unlink failure')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+        # 协作入口 / Collaborators: `fs.path`, `ns['ssh_receipt_path']`, `OSError`, `good_unlink`.
         def unlink(path, dir_fd=None):
             if failure == 'receipt-unlink' and fs.path(path, dir_fd) == ns['ssh_receipt_path'](run['runId']):
                 raise OSError('modeled receipt unlink failure')
             good_unlink(path, dir_fd)
+        # 中文功能：提供可控的拒绝或失败分支，让测试能够核对调用者的异常处理和证据保留。
+        # English: Provide controlled rejection/failure branches so tests can verify caller exception handling and evidence retention.
+        # 输入 / Inputs: path, data。
+        # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+        # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+        # 失败 / Failure: `OSError('modeled closed-phase write failure')`；由调用者或用例断言观察 / Observed by callers or case assertions.
+        # 协作入口 / Collaborators: `OSError`, `good_atomic`.
         def atomic(path, data):
             if failure == 'closed-write':
                 raise OSError('modeled closed-phase write failure')
@@ -755,6 +1284,12 @@ def partial_receipt_cleanup_recovery():
     ns, value, run, daemon, receipt, fs, archives, writes, actions = setup()
     original_sync = fs.os.fsync
     foreign = ns['run_bytes'](dict(run, identityId=str(uuid.uuid4())))
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: fd。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `fs.add`, `ns['run_path']`, `original_sync`.
     def conflict(fd):
         if '/runs/.record-' in fs.fds[fd][0]:
             fs.add(ns['run_path'](run['runId']), foreign)
@@ -774,6 +1309,13 @@ def partial_receipt_cleanup_recovery():
     # A tombstone published before final commit prevents materialization too.
     ns, value, run, daemon, receipt, fs, archives, writes, actions = setup()
     original_sync = fs.os.fsync
+    # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+    # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+    # 输入 / Inputs: fd。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `archives[run['runId']]`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `ns['run_bytes']`, `dict`, `original_sync`.
     def archive_during_sync(fd):
         if '/runs/.record-' in fs.fds[fd][0]:
             archives[run['runId']] = ns['run_bytes'](dict(run, phase='closed'))

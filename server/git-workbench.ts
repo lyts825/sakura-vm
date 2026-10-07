@@ -1,5 +1,6 @@
 /**
  * 模块职责：提供仓库状态、差异、冲突处理和 Git 动作；仓库相对路径与分支输入先校验。
+ * Module purpose: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
@@ -16,6 +17,18 @@ import { GitProjectTasks, type GitWorkbenchOptions } from './git-project-task.ts
 export type { GitWorkbenchOptions } from './git-project-task.ts';
 
 export type { GitChange } from '../shared/git.ts';
+/**
+ * 入口 / Entry: parseStatus.
+ * 功能：在提供仓库状态、差异、冲突处理和 Git 动作中，转换协议或持久数据表示并保持调用边界；本入口产生 `items` 供上层消费（`git-workbench.ts`）。
+ * Purpose: Converts protocol or durable data representations at the call boundary in `git-workbench.ts`; this entry produces `items` for its caller. Module context: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+ * 处理：通过 `text.split`, `row.slice`, `inline.includes`, `items.push` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `text.split`, `row.slice`, `inline.includes`, `items.push`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `row.length < 4`; `'RC'.includes(row[0]) || 'RC'.includes(row[1])`.
+ * 输入 / Inputs: text: string
+ * 输出 / Returns: GitChange[]；结果来自 / values from `items`.
+ * 副作用 / Effects: `items.push`; 更新 / updates `item.previous`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function parseStatus(text: string): GitChange[] {
   const parts = text.split('\0'),
     items: GitChange[] = [];
@@ -56,6 +69,17 @@ const remoteName = z
     (name) => !name.includes('..') && !name.endsWith('.') && !name.endsWith('.lock'),
     '远程仓库名称不符合 Git 规则',
   );
+/**
+ * 入口 / Entry: callback@62.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.string().url().refine / 远程仓库只接受不含凭证、查询参数或片段的 HTTPS 地址）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.string().url().refine / 远程仓库只接受不含凭证、查询参数或片段的 HTTPS 地址).
+ * 输入 / Inputs: value
+ * 输出 / Returns: `( url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash && !/[\s\x00-\x1f]/.test(value) )`; `false`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ * 失败处理：catch 分支执行 `return false;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `return false;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 const remoteUrl = z
   .string()
   .url()
@@ -75,7 +99,27 @@ const remoteUrl = z
     }
   }, '远程仓库只接受不含凭证、查询参数或片段的 HTTPS 地址');
 
+/**
+ * 入口 / Entry: redactGitOutput.
+ * 功能：从当前输入或状态计算 `text.replace(/https?:\/\/[^\s<>"']+/gi, (value) => { try { const url = new URL(value); url.username = ''; url.password = ''; …`，供调用方后续验证或使用。
+ * Purpose: Computes `text.replace(/https?:\/\/[^\s<>"']+/gi, (value) => { try { const url = new URL(value); url.username = ''; url.password = ''; …` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: text: string
+ * 输出 / Returns: `text.replace(/https?:\/\/[^\s<>"']+/gi, (value) => { try { const url = new URL(value); url.username = ''; url.password = ''; …`.
+ * 副作用 / Effects: `text.replace`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function redactGitOutput(text: string) {
+  /**
+   * 入口 / Entry: redactGitOutput.callback@79.
+   * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（text.replace）。
+   * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (text.replace).
+   * 输入 / Inputs: value
+   * 输出 / Returns: `url.toString()`; `'[远程地址已隐藏]'`.
+   * 副作用 / Effects: 更新 / updates `url.username`, `url.password`, `url.search`, `url.hash`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 失败处理：catch 分支执行 `return '[远程地址已隐藏]';`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `return '[远程地址已隐藏]';`; these statements determine whether a failure is absorbed or rejected again.
+   */
   return text.replace(/https?:\/\/[^\s<>"']+/gi, (value) => {
     try {
       const url = new URL(value);
@@ -147,11 +191,32 @@ export const gitActionSchema = z.discriminatedUnion('action', [
 ]);
 const git =
   'git --no-pager --literal-pathspecs -c core.hooksPath=/dev/null -c core.fsmonitor=false -c color.ui=false';
+/**
+ * 签名 / Signature: GitCommand.GitCommand.
+ * 功能：为提供仓库状态、差异、冲突处理和 Git 动作声明 GitCommand 的输入与结果契约，所属容器为 GitCommand。
+ * Purpose: Declares the input/result contract for GitCommand in GitCommand. Module responsibility: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+ * 输入 / Inputs: command: string; network: boolean optional
+ * 输出 / Returns: Promise<{ stdout: string; stderr: string; code: number }>.
+ * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+ * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+ */
 type GitCommand = (
   command: string,
   network?: boolean,
 ) => Promise<{ stdout: string; stderr: string; code: number }>;
 
+/**
+ * 入口 / Entry: repositoryState.
+ * 功能：在提供仓库状态、差异、冲突处理和 Git 动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ branch: branch.code === 0 ? branch.stdout.trim().replace(/^refs\/heads\//, '') : null, head: head.code === 0 ? head.stdout.…` 供上层消费（`git-workbench.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `git-workbench.ts`; this entry produces `{ branch: branch.code === 0 ? branch.stdout.trim().replace(/^refs\/heads\//, '') : null, head: head.code === 0 ? head.stdout.…` for its caller. Module context: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+ * 处理：通过 `command`, `redactGitOutput`, `parseStatus`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `command`, `redactGitOutput`, `parseStatus`, `quote`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `name && remote && ref?.startsWith('refs/heads/')`.
+ * 输入 / Inputs: command: GitCommand
+ * 输出 / Returns: `{ branch: branch.code === 0 ? branch.stdout.trim().replace(/^refs\/heads\//, '') : null, head: head.code === 0 ? head.stdout.…`.
+ * 副作用 / Effects: `ref.startsWith`; `branch.stdout.trim().replace`; 更新 / updates `upstream`.
+ * 拒绝 / Refusals: 条件 / conditions `status.code !== 0`; `operation.code !== 0`; `branch.code === 0`; 异常 / errors `new AppError(redactGitOutput(status.stderr))`; `new AppError('无法检查 Git 合并状态')`.
+ */
 async function repositoryState(command: GitCommand) {
   const status = await command('status --porcelain=v1 -z --untracked-files=all');
   if (status.code !== 0) throw new AppError(redactGitOutput(status.stderr));
@@ -182,6 +247,17 @@ async function repositoryState(command: GitCommand) {
   };
 }
 
+/**
+ * 入口 / Entry: requireSettled.
+ * 功能：在提供仓库状态、差异、冲突处理和 Git 动作中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`git-workbench.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `git-workbench.ts`; the calls and state transitions below complete the operation. Module context: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+ * 处理：通过 `state.conflicts.join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `state.conflicts.join`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: state: Awaited<ReturnType<typeof repositoryState>>; clean: default=false
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `state.conflicts.length`; `state.operation`; `!state.branch`; 异常 / errors `new AppError( `存在未解决的文件冲突：${state.conflicts.join('、')}。请编辑冲突文件并暂存解决结果，再完成或中止当前合并 / 变基。`, 409, 'git_conflict', )`; `new AppError( `Git 操作尚未结束（${state.operation}），请先在终端完成或中止该操作。`, 409, 'git_operation_in_progress', )`.
+ */
 function requireSettled(state: Awaited<ReturnType<typeof repositoryState>>, clean = false) {
   if (state.conflicts.length)
     throw new AppError(
@@ -208,11 +284,30 @@ function requireSettled(state: Awaited<ReturnType<typeof repositoryState>>, clea
 export class GitWorkbench {
   jobs = new Jobs('git');
   private tasks: GitProjectTasks;
+  /**
+   * 入口 / Entry: GitWorkbench.constructor.
+   * 功能：建立 GitWorkbench 的提供仓库状态、差异、冲突处理和 Git 动作上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the GitWorkbench context for this module's responsibility: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; options: GitWorkbenchOptions default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 更新 / updates `this.tasks`.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
     options: GitWorkbenchOptions = {},
   ) { this.tasks = new GitProjectTasks(machines, workspaces, options); }
+  /**
+   * 入口 / Entry: GitWorkbench.command.
+   * 功能：在提供仓库状态、差异、冲突处理和 Git 动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.tasks.exec(id, 'set -eu\n' + clean + `LC_ALL=C GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false GCM_I…` 供上层消费（`GitWorkbench`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `GitWorkbench`; this entry produces `this.tasks.exec(id, 'set -eu\n' + clean + `LC_ALL=C GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false GCM_I…` for its caller. Module context: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+   * 处理：通过 `this.tasks.project`, `this.tasks.exec` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.tasks.project`, `this.tasks.exec`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; command: string; signal: AbortSignal optional; project: Project optional; network: default=false
+   * 输出 / Returns: `this.tasks.exec(id, 'set -eu\n' + clean + `LC_ALL=C GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false GCM_I…`.
+   * 副作用 / Effects: `this.tasks.exec`; 更新 / updates `project`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async command(
     id: string, command: string, signal?: AbortSignal, project?: Project, network = false,
   ) {
@@ -228,9 +323,36 @@ export class GitWorkbench {
       `LC_ALL=C GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false GCM_INTERACTIVE=never ${network ? 'GIT_ALLOW_PROTOCOL=https ' : ''}${git} ${command}`,
       network ? 120000 : 30000, signal, project);
   }
+  /**
+   * 入口 / Entry: GitWorkbench.view.
+   * 功能：把本层请求转交 `this.tasks.withProject`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.tasks.withProject` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; signal: AbortSignal optional
+   * 输出 / Returns: `this.tasks.withProject(id, signal, undefined, async () => { const project = this.tasks.project(id); const command: GitCommand…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async view(id: string, signal?: AbortSignal) {
+    /**
+     * 入口 / Entry: GitWorkbench.view.callback@232.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.tasks.withProject）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.tasks.withProject).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ projectId: this.workspaces.projects.current(id), repository: false, error: this.tasks.redact(id, redactGitOutput(check.stde…`; `{ projectId: this.workspaces.projects.current(id), repository: true, branch: state.branch || '(detached HEAD)', detached: !st…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     return this.tasks.withProject(id, signal, undefined, async () => {
       const project = this.tasks.project(id);
+      /**
+       * 入口 / Entry: GitWorkbench.view.command.
+       * 功能：把本层请求转交 `this.command`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `this.command` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `this.command(id, value, signal, project)`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       const command: GitCommand = (value) => this.command(id, value, signal, project);
       const check = await command('rev-parse --is-inside-work-tree');
       if (check.code !== 0)
@@ -295,8 +417,28 @@ export class GitWorkbench {
       };
     });
   }
+  /**
+   * 入口 / Entry: GitWorkbench.diff.
+   * 功能：在提供仓库状态、差异、冲突处理和 Git 动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.tasks.withProject(id, signal, undefined, async () => { const project = this.tasks.project(id); const untracked = !staged…` 供上层消费（`GitWorkbench`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `GitWorkbench`; this entry produces `this.tasks.withProject(id, signal, undefined, async () => { const project = this.tasks.project(id); const untracked = !staged…` for its caller. Module context: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+   * 处理：通过 `repositoryPath.parse`, `this.tasks.withProject` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `repositoryPath.parse`, `this.tasks.withProject`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; path: string; staged: boolean; signal: AbortSignal optional
+   * 输出 / Returns: `this.tasks.withProject(id, signal, undefined, async () => { const project = this.tasks.project(id); const untracked = !staged…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async diff(id: string, path: string, staged: boolean, signal?: AbortSignal) {
     repositoryPath.parse(path);
+    /**
+     * 入口 / Entry: GitWorkbench.diff.callback@300.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.tasks.withProject）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.tasks.withProject).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ diff: this.tasks.redact(id, redactGitOutput(result.stdout)).slice(0, 200000), truncated: result.stdout.length > 200000 }`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `result.code !== 0 && !(untracked && result.code === 1)`; 异常 / errors `new AppError(result.stderr)`.
+     */
     return this.tasks.withProject(id, signal, undefined, async () => {
       const project = this.tasks.project(id);
       const untracked =
@@ -315,8 +457,28 @@ export class GitWorkbench {
       return { diff: this.tasks.redact(id, redactGitOutput(result.stdout)).slice(0, 200000), truncated: result.stdout.length > 200000 };
     });
   }
+  /**
+   * 入口 / Entry: GitWorkbench.mergeInputs.
+   * 功能：在提供仓库状态、差异、冲突处理和 Git 动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.tasks.withProject(id, signal, project, async () => { project = this.tasks.project(id); const directory = project.directo…` 供上层消费（`GitWorkbench`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `GitWorkbench`; this entry produces `this.tasks.withProject(id, signal, project, async () => { project = this.tasks.project(id); const directory = project.directo…` for its caller. Module context: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+   * 处理：通过 `repositoryPath.parse`, `this.tasks.withProject` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `repositoryPath.parse`, `this.tasks.withProject`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; path: string; signal: AbortSignal optional; project: Project optional
+   * 输出 / Returns: `this.tasks.withProject(id, signal, project, async () => { project = this.tasks.project(id); const directory = project.directo…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async mergeInputs(id: string, path: string, signal?: AbortSignal, project?: Project) {
     repositoryPath.parse(path);
+    /**
+     * 入口 / Entry: GitWorkbench.mergeInputs.callback@320.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.tasks.withProject）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.tasks.withProject).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ path, base: this.tasks.redact(id, values['1']), ours: this.tasks.redact(id, values['2']), theirs: this.tasks.redact(id, val…`.
+     * 副作用 / Effects: `this.tasks.exec`; 更新 / updates `project`, `values[entry![3]]`.
+     * 拒绝 / Refusals: 条件 / conditions `safe.code !== 0`; `index.code !== 0`; `entries.some((entry) => !entry) || !entries.some((entry) => entry?.[3] === '2') || !entries.some((entry) => entry?.[3] === '3…`; 异常 / errors `new AppError('冲突路径不能穿过符号链接')`; `new AppError(index.stderr)`.
+     */
     return this.tasks.withProject(id, signal, project, async () => {
       project = this.tasks.project(id);
       const directory = project.directory;
@@ -367,8 +529,28 @@ export class GitWorkbench {
       };
     });
   }
+  /**
+   * 入口 / Entry: GitWorkbench.conflictChoices.
+   * 功能：在提供仓库状态、差异、冲突处理和 Git 动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.tasks.withProject(id, signal, project, async () => { project = this.tasks.project(id); const directory = project.directo…` 供上层消费（`GitWorkbench`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `GitWorkbench`; this entry produces `this.tasks.withProject(id, signal, project, async () => { project = this.tasks.project(id); const directory = project.directo…` for its caller. Module context: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+   * 处理：通过 `repositoryPath.parse`, `this.tasks.withProject` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `repositoryPath.parse`, `this.tasks.withProject`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; path: string; signal: AbortSignal optional; project: Project optional
+   * 输出 / Returns: `this.tasks.withProject(id, signal, project, async () => { project = this.tasks.project(id); const directory = project.directo…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async conflictChoices(id: string, path: string, signal?: AbortSignal, project?: Project) {
     repositoryPath.parse(path);
+    /**
+     * 入口 / Entry: GitWorkbench.conflictChoices.callback@372.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.tasks.withProject）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.tasks.withProject).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ path, base: stages['1'] || null, ours: stages['2'] || null, theirs: stages['3'] || null, worktree: kind, expectedIndex: tex…`.
+     * 副作用 / Effects: `this.tasks.exec`; `inline.exec`; 更新 / updates `project`, `stages[entry[3]]`, `worktree`.
+     * 拒绝 / Refusals: 条件 / conditions `safe.code !== 0`; `index.code !== 0`; `!entry || entry[4] !== path || stages[entry[3]]`; 异常 / errors `new AppError('冲突路径不能穿过符号链接')`; `new AppError(index.stderr)`.
+     */
     return this.tasks.withProject(id, signal, project, async () => {
       project = this.tasks.project(id);
       const directory = project.directory;
@@ -423,18 +605,85 @@ export class GitWorkbench {
       };
     });
   }
+  /**
+   * 入口 / Entry: GitWorkbench.run.
+   * 功能：校验 Git 动作并在捕获的项目执行域完成分支、暂存、提交或冲突操作。
+   * Purpose: Validates Git actions and runs branch/stage/commit/conflict work in the captured project execution scope.
+   * 设计：路径、分支与动作条件在修改前核对；不把任务输出中的凭证带入日志，远端动作走专门认证边界。
+   * Design: Path/branch/action preconditions precede mutations; credential-bearing output is redacted and remote work uses its dedicated boundary.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: `this.machines.locked(`git:${captured.key}`, async () => this.tasks.inScope(captured, async () => { if (this.machines.state(id…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async run(id: string, input: unknown) {
     const value = gitActionSchema.parse(input);
     const captured = await this.tasks.capture(id);
-    return this.machines.locked(`git:${captured.key}`, async () => this.tasks.inScope(captured, async () => {
+    /**
+     * 入口 / Entry: GitWorkbench.run.callback@429.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.tasks.inScope）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.tasks.inScope).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.jobs.start( this.workspaces.projects.key(id), async (rawLog, signal, update) => this.tasks.runCaptured(captured, signal,…`.
+     * 副作用 / Effects: `this.jobs.start`.
+     * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; 异常 / errors `new AppError('请先启动发行版')`.
+     */
+    return this.machines.locked(`git:${captured.key}`, async () => this.tasks.inScope(captured,
+    /**
+     * 中文功能：要求实例运行后创建保留原项目配置的 Git job，任务中的命令与日志使用捕获执行域和脱敏能力。
+     * English: Requires a running VM and creates a Git job retaining original project configuration, using captured execution scope and redaction for commands/logs.
+     * 所属 / Owner: GitWorkbench.run.
+     * 输入 / Inputs: 无显式参数 / no explicit parameters.
+     */
+    async () => {
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
       // The accepted job retains its original config, named scope and Live.
       const project = captured.project;
       const { directory } = project;
+      /**
+       * 入口 / Entry: GitWorkbench.run.callback@436.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.tasks.runCaptured）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.tasks.runCaptured).
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `void`.
+       * 副作用 / Effects: `this.machines.writeGuestFile`; `execute`; 更新 / updates `command`.
+       * 拒绝 / Refusals: 条件 / conditions `value.action === 'fetch' || value.action === 'pull' || value.action === 'push'`; `error instanceof Error`; `message !== error.message`; 异常 / errors `reported`; `error`.
+       * 失败处理：catch 分支执行 `if (error instanceof Error) { const message = redactGitOutput(error.message); if (message !== error.message) { try { Object.d…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+       * Failure handling: Catch paths execute `if (error instanceof Error) { const message = redactGitOutput(error.message); if (message !== error.message) { try { Object.d…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+       */
       return this.jobs.start(
         this.workspaces.projects.key(id),
-        async (rawLog, signal, update) => this.tasks.runCaptured(captured, signal, async () => {
+        async (rawLog, signal, update) => this.tasks.runCaptured(captured, signal,
+        /**
+         * 中文功能：执行选定 Git 动作；合并和冲突选择复核索引/工作区版本，提交前扫描暂存密钥，命令失败输出脱敏异常。
+         * English: Executes the Git action, rechecking index/worktree versions for merges/conflict choices, scanning staged secrets before commit and reporting redacted command failures.
+         * 所属 / Owner: GitWorkbench.run.
+         * 输入 / Inputs: 无显式参数 / no explicit parameters.
+         * 设计：分支名和远端输入通过对应校验；冲突编辑先核对原项目身份，子模块选择不自动改变其工作目录。
+         * Design: Validate branch/remote inputs; conflict edits recheck original project identity and submodule choices do not automatically change their working directory.
+         */
+        async () => {
+          /**
+           * 入口 / Entry: GitWorkbench.run.log.
+           * 功能：在提供仓库状态、差异、冲突处理和 Git 动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `rawLog(this.tasks.redact(id, redactGitOutput(text)))` 供上层消费（`GitWorkbench`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `GitWorkbench`; this entry produces `rawLog(this.tasks.redact(id, redactGitOutput(text)))` for its caller. Module context: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+           * 处理：通过 `rawLog`, `this.tasks.redact`, `redactGitOutput` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `rawLog`, `this.tasks.redact`, `redactGitOutput`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: text: string
+           * 输出 / Returns: `rawLog(this.tasks.redact(id, redactGitOutput(text)))`.
+           * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+           * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+           */
           const log = (text: string) => rawLog(this.tasks.redact(id, redactGitOutput(text)));
+          /**
+           * 入口 / Entry: GitWorkbench.run.execute.
+           * 功能：把本层请求转交 `this.command`，沿用该实现的结果与失败路径。
+           * Purpose: Delegates this request to `this.command` and propagates the provider result or rejection.
+           * 输入 / Inputs: command; network
+           * 输出 / Returns: `this.command(id, command, signal, project, network)`.
+           * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+           * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+           */
           const execute: GitCommand = (command, network) =>
             this.command(id, command, signal, project, network);
           if (value.action === 'fetch' || value.action === 'pull' || value.action === 'push') {
@@ -568,6 +817,17 @@ export class GitWorkbench {
       );
     }));
   }
+  /**
+   * 入口 / Entry: GitWorkbench.remoteAction.
+   * 功能：为 fetch/pull/push 等远端动作准备限定凭证和受控 Git 环境。
+   * Purpose: Prepares scoped credentials and controlled Git environment for remote fetch/pull/push work.
+   * 设计：认证范围依据保存的仓库配置，禁止任意环境扩展凭证用途；临时材料在原任务收尾中释放。
+   * Design: Saved repository configuration defines credential scope; arbitrary environments cannot widen it, and task cleanup owns temporary material.
+   * 输入 / Inputs: value: { action: 'fetch' | 'pull' | 'push'; remote: string; branch?: string }; execute: GitCommand; log: (text: string) => void; update: (phase: string) => void
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `update`; `execute`; `fetched.stdout.trim`.
+   * 拒绝 / Refusals: 条件 / conditions `remotes.code !== 0 || !remotes.stdout.trim().split('\n').includes(value.remote)`; `urls.code !== 0 || targets.some((url) => !remoteUrl.safeParse(url).success)`; `targets.length !== 1`; 异常 / errors `new AppError('远程仓库不存在，请刷新并选择已配置的远程。', 409, 'git_remote_missing')`; `new AppError( '远程目标必须使用不含凭证的 HTTPS 地址；请检查远程地址及 URL 重写配置。', 409, 'git_unsafe_remote', )`.
+   */
   private async remoteAction(
     value: { action: 'fetch' | 'pull' | 'push'; remote: string; branch?: string },
     execute: GitCommand,
@@ -608,6 +868,17 @@ export class GitWorkbench {
     // Override repository defaults: only HTTPS, no recursive submodule operations,
     // no configured refspecs, implicit tags, pruning, mirroring or force pushes.
     const network = '-c protocol.allow=never -c protocol.https.allow=always -c http.followRedirects=false';
+    /**
+     * 入口 / Entry: GitWorkbench.remoteAction.run.
+     * 功能：校验 Git 动作并在捕获的项目执行域完成分支、暂存、提交或冲突操作。
+     * Purpose: Validates Git actions and runs branch/stage/commit/conflict work in the captured project execution scope.
+     * 设计：路径、分支与动作条件在修改前核对；不把任务输出中的凭证带入日志，远端动作走专门认证边界。
+     * Design: Path/branch/action preconditions precede mutations; credential-bearing output is redacted and remote work uses its dedicated boundary.
+     * 输入 / Inputs: command: string
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `execute`.
+     * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; `/\[rejected\].*(non-fast-forward|fetch first)/i.test(output)`; `/couldn't find remote ref/i.test(output)`; 异常 / errors `new AppError( '推送被拒绝：远程分支包含本地尚未整合的提交。请获取更新并手动整合分叉后重试；不会强制推送。', 409, 'git_push_rejected', )`; `new AppError(`远程分支 ${branch} 不存在，请检查目标分支。`, 409, 'git_remote_branch_missing')`.
+     */
     const run = async (command: string) => {
       const result = await execute(`${network} ${command}`, true);
       log(redactGitOutput(result.stdout + result.stderr));
@@ -679,6 +950,19 @@ export class GitWorkbench {
         'git_pull_blocked',
       );
   }
+  /**
+   * 入口 / Entry: GitWorkbench.close.
+   * 功能：在提供仓库状态、差异、冲突处理和 Git 动作中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`GitWorkbench`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `GitWorkbench`; the calls and state transitions below complete the operation. Module context: Exposes repository status, diffs, conflicts and actions, validating relative paths and branch inputs before work.
+   * 处理：通过 `this.jobs.close`, `this.tasks.close` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.jobs.close`, `this.tasks.close`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.jobs.close`; `this.tasks.close`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `await this.tasks.close();`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `await this.tasks.close();`; these steps also apply to exceptional exits.
+   */
   async close() {
     try { await this.jobs.close(); } finally { await this.tasks.close(); }
   }

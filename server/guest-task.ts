@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理客户机任务控制目录、进程归属和取消清理，按原任务票据核验资源退出。
+ * Module purpose: Owns guest task control directories, process identity and cancellation cleanup using original task tickets.
  */
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -11,10 +12,30 @@ import type { BaseAgent } from 'ssh2';
 import { isOwnedTaskAgent } from './ssh-agent-scope.ts';
 
 export const guestTaskControlRoot = '/run/sakura-guest-tasks';
+/**
+ * 入口 / Entry: guestTaskControlPaths.
+ * 功能：在管理客户机任务控制目录、进程归属和取消清理中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ directory, receipt: `${directory}/.sakura-job-${id}.pid` }` 供上层消费（`guest-task.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `guest-task.ts`; this entry produces `{ directory, receipt: `${directory}/.sakura-job-${id}.pid` }` for its caller. Module context: Owns guest task control directories, process identity and cancellation cleanup using original task tickets.
+ * 处理：通过 `z.uuid().parse`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: runId: string
+ * 输出 / Returns: `{ directory, receipt: `${directory}/.sakura-job-${id}.pid` }`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function guestTaskControlPaths(runId: string) {
   const id = z.uuid().parse(runId), directory = `${guestTaskControlRoot}/${id}`;
   return { directory, receipt: `${directory}/.sakura-job-${id}.pid` };
 }
+/**
+ * 入口 / Entry: rootCommand.
+ * 功能：从当前输入或状态计算 ``# SAKURA_GUEST_TASK_${phase}\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C` + // Only a minted,…`，供调用方后续验证或使用。
+ * Purpose: Computes ``# SAKURA_GUEST_TASK_${phase}\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C` + // Only a minted,…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: phase: 'RUN' | 'CLEANUP' | 'CONFIRM_STOPPED' | 'RETIRE'; source: string; forwarded: default=false
+ * 输出 / Returns: ``# SAKURA_GUEST_TASK_${phase}\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C` + // Only a minted,…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const rootCommand = (phase: 'RUN' | 'CLEANUP' | 'CONFIRM_STOPPED' | 'RETIRE', source: string, forwarded = false) =>
   `# SAKURA_GUEST_TASK_${phase}\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C` +
   // Only a minted, exact task owner may preserve the authenticated channel's
@@ -62,6 +83,17 @@ sakura_empty() {
   [ "$sakura_populated" = 0 ]
 }`;
 
+/**
+ * 入口 / Entry: taskCommands.
+ * 功能：按任务计划构造控制目录、启动、取消和退出核验的固定客户机命令。
+ * Purpose: Builds fixed guest commands for task control directories, launch, cancellation and exit verification.
+ * 设计：调用仅生成脚本，root 管理路径和项目命令运输分离；取消需原 token、boot 与 cgroup 证明而非仅 PID。
+ * Design: This generates scripts only, separating root control paths from project payload transport; cancellation requires token/boot/cgroup proof rather than PID alone.
+ * 输入 / Inputs: runId: string; token: string; script: string; timeout: number; input: default=false; forwarded: default=false
+ * 输出 / Returns: `{ run, cleanup, confirmStopped, retire }`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function taskCommands(runId: string, token: string, script: string, timeout: number, input = false, forwarded = false) {
   const { directory, receipt } = guestTaskControlPaths(runId), owner = directory + '/owner';
   const status = receipt + '.status',
@@ -359,6 +391,17 @@ rmdir ${quote(directory)}`);
 }
 
 /** A stream owner reuses the exact guest task commands and cancellation token. */
+/**
+ * 入口 / Entry: guestTaskControlPlan.
+ * 功能：在管理客户机任务控制目录、进程归属和取消清理中，执行此领域的具体处理步骤并返回其结果；本入口产生 `taskCommands(runId, token, script, timeout, true, false)` 供上层消费（`guest-task.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `guest-task.ts`; this entry produces `taskCommands(runId, token, script, timeout, true, false)` for its caller. Module context: Owns guest task control directories, process identity and cancellation cleanup using original task tickets.
+ * 处理：通过 `z.uuid().parse`, `z.uuid`, `taskCommands` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`, `taskCommands`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: runId: string; token: string; script: string; timeout: number
+ * 输出 / Returns: `taskCommands(runId, token, script, timeout, true, false)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!Number.isSafeInteger(timeout) || timeout < 1000 || timeout > 24 * 60 * 60 * 1000 || Buffer.byteLength(script) > 16384`; 异常 / errors `new AppError('协议运行域控制参数超过边界', 413, 'GUEST_INPUT_INVALID')`.
+ */
 export function guestTaskControlPlan(runId: string, token: string, script: string, timeout: number) {
   z.uuid().parse(runId); z.uuid().parse(token);
   if (!Number.isSafeInteger(timeout) || timeout < 1000 || timeout > 24 * 60 * 60 * 1000 || Buffer.byteLength(script) > 16384)
@@ -367,11 +410,45 @@ export function guestTaskControlPlan(runId: string, token: string, script: strin
 }
 
 /** Cleanup is independent of protocol EOF and confirms the whole original cgroup. */
+/**
+ * 入口 / Entry: cleanupGuestTaskPlan.
+ * 功能：在管理客户机任务控制目录、进程归属和取消清理中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`guest-task.ts`）。
+ * Purpose: Ends, revokes or cleans resources owned by this domain action in `guest-task.ts`; the calls and state transitions below complete the operation. Module context: Owns guest task control directories, process identity and cancellation cleanup using original task tickets.
+ * 处理：通过 `guestTaskControlPaths`, `control`, `machines.live.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `guestTaskControlPaths`, `control`, `machines.live.get`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `afterCleanup`.
+ * 输入 / Inputs: machines: Machines; id: string; instance: object | undefined; runId: string; commands: ReturnType<typeof guestTaskControlPlan>; afterCleanup: () => Promise<void> optional; log: (text: string) => void optional
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `instance`; `machines.live.get(id) !== instance`; 异常 / errors `new AppError('客户机实例已改变，原任务清理未确认', 503, 'GUEST_TASK_CLEANUP_FAILED')`.
+ */
 export async function cleanupGuestTaskPlan(machines: Machines, id: string, instance: object | undefined,
   runId: string, commands: ReturnType<typeof guestTaskControlPlan>, afterCleanup?: () => Promise<void>,
   log?: (text: string) => void) {
   const { receipt } = guestTaskControlPaths(runId);
-  const control = async (operation: string | (() => Promise<void>), phase: string) => {
+  /**
+   * 入口 / Entry: cleanupGuestTaskPlan.control.
+   * 功能：在管理客户机任务控制目录、进程归属和取消清理中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`guest-task.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `guest-task.ts`; this entry produces `void` for its caller. Module context: Owns guest task control directories, process identity and cancellation cleanup using original task tickets.
+   * 处理：通过 `machines.live.get`, `machines.exec`, `result.stderr.trim`, `result.stdout.trim` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `machines.live.get`, `machines.exec`, `result.stderr.trim`, `result.stdout.trim`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `machines.live.get(id) !== instance`; `attempt < 2`.
+   * 输入 / Inputs: operation: string | (() => Promise<void>); phase: string
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `machines.exec`; 更新 / updates `failure`.
+   * 拒绝 / Refusals: 条件 / conditions `typeof operation === 'string'`; `result.code !== 0`; `machines.live.get(id) !== instance`; 异常 / errors `new Error(result.stderr.trim() || result.stdout.trim() || '任务 cgroup 清理失败')`; `new Error('客户机实例已改变，原任务清理未确认')`.
+   * 失败处理：catch 分支执行 `failure = error;`; `log?.(`客户机任务${phase}第 ${attempt + 1} 次未确认，正在核对归属重试。\n`);`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `failure = error;`; `log?.(`客户机任务${phase}第 ${attempt + 1} 次未确认，正在核对归属重试。\n`);`; these statements determine whether a failure is absorbed or rejected again.
+   */
+  const control = async (operation: string | (
+  /**
+   * 中文功能：将 cleanupGuestTaskPlan.control.operation 所属工作交给原调用上下文，按声明返回业务结果或异步拒绝。
+   * English: Supplies work to the original context owned by cleanupGuestTaskPlan.control.operation, returning the declared business result or asynchronous rejection.
+   * 所属 / Owner: cleanupGuestTaskPlan.control.operation.
+   * 输入 / Inputs: 无显式参数 / no explicit parameters.
+   * 结果 / Result: `Promise<void>`.
+   */
+  () => Promise<void>), phase: string) => {
     let failure: unknown;
     for (let attempt = 0; attempt < 3; ++attempt) {
       if (machines.live.get(id) !== instance) {
@@ -402,6 +479,15 @@ export async function cleanupGuestTaskPlan(machines: Machines, id: string, insta
       if (machines.live.get(id) !== instance)
         throw new AppError('客户机实例已改变，原任务清理未确认', 503, 'GUEST_TASK_CLEANUP_FAILED');
       if (afterCleanup)
+        /**
+         * 入口 / Entry: cleanupGuestTaskPlan.callback@405.
+         * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（control / 后续清理）。
+         * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (control / 后续清理).
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: `machines.exec`.
+         * 拒绝 / Refusals: 条件 / conditions `confirmed.code !== 0`; `machines.live.get(id) !== instance`; 异常 / errors `new Error(confirmed.stderr.trim() || '任务停止身份未确认')`; `new Error('客户机实例已改变')`.
+         */
         await control(async () => {
           // A guest reboot can retain the host's Live object. Each callback
           // attempt also checks the original guest boot and the removed scope.
@@ -417,6 +503,19 @@ export async function cleanupGuestTaskPlan(machines: Machines, id: string, insta
 // A dedicated cgroup owns descendants even after they create new groups or
 // sessions. Cleanup uses independent, bounded control connections and refuses
 // unsupported guests before executing any project code.
+/**
+ * 入口 / Entry: guestTask.
+ * 功能：在管理客户机任务控制目录、进程归属和取消清理中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result` 供上层消费（`guest-task.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `guest-task.ts`; this entry produces `result` for its caller. Module context: Owns guest task control directories, process identity and cancellation cleanup using original task tickets.
+ * 处理：通过 `machines.live.get`, `z.uuid().parse`, `z.uuid`, `randomUUID` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `machines.live.get`, `z.uuid().parse`, `z.uuid`, `randomUUID`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: machines: Machines; id: string; script: string; signal: AbortSignal; log: (text: string) => void optional; timeout: default=1200000; agentPath: string | BaseAgent optional; afterCleanup: () => Promise<void> optional; options: { input?: Buffer; runId?: string; forwardedAgent?: true } default={}
+ * 输出 / Returns: `result`.
+ * 副作用 / Effects: `ExecutionScope.current().deferCleanup`; `ExecutionScope.current`; `machines.exec`; `machines.execInput`.
+ * 拒绝 / Refusals: 条件 / conditions `options.input !== undefined && (!Buffer.isBuffer(options.input) || options.input.length > 128 * 1024)`; `options.forwardedAgent && (input === undefined || !options.runId || !isOwnedTaskAgent(machines, id, runId, agentPath))`; `result.code === 126 && result.stderr.includes('SAKURA_TASK_SCOPE_UNAVAILABLE:')`; 异常 / errors `new AppError('命令输入超过 128 KiB 或类型无效', 413, 'GUEST_INPUT_INVALID')`; `new AppError('SSH Agent 必须属于本次已登记的受保护任务', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`.
+ * 收尾：退出 try 区域时始终执行 `await retire();`；这些步骤也适用于异常退出。
+ * Finalization: Leaving the try region always executes `await retire();`; these steps also apply to exceptional exits.
+ */
 export async function guestTask(
   machines: Machines,
   id: string,
@@ -438,6 +537,15 @@ export async function guestTask(
       !isOwnedTaskAgent(machines, id, runId, agentPath)))
     throw new AppError('SSH Agent 必须属于本次已登记的受保护任务', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
   const commands = taskCommands(runId, randomUUID(), script, timeout, input !== undefined, options.forwardedAgent);
+  /**
+   * 入口 / Entry: guestTask.cleanup.
+   * 功能：把本层请求转交 `cleanupGuestTaskPlan`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `cleanupGuestTaskPlan` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `cleanupGuestTaskPlan(machines, id, instance, runId, commands, afterCleanup, log)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const cleanup = () => cleanupGuestTaskPlan(machines, id, instance, runId, commands, afterCleanup, log);
   const retire = ExecutionScope.current()?.deferCleanup(cleanup) || cleanup;
   try {

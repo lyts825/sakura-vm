@@ -1,5 +1,8 @@
 /**
- * 模块职责：项目服务、环境变量和外部连接的可编辑组件，按可选插件加载健康检查、秘密与 IDE/配方入口。
+ * 模块职责（中文）：项目服务、环境变量和外部连接的可编辑组件，按可选插件加载健康检查、秘密与 IDE/配方入口。
+ * Module responsibility (English): UI interaction and state presentation for project configuration, identities and running services.
+ * 详细范围（中文）：公开入口包括 ServiceEditor, EnvironmentEditor, ProjectConnections；职责覆盖项目配置、账号与运行服务的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ServiceEditor, EnvironmentEditor, ProjectConnections. The scope covers UI interaction and state presentation for project configuration, identities and running services. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { embeddedPluginComponent } from '../../src/plugin-client';
 import { Plus, Trash2 } from 'lucide-react';
@@ -8,25 +11,61 @@ import type { Project } from './view-types';
 import type { FeatureProps } from '../../src/feature-shared';
 import { PluginGate } from '../../src/plugin-context';
 import { PluginBoundary } from '../../src/plugin-boundary';
+/**
+ * 中文：懒加载 ../service-health/client 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码
+ * English: Lazily load ../service-health/client and adapt its selected export as the default React component, deferring this feature's UI code download
+ */
 const loadHealthEditor = () =>
   import('../service-health/client').then((module) => ({ default: module.HealthEditor }));
+/**
+ * 中文：懒加载 ../secrets/client 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码
+ * English: Lazily load ../secrets/client and adapt its selected export as the default React component, deferring this feature's UI code download
+ */
 const loadSecretReferences = () =>
   import('../secrets/client').then((module) => ({ default: module.SecretReferences }));
+/**
+ * 中文：懒加载 ../ide/client 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码
+ * English: Lazily load ../ide/client and adapt its selected export as the default React component, deferring this feature's UI code download
+ */
 const loadIdeConnection = () =>
   import('../ide/client').then((module) => ({ default: module.IdeConnection }));
+/**
+ * 中文：懒加载 ../recipes/client 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码
+ * English: Lazily load ../recipes/client and adapt its selected export as the default React component, deferring this feature's UI code download
+ */
 const loadRecipeConnection = () =>
   import('../recipes/client').then((module) => ({ default: module.RecipeConnection }));
 
+/**
+ * 中文：呈现项目配置、账号与运行服务的界面交互与状态呈现中的 ServiceEditor 界面，组合 Plus，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ServiceEditor surface for UI interaction and state presentation for project configuration, identities and running services and composing Plus. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  project,
+  edit,
+  request,
+} 提供 project（project 状态）、edit（当前文件编辑项）、request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: {
+  project,
+  edit,
+  request,
+} provides context fields project (project state), edit (current file edit), request (transport capability bound to identity/authority scope)
+ */
 export function ServiceEditor({
   project,
   edit,
   request,
 }: {
   project: Project;
-  edit: (patch: Partial<Project>) => void;
+  edit: /** 中文：把局部项目配置变更交给受控编辑器合并；这是 ServiceEditor 的调用契约 | English: Deliver partial project-configuration changes to controlled-editor merging; this is the callable contract of ServiceEditor | 中文：输入：patch：只包含修改字段的增量 | English: Inputs: patch: delta containing modified fields only | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (patch: Partial<Project>) => void;
   request: FeatureProps['request'];
 }) {
   const services = project.services || [];
+  /**
+   * 中文：仅给指定索引服务合并局部 patch，以新数组交给受控项目编辑器，保留其他服务字段。
+   * English: Merge a partial patch only into the selected service index, delivering a new array to the controlled project editor while retaining other services.
+   * 中文：输入：index：签名所示 number 业务值；patch：只包含修改字段的增量
+   * English: Inputs: index: the number domain value in the signature; patch: delta containing modified fields only
+   */
   const change = (index: number, patch: Partial<(typeof services)[number]>) =>
     edit({ services: services.map((s, i) => (i === index ? { ...s, ...patch } : s)) });
   return (
@@ -141,19 +180,31 @@ export function ServiceEditor({
   );
 }
 
+/**
+ * 中文：呈现项目配置、账号与运行服务的界面交互与状态呈现中的 EnvironmentEditor 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the EnvironmentEditor surface for UI interaction and state presentation for project configuration, identities and running services. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  value,
+  change,
+} 提供 value（待校验、转换或保存的输入值）、change（change 状态） 上下文字段
+ * English: Inputs: {
+  value,
+  change,
+} provides context fields value (input value to validate/transform/save), change (change state)
+ */
 export function EnvironmentEditor({
   value,
   change,
 }: {
   value?: Record<string, string>;
-  change: (value: Record<string, string>) => void;
+  change: /** 中文：把修改后的字段或文档交给父级状态所有者；这是 EnvironmentEditor 的调用契约 | English: Deliver modified fields/documents to the parent state owner; this is the callable contract of EnvironmentEditor | 中文：输入：value：待校验、转换或保存的输入值 | English: Inputs: value: input value to validate/transform/save | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (value: Record<string, string>) => void;
 }) {
   const [text, setText] = useState(() =>
     Object.entries(value || {})
       .map(([key, val]) => `${key}=${val}`)
       .join('\n'),
   );
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [value] 变化时文本输入；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [value] change, text input. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     const parsed = Object.fromEntries(
       text
         .split('\n')
@@ -190,7 +241,13 @@ export function EnvironmentEditor({
   );
 }
 
-export function ProjectConnections(props: FeatureProps & { applied: (project: Project) => void }) {
+/**
+ * 中文：呈现项目配置、账号与运行服务的界面交互与状态呈现中的 ProjectConnections 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ProjectConnections surface for UI interaction and state presentation for project configuration, identities and running services. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：props：签名所示 FeatureProps & { applied: (project: Project) => void } 业务值
+ * English: Inputs: props: the FeatureProps & { applied: (project: Project) => void } domain value in the signature
+ */
+export function ProjectConnections(props: FeatureProps & { applied: /** 中文：在配置应用后通知外层恢复最新视图；这是 ProjectConnections 的调用契约 | English: Notify the outer owner to restore current views after configuration application; this is the callable contract of ProjectConnections | 中文：输入：project：签名所示 Project 业务值 | English: Inputs: project: the Project domain value in the signature | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (project: Project) => void }) {
   return (
     <>
       <PluginGate id="ide">

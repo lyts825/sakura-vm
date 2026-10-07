@@ -1,9 +1,34 @@
 /**
- * 模块职责：展示三方合并片段，收集冲突选择和手工编辑后输出最终合并文本。
+ * 模块职责（中文）：展示三方合并片段，收集冲突选择和手工编辑后输出最终合并文本。
+ * Module responsibility (English): Collecting conflict choices and producing complete merged text.
+ * 详细范围（中文）：公开入口包括 ThreeWayMerge；职责覆盖收集冲突选择并输出完整合并文本，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ThreeWayMerge. The scope covers Collecting conflict choices and producing complete merged text. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useMemo, useState } from 'react';
 import { threeWayMerge, resolvedMerge } from '../shared/three-way-merge';
 
+/**
+ * 中文：呈现收集冲突选择并输出完整合并文本中的 ThreeWayMerge 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ThreeWayMerge surface for Collecting conflict choices and producing complete merged text. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  base,
+  ours,
+  theirs,
+  apply,
+  cancel,
+  oursLabel = '当前草稿',
+  theirsLabel = '外部修改',
+} 提供 base（base 状态）、ours（ours 状态）、theirs（theirs 状态）、apply（apply 状态）、cancel（cancel 状态）、oursLabel（oursLabel 状态）、theirsLabel（theirsLabel 状态） 上下文字段
+ * English: Inputs: {
+  base,
+  ours,
+  theirs,
+  apply,
+  cancel,
+  oursLabel = '当前草稿',
+  theirsLabel = '外部修改',
+} provides context fields base (base state), ours (ours state), theirs (theirs state), apply (apply state), cancel (cancel state), oursLabel (oursLabel state), theirsLabel (theirsLabel state)
+ */
 export function ThreeWayMerge({
   base,
   ours,
@@ -16,8 +41,8 @@ export function ThreeWayMerge({
   base: string;
   ours: string;
   theirs: string;
-  apply: (content: string) => void;
-  cancel: () => void;
+  apply: /** 中文：交付完整合并或编辑结果，供调用者保存；这是 ThreeWayMerge 的调用契约 | English: Deliver the complete merge/edit result for the caller to save; this is the callable contract of ThreeWayMerge | 中文：输入：content：当前文件文本内容 | English: Inputs: content: current file text | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (content: string) => void;
+  cancel: /** 中文：取消当前编辑或冲突决策流程；这是 ThreeWayMerge 的调用契约 | English: Cancel the current edit/conflict-decision flow; this is the callable contract of ThreeWayMerge | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ () => void;
   oursLabel?: string;
   theirsLabel?: string;
 }) {
@@ -26,8 +51,14 @@ export function ThreeWayMerge({
     resolution.base === base && resolution.ours === ours && resolution.theirs === theirs
       ? resolution.values
       : {};
+  /**
+   * 中文：在收集冲突选择并输出完整合并文本流程中resolution 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Collecting conflict choices and producing complete merged text, resolution state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：values：签名所示 Record<number, string> 业务值
+   * English: Inputs: values: the Record<number, string> domain value in the signature
+   */
   const setChoices = (values: Record<number, string>) => setResolution({ base, ours, theirs, values });
-  const parsed = useMemo(() => {
+  const parsed = useMemo(/** 中文：为收集冲突选择并输出完整合并文本构造包含 parts、error 的局部数据对象，字段取自本次输入和明确默认值，供后续表单或状态流程使用 | English: Build a local data object containing parts, error for Collecting conflict choices and producing complete merged text, using current inputs/explicit defaults for subsequent form/state processing | 中文：结果：包含 parts、error 的对象，字段供调用者读取状态或调用操作 | English: Result: an object containing parts, error for caller state reads/operations */ () => {
     try {
       return { parts: threeWayMerge(base, ours, theirs), error: '' };
     } catch (error) {

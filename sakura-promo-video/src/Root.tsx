@@ -1,4 +1,5 @@
-/** 注册全片、封面和独立场景 Composition，以已生成旁白的时间线决定视频帧数。 */
+/** 注册全片、封面和独立场景 Composition，以已生成旁白的时间线决定视频帧数。
+ * Register full-film/still/scene compositions using generated narration timing for frame counts. */
 import {Composition, Folder, Still} from 'remotion';
 import {SakuraPromo} from './SakuraPromo';
 import {Cover} from './Cover';
@@ -16,6 +17,8 @@ import {IsolationScene} from './scenes/IsolationScene';
 import {DesktopScene} from './scenes/DesktopScene';
 import {ClosingScene} from './scenes/ClosingScene';
 
+/** 注册完整 1080p/30fps 影片、静态封面及每章独立预览；所有时长从统一 timeline 读取，避免预览与整片剪辑漂移。
+ * Register the full 1080p/30fps film, cover still and individual chapter previews; durations come from the shared timeline to prevent preview/edit drift. */
 export const RemotionRoot = () => <>
   <Composition id="SakuraPromo" component={SakuraPromo} durationInFrames={totalFrames} fps={30} width={1920} height={1080}/>
   <Still id="SakuraCover" component={Cover} width={1920} height={1080}/>

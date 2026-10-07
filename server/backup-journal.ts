@@ -1,5 +1,6 @@
 /**
  * 模块职责：定义备份发布日志与文件身份约束，为中断后的发布恢复保留可验证票据。
+ * Module purpose: Defines backup publication journals and file identity constraints so interrupted publication retains verifiable recovery tickets.
  */
 import { z } from 'zod';
 import { isAbsolute } from 'node:path';
@@ -44,6 +45,15 @@ export const backupPublicationSchema = z
     '备份发布日志与已验证文件身份不符',
   );
 export type BackupPublication = z.infer<typeof backupPublicationSchema>;
+/**
+ * 入口 / Entry: backupPublication.
+ * 功能：把本层请求转交 `metadataFile`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `metadataFile` and propagates the provider result or rejection.
+ * 输入 / Inputs: file: string
+ * 输出 / Returns: `metadataFile<BackupPublication | null>( file, () => null, (value) => (value === null ? null : backupPublicationSchema.parse(v…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const backupPublication = (file: string) =>
   metadataFile<BackupPublication | null>(
     file,

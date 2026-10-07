@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - all HTTP inputs declare a body protocol and expose query/header contracts without unknown bodies
- * - SDK and typed frontend use the same form, no-body and binary encoding and retain failure identities
- * - VM project hints are declared and optional query values encode consistently in SDK and typed clients
+ * 模块职责：回归验证模块，围绕 `openapi` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `openapi`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: all HTTP inputs declare a body protocol and expose query/header contracts without unknown bodies; SDK and typed frontend use the same form, no-body and binary encoding and retain failure identities.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,12 +16,30 @@ import { operationEntries } from '../server/operation-catalog.ts';
 import { createOperationClient } from '../shared/api-client.ts';
 import { encodeOperationBody } from '../shared/http-transport.ts';
 import { ControllerSession } from '../src/controller-session.ts';
+/**
+ * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+ * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+ * 输入 / Inputs: port = 7337。
+ * 结果：返回分支计算值（`import( 'data:text/javascript;base64,' + Buffer.from(generateSdk(apiDocument(['c…`），以 Promise 交付。
+ * Result: Return the branch-computed value (`import( 'data:text/javascript;base64,' + Buffer.from(generateSdk(apiDocument(['c…`) through a Promise.
+ * 协作入口 / Collaborators: `import`, `Buffer.from(generateSdk(apiDocument(['commands'], port))).toString`, `Buffer.from`, `generateSdk`.
+ */
 const sdk = async (port = 7337) =>
   import(
     'data:text/javascript;base64,' +
       Buffer.from(generateSdk(apiDocument(['commands'], port))).toString('base64')
   );
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: all HTTP inputs declare a body protocol and expose query/header contracts without unknown bodies
+ * 协作入口 / Collaborators: `apiDocument`, `operationEntries.filter`, `assert.ok`, `assert.deepEqual`.
+ * 检查边界 / Checked boundaries: `assert.ok(entry.requestContract, entry.declaration.id)`; `assert.ok(entry.declaration.request, entry.declaration.id)`.
+ */
 test('all HTTP inputs declare a body protocol and expose query/header contracts without unknown bodies', () => {
   const spec = apiDocument([], 7337);
   for (const entry of operationEntries.filter(entry => entry.declaration.method !== 'UPGRADE')) {
@@ -42,9 +61,30 @@ test('all HTTP inputs declare a body protocol and expose query/header contracts 
   assert.equal(spec['x-sakura-operations']!.filter(entry => entry.method === 'UPGRADE' && entry.contract === 'declared').length, 6);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: SDK and typed frontend use the same form, no-body and binary encoding and retain failure identities
+ * 协作入口 / Collaborators: `sdk`, `assert.equal`, `client.call`, `controller.operation`.
+ * 检查边界 / Checked boundaries: `assert.equal(await client.call('core.access.ssoSamlCallback', { body }), '<html>callback</html>')`; `assert.equal(await controller.operation('core.access.ssoSamlCallback', { body }), '<html>callback</html>')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('SDK and typed frontend use the same form, no-body and binary encoding and retain failure identities', async () => {
   const { SakuraClient } = await sdk();
   const captured: RequestInit[] = [];
+  /**
+   * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+   * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+   * 输入 / Inputs: _url: string | URL | Request; init: RequestInit。
+   * 结果：返回分支计算值（`new Response('<html>callback</html>', { headers: { 'content-type': 'text/html' }…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`new Response('<html>callback</html>', { headers: { 'content-type': 'text/html' }…`) through a Promise.
+   * 验证场景 / Scenario: SDK and typed frontend use the same form, no-body and binary encoding and retain failure identities
+   * 协作入口 / Collaborators: `captured.push`.
+   */
   const fetcher = async (_url: string | URL | Request, init?: RequestInit) => {
     captured.push(init!);
     return new Response('<html>callback</html>', { headers: { 'content-type': 'text/html' } });
@@ -66,13 +106,34 @@ test('SDK and typed frontend use the same form, no-body and binary encoding and 
   await typed('files.legacy.put.vms.vmId.uploads', { path: { vmId: 'vm' }, query: { id: 'upload', chunk: '0' }, body: bytes });
   assert.equal(transfers[0].bodyKind, 'binary'); assert.equal(transfers[0].body, bytes);
   const correlationId = '11111111-1111-4111-8111-111111111111';
-  const failing = new SakuraClient({ fetcher: async () => Response.json({ error: '响应校验失败', code: 'INVALID_OPERATION_RESPONSE', correlationId,
+  const failing = new SakuraClient({ /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`Response.json({ error: '响应校验失败', code: 'INVALID_OPERATION_RESPONSE', correlation…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`Response.json({ error: '响应校验失败', code: 'INVALID_OPERATION_RESPONSE', correlation…`) through a Promise.
+   * 验证场景 / Scenario: SDK and typed frontend use the same form, no-body and binary encoding and retain failure identities
+   * 协作入口 / Collaborators: `Response.json`.
+   */
+  fetcher: async () => Response.json({ error: '响应校验失败', code: 'INVALID_OPERATION_RESPONSE', correlationId,
     operationResult: { correlationId, outcome: 'succeeded', executed: true, query: '/api/operation-results/' + correlationId } }, { status: 502 }) });
   await assert.rejects(failing.call('core.access.ssoSamlCallback', { body }), (error: any) =>
     error.status === 502 && error.code === 'INVALID_OPERATION_RESPONSE' && error.correlationId === correlationId &&
     error.operationResult.outcome === 'succeeded' && error.message.includes(correlationId));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: VM project hints are declared and optional query values encode consistently in SDK and typed clients
+ * 协作入口 / Collaborators: `apiDocument`, `operationEntries.find`, `assert.equal`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.equal(entry.declaration.projectScoped, false)`; `assert.equal(entry.declaration.projectBinding, 'none')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('VM project hints are declared and optional query values encode consistently in SDK and typed clients', async () => {
   const spec = apiDocument(['files'], 7337), id = 'files.legacy.get.vms.vmId.files' as const;
   const entry = operationEntries.find(candidate => candidate.declaration.id === id)!;
@@ -82,7 +143,16 @@ test('VM project hints are declared and optional query values encode consistentl
     item.in === 'query' && item.name === 'project' && !item.required));
   const { SakuraClient } = await sdk();
   const sdkPaths: string[] = [], typedPaths: string[] = [];
-  const client = new SakuraClient({ fetcher: async (target: string) => {
+  const client = new SakuraClient({ /**
+   * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+   * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+   * 输入 / Inputs: target: string。
+   * 结果：返回分支计算值（`Response.json({ token: 'credential' }) / Response.json([])`），以 Promise 交付。
+   * Result: Return the branch-computed value (`Response.json({ token: 'credential' }) / Response.json([])`) through a Promise.
+   * 验证场景 / Scenario: VM project hints are declared and optional query values encode consistently in SDK and typed clients
+   * 协作入口 / Collaborators: `Response.json`, `sdkPaths.push`.
+   */
+  fetcher: async (target: string) => {
     const url = new URL(target);
     if (url.pathname === '/api/bootstrap') return Response.json({ token: 'credential' });
     sdkPaths.push(url.pathname + url.search);
@@ -107,6 +177,16 @@ test('VM project hints are declared and optional query values encode consistentl
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: OpenAPI describes real core and typed operations, optional defaults, project queries and plugin availability
+ * 协作入口 / Collaborators: `apiDocument`, `assert.equal`, `Object.entries`, `Object.values`.
+ * 检查边界 / Checked boundaries: `assert.equal(spec.openapi, '3.1.1')`; `assert.ok(!ids.has(operation.operationId))`.
+ */
 test('OpenAPI describes real core and typed operations, optional defaults, project queries and plugin availability', () => {
   const spec = apiDocument(['commands'], 7337);
   assert.equal(spec.openapi, '3.1.1');
@@ -209,11 +289,35 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   assert.throws(() => apiPath('/api/vms/{vmId}', { vmId: '..' }));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: generated SDK logs into account mode, uses the session token and revokes it on logout
+ * 协作入口 / Collaborators: `sdk`, `'a'.repeat`, `assert.equal`, `client.login`.
+ * 检查边界 / Checked boundaries: `assert.equal((await client.login('reader', 'long private password')).role, 'viewer')`; `assert.deepEqual(await client.call('core.access.view'), { vms: [] })`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('generated SDK logs into account mode, uses the session token and revokes it on logout', async () => {
   const { SakuraClient } = await sdk();
   const token = 'a'.repeat(64);
   const calls: { path: string; method: string; token?: string; body?: string }[] = [];
-  const client = new SakuraClient({ fetcher: async (url: string, options: RequestInit) => {
+  const client = new SakuraClient({ /**
+   * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+   * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+   * 输入 / Inputs: url: string; options: RequestInit。
+   * 结果：返回分支计算值（`Response.json({ token, principal: { id: 'viewer-id', username: 'reader', role: '… / Response.json({ ok: true })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`Response.json({ token, principal: { id: 'viewer-id', username: 'reader', role: '… / Response.json({ ok: true })`) through a Promise.
+   * 验证场景 / Scenario: generated SDK logs into account mode, uses the session token and revokes it on logout
+   * 失败 / Failure: `new Error('Unexpected request ' + path)`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `calls.push`, `Response.json`, `Date.now`.
+   * 设计思路：根据受控条件分别注入拒绝或结果，保持分支证据可观察，供调用者失败恢复用例复用。
+   * Design: Inject rejection or results under controlled conditions while keeping branch evidence observable for caller recovery tests.
+   */
+  fetcher: async (url: string, options: RequestInit) => {
     const path = new URL(url).pathname;
     const headers = options.headers as Record<string, string>;
     calls.push({ path, method: options.method!, token: headers['X-Sakura-Token'],
@@ -237,11 +341,34 @@ test('generated SDK logs into account mode, uses the session token and revokes i
   assert.equal(JSON.stringify(client), '{}');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: generated SDK accepts project member accounts and includes project authorization operations
+ * 协作入口 / Collaborators: `sdk`, `assert.equal`, `'b'.repeat`, `client.login`.
+ * 检查边界 / Checked boundaries: `assert.equal(operations['core.access.configureProjectPermissions'].method, 'PUT')`; `assert.equal((await client.login('developer', 'long private password')).role, 'member')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('generated SDK accepts project member accounts and includes project authorization operations', async () => {
   const { SakuraClient, operations } = await sdk();
   assert.equal(operations['core.access.configureProjectPermissions'].method, 'PUT');
   const token = 'b'.repeat(64);
-  const client = new SakuraClient({ fetcher: async (url: string, options: RequestInit) => {
+  const client = new SakuraClient({ /**
+   * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+   * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+   * 输入 / Inputs: url: string; options: RequestInit。
+   * 结果：返回分支计算值（`Response.json({ token, principal: { id: 'member-id', username: 'developer', role… / Response.json({ projects: [{ vmId: 'vm', projectId: 'default', roleId: 'reader' …`），以 Promise 交付。
+   * Result: Return the branch-computed value (`Response.json({ token, principal: { id: 'member-id', username: 'developer', role… / Response.json({ projects: [{ vmId: 'vm', projectId: 'default', roleId: 'reader' …`) through a Promise.
+   * 验证场景 / Scenario: generated SDK accepts project member accounts and includes project authorization operations
+   * 失败 / Failure: `new Error('Unexpected request ' + path)`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `Response.json`, `Date.now`, `assert.equal`.
+   * 检查边界 / Checked boundaries: `assert.equal((options.headers as Record<string, string>)['X-Sakura-Token'], token)`.
+   */
+  fetcher: async (url: string, options: RequestInit) => {
     const path = new URL(url).pathname;
     if (path === '/api/access/login') return Response.json({ token,
       principal: { id: 'member-id', username: 'developer', role: 'member', vmIds: [],
@@ -256,9 +383,32 @@ test('generated SDK accepts project member accounts and includes project authori
   assert.equal((await client.call('core.access.projects')).projects[0].roleId, 'reader');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: the generated module authenticates against HTTP, sends encoded parameters and JSON, and streams binary replies
+ * 协作入口 / Collaborators: `createServer`, `sdk`, `server.address`, `assert.deepEqual`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual( await client.call('commands.run', { path: { vmId: 'machine-id' }, query: { project: 'default', q: 'a&b' }, body:…`; `assert.deepEqual(calls[0], { path: '/api/vms/machine-id/commands?project=default&q=a%26b', method: 'POST', body: JSON.stringify({ …`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('the generated module authenticates against HTTP, sends encoded parameters and JSON, and streams binary replies', async () => {
   const calls: { path: string; method: string; body: string }[] = [];
-  const server = createServer(async (req, res) => {
+  const server = createServer(/**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: req; res。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: the generated module authenticates against HTTP, sends encoded parameters and JSON, and streams binary replies
+   * 状态影响 / State effects: `body`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `res.setHeader`, `res.end`, `JSON.stringify`, `assert.equal`.
+   * 检查边界 / Checked boundaries: `assert.equal(req.headers['x-sakura-token'], 'private-token')`.
+   */
+  async (req, res) => {
     if (req.url === '/api/bootstrap') {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ token: 'private-token' }));
@@ -305,6 +455,19 @@ test('the generated module authenticates against HTTP, sends encoded parameters 
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: generated clients reject route escape and external origins, never replay writes, and reauthenticate only on a new explicit call
+ * 状态影响 / State effects: `deny`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `sdk`, `assert.throws`, `assert.rejects`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.throws(() => new SakuraClient({ baseUrl }))`; `assert.rejects( () => client.call('core.vms.start', { path: { vmId: '../outside' } }), /Invalid path parameter/, )`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('generated clients reject route escape and external origins, never replay writes, and reauthenticate only on a new explicit call', async () => {
   const { SakuraClient } = await sdk();
   for (const baseUrl of [
@@ -317,6 +480,15 @@ test('generated clients reject route escape and external origins, never replay w
     writes = 0,
     deny = true;
   const client = new SakuraClient({
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: url: string。
+     * 结果：返回分支计算值（`Response.json({ token: 'token' }) / Response.json({ error: 'expired', code: 'UNAUTHORIZED' }, { status: 401 })`），以 Promise 交付。
+     * Result: Return the branch-computed value (`Response.json({ token: 'token' }) / Response.json({ error: 'expired', code: 'UNAUTHORIZED' }, { status: 401 })`) through a Promise.
+     * 验证场景 / Scenario: generated clients reject route escape and external origins, never replay writes, and reauthenticate only on a new explicit call
+     * 协作入口 / Collaborators: `url.endsWith`, `Response.json`.
+     */
     fetcher: async (url: string) => {
       if (url.endsWith('/bootstrap')) {
         authentication++;
@@ -355,6 +527,16 @@ test('generated clients reject route escape and external origins, never replay w
   await assert.rejects(() => client.call('core.vms.start', { path: { vmId: 'vm' }, signal: abort.signal }));
   assert.equal(writes, 2);
   const broken = new SakuraClient({
+    /**
+     * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+     * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+     * 输入 / Inputs: url: string。
+     * 结果：返回分支计算值（`Response.json({ token: 'token' })`），以 Promise 交付。
+     * Result: Return the branch-computed value (`Response.json({ token: 'token' })`) through a Promise.
+     * 验证场景 / Scenario: generated clients reject route escape and external origins, never replay writes, and reauthenticate only on a new explicit call
+     * 失败 / Failure: `new TypeError('Connection lost after submission')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `url.endsWith`, `Response.json`.
+     */
     fetcher: async (url: string) => {
       if (url.endsWith('/bootstrap')) return Response.json({ token: 'token' });
       writes++;

@@ -1,5 +1,6 @@
 /**
  * 模块职责：构造项目私有 Docker 环境及 Compose 校验，限制网络模式并核对运行路径绑定。
+ * Module purpose: Builds project-private Docker execution and Compose validation with restricted network modes and pinned runtime paths.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -16,6 +17,15 @@ import {
   projectNetworkNamespace,
 } from './project-network-isolation.ts';
 
+/**
+ * 入口 / Entry: privateDockerPaths.
+ * 功能：从当前输入或状态计算 `{ projectId: key, config, runtime, data, unit, socket: `${runtime}/d.sock`, containerdSocket: `${runtime}/c.sock`, unitPath: …`，供调用方后续验证或使用。
+ * Purpose: Computes `{ projectId: key, config, runtime, data, unit, socket: `${runtime}/d.sock`, containerdSocket: `${runtime}/c.sock`, unitPath: …` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: `{ projectId: key, config, runtime, data, unit, socket: `${runtime}/d.sock`, containerdSocket: `${runtime}/c.sock`, unitPath: …`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function privateDockerPaths(projectId: string) {
   const key = projectIdSchema.parse(projectId);
   const config = `/etc/sakura/docker/${key}`,
@@ -33,10 +43,30 @@ export function privateDockerPaths(projectId: string) {
     unitPath: `/etc/systemd/system/${unit}`,
   };
 }
+/**
+ * 入口 / Entry: privateDockerBinding.
+ * 功能：在构造项目私有 Docker 环境及 Compose 校验中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256') .update(JSON.stringify([project._workspace || 'default', project.directory, 'private'])) .digest('hex')` 供上层消费（`private-docker.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `private-docker.ts`; this entry produces `createHash('sha256') .update(JSON.stringify([project._workspace || 'default', project.directory, 'private'])) .digest('hex')` for its caller. Module context: Builds project-private Docker execution and Compose validation with restricted network modes and pinned runtime paths.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project
+ * 输出 / Returns: `createHash('sha256') .update(JSON.stringify([project._workspace || 'default', project.directory, 'private'])) .digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const privateDockerBinding = (project: Project) =>
   createHash('sha256')
     .update(JSON.stringify([project._workspace || 'default', project.directory, 'private']))
     .digest('hex');
+/**
+ * 入口 / Entry: privateComposeValidator.
+ * 功能：从当前输入或状态计算 `( `def private_compose(value):\n` + ` if not isinstance(value,dict) or not isinstance(value.get('services'),dict) or not valu…`，供调用方后续验证或使用。
+ * Purpose: Computes `( `def private_compose(value):\n` + ` if not isinstance(value,dict) or not isinstance(value.get('services'),dict) or not valu…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: project: Project; labels: Record<string, string> default={}
+ * 输出 / Returns: `( `def private_compose(value):\n` + ` if not isinstance(value,dict) or not isinstance(value.get('services'),dict) or not valu…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function privateComposeValidator(project: Project, labels: Record<string, string> = {}) {
   return (
     `def private_compose(value):\n` +
@@ -57,6 +87,14 @@ export function privateComposeValidator(project: Project, labels: Record<string,
     `    return value\n`
   );
 }
+/**
+ * 入口 / Entry: dockerArgs.
+ * 功能：从当前输入或状态计算 `[ '--config-file', `${p.config}/daemon.json`, '--containerd', p.containerdSocket, '--host', `unix://${p.socket}`, '--data-roo…`，供调用方后续验证或使用。
+ * Purpose: Computes `[ '--config-file', `${p.config}/daemon.json`, '--containerd', p.containerdSocket, '--host', `unix://${p.socket}`, '--data-roo…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: p: ReturnType<typeof privateDockerPaths>
+ * 输出 / Returns: `[ '--config-file', `${p.config}/daemon.json`, '--containerd', p.containerdSocket, '--host', `unix://${p.socket}`, '--data-roo…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const dockerArgs = (p: ReturnType<typeof privateDockerPaths>) => [
   '--config-file',
   `${p.config}/daemon.json`,
@@ -86,6 +124,17 @@ const dockerArgs = (p: ReturnType<typeof privateDockerPaths>) => [
 ];
 
 // Explicit endpoints take precedence over project values and Docker contexts.
+/**
+ * 入口 / Entry: dockerClientEnvironment.
+ * 功能：在构造项目私有 Docker 环境及 Compose 校验中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( `unset DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_API_VERSION\n` + `export DOCKER_HOST=${quote(`unix://${p.so…` 供上层消费（`private-docker.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `private-docker.ts`; this entry produces `( `unset DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_API_VERSION\n` + `export DOCKER_HOST=${quote(`unix://${p.so…` for its caller. Module context: Builds project-private Docker execution and Compose validation with restricted network modes and pinned runtime paths.
+ * 处理：通过 `privateDockerPaths`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `privateDockerPaths`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: projectId: string
+ * 输出 / Returns: `( `unset DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_API_VERSION\n` + `export DOCKER_HOST=${quote(`unix://${p.so…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function dockerClientEnvironment(projectId: string) {
   const p = privateDockerPaths(projectId);
   return (
@@ -94,6 +143,17 @@ export function dockerClientEnvironment(projectId: string) {
     `docker() { ${quote(p.config + '/docker-client')} "$@"; }\n`
   );
 }
+/**
+ * 入口 / Entry: privateDockerCommand.
+ * 功能：在构造项目私有 Docker 环境及 Compose 校验中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( `set -eu\n${projectNetworkCheckScript(namespace)}\n` + `exec nsenter --net=/run/netns/${namespace} -- env -i HOME=/root ` +…` 供上层消费（`private-docker.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `private-docker.ts`; this entry produces `( `set -eu\n${projectNetworkCheckScript(namespace)}\n` + `exec nsenter --net=/run/netns/${namespace} -- env -i HOME=/root ` +…` for its caller. Module context: Builds project-private Docker execution and Compose validation with restricted network modes and pinned runtime paths.
+ * 处理：通过 `projectNetworkNamespace`, `envPrefix`, `dockerClientEnvironment`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectNetworkNamespace`, `envPrefix`, `dockerClientEnvironment`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project; command: string; environment: default=true
+ * 输出 / Returns: `( `set -eu\n${projectNetworkCheckScript(namespace)}\n` + `exec nsenter --net=/run/netns/${namespace} -- env -i HOME=/root ` +…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!namespace`; 异常 / errors `new AppError('此项目没有私有网络', 409)`.
+ */
 export function privateDockerCommand(project: Project, command: string, environment = true) {
   const namespace = projectNetworkNamespace(project);
   if (!namespace) throw new AppError('此项目没有私有网络', 409);
@@ -110,6 +170,17 @@ export function privateDockerCommand(project: Project, command: string, environm
   );
 }
 
+/**
+ * 入口 / Entry: privateDockerFiles.
+ * 功能：为一次私有 Docker 运行生成固定绑定、服务和客户机配置文件内容。
+ * Purpose: Builds fixed binding/service/guest configuration contents for one private Docker run.
+ * 设计：运行 ID 和路径先校验，用户 Compose 环境与 root 控制逻辑分离；函数只生成内容，不在宿主启动 Docker。
+ * Design: Run IDs/paths are validated and Compose input remains separate from root control; generation does not start host Docker.
+ * 输入 / Inputs: project: Project; runId: string
+ * 输出 / Returns: `{ [`${p.config}/run.sh`]: script, [p.unitPath]: unit, [`${p.config}/docker-client`]: wrapper, [`${p.config}/compose-client`]:…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function privateDockerFiles(project: Project, runId: string) {
   z.uuid().parse(runId);
   const projectId = projectIdSchema.parse(project._workspace || 'default'),
@@ -217,6 +288,17 @@ const runtimeSchema = z
 export type PrivateDockerStatus = z.infer<typeof runtimeSchema>;
 
 /** Inspection starts outside project environment and never falls back to the shared daemon. */
+/**
+ * 入口 / Entry: privateDockerStatusCommand.
+ * 功能：生成核对私有 Docker 服务、目录和运行绑定的客户机探测脚本。
+ * Purpose: Builds guest probes for private Docker service/directory/run bindings.
+ * 设计：核对配置摘要、socket 与进程归属，未知原运行报告不可接管；此函数自身只生成固定脚本。
+ * Design: Configuration/socket/process proof distinguishes owned from unadoptable unknown runs; this function only constructs fixed code.
+ * 输入 / Inputs: project: Project
+ * 输出 / Returns: ``python3 -I -S -c ${quote(code)}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function privateDockerStatusCommand(project: Project) {
   const projectId = project._workspace || 'default',
     p = privateDockerPaths(projectId);
@@ -305,6 +387,18 @@ print(json.dumps(result,ensure_ascii=False))`;
   return `python3 -I -S -c ${quote(code)}`;
 }
 
+/**
+ * 入口 / Entry: privateDockerStatus.
+ * 功能：在构造项目私有 Docker 环境及 Compose 校验中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ present: false, running: false, valid: false, reason: null, runId: null, containers: 0, } satisfies PrivateDockerStatus` / `runtimeSchema.parse(JSON.parse(result.stdout))` 供上层消费（`private-docker.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `private-docker.ts`; this entry produces `{ present: false, running: false, valid: false, reason: null, runId: null, containers: 0, } satisfies PrivateDockerStatus` / `runtimeSchema.parse(JSON.parse(result.stdout))` for its caller. Module context: Builds project-private Docker execution and Compose validation with restricted network modes and pinned runtime paths.
+ * 处理：通过 `machines.state`, `privateDockerPaths`, `machines.exec`, `privateDockerStatusCommand` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `machines.state`, `privateDockerPaths`, `machines.exec`, `privateDockerStatusCommand`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `machines.state(id) !== 'running'`.
+ * 输入 / Inputs: machines: Machines; id: string; project: Project; signal: AbortSignal optional
+ * 输出 / Returns: `{ present: false, running: false, valid: false, reason: null, runId: null, containers: 0, } satisfies PrivateDockerStatus`; `runtimeSchema.parse(JSON.parse(result.stdout))`.
+ * 副作用 / Effects: `machines.exec`.
+ * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; 异常 / errors `new AppError('无法核对私有 Docker，请先安装 Python 3', 409)`.
+ */
 export async function privateDockerStatus(
   machines: Machines,
   id: string,
@@ -334,6 +428,20 @@ export async function privateDockerStatus(
 }
 
 /** Callers hold the VM lock, including cleanup, through this operation. */
+/**
+ * 入口 / Entry: preparePrivateDocker.
+ * 功能：在构造项目私有 Docker 环境及 Compose 校验中，执行此领域的具体处理步骤并返回其结果；本入口产生 `existing` / `status` 供上层消费（`private-docker.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `private-docker.ts`; this entry produces `existing` / `status` for its caller. Module context: Builds project-private Docker execution and Compose validation with restricted network modes and pinned runtime paths.
+ * 处理：通过 `privateDockerStatus`, `privateDockerPaths`, `randomUUID`, `projectNetworkNamespace` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `privateDockerStatus`, `privateDockerPaths`, `randomUUID`, `projectNetworkNamespace`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `status.valid && status.runId === runId`; `status.reason`.
+ * 输入 / Inputs: machines: Machines; id: string; project: Project; signal: AbortSignal
+ * 输出 / Returns: `existing`; `status`.
+ * 副作用 / Effects: `machines.exec`; `stopPrivateDocker`; 更新 / updates `reason`.
+ * 拒绝 / Refusals: 条件 / conditions `existing.running`; `!existing.valid`; `!namespace`; 异常 / errors `new AppError(existing.reason || '私有 Docker 绑定无效', 409)`; `new AppError('此项目没有私有网络', 409)`.
+ * 失败处理：catch 分支执行 `await stopPrivateDocker(machines, id, project, runId);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `await stopPrivateDocker(machines, id, project, runId);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function preparePrivateDocker(
   machines: Machines,
   id: string,
@@ -389,6 +497,18 @@ export async function preparePrivateDocker(
     throw error;
   }
 }
+/**
+ * 入口 / Entry: stopPrivateDocker.
+ * 功能：在构造项目私有 Docker 环境及 Compose 校验中，结束、撤销或清理本次拥有的领域资源；本入口产生 `void` 供上层消费（`private-docker.ts`）。
+ * Purpose: Ends, revokes or cleans resources owned by this domain action in `private-docker.ts`; this entry produces `void` for its caller. Module context: Builds project-private Docker execution and Compose validation with restricted network modes and pinned runtime paths.
+ * 处理：通过 `privateDockerPaths`, `privateDockerStatus`, `quote`, `machines.exec` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `privateDockerPaths`, `privateDockerStatus`, `quote`, `machines.exec`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!expectedRunId && !(await privateDockerStatus(machines, id, project)).running`; `expectedRunId && !result.stdout.includes('SAKURA_DOCKER_STOPPED')`.
+ * 输入 / Inputs: machines: Machines; id: string; project: Project; expectedRunId: string optional
+ * 输出 / Returns: `void`.
+ * 副作用 / Effects: `machines.exec`.
+ * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; `status.running`; 异常 / errors `new AppError('私有 Docker 环境未能停止，请检查客户机服务', 409)`; `new AppError('私有 Docker 的遗留进程仍在运行，绑定不可修改', 409)`.
+ */
 export async function stopPrivateDocker(
   machines: Machines,
   id: string,

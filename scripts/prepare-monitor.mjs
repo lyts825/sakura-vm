@@ -1,4 +1,5 @@
-/** 打包只读监控 PWA，计算静态壳版本并替换 service worker 的缓存修订占位符。 */
+/** 打包只读监控 PWA，计算静态壳版本并替换 service worker 的缓存修订占位符。
+ * Copy the monitor PWA shell and bind worker cache revision to actual shell bytes for coherent offline updates. */
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

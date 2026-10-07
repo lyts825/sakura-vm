@@ -1,24 +1,37 @@
-/** 检查插件源码的 manifest、服务与路由契约使用，核对声明能力与实际实现的对应关系。 */
+/** 检查插件源码的 manifest、服务与路由契约使用，核对声明能力与实际实现的对应关系。
+ * Inspect browser/server plugin entry declarations and public service capabilities to enforce independent source contracts. */
 import { isBuiltin } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import type { PluginManifest } from '../shared/plugin-protocol.ts';
 import { staticString } from './network-boundaries.ts';
 
+/** 生成规范工作区相对源码标签，供插件所属和诊断共用。
+ * Produce normalized workspace-relative source labels for ownership and diagnostics. */
 const label = (file: string) => relative(process.cwd(), resolve(file)).replaceAll('\\', '/');
+/** 从明确 plugins/<id>/ 路径提取插件 owner，其他源不冒充插件。
+ * Extract ownership from explicit plugins/<id>/ paths, leaving other sources unowned. */
 const owner = (file: string) => /^plugins\/([^/]+)\//.exec(label(file))?.[1];
+/** 判断符号是否来自历史兼容服务 getter，供官方插件源码拒绝隐式服务依赖。
+ * Detect symbols from legacy compatibility getters so official plugins cannot hide service dependencies. */
 const compatibilityMember = (symbol: ts.Symbol | undefined) => symbol?.declarations?.some(
   declaration => label(declaration.getSourceFile().fileName) === 'server/plugin-services.ts',
 );
 
 /** Repository authoring rules supplement the runtime broker; they do not change API 5. */
+/** 核对客户端贡献和 manifest 精确一致，并检查浏览器依赖及服务器显式 ServiceRef 边界，返回去重诊断。
+ * Validate exact client contribution/manifest agreement and browser/server explicit-ServiceRef boundaries, returning deduplicated diagnostics. */
 export function pluginSourceContractErrors(program: ts.Program, catalog: readonly PluginManifest[]): string[] {
   const checker = program.getTypeChecker();
   const errors: string[] = [];
+  /** 附带源文件与一基行号累计边界诊断，不中断遍历，以便一次报告全部违规。
+   * Accumulate boundary diagnostics with source path/one-based line without stopping traversal, reporting all violations together. */
   const report = (node: ts.Node, message: string) => {
     const file = node.getSourceFile();
     errors.push(`${label(file.fileName)}:${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1}: ${message}`);
   };
+  /** 优先按相对源码候选解析 import，再用 TS 模块解析，未找到返回 undefined。
+   * Resolve relative source candidates first, then TS modules, returning undefined when absent. */
   const target = (file: ts.SourceFile, specifier: string) => {
     if (specifier.startsWith('.')) {
       const base = resolve(dirname(file.fileName), specifier);
@@ -30,8 +43,12 @@ export function pluginSourceContractErrors(program: ts.Program, catalog: readonl
     const path = ts.resolveModuleName(specifier, file.fileName, program.getCompilerOptions(), ts.sys).resolvedModule?.resolvedFileName;
     return path ? program.getSourceFile(path) : undefined;
   };
+  /** 遍历源码收集静态/类型/动态 import 和 require 的来源节点与 specifier。
+   * Collect source nodes/specifiers for static/type/dynamic imports and require throughout the AST. */
   const imports = (file: ts.SourceFile) => {
     const found: { node: ts.Node; specifier: string }[] = [];
+    /** 递归检查 import 形式或兼容 getter/解构使用，保留具体源节点用于精确诊断。
+     * Recursively inspect import forms or compatibility getter/destructuring uses, retaining source nodes for precise diagnostics. */
     function visit(node: ts.Node) {
       const value = ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ? node.moduleSpecifier
         : ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) ? node.argument.literal
@@ -45,6 +62,8 @@ export function pluginSourceContractErrors(program: ts.Program, catalog: readonl
     return found;
   };
   const browserVisited = new Set<ts.SourceFile>();
+  /** 遍历插件浏览器依赖闭包一次，拒绝 Node builtin/服务端实现，只继续自有 shared/plugin 源。
+   * Walk plugin-browser dependency closure once, rejecting Node/server imports and continuing only owned shared/plugin sources. */
   function browser(file: ts.SourceFile) {
     if (browserVisited.has(file)) return;
     browserVisited.add(file);
@@ -56,6 +75,8 @@ export function pluginSourceContractErrors(program: ts.Program, catalog: readonl
     }
   }
   const serverVisited = new Set<ts.SourceFile>();
+  /** 核对服务器跨插件依赖直接声明且仅通过 public services.ts，再检查本插件对兼容服务的访问。
+   * Require declared direct cross-plugin dependencies through public services.ts and inspect own compatibility-service access. */
   function server(file: ts.SourceFile) {
     if (serverVisited.has(file)) return;
     serverVisited.add(file);
@@ -74,6 +95,8 @@ export function pluginSourceContractErrors(program: ts.Program, catalog: readonl
           report(node, 'Server plugins may import another plugin only through its public services.ts references');
       } else server(dependency);
     }
+    /** 递归检查 import 形式或兼容 getter/解构使用，保留具体源节点用于精确诊断。
+     * Recursively inspect import forms or compatibility getter/destructuring uses, retaining source nodes for precise diagnostics. */
     function visit(node: ts.Node) {
       if (ts.isPropertyAccessExpression(node) && compatibilityMember(checker.getSymbolAtLocation(node.name)))
         report(node, 'Official plugin entries must resolve services explicitly with use/optional(ServiceRef)');
@@ -129,6 +152,8 @@ export function pluginSourceContractErrors(program: ts.Program, catalog: readonl
   return [...new Set(errors)];
 }
 
+/** 建立插件源码 program 并调用契约检查，配置或边界诊断失败一次抛出全部问题。
+ * Build the plugin-source program and throw all configuration/boundary diagnostics together. */
 export function assertPluginSourceContracts(catalog: readonly PluginManifest[]) {
   const config = ts.readConfigFile('tsconfig.json', ts.sys.readFile);
   if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'));

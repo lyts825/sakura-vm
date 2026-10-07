@@ -1,4 +1,5 @@
-/** 准备独立 JetBrains Gateway 配置，并观测远程后端的 UID、cgroup、目录及项目 SSH 身份。 */
+/** 准备独立 JetBrains Gateway 配置，并观测远程后端的 UID、cgroup、目录及项目 SSH 身份。
+ * Build an isolated JetBrains Gateway profile/link and verify the real remote backend’s project identity. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -24,6 +25,8 @@ export type JetbrainsProfile = {
   hostKeyVerification: string;
   download: { content: string };
 };
+/** 转义 XML 保留字符，以安全写入 Gateway 的配置属性值。
+ * Escape XML reserved characters for Gateway configuration attributes. */
 const xml = (value: string) =>
   value
     .replaceAll('&', '&amp;')
@@ -31,12 +34,16 @@ const xml = (value: string) =>
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll("'", '&apos;');
+/** 拒绝引号与换行，并对百分号翻倍后包双引号，为专用 cmd 包装器编码固定本机路径。
+ * Reject quotes/newlines and double percent signs before quoting fixed local paths for the dedicated cmd wrapper. */
 const windowsArgument = (value: string) => {
   assert.ok(!/["\r\n]/.test(value), 'Unsafe Windows command path');
   return '"' + value.replaceAll('%', '%%') + '"';
 };
 
 /** Prepare only a new, caller-owned client directory; never edit a user's IDE or SSH home. */
+/** 核验真实 Windows Gateway 安装与自有物理目录，为各项目写独立严格主机密钥 SSH 配置；wx 防覆盖，禁用外部已知主机和代理使桌面验证依赖精确项目端点。
+ * Validate real Windows Gateway/owned physical root and write project-specific strict-host-key SSH profiles; wx prevents overwrite and global-known-hosts/agent exclusions keep desktop verification tied to exact project endpoints. */
 export async function prepareJetbrainsGatewayProfile(
   directory: string,
   gateway: string,
@@ -144,6 +151,8 @@ export async function prepareJetbrainsGatewayProfile(
   };
 }
 
+/** 验证后端位于指定项目 Home 内，编码固定 SSH 配置生成 Gateway 链接；deploy=false 使用已核验后端，路径控制字符拒绝。
+ * Validate the backend lies inside the project home and encode an SSH Gateway link; deploy=false uses the verified backend and path control characters reject. */
 export function projectJetbrainsGatewayLink(profile: JetbrainsProfile, idePath: string, home: string) {
   assert.match(home, /^\/var\/lib\/sakura-project-homes\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/);
   assert.ok(idePath.startsWith(home + '/.jetbrains/ide-'));
@@ -162,6 +171,8 @@ export function projectJetbrainsGatewayLink(profile: JetbrainsProfile, idePath: 
 }
 
 /** Actual Gateway SSH/SFTP/backend/tunnel proof. Client editor/licensing is recorded separately. */
+/** 仅在指定真实 Gateway 时验收；先核验官方本地后端摘要，再使用项目 SSH 配置部署/启动并观察编辑、账号与网络域，关闭自有客户端后保留证据。
+ * Run only with an explicitly supplied real Gateway; verify the official local backend hash before project-SSH deployment/start, observe editing/account/network domain and retain evidence after owned-client teardown. */
 export async function projectJetbrainsClientSmoke(
   root: string,
   sshConfig: string,
@@ -371,6 +382,8 @@ export async function projectJetbrainsClientSmoke(
   await writeFile(join(root, 'jetbrains-client-evidence.json'), JSON.stringify(evidence, null, 2));
 }
 
+/** 生成来宾 Python 观测源码，按精确后端可执行路径枚举 UID/GID/Home/cgroup/网络域并探测外网阻断，输出 JSON 而不修改后端。
+ * Generate guest Python observing exact backend executable/UID/GID/home/cgroup/network and external-network denial as JSON without mutating the backend. */
 function backendProcessProbe(project: Project, ide: string) {
   const source = `import os,json,pathlib,socket
 project=${JSON.stringify(project)}

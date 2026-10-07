@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目终端只读授权、撤销、暂停守卫及插件禁用回退。 */
+/** 烟雾验收：验证项目终端只读授权、撤销、暂停守卫及插件禁用回退。
+ * Smoke acceptance for terminal read-only authority, revocation, pause guards and plugin-disable fallback. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -24,6 +25,8 @@ const origin = `http://127.0.0.1:${port}`;
 let server: ReturnType<typeof spawn> | undefined, output = '', token = '';
 let debugVm = '';
 const sockets = new Set<WebSocket>();
+/** 启动实际 CLI 子进程，绑定本机端口/可选账号令牌与输入，等待 close 后返回退出码和两路输出。
+ * Spawn the actual CLI with local port/optional account token/input, awaiting close before returning exit code/both streams. */
 async function cli(args: string[], accountToken?: string, input?: string) {
   const child = spawn(process.execPath, ['scripts/cli.mjs', ...args], { cwd: resolve('.'),
     env: { ...process.env, SAKURA_PORT: String(port), SAKURA_TOKEN: accountToken || '' },
@@ -37,6 +40,8 @@ async function cli(args: string[], accountToken?: string, input?: string) {
   });
   return { code, stdout, stderr };
 }
+/** 在专用状态和发行版镜像启动编译服务，三十秒内等待账户入口，提前退出附输出。
+ * Start compiled service with dedicated state/distribution image and await account entry within thirty seconds, reporting output on early exit. */
 async function start() {
   server = spawn(process.execPath, ['.sakura-server/index.js'], {
     cwd: resolve('.'), env: { ...process.env, SAKURA_DATA_DIR: data, SAKURA_PORT: String(port),
@@ -54,6 +59,8 @@ async function start() {
   }
   throw new Error('Compiled terminal server did not start: ' + output);
 }
+/** 关闭登记的终端 socket 后停止自有服务，十五秒后可强杀，仍等待实际 exit。
+ * Close registered terminal sockets/stop the owned service, escalating after fifteen seconds while still awaiting physical exit. */
 async function stop() {
   for (const socket of sockets) socket.close();
   if (!server || server.exitCode !== null) return;
@@ -63,17 +70,23 @@ async function stop() {
   if (server.exitCode === null) server.kill('SIGKILL');
   await exited;
 }
+/** 用指定认证凭据发送最长三分钟的本机 JSON 请求，返回状态与正文供允许/拒绝验收。
+ * Send local JSON requests with the selected credential/three-minute deadline, returning status/body for acceptance/denial checks. */
 async function request(path: string, method = 'GET', body?: unknown, credential = token) {
   const response = await fetch(origin + path, { method,
     headers: { 'x-sakura-token': credential, 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(180000) });
   return { status: response.status, body: await response.json() as any };
 }
+/** 封装 request 并要求 2xx，返回成功正文，失败保留状态与结构化诊断。
+ * Wrap request/require 2xx and return successful bodies, retaining status/structured diagnostics on failure. */
 async function ok(path: string, method = 'GET', body?: unknown) {
   const result = await request(path, method, body);
   assert.ok(result.status >= 200 && result.status < 300, JSON.stringify(result));
   return result.body;
 }
+/** 经编译 API 启动实例并五分钟内等 running，停止/错误或期限失败附视图与服务日志。
+ * Start via compiled API/await running within five minutes, failing stopped/error/expiry with VM view/service logs. */
 async function boot(id: string) {
   await ok(`/api/vms/${id}/start`, 'POST');
   const deadline = Date.now() + 300000;
@@ -85,6 +98,8 @@ async function boot(id: string) {
     await delay(250);
   }
 }
+/** 按账号/项目/会话打开真实 terminal 或只读 terminal-view，登记并收集消息；三分钟内要求 ready，返回输入与实际关闭句柄。
+ * Open real terminal/read-only terminal-view by credential/project/session, register/collect messages and require ready within three minutes, returning input/physical-close handles. */
 async function terminal(id: string, session: string | null, projectId?: string, viewerToken?: string) {
   const query = new URLSearchParams({ token: viewerToken || token });
   if (session) query.set('session', session);
@@ -102,7 +117,11 @@ async function terminal(id: string, session: string | null, projectId?: string, 
     assert.ok(Date.now() < deadline, 'Terminal did not become ready'); await delay(100);
   }
   return { socket, messages, context: messages.find((item) => item.type === 'ready')!.data,
+    /** 把一行输入编码成终端 input 消息，自动增加换行以提交来宾命令。
+     * Encode one line as terminal input, appending a newline to submit the guest command. */
     input: (value: string) => socket.send(JSON.stringify({ type: 'input', data: value + '\n' })),
+    /** 结束本终端 WebSocket 并等待实际 close，已关闭时直接返回，防止等待不存在的第二次事件。
+     * Close this terminal WebSocket/await actual close, returning immediately if already closed to avoid waiting for a nonexistent second event. */
     close: async () => {
       if (socket.readyState === WebSocket.CLOSED) return;
       const closed = new Promise<void>((done) => socket.once('close', () => done())); socket.close(); await closed;
@@ -122,10 +141,14 @@ try {
   const index = await ok(`/api/vms/${id}/projects`, 'POST', { action: 'create', name: 'Private', config });
   const privateId = index.active as string;
   await boot(id);
+  /** 经认证 API 的实例域执行自有命令，要求零退出并返回 stdout。
+   * Run owned commands through authenticated API instance scope, require zero exit and return stdout. */
   const guest = async (command: string) => {
     const result = await ok(`/api/vms/${id}/exec`, 'POST', { command, scope: 'instance' });
     assert.equal(result.code, 0, result.stderr); return result.stdout.trim() as string;
   };
+  /** 只接受两个数字 PID，有限轮询确认 shell/子进程与任务锁清理，容许短暂 409 收敛，其他状态或期限失败。
+   * Accept exactly two numeric PIDs, poll bounded shell/child/job-lock cleanup allowing transient 409 convergence, and fail other responses/expiry. */
   const waitForProcessCleanup = async (pids: string[], label: string) => {
     assert.ok(pids.length === 2 && pids.every((pid) => /^\d+$/.test(pid)));
     let last;

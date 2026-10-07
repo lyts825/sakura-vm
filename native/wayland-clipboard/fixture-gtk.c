@@ -1,4 +1,7 @@
-/** GTK 原生 Wayland 剪贴板夹具，用真实工具包读写文本并报告会话身份与操作结果。 */
+/**
+ * 中文：原生 GTK Wayland 夹具，以真实窗口输入和 compositor 焦点启动选择 owner 或读取请求。按模式写出测试标记，异步读取受焦点等待和内容格式条件约束。
+ * English: Native GTK Wayland fixture using real window input and compositor focus to start selection ownership or read requests. It writes mode-specific test markers, with asynchronous reads constrained by focus waits and content-format checks.
+ */
 #include <gtk/gtk.h>
 #include <gdk/gdkwayland.h>
 #include <string.h>
@@ -11,12 +14,22 @@ static GtkClipboard *clipboard;
 static gint64 started;
 static gboolean input_received;
 
+/**
+ * 中文：记录真实 F8 键事件作为 compositor 输入证据，返回 FALSE 继续正常 GTK 事件传播。
+ * English: Records a real F8 key event as compositor-input evidence and returns FALSE to preserve normal GTK event propagation.
+ * 参数 / Parameters: `key_pressed(GtkWidget *unused, GdkEventKey *event, gpointer data)`.
+ */
 static gboolean key_pressed(GtkWidget *unused, GdkEventKey *event, gpointer data) {
     (void)unused; (void)data;
     if (event->keyval == GDK_KEY_F8) input_received = TRUE;
     return FALSE;
 }
 
+/**
+ * 中文：按请求 MIME 从夹具输入文件提供原字节，读取失败时不设置选择数据。
+ * English: Provides original fixture-file bytes for the requested MIME, leaving selection data unset if reading fails.
+ * 参数 / Parameters: `provide(GtkClipboard *unused, GtkSelectionData *selection, guint info, gpointer user_data)`.
+ */
 static void provide(GtkClipboard *unused, GtkSelectionData *selection, guint info, gpointer user_data) {
     (void)unused; (void)info; (void)user_data;
     gchar *bytes = NULL; gsize size = 0;
@@ -25,7 +38,19 @@ static void provide(GtkClipboard *unused, GtkSelectionData *selection, guint inf
         g_free(bytes);
     }
 }
+/**
+ * 中文：接收 GTK 所有权撤销通知；本夹具未绑定额外资源，因此无需释放动作。
+ * English: Receives GTK ownership-clear notification; the fixture binds no extra resources and needs no disposal action.
+ * 参数 / Parameters: `cleared(GtkClipboard *unused, gpointer data)`.
+ */
 static void cleared(GtkClipboard *unused, gpointer data) { (void)unused; (void)data; }
+/**
+ * 中文：等待真实输入和活动窗口后取得选择所有权或同步读取 MIME，写入标记并停止此计时器。
+ * English: Waits for real input/active-window focus before owning or synchronously reading the MIME selection, writes its marker and stops this timer.
+ * 参数 / Parameters: `tick(gpointer unused)`.
+ * 设计 / Design: GTK 同步读取可进入嵌套事件循环；十秒没有原生焦点时写 NO-NATIVE-FOCUS 并退出。
+ * GTK synchronous reads may enter a nested event loop; ten seconds without native focus writes NO-NATIVE-FOCUS and exits.
+ */
 static gboolean tick(gpointer unused) {
     (void)unused;
     if (input_received && gtk_window_is_active(GTK_WINDOW(window))) {
@@ -52,6 +77,11 @@ static gboolean tick(gpointer unused) {
     }
     return G_SOURCE_CONTINUE;
 }
+/**
+ * 中文：要求真实 Wayland 后端，创建全屏 GTK 窗口并注册输入与计时处理来运行 CLIPBOARD/PRIMARY 夹具。
+ * English: Requires a real Wayland backend, creates a fullscreen GTK window and registers input/timer handlers for the CLIPBOARD/PRIMARY fixture.
+ * 参数 / Parameters: `main(int argc, char **argv)`.
+ */
 int main(int argc, char **argv) {
     gtk_init(&argc, &argv);
     if (argc < 5 || !GDK_IS_WAYLAND_DISPLAY(gdk_display_get_default())) return 42;

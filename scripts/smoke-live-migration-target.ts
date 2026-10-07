@@ -1,4 +1,5 @@
-/** 烟雾验收：验证生产接收器创建真实暂停目标、限制 QMP 并安全中止移除。 */
+/** 烟雾验收：验证生产接收器创建真实暂停目标、限制 QMP 并安全中止移除。
+ * Smoke acceptance for real paused targets, constrained QMP and safe aborted-target removal by the production receiver. */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -29,6 +30,8 @@ try {
   engine = await createRuntime();
   machines = new Machines(engine);
   await machines.init();
+  /** 返回迁移夹具的固定资源与实例计数，供生产对等服务的状态接口，不影响真实迁移接收器。
+   * Return fixed fixture resources/VM counts for the production peer-status interface without altering the real migration receiver. */
   const peerStatus = async () => ({ platform: process.platform, arch: process.arch,
     cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFree: 4 * 1024 ** 3,
     load: [0, 0, 0], vmCount: 1, runningVms: 0 });
@@ -55,9 +58,17 @@ try {
   await targetPeers.configure({ operation: 'allow-activate', id: inboundId, enabled: true });
   const receiver = new LiveMigrationReceiver(machines, targetPeers);
   peerHandlers.set(targetPeers, { ...peerHandlers.get(targetPeers), liveMigrationReceiver: {
+    /** 将会话输入转发到生产接收器 prepare，返回预备票据并传播验证/资源失败。
+     * Forward session input to production receiver prepare, returning its preparation receipt and propagating validation/resource failures. */
     prepare: (input) => receiver.prepare(input),
+    /** 转发完成输入给生产接收器，使认证票据和所有权交接仍由正式实现验证。
+     * Forward completion input to the production receiver so authenticated receipts/ownership transfer remain validated by the real implementation. */
     complete: (input) => receiver.complete(input),
+    /** 转发指定会话的撤销输入，保持正式接收器的资源归属和阶段检查。
+     * Forward abort input for the specified session, retaining production ownership/phase checks. */
     abort: (input) => receiver.abort(input),
+    /** 调用 verifiedStatus 返回经验证会话状态，避免用夹具伪造迁移完成证据。
+     * Call verifiedStatus for validated session state instead of fabricating completion evidence in the fixture. */
     status: (input) => receiver.verifiedStatus(input),
   } });
   const key = createSshKey().privateText;

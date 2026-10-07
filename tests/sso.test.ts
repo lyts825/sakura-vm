@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - OIDC login binds an existing account, validates PKCE and ID Token, and revokes on unlink
- * - SAML metadata requires a valid signing certificate and callback page escapes identity data
- * - SAML accepts a signed solicited assertion and rejects an incorrect ACS recipient
+ * 模块职责：回归验证模块，围绕 `sso` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `sso`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: OIDC login binds an existing account, validates PKCE and ID Token, and revokes on unlink; SAML metadata requires a valid signing certificate and callback page escapes identity data.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,6 +18,20 @@ import { SignedXml } from 'xml-crypto';
 import { AccessControl } from '../server/access-control.ts';
 import { SingleSignOn, parseSamlMetadata, ssoCallbackPage } from '../server/sso.ts';
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: OIDC login binds an existing account, validates PKCE and ID Token, and revokes on unlink
+ * 状态影响 / State effects: `configuration[oidc.customFetch]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 失败 / Failure: `new Error('OIDC login did not issue a session')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `access.init`.
+ * 检查边界 / Checked boundaries: `assert.equal(sso.providers().oidc, true)`; `assert.ok(!JSON.stringify(sso.view()).includes('test-access-token'))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('OIDC login binds an existing account, validates PKCE and ID Token, and revokes on unlink',
   async () => {
     const directory = await mkdtemp(join(tmpdir(), 'sakura-sso-'));
@@ -32,7 +47,17 @@ test('OIDC login binds an existing account, validates PKCE and ID Token, and rev
     'sakura-test', { token_endpoint_auth_method: 'none' }, oidc.None());
     let nonce = '';
     let tokenCalls = 0;
-    configuration[oidc.customFetch] = async (input, init) => {
+    configuration[oidc.customFetch] = /**
+     * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+     * English: Generate or verify digest and identity material required by this suite.
+     * 输入 / Inputs: input; init。
+     * 结果：返回分支计算值（`new Response(JSON.stringify({ keys: [key] }), { headers: { 'content-type': 'appl… / new Response(JSON.stringify({ access_token: 'test-access-token', token_type: 'Be…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`new Response(JSON.stringify({ keys: [key] }), { headers: { 'content-type': 'appl… / new Response(JSON.stringify({ access_token: 'test-access-token', token_type: 'Be…`) through a Promise.
+     * 验证场景 / Scenario: OIDC login binds an existing account, validates PKCE and ID Token, and revokes on unlink
+     * 协作入口 / Collaborators: `String`, `JSON.stringify`, `assert.equal`, `form.get`.
+     * 检查边界 / Checked boundaries: `assert.equal(uri.pathname, '/token')`; `assert.equal(form.get('code'), 'test-code')`.
+     */
+    async (input, init) => {
       const uri = new URL(String(input));
       if (uri.pathname === '/jwks') return new Response(JSON.stringify({ keys: [key] }),
         { headers: { 'content-type': 'application/json' } });
@@ -54,6 +79,14 @@ test('OIDC login binds an existing account, validates PKCE and ID Token, and rev
         token_type: 'Bearer', id_token: idToken }),
       { headers: { 'content-type': 'application/json' } });
     };
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`configuration`），以 Promise 交付。
+     * Result: Return the branch-computed value (`configuration`) through a Promise.
+     * 验证场景 / Scenario: OIDC login binds an existing account, validates PKCE and ID Token, and revokes on unlink
+     */
     const discover: typeof oidc.discovery = async () => configuration;
     const ssoFile = join(directory, 'sso.json');
     const sso = new SingleSignOn(access, 7337, ssoFile,
@@ -66,6 +99,17 @@ test('OIDC login binds an existing account, validates PKCE and ID Token, and rev
       await sso.configureOidc({ issuer, clientId: 'sakura-test', authMethod: 'none' });
       assert.equal(sso.providers().oidc, true);
       assert.ok(!JSON.stringify(sso.view()).includes('test-access-token'));
+      /**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: mode: 'link' | 'login'; token: string。
+       * 结果：返回分支计算值（`new URL(`http://localhost:7337/api/access/sso/oidc/callback?code=test-code&state…`），以 Promise 交付。
+       * Result: Return the branch-computed value (`new URL(`http://localhost:7337/api/access/sso/oidc/callback?code=test-code&state…`) through a Promise.
+       * 验证场景 / Scenario: OIDC login binds an existing account, validates PKCE and ID Token, and revokes on unlink
+       * 状态影响 / State effects: `nonce`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 协作入口 / Collaborators: `sso.begin`, `redirect.searchParams.get`, `assert.equal`.
+       * 检查边界 / Checked boundaries: `assert.equal(redirect.searchParams.get('state'), begun.state)`; `assert.equal(redirect.searchParams.get('code_challenge_method'), 'S256')`.
+       */
       const start = async (mode: 'link' | 'login', token?: string) => {
         const begun = await sso.begin({ provider: 'oidc', mode,
           origin: 'http://127.0.0.1:7337' }, token);
@@ -102,6 +146,16 @@ test('OIDC login binds an existing account, validates PKCE and ID Token, and rev
     }
   });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: SAML metadata requires a valid signing certificate and callback page escapes identity data
+ * 协作入口 / Collaborators: `generate`, `Date.now`, `certificate.cert.replace`, `parseSamlMetadata`.
+ * 检查边界 / Checked boundaries: `assert.equal(parsed.issuer, 'https://id.example.test/saml')`; `assert.equal(parsed.certs.length, 1)`.
+ */
 test('SAML metadata requires a valid signing certificate and callback page escapes identity data',
   async () => {
     const certificate = await generate([{ name: 'commonName', value: 'Sakura IdP test' }],
@@ -121,6 +175,19 @@ test('SAML metadata requires a valid signing certificate and callback page escap
     assert.ok(page.html.includes('\\u003c/script>'));
   });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: SAML accepts a signed solicited assertion and rejects an incorrect ACS recipient
+ * 失败 / Failure: `new Error('SAML login did not issue a session')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `generate`.
+ * 检查边界 / Checked boundaries: `assert.ok('linked' in linked.result && linked.result.linked)`; `assert.ok('token' in session.result)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('SAML accepts a signed solicited assertion and rejects an incorrect ACS recipient', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-saml-'));
   const access = new AccessControl(join(directory, 'access.json'));
@@ -132,6 +199,15 @@ test('SAML accepts a signed solicited assertion and rejects an incorrect ACS rec
   const issuer = 'https://id.example.test/saml';
   const callback = 'http://localhost:7337/api/access/sso/saml/callback';
   const metadata = `<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="${issuer}"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><KeyDescriptor use="signing"><KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#"><X509Data><X509Certificate>${certBody}</X509Certificate></X509Data></KeyInfo></KeyDescriptor><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://id.example.test/login"/></IDPSSODescriptor></EntityDescriptor>`;
+  /**
+   * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+   * English: Generate or verify digest and identity material required by this suite.
+   * 输入 / Inputs: requestId: string; recipient = callback。
+   * 结果：返回分支计算值（`Buffer.from(signature.getSignedXml()).toString('base64')`）。
+   * Result: Return the branch-computed value (`Buffer.from(signature.getSignedXml()).toString('base64')`).
+   * 验证场景 / Scenario: SAML accepts a signed solicited assertion and rejects an incorrect ACS recipient
+   * 协作入口 / Collaborators: `new Date().toISOString`, `new Date(Date.now() - 60_000).toISOString`, `Date.now`, `new Date(Date.now() + 5 * 60_000).toISOString`.
+   */
   const response = (requestId: string, recipient = callback) => {
     const now = new Date().toISOString();
     const before = new Date(Date.now() - 60_000).toISOString();
@@ -156,6 +232,16 @@ test('SAML accepts a signed solicited assertion and rejects an incorrect ACS rec
       password: 'correct horse battery staple' });
     await sso.init();
     await sso.configureSaml({ metadataXml: metadata });
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: mode: 'link' | 'login'; token: string。
+     * 结果：返回受控对象，公开字段包括 `state, id`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `state, id`; the actual branch determines its shape.
+     * 验证场景 / Scenario: SAML accepts a signed solicited assertion and rejects an incorrect ACS recipient
+     * 协作入口 / Collaborators: `sso.begin`, `assert.equal`, `target.searchParams.get`, `inflateRawSync(Buffer.from(target.searchParams.get('SAMLRequest')!, 'base64…`.
+     * 检查边界 / Checked boundaries: `assert.equal(target.searchParams.get('RelayState'), begin.state)`; `assert.ok(id)`.
+     */
     const start = async (mode: 'link' | 'login', token?: string) => {
       const begin = await sso.begin({ provider: 'saml', mode,
         origin: 'http://localhost:7337' }, token);

@@ -1,5 +1,6 @@
 /**
  * 模块职责：定义网格二进制、配置与进程身份回执，为边车配置发布和退休提供核验边界。
+ * Module purpose: Defines mesh binary/config/process identity receipts for configuration publication and sidecar retirement checks.
  */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -34,6 +35,17 @@ export const meshProcessReplySchema = z.object({ ready: z.literal(true) }).stric
 type Ports = { listenPort: number; upstreamPort: number };
 export type MeshConfigPlan = { projectId: string; identityId: string; uid: number; gid: number; runId: string;
   bootId: string; path: string; sha256: string; bytes: number; listenPort: number; upstreamPort: number };
+/**
+ * 入口 / Entry: meshConfigPlan.
+ * 功能：在定义网格二进制、配置与进程身份回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ projectId: identity.projectId, identityId: identity.identityId, uid: identity.uid, gid: identity.gid, runId: record.runId, …` 供上层消费（`service-mesh-identity.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-mesh-identity.ts`; this entry produces `{ projectId: identity.projectId, identityId: identity.identityId, uid: identity.uid, gid: identity.gid, runId: record.runId, …` for its caller. Module context: Defines mesh binary/config/process identity receipts for configuration publication and sidecar retirement checks.
+ * 处理：通过 `projectIdentitySchema.parse`, `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectIdentitySchema.parse`, `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: identity: ProjectIdentity; record: ProjectMeshRecord; source: string; ports: Ports
+ * 输出 / Returns: MeshConfigPlan；结果来自 / values from `{ projectId: identity.projectId, identityId: identity.identityId, uid: identity.uid, gid: identity.gid, runId: record.runId, …`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`; 更新 / updates `identity`.
+ * 拒绝 / Refusals: 条件 / conditions `record.projectId !== identity.projectId || identity.phase !== 'active'`; `bytes.length < 1 || bytes.length > 16384`; 异常 / errors `new Error('Mesh identity mismatch')`; `new Error('Fixed mesh config bound')`.
+ */
 export function meshConfigPlan(identity: ProjectIdentity, record: ProjectMeshRecord, source: string, ports: Ports): MeshConfigPlan {
   identity = projectIdentitySchema.parse(identity);
   if (record.projectId !== identity.projectId || identity.phase !== 'active') throw new Error('Mesh identity mismatch');
@@ -43,23 +55,77 @@ export function meshConfigPlan(identity: ProjectIdentity, record: ProjectMeshRec
     sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length,
     listenPort: ports.listenPort, upstreamPort: ports.upstreamPort };
 }
+/**
+ * 入口 / Entry: meshInspectInput.
+ * 功能：在定义网格二进制、配置与进程身份回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `meshControlInput({ op: 'inspect', projectId: projectIdSchema.parse(project._workspace || 'default'), directory: project.direc…` 供上层消费（`service-mesh-identity.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-mesh-identity.ts`; this entry produces `meshControlInput({ op: 'inspect', projectId: projectIdSchema.parse(project._workspace || 'default'), directory: project.direc…` for its caller. Module context: Defines mesh binary/config/process identity receipts for configuration publication and sidecar retirement checks.
+ * 处理：通过 `meshControlInput`, `projectIdSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `meshControlInput`, `projectIdSchema.parse`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project
+ * 输出 / Returns: `meshControlInput({ op: 'inspect', projectId: projectIdSchema.parse(project._workspace || 'default'), directory: project.direc…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function meshInspectInput(project: Project) {
   return meshControlInput({ op: 'inspect', projectId: projectIdSchema.parse(project._workspace || 'default'),
     directory: project.directory, networkIsolation: project.networkIsolation || 'host' });
 }
+/**
+ * 入口 / Entry: meshConfigInput.
+ * 功能：把本层请求转交 `meshControlInput`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `meshControlInput` and propagates the provider result or rejection.
+ * 输入 / Inputs: op: 'publish' | 'config' | 'cleanup'; plan: MeshConfigPlan; config: MeshConfig | null optional; source: string optional
+ * 输出 / Returns: `meshControlInput({ op, ...plan, config: config || null }, source === undefined ? undefined : Buffer.from(source))`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function meshConfigInput(op: 'publish' | 'config' | 'cleanup', plan: MeshConfigPlan, config?: MeshConfig | null, source?: string) {
   return meshControlInput({ op, ...plan, config: config || null }, source === undefined ? undefined : Buffer.from(source));
 }
+/**
+ * 入口 / Entry: meshProcessInput.
+ * 功能：在定义网格二进制、配置与进程身份回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `meshControlInput({ op: 'process', ...plan, config: meshConfigSchema.parse(config), binary: meshBinarySchema.parse(binary), id…` 供上层消费（`service-mesh-identity.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-mesh-identity.ts`; this entry produces `meshControlInput({ op: 'process', ...plan, config: meshConfigSchema.parse(config), binary: meshBinarySchema.parse(binary), id…` for its caller. Module context: Defines mesh binary/config/process identity receipts for configuration publication and sidecar retirement checks.
+ * 处理：通过 `meshControlInput`, `meshConfigSchema.parse`, `meshBinarySchema.parse`, `projectIdentitySchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `meshControlInput`, `meshConfigSchema.parse`, `meshBinarySchema.parse`, `projectIdentitySchema.parse`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: plan: MeshConfigPlan; config: MeshConfig; binary: MeshBinary; identity: ProjectIdentity; run: ProjectIdentityRun; listener: ReverseTunnelListener
+ * 输出 / Returns: `meshControlInput({ op: 'process', ...plan, config: meshConfigSchema.parse(config), binary: meshBinarySchema.parse(binary), id…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function meshProcessInput(plan: MeshConfigPlan, config: MeshConfig, binary: MeshBinary,
   identity: ProjectIdentity, run: ProjectIdentityRun, listener: ReverseTunnelListener) {
   return meshControlInput({ op: 'process', ...plan, config: meshConfigSchema.parse(config), binary: meshBinarySchema.parse(binary),
     identity: projectIdentitySchema.parse(identity), run: projectIdentityRunSchema.parse(run), listener: reverseTunnelListenerSchema.parse(listener) });
 }
+/**
+ * 入口 / Entry: meshControlInput.
+ * 功能：在定义网格二进制、配置与进程身份回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `input` 供上层消费（`service-mesh-identity.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-mesh-identity.ts`; this entry produces `input` for its caller. Module context: Defines mesh binary/config/process identity receipts for configuration publication and sidecar retirement checks.
+ * 处理：通过 `input.write`, `input.writeUInt32LE`, `encoded.copy`, `body.copy` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `input.write`, `input.writeUInt32LE`, `encoded.copy`, `body.copy`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: metadata: object; body: Buffer optional
+ * 输出 / Returns: `input`.
+ * 副作用 / Effects: `input.write`; `input.writeUInt32LE`.
+ * 拒绝 / Refusals: 条件 / conditions `encoded.length > 8192 || body && body.length > 16384`; 异常 / errors `new Error('Mesh control frame bound')`.
+ */
 function meshControlInput(metadata: object, body?: Buffer) {
   const encoded = Buffer.from(JSON.stringify(metadata)); if (encoded.length > 8192 || body && body.length > 16384) throw new Error('Mesh control frame bound');
   const input = Buffer.alloc(12 + encoded.length + (body?.length || 0)); input.write('SKMESH01'); input.writeUInt32LE(encoded.length, 8);
   encoded.copy(input, 12); body?.copy(input, 12 + encoded.length); return input;
 }
+/**
+ * 入口 / Entry: meshEnvoyExecution.
+ * 功能：在定义网格二进制、配置与进程身份回执中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'exec /usr/bin/python3 -I -S -c ' + quote(source)` 供上层消费（`service-mesh-identity.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-mesh-identity.ts`; this entry produces `'exec /usr/bin/python3 -I -S -c ' + quote(source)` for its caller. Module context: Defines mesh binary/config/process identity receipts for configuration publication and sidecar retirement checks.
+ * 处理：通过 `meshBinarySchema.parse`, `meshConfigSchema.parse`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `meshBinarySchema.parse`, `meshConfigSchema.parse`, `quote`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `config`.
+ * 输入 / Inputs: binary: MeshBinary; config: MeshConfig optional; validate: default=false
+ * 输出 / Returns: `'exec /usr/bin/python3 -I -S -c ' + quote(source)`.
+ * 副作用 / Effects: 更新 / updates `binary`, `config`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function meshEnvoyExecution(binary: MeshBinary, config?: MeshConfig, validate = false) {
   binary = meshBinarySchema.parse(binary); if (config) config = meshConfigSchema.parse(config);
   const argv = config ? [binary.path, ...(validate ? ['--mode', 'validate'] : []), '-c', config.path,

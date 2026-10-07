@@ -1,4 +1,5 @@
-/** 烟雾验收：验证快照合并的冲突预览、选择和最终磁盘内容。 */
+/** 烟雾验收：验证快照合并的冲突预览、选择和最终磁盘内容。
+ * Smoke acceptance for merge-conflict previews/selections and final disk content. */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,7 +21,11 @@ await machines.init();
 const bundles = new Bundles(machines);
 const merge = new SnapshotMerge(machines, bundles);
 const lines: string[] = [];
+/** 同时输出并保存本次验收结论，供最终报告按原顺序汇总；记录本身不替代此前的断言。
+ * Print and retain this verification result for ordered final reporting; recording does not replace the preceding assertions. */
 const record = (line: string) => { console.log(line); lines.push(line); };
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 270_000;
@@ -30,6 +35,8 @@ async function boot(id: string) {
     await delay(100);
   }
 }
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function command(id: string, text: string) {
   const result = await machines.exec(id, text);
   assert.equal(result.code, 0, result.stderr);

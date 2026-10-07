@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - protected main command and secret bytes never enter root controller or tmux argv
- * - old main v2 receipt is stoppable but cannot silently run a root command again
- * - identity close failure keeps the stopped scope and journal recoverable until a later stop
+ * 模块职责：回归验证模块，围绕 `project-main-scope` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `project-main-scope`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: protected main command and secret bytes never enter root controller or tmux argv; old main v2 receipt is stoppable but cannot silently run a root command again.
  */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,6 +25,18 @@ after(async () => {
   await rm(owned, { recursive: true, force: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: protected main command and secret bytes never enter root controller or tmux argv
+ * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `assert.ok`, `f.identity.inputs[0].includes`.
+ * 检查边界 / Checked boundaries: `assert.ok(f.identity.inputs.length)`; `assert.ok(f.identity.inputs[0].includes(Buffer.from('owned-main-private-token')))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('protected main command and secret bytes never enter root controller or tmux argv', async () => {
   const f = await mainFixture();
   try {
@@ -43,6 +56,19 @@ test('protected main command and secret bytes never enter root controller or tmu
   } finally { await f.spaces.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: old main v2 receipt is stoppable but cannot silently run a root command again
+ * 状态影响 / State effects: `f.state.main`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mainFixture`, `f.scope.intent`, `writeStore`, `f.scope.receipt`.
+ * 检查边界 / Checked boundaries: `assert.rejects(runProjectMain(f.machines, f.id, f.project, () => {}, f.controller.signal, async () => assert.fail('legacy root run…`; `assert.equal(f.state.main.phase, 'stopped')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('old main v2 receipt is stoppable but cannot silently run a root command again', async () => {
   const f = await mainFixture();
   try {
@@ -56,6 +82,19 @@ test('old main v2 receipt is stoppable but cannot silently run a root command ag
   } finally { await f.spaces.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: identity close failure keeps the stopped scope and journal recoverable until a later stop
+ * 状态影响 / State effects: `f.identity.state.stopFailures`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `assert.rejects`, `f.scope.stop`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.scope.stop(old), { code: 'PROJECT_MAIN_CLEANUP_FAILED' })`; `assert.equal((await f.scope.metadata())!.phase, 'stopped')`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('identity close failure keeps the stopped scope and journal recoverable until a later stop', async () => {
   const f = await mainFixture();
   try {
@@ -72,6 +111,18 @@ test('identity close failure keeps the stopped scope and journal recoverable unt
   } finally { await f.spaces.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: main v2 is independent from a real service named main and v1 records remain recoverable
+ * 协作入口 / Collaborators: `mainFixture`, `serviceSchema.parse`, `f.scope.intent`, `services.intent`.
+ * 检查边界 / Checked boundaries: `assert.equal(projectServiceRecordSchema.safeParse(worker).success, true)`; `assert.equal(projectMainRecordSchema.safeParse(main).success, true)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('main v2 is independent from a real service named main and v1 records remain recoverable', async () => {
   const f = await mainFixture(), services = new ProjectServiceScopes(f.machines, f.id, f.project);
   const service = serviceSchema.parse({ name: 'main', command: 'sleep 600' }), main = f.scope.intent(f.bootId);
@@ -93,6 +144,18 @@ test('main v2 is independent from a real service named main and v1 records remai
     await stopProjectMain(f.machines, f.id, f.project, () => {}, f.controller.signal);
   } finally { await f.spaces.close(); }
 });
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: main start is idempotent and does not rerun setup or overwrite its durable run
+ * 协作入口 / Collaborators: `mainFixture`, `runProjectMain`, `assert.equal`, `assert.deepEqual`.
+ * 检查边界 / Checked boundaries: `assert.equal(prepared, 1)`; `assert.equal(f.state.commits, 1)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('main start is idempotent and does not rerun setup or overwrite its durable run', async () => {
   const f = await mainFixture(); let prepared = 0;
   try {
@@ -103,6 +166,17 @@ test('main start is idempotent and does not rerun setup or overwrite its durable
   } finally { await f.spaces.close(); }
 });
 for (const mode of ['prepare-ack-lost', 'pane-ack-lost', 'commit-ack-lost', 'cancel-after-commit', 'unavailable']) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `mainFixture`, `assert.rejects`, `runProjectMain`, `assert.equal`.
+   * 检查边界 / Checked boundaries: `assert.rejects(runProjectMain(f.machines, f.id, f.project, () => {}, f.controller.signal, async () => {}))`; `assert.equal(f.state.stopAttempts, 1)`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   test(`main ${mode} rolls back its known run without losing the stopped receipt`, async () => {
     const f = await mainFixture(mode);
     try {
@@ -113,6 +187,17 @@ for (const mode of ['prepare-ack-lost', 'pane-ack-lost', 'commit-ack-lost', 'can
   });
 }
 for (const mode of ['first-stop-failure', 'stop-ack-lost']) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `stopProjectMain`, `assert.equal`.
+   * 检查边界 / Checked boundaries: `assert.equal(f.state.stopAttempts, 2)`; `assert.deepEqual(f.state.main, stopped)`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   test(`main ${mode} retries independently and repeated stop retains the same run`, async () => {
     const f = await mainFixture(mode);
     try {
@@ -125,6 +210,18 @@ for (const mode of ['first-stop-failure', 'stop-ack-lost']) {
     } finally { await f.spaces.close(); }
   });
 }
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: all main stop failures retain the running receipt and expose cleanup failure
+ * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `readFile`, `f.scope.receipt`.
+ * 检查边界 / Checked boundaries: `assert.rejects(stopProjectMain(f.machines, f.id, f.project, () => {}, f.controller.signal), { code: 'PROJECT_MAIN_CLEANUP_FAILED',…`; `assert.equal(f.state.stopAttempts, 3)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('all main stop failures retain the running receipt and expose cleanup failure', async () => {
   const f = await mainFixture('all-stop-failures');
   try {
@@ -136,6 +233,18 @@ test('all main stop failures retain the running receipt and expose cleanup failu
     assert.equal(await readFile(f.scope.receipt(), 'utf8'), before);
   } finally { await f.spaces.close(); }
 });
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: changed live instance prevents cleanup retries against a replacement machine
+ * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `assert.rejects`, `f.scope.stop`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.scope.stop(f.state.main!), { code: 'PROJECT_MAIN_CLEANUP_FAILED' })`; `assert.equal(f.state.stopAttempts, 1)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('changed live instance prevents cleanup retries against a replacement machine', async () => {
   const f = await mainFixture('replace-live');
   try {
@@ -145,6 +254,18 @@ test('changed live instance prevents cleanup retries against a replacement machi
   } finally { await f.spaces.close(); }
 });
 for (const field of ['runId', 'bootId', 'inode', 'panePid', 'paneStartTicks'] as const) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `(f.state.main as any)[field]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `field.endsWith`, `randomUUID`.
+   * 检查边界 / Checked boundaries: `assert.rejects(f.scope.status(), { code: 'PROJECT_MAIN_SCOPE_CHANGED' })`; `assert.rejects(stopProjectMain(f.machines, f.id, f.project, () => {}, f.controller.signal), { code: 'PROJECT_MAIN_CLEANUP_FAILED' …`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   test(`main replaced ${field} is refused before any process is stopped`, async () => {
     const f = await mainFixture();
     try {
@@ -157,6 +278,18 @@ for (const field of ['runId', 'bootId', 'inode', 'panePid', 'paneStartTicks'] as
     } finally { await f.spaces.close(); }
   });
 }
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: unknown legacy main sessions are refused without prepare, commit or inferred cleanup
+ * 协作入口 / Collaborators: `mainFixture`, `assert.rejects`, `runProjectMain`, `stopProjectMain`.
+ * 检查边界 / Checked boundaries: `assert.rejects(runProjectMain(f.machines, f.id, f.project, () => {}, f.controller.signal, async () => { assert.fail('legacy main m…`; `assert.rejects(stopProjectMain(f.machines, f.id, f.project, () => {}, f.controller.signal), { code: 'PROJECT_MAIN_SCOPE_UNMANAGED'…`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('unknown legacy main sessions are refused without prepare, commit or inferred cleanup', async () => {
   const f = await mainFixture('legacy');
   try {
@@ -167,6 +300,18 @@ test('unknown legacy main sessions are refused without prepare, commit or inferr
     assert.equal(f.state.prepared, 0); assert.equal(f.state.commits, 0); assert.equal(f.state.stopAttempts, 0);
   } finally { await f.spaces.close(); }
 });
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: same-boot intent without a guest receipt remains unconfirmed until explicit cancellation
+ * 协作入口 / Collaborators: `mainFixture`, `writeStore`, `f.scope.receipt`, `f.scope.intent`.
+ * 检查边界 / Checked boundaries: `assert.equal((await f.scope.status()).status, 'unconfirmed')`; `assert.rejects(runProjectMain(f.machines, f.id, f.project, () => {}, f.controller.signal, async () => {}), { code: 'PROJECT_MAIN_S…`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('same-boot intent without a guest receipt remains unconfirmed until explicit cancellation', async () => {
   const f = await mainFixture();
   try {
@@ -178,6 +323,18 @@ test('same-boot intent without a guest receipt remains unconfirmed until explici
     assert.equal((await f.scope.status()).status, 'stopped');
   } finally { await f.spaces.close(); }
 });
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: main rejects corrupt host receipts and incomplete success replies with its own error code
+ * 协作入口 / Collaborators: `mainFixture`, `assert.rejects`, `f.scope.status`, `writeStore`.
+ * 检查边界 / Checked boundaries: `assert.rejects(f.scope.status(), { code: 'PROJECT_MAIN_SCOPE_CHANGED' })`; `assert.rejects(f.scope.metadata(), { code: 'PROJECT_MAIN_SCOPE_CHANGED' })`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('main rejects corrupt host receipts and incomplete success replies with its own error code', async () => {
   const f = await mainFixture('malformed-status');
   try {
@@ -188,6 +345,19 @@ test('main rejects corrupt host receipts and incomplete success replies with its
   } finally { await f.spaces.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a confirmed different boot retires only the exact absent main run and repeated stop sends no signal
+ * 状态影响 / State effects: `f.state.currentBoot`, `f.state.main`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `f.scope.metadata`, `randomUUID`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(await f.scope.metadata(), { ...record, phase: 'stopped' })`; `assert.equal(f.state.stopAttempts, 0)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('a confirmed different boot retires only the exact absent main run and repeated stop sends no signal', async () => {
   const f = await mainFixture();
   try {
@@ -204,6 +374,18 @@ test('a confirmed different boot retires only the exact absent main run and repe
 });
 
 for (const blocked of ['new guest owner exists', 'replacement cgroup exists', 'replacement pane exists']) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `f.state.currentBoot`, `f.state.main`, `f.state.rebootBlock`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `readFile`, `f.scope.receipt`.
+   * 检查边界 / Checked boundaries: `assert.rejects(stopProjectMain(f.machines, f.id, f.project, () => {}), { code: 'PROJECT_MAIN_CLEANUP_FAILED', status: 503 })`; `assert.equal(f.state.rebootProbes, 3)`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   test(`different-boot ${blocked} refuses retirement and preserves the old receipt`, async () => {
     const f = await mainFixture();
     try {
@@ -218,6 +400,19 @@ for (const blocked of ['new guest owner exists', 'replacement cgroup exists', 'r
   });
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: reboot ownership probe retries a failed connection before recording a confirmed stop
+ * 状态影响 / State effects: `f.state.currentBoot`, `f.state.main`, `f.state.rebootProbeFailures`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `randomUUID`, `stopProjectMain`.
+ * 检查边界 / Checked boundaries: `assert.equal(f.state.rebootProbes, 2)`; `assert.equal(f.state.stopAttempts, 0)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('reboot ownership probe retries a failed connection before recording a confirmed stop', async () => {
   const f = await mainFixture();
   try {
@@ -229,6 +424,19 @@ test('reboot ownership probe retries a failed connection before recording a conf
   } finally { await f.spaces.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: unconfirmed reboot probes never change the retained receipt or send cleanup signals
+ * 状态影响 / State effects: `f.state.currentBoot`, `f.state.main`, `f.state.rebootProbeFailures`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `readFile`, `f.scope.receipt`.
+ * 检查边界 / Checked boundaries: `assert.rejects(stopProjectMain(f.machines, f.id, f.project, () => {}), { code: 'PROJECT_MAIN_CLEANUP_FAILED' })`; `assert.equal(f.state.rebootProbes, 3)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('unconfirmed reboot probes never change the retained receipt or send cleanup signals', async () => {
   const f = await mainFixture();
   try {
@@ -242,13 +450,33 @@ test('unconfirmed reboot probes never change the retained receipt or send cleanu
 });
 
 for (const changed of ['live', 'host']) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `f.state.currentBoot`, `f.state.main`, `f.machines.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `mainFixture`, `f.startMain`, `readFile`, `f.scope.receipt`.
+   * 检查边界 / Checked boundaries: `assert.rejects(stopProjectMain(f.machines, f.id, f.project, () => {}), { code: 'PROJECT_MAIN_CLEANUP_FAILED' })`; `assert.equal(f.state.rebootProbes, 1)`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   test(`reboot probe cannot retire a ${changed} replacement made before its acknowledgement`, async () => {
     const f = await mainFixture();
     try {
       await f.startMain();
       const before = await readFile(f.scope.receipt(), 'utf8'), exec = f.machines.exec.bind(f.machines);
       f.state.currentBoot = randomUUID(); f.state.main = null;
-      f.machines.exec = (async (...args: Parameters<typeof f.machines.exec>) => {
+      f.machines.exec = (/**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: args: Parameters<typeof f.machines.exec>。
+       * 结果：返回分支计算值（`result`），以 Promise 交付。
+       * Result: Return the branch-computed value (`result`) through a Promise.
+       * 协作入口 / Collaborators: `exec`, `args[1].startsWith`, `f.machines.live.set`, `writeStore`.
+       */
+      async (...args: Parameters<typeof f.machines.exec>) => {
         const result = await exec(...args);
         if (args[1].startsWith('# SAKURA_PROJECT_MAIN_REBOOT_STOP') && f.state.rebootProbes === 1) {
           if (changed === 'live') f.machines.live.set(f.id, {} as any);

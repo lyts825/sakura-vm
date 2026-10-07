@@ -1,4 +1,9 @@
-/** 烟雾验收：验证Windows EXE/DLL 入口前初始化阶段的策略注入与拒绝边界。 */
+/**
+ * 模块职责：验证原生应用初始化前的策略附着及 SxS、Common Controls、.local 和冷初始化拒绝边界。
+ * Module: Verify policy attachment before native application initialization and rejection boundaries for SxS, Common Controls, .local and cold initialization.
+ * 设计思路：编译并驱动自有夹具，在私有 station、独立状态文件与精确出生身份范围内检查实际回执；本脚本会产生临时进程/资产，执行平台及编译器要求由入口校验定义。
+ * Design: Compile/drive owned fixtures and check actual receipts within private stations, separate state files and exact process-birth identities. This script creates temporary processes/assets; entry checks define platform/compiler requirements.
+ */
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -73,13 +78,30 @@ await execute(
   ],
   { windowsHide: true, timeout: 60000 },
 );
+/**
+ * 中文功能：建立本轮自有命名管道，解析夹具逐行 JSON 回执，暴露写入、等待与关闭入口。
+ * English: Create an owned named pipe, parse line-delimited fixture JSON receipts, and expose write/wait/close operations.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回受控对象，公开字段包括 `pipe, next, write, close`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `pipe, next, write, close`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `randomUUID`, `createServer`, `server.on`.
+ */
 async function channel() {
   const pipe = '\\\\.\\pipe\\SakuraEarlyFixture.' + randomUUID();
   const server = createServer();
   let socket, lines;
   const queued = [],
     waiting = [];
-  server.on('connection', (connection) => {
+  server.on('connection', /**
+   * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+   * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+   * 输入 / Inputs: connection。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `socket`, `lines`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `connection.destroy`, `createInterface`, `lines.on`, `socket.on`.
+   */
+  (connection) => {
     if (socket) {
       connection.destroy();
       return;
@@ -101,15 +123,47 @@ async function channel() {
   });
   return {
     pipe,
+    /**
+     * 中文功能：优先取已排队回执，否则登记等待者；关闭或超时通过本分支的拒绝路径结束等待。
+     * English: Consume a queued receipt first or register a waiter; the implemented closure/timeout rejection path ends pending waits.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`queued.length ? Promise.resolve(queued.shift()) : new Promise((resolve, reject) …`）。
+     * Result: Return the branch-computed value (`queued.length ? Promise.resolve(queued.shift()) : new Promise((resolve, reject) …`).
+     * 协作入口 / Collaborators: `Promise.resolve`, `queued.shift`.
+     */
     next: () =>
       queued.length
         ? Promise.resolve(queued.shift())
-        : new Promise((resolve, reject) => {
+        : new Promise(/**
+         * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+         * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+         * 输入 / Inputs: resolve; reject。
+         * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+         * Result: No explicit result value; callers observe completion, state changes or an exception.
+         * 协作入口 / Collaborators: `setTimeout`, `waiting.push`.
+         */
+        (resolve, reject) => {
             const item = {
+              /**
+               * 中文功能：清除本等待者的超时定时器并完成其成功结果。
+               * English: Clear this waiter's timeout and settle its successful result.
+               * 输入 / Inputs: value。
+               * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+               * Result: No explicit result value; callers observe completion, state changes or an exception.
+               * 协作入口 / Collaborators: `clearTimeout`, `resolve`.
+               */
               resolve: (value) => {
                 clearTimeout(timer);
                 resolve(value);
               },
+              /**
+               * 中文功能：清除本等待者的超时定时器并交付失败原因。
+               * English: Clear this waiter's timeout and deliver its rejection reason.
+               * 输入 / Inputs: error。
+               * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+               * Result: No explicit result value; callers observe completion, state changes or an exception.
+               * 协作入口 / Collaborators: `clearTimeout`, `reject`.
+               */
               reject: (error) => {
                 clearTimeout(timer);
                 reject(error);
@@ -121,7 +175,23 @@ async function channel() {
             }, 40000);
             waiting.push(item);
           }),
+    /**
+     * 中文功能：向当前夹具管道写入命令；连接未建立或已结束时按本表达式处理。
+     * English: Write a command to the fixture pipe; this expression handles absent or ended connections.
+     * 输入 / Inputs: value。
+     * 结果：返回分支计算值（`socket?.write(value)`）。
+     * Result: Return the branch-computed value (`socket?.write(value)`).
+     * 协作入口 / Collaborators: `socket?.write`.
+     */
     write: (value) => socket?.write(value),
+    /**
+     * 中文功能：关闭本夹具拥有的进程、流或管道；具体等待期限和强制终止条件以本函数分支为准。
+     * English: Close processes, streams or pipes owned by this fixture; its branches define wait deadlines and forced-termination conditions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `socket?.end`, `lines?.close`, `socket?.destroy`.
+     */
     close: async () => {
       socket?.end();
       lines?.close();
@@ -134,6 +204,16 @@ const windres = join(
   dirname(compiler.includes('/') || compiler.includes('\\') ? compiler : 'C:/Strawberry/c/bin/g++.exe'),
   'windres.exe',
 );
+/**
+ * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+ * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+ * 输入 / Inputs: target; redirect = false; dependency; imports = importLibrary。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `writeFile`, `xml.replaceAll`, `execute`, `resolve`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function manifestExecutable(target, redirect = false, dependency, imports = importLibrary) {
   const xml = target + '.resource.manifest',
     rc = xml + '.rc',
@@ -163,6 +243,16 @@ ${redirect ? '<file name="user32.dll"/>' : dependency || '<dependency><dependent
     { windowsHide: true, timeout: 60000 },
   );
 }
+/**
+ * 中文功能：执行本模块中下述具体协作步骤，准备或观察本轮原生验收所需材料。
+ * English: Perform the concrete collaboration steps below to prepare or observe material required by this native smoke run.
+ * 输入 / Inputs: target; redirect = false。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `join`, `writeFile`, `basename`, `xml.replaceAll`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function privateAssembly(target, redirect = false) {
   const name = `Sakura.EarlyPrivate.${bits}${redirect ? '.Redirect' : ''}`,
     dll = join(folder, name + '.dll'),
@@ -223,6 +313,17 @@ const service = new NativeClipboard({ file, assets, interval: 0 });
 const run = await channel();
 let launched;
 const sessions = [];
+/**
+ * 中文功能：配置带清单应用的内容摘要并启动，核对所有早期阶段已在私有 station 上应用策略及受保护 Common Controls。
+ * English: Configure a manifest application digest and launch it, checking policy and protected Common Controls on the private station at every early phase.
+ * 输入 / Inputs: identity; saved; application = manifestApplication。
+ * 结果：返回受控对象，公开字段包括 `process, evidence`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `process, evidence`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `channel`, `sessions.push`, `createHash('sha256') .update(await readFile(application)) .digest`, `createHash('sha256') .update`.
+ * 检查边界 / Checked boundaries: `assert.equal(evidence.pid, committed.process.pid)`; `assert.equal(evidence.created, committed.process.created)`.
+ * 设计思路：将控制面提交身份与应用报告的 PID/创建时间交叉核对，不能只用配置成功代替初始化前已执行策略的证据。
+ * Design: Cross-check control-plane committed identity with application-reported PID/creation time instead of treating successful configuration as proof of policy before initialization.
+ */
 async function manifestLaunch(identity, saved, application = manifestApplication) {
   const connection = await channel();
   sessions.push(connection);
@@ -268,6 +369,16 @@ async function manifestLaunch(identity, saved, application = manifestApplication
   }
   return { process: committed.process, evidence };
 }
+/**
+ * 中文功能：分别构造清单重定向、应用私有 comctl32 和策略私有 comctl32 情景，断言在应用初始化前拒绝。
+ * English: Construct manifest-redirection, application-private comctl32 and policy-private comctl32 cases and assert rejection before application initialization.
+ * 输入 / Inputs: identity; saved。
+ * 结果：返回受控对象，公开字段包括 `cases, applicationInitializerNeverEntered, noChildCreated`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `cases, applicationInitializerNeverEntered, noChildCreated`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `join`, `rejectWith`, `mkdir`, `copyFile`.
+ * 设计思路：各拒绝用例同时核对错误原因、入口标记未产生和 managed 记录数量不变；局部服务使用独立资产和 finally 清理，避免一个拒绝情景污染其他用例。
+ * Design: Check rejection reason, absent entry marker and unchanged managed-record count together. A local service uses separate assets and finally cleanup so one rejection case does not contaminate others.
+ */
 async function rejectedCommonControls(identity, saved) {
   const marker = join(folder, 'must-not-enter-common-controls-redirected-initializer');
   const options = [
@@ -277,6 +388,17 @@ async function rejectedCommonControls(identity, saved) {
     `--early-marker=${marker}`,
   ];
   const cases = [];
+  /**
+   * 中文功能：检查本轮真实原生回执和状态，以下断言摘录给出本函数具体核对的边界。
+   * English: Check real native receipts/state from this run; assertion excerpts below identify the boundaries checked by this function.
+   * 输入 / Inputs: selectedService; image; expression; name。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `createHash('sha256') .update(await readFile(image)) .digest`, `createHash('sha256') .update`, `createHash`, `readFile`.
+   * 检查边界 / Checked boundaries: `assert.rejects( selectedService.action({ action: 'launch', version: selectedService.view().version, image, sha256, args: options, …`; `assert.equal(existsSync(marker), false)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   async function rejectWith(selectedService, image, expression, name) {
     const sha256 = createHash('sha256')
       .update(await readFile(image))
@@ -345,6 +467,17 @@ async function rejectedCommonControls(identity, saved) {
   }
   return { cases, applicationInitializerNeverEntered: true, noChildCreated: true };
 }
+/**
+ * 中文功能：验证策略依赖的嵌入/外部/私有清单及 .local 重定向会在创建应用之前拒绝。
+ * English: Verify that embedded/external/private manifests and .local redirections of policy dependencies are rejected before application creation.
+ * 输入 / Inputs: identity; saved。
+ * 结果：返回受控对象，公开字段包括 `policyDependencySxsRedirectRejected, externalUtf16CharacterReferenceRedi…, manifestError, externalManifestError, privateAssemblyResourceRedirectReje…, privateManifestError, dotLocalRejected, noApplicationInitializer, noChildCreated`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `policyDependencySxsRedirectRejected, externalUtf16CharacterReferenceRedi…, manifestError, externalManifestError, privateAssemblyResourceRedirectReje…, privateManifestError, dotLocalRejected, noApplicationInitializer, noChildCreated`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `join`, `createHash('sha256') .update(await readFile(redirectApplication)) .digest`, `createHash('sha256') .update`, `createHash`.
+ * 检查边界 / Checked boundaries: `assert.rejects(service.action({ ...request, version: service.view().version }), (error) => { manifestError = error.message; return…`; `assert.equal(existsSync(marker), false)`.
+ * 设计思路：每种变体使用真实文件或清单材料，拒绝后检查入口标记与持久记录均未改变；UTF-16 与字符引用变体避免把一种文本编码的解析结果推广至所有清单。
+ * Design: Use real file/manifest material for each variant and check unchanged markers/persisted records after refusal. UTF-16 and character-reference variants avoid generalizing one text encoding to every manifest.
+ */
 async function rejectedRedirections(identity, saved) {
   const marker = join(folder, 'must-not-enter-redirected-initializer');
   const sha256 = createHash('sha256')
@@ -469,6 +602,18 @@ async function rejectedRedirections(identity, saved) {
     noChildCreated: true,
   };
 }
+/**
+ * 中文功能：构建摘要可验证但内部 build 身份不匹配的策略资产，验证冷启动不能进入应用初始化。
+ * English: Build policy assets with verifiable digests but mismatched internal build identity, verifying cold launch cannot enter application initialization.
+ * 输入 / Inputs: identity。
+ * 结果：返回受控对象，公开字段包括 `mismatchedBuildRejected, applicationInitializerNeverEntered, jobCleaned, ownershipRetainedUntilReconciliatio…, previousCommittedProcessRetained, errorMessage, process`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `mismatchedBuildRejected, applicationInitializerNeverEntered, jobCleaned, ownershipRetainedUntilReconciliatio…, previousCommittedProcessRetained, errorMessage, process`; the actual branch determines its shape.
+ * 状态影响 / State effects: `entry.size`, `entry.sha256`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `join`, `cp`, `copyFile`, `resolve`.
+ * 检查边界 / Checked boundaries: `assert.rejects( failed.action({ action: 'launch', version: failed.view().version, image: failedApplication, sha256, args: [ `--ear…`; `assert.equal(retained.length, 1, 'cold failure retains its durably saved ownership until reconciliation')`.
+ * 设计思路：更新复制资产的清单大小和哈希，使失败针对策略内部身份与初始化，而非简单损坏文件摘要；同时核对启动拒绝、未产生入口标记及后续可恢复状态。
+ * Design: Update copied manifest sizes/hashes so failure targets internal policy identity/initialization rather than a corrupt file digest; check launch rejection, absent entry marker and subsequent recoverable state.
+ */
 async function rejectedColdInitialization(identity) {
   const badAssets = join(folder, 'mismatched-assets');
   await cp(assets, badAssets, { recursive: true });

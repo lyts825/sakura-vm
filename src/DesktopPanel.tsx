@@ -1,5 +1,8 @@
 /**
- * 模块职责：装配 noVNC 远程桌面、连接设置、分辨率与剪贴板/录制控制。
+ * 模块职责（中文）：装配 noVNC 远程桌面、连接设置、分辨率与剪贴板/录制控制。
+ * Module responsibility (English): Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling.
+ * 详细范围（中文）：公开入口包括 DesktopPanel；职责覆盖连接桌面、配置偏好与剪贴板并协调状态轮询，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include DesktopPanel. The scope covers Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import type RFB from '@novnc/novnc';
 import { socketPath } from '../shared/socket-client.ts';
@@ -59,12 +62,18 @@ import { X11ClipboardSettings } from './X11ClipboardSettings';
 type Props = {
   vm: VMView;
   token: string;
-  start: () => unknown;
+  start: /** 中文：请求启动客户机，兑现后由外层更新状态；这是 Props 的调用契约 | English: Request guest startup, allowing the owner to update state after fulfillment; this is the callable contract of Props | 中文：结果：unknown；调用者依赖此类型约定 | English: Result: unknown; callers depend on this type contract */ () => unknown;
   busy: boolean;
-  configure: () => void;
+  configure: /** 中文：请求跳转到实例配置界面；这是 Props 的调用契约 | English: Request navigation to VM configuration; this is the callable contract of Props | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ () => void;
   request: Request;
 };
 
+/**
+ * 中文：呈现连接桌面、配置偏好与剪贴板并协调状态轮询中的 DesktopPanel 界面，订阅 /vms/{vm.id}/ime，组合 Monitor、Square、SlidersHorizontal、Clipboard、RefreshCw、Minimize2、Maximize2、DesktopRecording，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the DesktopPanel surface for Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, subscribing to /vms/{vm.id}/ime and composing Monitor, Square, SlidersHorizontal, Clipboard, RefreshCw, Minimize2, Maximize2, DesktopRecording. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, token, start, busy, configure, request } 提供 vm（vm 状态）、token（当前传输认证凭证）、start（start 状态）、busy（忙碌标记）、configure（configure 状态）、request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { vm, token, start, busy, configure, request } provides context fields vm (vm state), token (current transport credential), start (start state), busy (busy flag), configure (configure state), request (transport capability bound to identity/authority scope)
+ */
 export function DesktopPanel({ vm, token, start, busy, configure, request }: Props) {
   const [desktop, setDesktop] = useState<DesktopView | null>(null);
   const [error, setError] = useState('');
@@ -98,7 +107,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const clipboardContext = { app: 'desktop' as const, vmId: vm.id };
   const clipboardRule = effectiveClipboardRule(clipboardPolicies.policies, clipboardContext);
   const [clipboardError, setClipboardError] = useState('');
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [clipboardPolicies, detectSensitive, vm.id] 变化时incoming 状态，outgoing 状态，attempt 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [clipboardPolicies, detectSensitive, vm.id] change, incoming state, outgoing state, attempt state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     try {
       assertClipboardTransfer(clipboardContext, 'copy', incoming);
     } catch {
@@ -151,22 +160,30 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
     connecting: '正在连接',
   }[desktopState];
 
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [vm.id] 变化时preferenceState 状态，showCustomizer 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [vm.id] change, preferenceState state, showCustomizer state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setPreferenceState(loadDesktopPreferences(vm.id, () => localStorage));
     setShowCustomizer(false);
   }, [vm.id]);
 
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [vm.id, preferenceState] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [vm.id, preferenceState] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     saveDesktopPreferences(vm.id, preferenceState, () => localStorage);
   }, [vm.id, preferenceState]);
 
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [] 变化时登记浏览器或资源事件监听；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [] change, register browser/resource event listeners. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
+    /**
+     * 中文：在连接桌面、配置偏好与剪贴板并协调状态轮询流程中fullscreen 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, fullscreen state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     */
     const changed = () => setFullscreen(document.fullscreenElement === frame.current);
     document.addEventListener('fullscreenchange', changed);
+    /**
+     * 中文：在连接桌面、配置偏好与剪贴板并协调状态轮询流程中移除登记的事件监听；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, remove registered event listeners. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     */
     return () => document.removeEventListener('fullscreenchange', changed);
   }, []);
 
-  useEffect(() => {
+  useEffect(/** 中文：读取 GET /vms/{vm.id}/desktop，完成连接桌面、配置偏好与剪贴板并协调状态轮询的数据交互并更新submitting 状态、desktop 状态、错误反馈、statusError 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{vm.id}/desktop for Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling and update submitting state, desktop state, error feedback, statusError state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     // 桌面绑定或实例运行代次变化时失效已有轮询；alive 和请求顺序共同阻止旧状态恢复新界面的连接。
     statusOrder.current.invalidate();
     setSubmitting(false);
@@ -180,6 +197,14 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
     let alive = true;
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
+    /**
+     * 中文：读取 GET /vms/{vm.id}/desktop，完成连接桌面、配置偏好与剪贴板并协调状态轮询的数据交互并更新timeout 状态、desktop 状态、preferenceState 状态、statusError 状态；异步失败传给此处的捕获分支或外层动作反馈
+     * English: Perform GET /vms/{vm.id}/desktop for Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling and update timeout state, desktop state, preferenceState state, statusError state. Propagate asynchronous failure to this catch path or the outer action feedback
+     * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+     * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+     * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+     * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+     */
     const poll = async () => {
       if (enabling.current) {
         timer = setTimeout(poll, 2500);
@@ -208,6 +233,12 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       }
     };
     void poll();
+    /**
+     * 中文：在连接桌面、配置偏好与剪贴板并协调状态轮询流程中取消捕获的异步寿命，使匹配资源缓存失效，取消延迟计时任务；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, abort the captured asynchronous lifetime, invalidate matching resource caches, cancel delayed timers. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     return () => {
       alive = false;
       abort.abort();
@@ -218,12 +249,12 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
     };
   }, [vm.id, vm.startedAt, running, request, attempt]);
 
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [desktop?.log] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [desktop?.log] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (installLog.current && followLog.current)
       installLog.current.scrollTop = installLog.current.scrollHeight;
   }, [desktop?.log]);
 
-  useEffect(() => {
+  useEffect(/** 中文：懒加载 @novnc/novnc 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load @novnc/novnc and adapt its selected export as the default React component, deferring this feature's UI code download | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     setConnected(false);
     if (!ready || !screen.current) return;
     let alive = true;
@@ -232,11 +263,15 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
     setConnection('正在连接桌面…');
     // Load the graphics client only when the desktop is used.
     void import('@novnc/novnc')
-      .then(({ default: RFBClient }) => {
+      .then(/** 中文：更新 controller、connectionRef.current 以维护连接桌面、配置偏好与剪贴板并协调状态轮询当前状态；这些赋值属于此输入/事件的状态转换 | English: Update controller, connectionRef.current to maintain current state for Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling; these assignments belong to this input/event transition | 中文：输入：{ default: RFBClient } 提供 default（default 状态） 上下文字段 | English: Inputs: { default: RFBClient } provides context fields default (default state) | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ ({ default: RFBClient }) => {
         if (!alive || !screen.current) return;
         const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const target = screen.current;
         controller = connectDesktop(
+          /**
+           * 中文：在连接桌面、配置偏好与剪贴板并协调状态轮询流程中登记浏览器或资源事件监听；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+           * English: In Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, register browser/resource event listeners. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+           */
           () => {
             const client = new RFBClient(
               target,
@@ -248,7 +283,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
               desktop?.preferences?.monitorLayout !== 'dual-vertical';
             client.background = '#201b24';
             clientRef.current = client;
-            client.addEventListener('clipboard', (event) => {
+            client.addEventListener('clipboard', /** 中文：在连接桌面、配置偏好与剪贴板并协调状态轮询流程中incoming 状态，clipboardError 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, incoming state, clipboardError state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：输入：event：触发本处理器的事件及其数据 | English: Inputs: event: triggering event and its data | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ (event) => {
               if (alive && clientRef.current === client) {
                 const text = (event as CustomEvent<{ text: string }>).detail.text;
                 try {
@@ -277,6 +312,12 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       .catch((e: Error) => {
         if (alive) setError(`桌面客户端加载失败：${e.message}`);
       });
+    /**
+     * 中文：在连接桌面、配置偏好与剪贴板并协调状态轮询流程中释放所属连接或界面寿命；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, dispose owned connection/UI lifetimes. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     return () => {
       alive = false;
       controller?.dispose();
@@ -286,6 +327,18 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
     };
   }, [vm.id, vm.startedAt, ready, token, attempt, desktop?.preferences?.monitorLayout, desktop?.projectId]);
 
+  /**
+   * 中文：提交 POST /vms/{vm.id}/desktop；GET /vms/{vm.id}/desktop，完成连接桌面、配置偏好与剪贴板并协调状态轮询的数据交互并更新submitting 状态、错误反馈、desktop 状态、showCustomizer 状态、statusError 状态；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/desktop; GET /vms/{vm.id}/desktop for Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling and update submitting state, error feedback, desktop state, showCustomizer state, statusError state. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：action：本次动作或状态机输入
+   * English: Inputs: action: current action/state-machine input
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+   * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+   * 中文：设计：等待期间身份或版本可能改变，完成后按捕获代次比较再采用结果，避免旧上下文覆盖新状态
+   * English: Design: identity/version may change while awaiting; compare captured generations before adopting completion to avoid old context replacing new state
+   */
   const enable = useCallback(
     async (action: 'install' | 'start' | 'configure' | 'stop') => {
       if (!running || enabling.current) return;
@@ -323,9 +376,23 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
     [preferences, request, vm.id, running],
   );
 
+  /**
+   * 中文：在连接桌面、配置偏好与剪贴板并协调状态轮询流程中preferenceState 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, preferenceState state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：patch：只包含修改字段的增量
+   * English: Inputs: patch: delta containing modified fields only
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const updatePreferences = (patch: Partial<DesktopPreferences>) => {
     setPreferenceState((current) => editDesktopPreferences(current, patch));
   };
+  /**
+   * 中文：在连接桌面、配置偏好与剪贴板并协调状态轮询流程中showCustomizer 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, showCustomizer state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const applyPreferences = () => {
     if (desktop?.status === 'ready' || desktop?.status === 'stopped') {
       void enable('configure');
@@ -333,6 +400,10 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       setShowCustomizer(false);
     }
   };
+  /**
+   * 中文：把桌面偏好草稿改为完整默认值，使用同一编辑入口标记待应用；尚未向客户机写入。
+   * English: Replace the desktop draft with complete defaults through the shared editing entry, marking pending application without yet writing to the guest.
+   */
   const resetPreferences = () => updatePreferences({ ...desktopPreferenceDefaults });
 
   return (
@@ -370,7 +441,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             <button
               className="secondary compact"
               aria-expanded={showRecording}
-              onClick={async () => {
+              onClick={/** 中文：在连接桌面、配置偏好与剪贴板并协调状态轮询流程中showRecording 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling, showRecording state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                 if (showRecording && !(await mayLeaveEditor())) return;
                 setShowRecording((value) => !value);
               }}
@@ -403,7 +474,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
                   title="安装中文输入法，安装期间会重启图形桌面"
                   onClick={() => {
                     if (confirm('安装中文输入法会重启图形桌面，请先保存桌面中的工作。继续？'))
-                      void clipboardAction.run(async () => {
+                      void clipboardAction.run(/** 中文：提交 POST /vms/{vm.id}/ime，完成连接桌面、配置偏好与剪贴板并协调状态轮询的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/ime for Connecting the desktop, configuring preferences and clipboard behavior, and coordinating status polling. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                         await request(`/vms/${vm.id}/ime`, 'POST');
                         ime.reload();
                       });

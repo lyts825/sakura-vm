@@ -1,5 +1,8 @@
 /**
- * 模块职责：显示敏感剪贴板保护开关及其生效说明，同步浏览器内的策略变更。
+ * 模块职责（中文）：显示敏感剪贴板保护开关及其生效说明，同步浏览器内的策略变更。
+ * Module responsibility (English): Editing sensitive-clipboard protection preferences in the browser.
+ * 详细范围（中文）：公开入口包括 ClipboardSettings；职责覆盖编辑浏览器的敏感剪贴板保护偏好，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ClipboardSettings. The scope covers Editing sensitive-clipboard protection preferences in the browser. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useState, useSyncExternalStore } from 'react';
 import {
@@ -17,6 +20,12 @@ import {
   subscribeClipboardProtection,
 } from './clipboard-protection';
 
+/**
+ * 中文：呈现编辑浏览器的敏感剪贴板保护偏好中的 ClipboardSettings 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ClipboardSettings surface for Editing sensitive-clipboard protection preferences in the browser. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vms = [] } 提供 vms（vms 状态） 上下文字段
+ * English: Inputs: { vms = [] } provides context fields vms (vms state)
+ */
 export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: string }[] }) {
   const enabled = useSyncExternalStore(subscribeClipboardProtection, clipboardProtectionEnabled);
   const state = useSyncExternalStore(subscribeClipboardPolicies, getClipboardPolicies);
@@ -26,6 +35,14 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
   const context = { app, vmId: scope === 'global' ? undefined : scope };
   const rule = effectiveClipboardRule(state.policies, context);
   const overridden = scope === 'global' || !!state.policies.instances[scope]?.[app];
+  /**
+   * 中文：在编辑浏览器的敏感剪贴板保护偏好流程中clipboardPolicies 状态，错误反馈；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Editing sensitive-clipboard protection preferences in the browser, clipboardPolicies state, error feedback. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：next：待采用的新状态或数据
+   * English: Inputs: next: new state/data to adopt
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const save = (next: typeof state.policies) => {
     try {
       setClipboardPolicies(next);
@@ -34,6 +51,14 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
       setError((error as Error).message);
     }
   };
+  /**
+   * 中文：更新 next.defaults[app]、next.instances[scope] 以维护编辑浏览器的敏感剪贴板保护偏好当前状态；这些赋值属于此输入/事件的状态转换
+   * English: Update next.defaults[app], next.instances[scope] to maintain current state for Editing sensitive-clipboard protection preferences in the browser; these assignments belong to this input/event transition
+   * 中文：输入：value：待校验、转换或保存的输入值
+   * English: Inputs: value: input value to validate/transform/save
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const update = (value: ClipboardRule) => {
     const next = structuredClone(state.policies);
     if (scope === 'global') next.defaults[app] = value;

@@ -1,5 +1,6 @@
 /**
  * 模块职责：校验在线迁移输入并生成步骤计划，明确源目标硬件和磁盘一致性要求。
+ * Module purpose: Validates migration requests and plans source/target hardware and disk consistency steps.
  */
 import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
@@ -17,6 +18,19 @@ export const liveMigrationInput = z.object({
 type Score = Awaited<ReturnType<HostPeersV1['score']>>;
 type Query = typeof qmp;
 
+/**
+ * 入口 / Entry: planLiveMigration.
+ * 功能：校验源实例、目标评分和硬件配置，返回在线迁移步骤及阻塞项。
+ * Purpose: Validates source/target scoring/hardware and returns migration steps plus blockers.
+ * 设计：计划只描述可执行前提，不启动目标或移动磁盘；来源、目标及见证条件分别记录便于执行时复核。
+ * Design: Planning has no target-start/disk-transfer effects and records source/target/witness conditions for execution-time rechecks.
+ * 输入 / Inputs: machines: Machines; scoreHosts: (input: { cpus: number; memoryMiB: number }) => Promise<Score>; id: string; raw: unknown; signal: AbortSignal optional; query: Query default=qmp; executionAvailable: default=false
+ * 输出 / Returns: `{ ready: executionAvailable && blockers.length === 0, executed: false, planned: true, sourceVmId: id, targetHostId: target?.i…`.
+ * 副作用 / Effects: `blockers.push`; 更新 / updates `score`, `qemu`, `migration`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ * 失败处理：catch 分支执行 `blockers.push(`无法读取主机资源：${(error as Error).message}`);`; `blockers.push(`项目配置：${(error as Error).message}`);`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `blockers.push(`无法读取主机资源：${(error as Error).message}`);`; `blockers.push(`项目配置：${(error as Error).message}`);`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export async function planLiveMigration(machines: Machines,
   scoreHosts: (input: { cpus: number; memoryMiB: number }) => Promise<Score>,
   id: string, raw: unknown, signal?: AbortSignal, query: Query = qmp,
@@ -41,6 +55,14 @@ export async function planLiveMigration(machines: Machines,
     .map(({ id, name, eligible, reasons, status }) => ({ id, name, eligible,
       reasons, platform: status?.platform, arch: status?.arch })) || [];
   const local = score?.candidates.find((item) => item.source === 'local');
+  /**
+   * 入口 / Entry: planLiveMigration.compatible.
+   * 功能：从当前输入或状态计算 `item.eligible && !!item.status && !!local?.status && item.status.platform === local.status.platform && item.status.arch === l…`，供调用方后续验证或使用。
+   * Purpose: Computes `item.eligible && !!item.status && !!local?.status && item.status.platform === local.status.platform && item.status.arch === l…` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: item: NonNullable<Score>['candidates'][number]
+   * 输出 / Returns: `item.eligible && !!item.status && !!local?.status && item.status.platform === local.status.platform && item.status.arch === l…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   const compatible = (item: NonNullable<Score>['candidates'][number]) =>
     item.eligible && !!item.status && !!local?.status &&
     item.status.platform === local.status.platform &&

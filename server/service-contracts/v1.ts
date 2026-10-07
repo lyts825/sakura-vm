@@ -1,5 +1,6 @@
 /**
  * 模块职责：维护独立于实现的 V1 公共服务接口；成员变化属于显式契约修订，初始化仍由提供者负责。
+ * Module purpose: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
  */
 import type WebSocket from 'ws';
 import type { DomainRecoveryTicket } from '../../shared/contracts/domain-recovery.ts';
@@ -35,7 +36,25 @@ export type OperationJsonSchemaV1 = {
 export interface FeatureSuiteV1 {
   readonly "jobs": JobsV1;
   readonly "packageWorkbench": PackageWorkbenchV1;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.enableBackground.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 enableBackground 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for enableBackground in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: () => void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "enableBackground": () => () => void;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.catalog.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 catalog 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for catalog in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ features: import("../../shared/catalogs/automation.ts").FeatureCatalogItem[]; capabilities: import("../../shared/capability-actions.ts").CapabilityActionView[]; pres….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "catalog": () => Promise<{
     features: import("../../shared/catalogs/automation.ts").FeatureCatalogItem[];
     capabilities: import("../../shared/capability-actions.ts").CapabilityActionView[];
@@ -63,7 +82,25 @@ export interface FeatureSuiteV1 {
     };
     generatedAt: string;
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.alertEvents.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 alertEvents 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for alertEvents in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<AlertEventV1[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "alertEvents": () => Promise<AlertEventV1[]>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for view in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; limit: number optional
+   * 输出 / Returns: Promise<{ projectId: string; settings: { schedule: { enabled: boolean; idleMinutes: number; idleAction: "stop"; startAt?: string | undefined; stopAt?: string | undefined; }; a….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, limit?: number) => Promise<{
     projectId: string;
     settings: {
@@ -122,6 +159,15 @@ export interface FeatureSuiteV1 {
     capabilities: import("../../shared/capability-actions.ts").CapabilityActionView[];
     capabilityJobs: import("../../shared/contracts/jobs.ts").JobView[];
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.feature.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 feature 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for feature in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: { featureId: "image-import" | "golden-images" | "multi-arch" | "power-schedules" | "i…; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<Record<string, unknown> | import("../../shared/contracts/jobs.ts").JobView | { message: string; reason?: string | undefined; ready: boolean; executed: boolean; enabled….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "feature": (id: string, input: {
     featureId: "image-import" | "golden-images" | "multi-arch" | "power-schedules" | "idle-shutdown" | "dynamic-memory" | "online-snapshots" | "snapshot-diff" | "disk-maintenance" | "resource-presets" | "windows-mount" | "file-drop" | "workspace-search" | "disk-analyzer" | "resumable-transfer" | "three-way-sync" | "directory-history" | "binary-preview" | "language-services" | "debug-adapter" | "test-explorer" | "format-lint" | "git-worktrees" | "merge-editor" | "dependency-report" | "runtime-matrix" | "package-manager" | "reproducible-env" | "dev-container" | "browser-preview" | "database-presets" | "ai-assistant" | "port-discovery" | "reverse-proxy" | "network-profiles" | "vpn-integration" | "network-diagnostics" | "package-cache" | "service-dashboard" | "gpu-acceleration" | "audio-video" | "single-app-windows" | "process-interop" | "native-integration" | "multi-monitor" | "metrics-history" | "alerts" | "security-scan" | "rbac-sharing" | "plugin-api";
     action: "check" | "run";
@@ -332,6 +378,15 @@ export interface FeatureSuiteV1 {
     checkedAt: string;
     featureId: "nat-hairpin";
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.update.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 update 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for update in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ schedule: { enabled: boolean; idleMinutes: number; idleAction: "stop"; startAt?: string | undefined; stopAt?: string | undefined; }; alerts: { enabled: boolean; cpuP….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "update": (id: string, input: unknown) => Promise<{
     schedule: {
         enabled: boolean;
@@ -352,6 +407,15 @@ export interface FeatureSuiteV1 {
     };
     updatedAt: string;
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.sample.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sample 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for sample in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ cpuPercent: number; memoryUsed: number; memoryTotal: number; diskUsed: number; diskTotal: number; networkReceivedBytes: number | null; networkTransmittedBytes: numbe….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "sample": (id: string) => Promise<{
     cpuPercent: number;
     memoryUsed: number;
@@ -374,8 +438,35 @@ export interface FeatureSuiteV1 {
     uptime: number;
     sampledAt: string;
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.memoryTarget.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 memoryTarget 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for memoryTarget in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; memoryMiB: number
+   * 输出 / Returns: Promise<import("../../shared/contracts/vm.ts").VMView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "memoryTarget": (id: string, memoryMiB: number) => Promise<import("../../shared/contracts/vm.ts").VMView>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.applyPreset.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 applyPreset 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for applyPreset in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; preset: "light" | "development" | "build" | "desktop"
+   * 输出 / Returns: Promise<import("../../shared/contracts/vm.ts").VMView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "applyPreset": (id: string, preset: "light" | "development" | "build" | "desktop") => Promise<import("../../shared/contracts/vm.ts").VMView>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.diskAnalysis.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 diskAnalysis 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for diskAnalysis in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: { path?: string | undefined; }; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ path: string; entries: { path: string; bytes: number; }[]; checkedAt: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "diskAnalysis": (id: string, input: {
     path?: string | undefined;
 }, signal?: AbortSignal | undefined) => Promise<{
@@ -386,6 +477,15 @@ export interface FeatureSuiteV1 {
     }[];
     checkedAt: string;
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.dev.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 dev 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for dev in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: Omit<{ action: "dev"; operation: "format" | "lint" | "dependencies" | "test" | "datab…; signal: AbortSignal | undefined optional
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "dev": (id: string, input: Omit<{
     action: "dev";
     operation: "format" | "lint" | "dependencies" | "test" | "database" | "test-discover" | "lock" | "lock-check" | "install-locked" | "prefetch-dependencies" | "install-cached-dependencies" | "worktree-list" | "worktree-add" | "worktree-remove";
@@ -397,7 +497,25 @@ export interface FeatureSuiteV1 {
     password?: string | undefined;
     manager?: "npm" | "pip" | undefined;
 }, "action">, signal?: AbortSignal | undefined) => import("../../shared/contracts/jobs.ts").JobView;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.acknowledge.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 acknowledge 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for acknowledge in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; eventId: string
+   * 输出 / Returns: Promise<AlertEventV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "acknowledge": (id: string, eventId: string) => Promise<AlertEventV1>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.search.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 search 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for search in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: { query: string; path?: string | undefined; content?: boolean | undefined; }; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ query: string; path: string; content: boolean; matches: string[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "search": (id: string, input: {
     query: string;
     path?: string | undefined;
@@ -408,19 +526,55 @@ export interface FeatureSuiteV1 {
     content: boolean;
     matches: string[];
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.package.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 package 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for package in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: Omit<{ action: "package"; operation: "list" | "update" | "remove" | "install" | "sear…; signal: AbortSignal | undefined optional
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "package": (id: string, input: Omit<{
     action: "package";
     operation: "list" | "update" | "remove" | "install" | "search" | "upgrade" | "upgrade-all" | "cache-list" | "cache-prefetch" | "cache-install" | "cache-clear";
     name?: string | undefined;
 }, "action">, signal?: AbortSignal | undefined) => import("../../shared/contracts/jobs.ts").JobView;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.networkTest.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 networkTest 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for networkTest in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; target: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ target: string; output: string; code: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "networkTest": (id: string, target: string, signal?: AbortSignal | undefined) => Promise<{
     target: string;
     output: string;
     code: number;
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.discoverPorts.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 discoverPorts 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for discoverPorts in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ ports: number[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "discoverPorts": (id: string, signal?: AbortSignal | undefined) => Promise<{
     ports: number[];
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.securityScan.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 securityScan 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for securityScan in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ checkedAt: string; findings: string[]; output: string; code: number; vulnerabilityScan: VulnerabilityScanV1; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "securityScan": (id: string, signal?: AbortSignal | undefined) => Promise<{
     checkedAt: string;
     findings: string[];
@@ -428,6 +582,15 @@ export interface FeatureSuiteV1 {
     code: number;
     vulnerabilityScan: VulnerabilityScanV1;
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for action in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<AlertEventV1 | Record<string, unknown> | import("../../shared/contracts/jobs.ts").JobView | { message: string; reason?: string | undefined; ready: boolean; executed: b….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, input: unknown, signal?: AbortSignal | undefined) => Promise<AlertEventV1 | Record<string, unknown> | import("../../shared/contracts/jobs.ts").JobView | {
     message: string;
     reason?: string | undefined;
@@ -679,6 +842,15 @@ export interface FeatureSuiteV1 {
     code: number;
     vulnerabilityScan: VulnerabilityScanV1;
 }>;
+  /**
+   * 签名 / Signature: FeatureSuiteV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 FeatureSuiteV1。
+   * Purpose: Declares the input/result contract for tick in FeatureSuiteV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": () => Promise<void>;
 }
 
@@ -687,10 +859,46 @@ export interface FeatureSchedulerV1 {
 }
 
 export interface BackupsV1 {
+  /**
+   * 签名 / Signature: BackupsV1.recoveryTickets.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 recoveryTickets 的输入与结果契约，所属容器为 BackupsV1。
+   * Purpose: Declares the input/result contract for recoveryTickets in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<DomainRecoveryTicket[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "recoveryTickets": () => Promise<DomainRecoveryTicket[]>;
+  /**
+   * 签名 / Signature: BackupsV1.recoverTicket.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 recoverTicket 的输入与结果契约，所属容器为 BackupsV1。
+   * Purpose: Declares the input/result contract for recoverTicket in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: ticket: DomainRecoveryTicket
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "recoverTicket": (ticket: DomainRecoveryTicket) => Promise<void>;
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: BackupsV1.downloadable.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 downloadable 的输入与结果契约，所属容器为 BackupsV1。
+   * Purpose: Declares the input/result contract for downloadable in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; backupId: string
+   * 输出 / Returns: Promise<BackupDownloadV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "downloadable": (id: string, backupId: string) => Promise<BackupDownloadV1>;
+  /**
+   * 签名 / Signature: BackupsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 BackupsV1。
+   * Purpose: Declares the input/result contract for view in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ bytes: number; job: import("../../shared/contracts/jobs.ts").JobView | null; waitingForShutdown: boolean; maintenance: boolean; policy: { enabled: boolean; intervalH….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     bytes: number;
     job: import("../../shared/contracts/jobs.ts").JobView | null;
@@ -710,20 +918,119 @@ export interface BackupsV1 {
     items: BackupRecordV1[];
     lastSuccess?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: BackupsV1.policy.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 policy 的输入与结果契约，所属容器为 BackupsV1。
+   * Purpose: Declares the input/result contract for policy in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; value: unknown
+   * 输出 / Returns: Promise<BackupStateV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "policy": (id: string, value: unknown) => Promise<BackupStateV1>;
+  /**
+   * 签名 / Signature: BackupsV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 BackupsV1。
+   * Purpose: Declares the input/result contract for tick in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: now: number optional; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": (now?: number, signal?: AbortSignal | undefined) => Promise<void>;
+  /**
+   * 签名 / Signature: BackupsV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 BackupsV1。
+   * Purpose: Declares the input/result contract for run in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; password: string | undefined optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, password?: string | undefined) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
+  /**
+   * 签名 / Signature: BackupsV1.operate.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 operate 的输入与结果契约，所属容器为 BackupsV1。
+   * Purpose: Declares the input/result contract for operate in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; backupId: string; action: "delete" | "restore" | "verify"; name: string | undefined optional; password: string | undefined optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView | { ok: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "operate": (id: string, backupId: string, action: "delete" | "restore" | "verify", name?: string | undefined, password?: string | undefined) => Promise<import("../../shared/contracts/jobs.ts").JobView | {
     ok: boolean;
 }>;
+  /**
+   * 签名 / Signature: BackupsV1.withVerifiedFile.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 withVerifiedFile 的输入与结果契约，所属容器为 BackupsV1。
+   * Purpose: Declares the input/result contract for withVerifiedFile in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; backupId: string; password: string | undefined; signal: AbortSignal; work: (file: string, lease: { id: string; release: () => void; assertActive: (checkSignal?:…; options: { extraBuffers?: number | undefined; writes?: boolean | undefined; writePaths?: reado… optional
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "withVerifiedFile": <T>(id: string, backupId: string, password: string | undefined, signal: AbortSignal, work: (file: string, lease: {
     id: string;
+    /**
+     * 签名 / Signature: BackupsV1.release.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 release 的输入与结果契约，所属容器为 BackupsV1。
+     * Purpose: Declares the input/result contract for release in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     release: () => void;
+    /**
+     * 签名 / Signature: BackupsV1.assertActive.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 assertActive 的输入与结果契约，所属容器为 BackupsV1。
+     * Purpose: Declares the input/result contract for assertActive in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: checkSignal: boolean optional
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     assertActive: (checkSignal?: boolean) => void;
+    /**
+     * 签名 / Signature: BackupsV1.reserveTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 reserveTemporary 的输入与结果契约，所属容器为 BackupsV1。
+     * Purpose: Declares the input/result contract for reserveTemporary in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string; bytes: number
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     reserveTemporary: (path: string, bytes: number) => Promise<void>;
+    /**
+     * 签名 / Signature: BackupsV1.releaseTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 releaseTemporary 的输入与结果契约，所属容器为 BackupsV1。
+     * Purpose: Declares the input/result contract for releaseTemporary in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     releaseTemporary: (path: string) => Promise<void>;
+    /**
+     * 签名 / Signature: BackupsV1.cleanupPending.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 cleanupPending 的输入与结果契约，所属容器为 BackupsV1。
+     * Purpose: Declares the input/result contract for cleanupPending in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: error: unknown
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     cleanupPending: (error: unknown) => void;
     readonly pendingCleanup: boolean;
+    /**
+     * 签名 / Signature: BackupsV1.transfer.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 transfer 的输入与结果契约，所属容器为 BackupsV1。
+     * Purpose: Declares the input/result contract for transfer in BackupsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: owner: string
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     transfer: (owner: string) => void;
 }, sourceFile: string) => Promise<T>, options?: {
     extraBuffers?: number | undefined;
@@ -734,10 +1041,28 @@ export interface BackupsV1 {
 
 export interface BackupRecoveryV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: BackupRecoveryV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 BackupRecoveryV1。
+   * Purpose: Declares the input/result contract for view in BackupRecoveryV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { runs: import("../../shared/contracts/jobs.ts").JobView[]; persistenceError: string | undefined; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => {
     runs: import("../../shared/contracts/jobs.ts").JobView[];
     persistenceError: string | undefined;
 };
+  /**
+   * 签名 / Signature: BackupRecoveryV1.artifact.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 artifact 的输入与结果契约，所属容器为 BackupRecoveryV1。
+   * Purpose: Declares the input/result contract for artifact in BackupRecoveryV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; run: string; artifact: string
+   * 输出 / Returns: Promise<{ base64: string; id: string; name: string; path: string; bytes: number; sha256: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "artifact": (id: string, run: string, artifact: string) => Promise<{
     base64: string;
     id: string;
@@ -746,10 +1071,28 @@ export interface BackupRecoveryV1 {
     bytes: number;
     sha256: string;
 }>;
+  /**
+   * 签名 / Signature: BackupRecoveryV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 BackupRecoveryV1。
+   * Purpose: Declares the input/result contract for run in BackupRecoveryV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown) => import("../../shared/contracts/jobs.ts").JobView;
 }
 
 export interface CodeIntelligenceV1 {
+  /**
+   * 签名 / Signature: CodeIntelligenceV1.diagnose.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 diagnose 的输入与结果契约，所属容器为 CodeIntelligenceV1。
+   * Purpose: Declares the input/result contract for diagnose in CodeIntelligenceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ path: string; diagnostics: DiagnosticV1[]; supported: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "diagnose": (id: string, path: string, signal?: AbortSignal | undefined) => Promise<{
     path: string;
     diagnostics: DiagnosticV1[];
@@ -758,6 +1101,15 @@ export interface CodeIntelligenceV1 {
 }
 
 export interface LanguageServicesV1 {
+  /**
+   * 签名 / Signature: LanguageServicesV1.status.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 status 的输入与结果契约，所属容器为 LanguageServicesV1。
+   * Purpose: Declares the input/result contract for status in LanguageServicesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ language: string; installed: boolean; supported: boolean; pending: { token: string; phase: "active" | "review" | "intent" | "closed"; needsReview: boolean; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "status": (id: string, path: string, signal?: AbortSignal | undefined) => Promise<{
     language: string;
     installed: boolean;
@@ -768,11 +1120,27 @@ export interface LanguageServicesV1 {
         needsReview: boolean;
     }[];
 }>;
+  /**
+   * 签名 / Signature: LanguageServicesV1.install.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 install 的输入与结果契约，所属容器为 LanguageServicesV1。
+   * Purpose: Declares the input/result contract for install in LanguageServicesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ installed: boolean; languages: string[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "install": (id: string, signal?: AbortSignal | undefined) => Promise<{
     installed: boolean;
     languages: string[];
 }>;
   readonly "execute": {
+    /**
+     * 中文功能：接收实例、文件内容和位置，异步返回带插入文本及范围的补全项。
+     * English: Accepts VM, file content and position and asynchronously returns completion items with insertion text/ranges.
+     * 所属 / Owner: LanguageServicesV1."execute".
+     * 输入 / Inputs: id: string; input: { action: "completion"; path: string; content: string; position: import("../../shared/language-service.ts").LspPosition; }; signal?: AbortSignal | undefined.
+     * 结果 / Result: `Promise<{ path: string; items: { label: string; detail: string; insertText: string; range: import("../../shared/language-service.ts").LspRange | null; }[]; }>`.
+     */
     (id: string, input: {
         action: "completion";
         path: string;
@@ -787,6 +1155,13 @@ export interface LanguageServicesV1 {
             range: import("../../shared/language-service.ts").LspRange | null;
         }[];
     }>;
+    /**
+     * 中文功能：接收实例、文件内容和位置，异步返回定义的文件/行列位置。
+     * English: Accepts VM, content and position and asynchronously returns definition file/line/column locations.
+     * 所属 / Owner: LanguageServicesV1."execute".
+     * 输入 / Inputs: id: string; input: { action: "definition"; path: string; content: string; position: import("../../shared/language-service.ts").LspPosition; }; signal?: AbortSignal | undefined.
+     * 结果 / Result: `Promise<{ path: string; locations: { path: string; line: number; column: number; }[]; }>`.
+     */
     (id: string, input: {
         action: "definition";
         path: string;
@@ -800,6 +1175,13 @@ export interface LanguageServicesV1 {
             column: number;
         }[];
     }>;
+    /**
+     * 中文功能：接收实例及文件内容，异步返回诊断是否收到及严重度/消息/行列。
+     * English: Accepts VM/file content and asynchronously returns receipt status and diagnostic severity/message/positions.
+     * 所属 / Owner: LanguageServicesV1."execute".
+     * 输入 / Inputs: id: string; input: { action: "diagnostics"; path: string; content: string; }; signal?: AbortSignal | undefined.
+     * 结果 / Result: `Promise<{ path: string; received: boolean; diagnostics: { severity: string; message: string; line: number; column: number; }[]; }>`.
+     */
     (id: string, input: {
         action: "diagnostics";
         path: string;
@@ -814,6 +1196,13 @@ export interface LanguageServicesV1 {
             column: number;
         }[];
     }>;
+    /**
+     * 中文功能：接收实例、内容、位置、新名称和版本，异步返回变更 token 与文件前后文本。
+     * English: Accepts VM, content, position, new name/version and returns a change token with before/after file text.
+     * 所属 / Owner: LanguageServicesV1."execute".
+     * 输入 / Inputs: id: string; input: { action: "rename"; path: string; content: string; position: import("../../shared/language-service.ts").LspPosition; newName: string; version: string; }; signal?: AbortSignal | undefined.
+     * 结果 / Result: `Promise<{ token: string; files: { path: string; before: string; after: string; }[]; }>`.
+     */
     (id: string, input: {
         action: "rename";
         path: string;
@@ -829,6 +1218,13 @@ export interface LanguageServicesV1 {
             after: string;
         }[];
     }>;
+    /**
+     * 中文功能：声明 diagnostics、completion、definition、rename 联合输入的兼容调用签名，异步返回对应动作结果。
+     * English: Declares the compatibility call signature for diagnostics, completion, definition and rename union inputs, returning the corresponding action result asynchronously.
+     * 所属 / Owner: LanguageServicesV1."execute".
+     * 输入 / Inputs: id: string; input: { action: "diagnostics" | "completion" | "definition" | "rename"; path: string; content: string; position?: import("../../shared/language-service.ts").LspPosition | undefined; newName?: string | undefined; version?: string | undefined; }; signal?: AbortSignal | undefined.
+     * 结果 / Result: `Promise<any>`；具体形状由上方各动作重载定义 / the action overloads above define each result shape.
+     */
     (id: string, input: {
         action: "diagnostics" | "completion" | "definition" | "rename";
         path: string;
@@ -838,6 +1234,15 @@ export interface LanguageServicesV1 {
         version?: string | undefined;
     }, signal?: AbortSignal | undefined): Promise<any>;
 };
+  /**
+   * 签名 / Signature: LanguageServicesV1.apply.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 apply 的输入与结果契约，所属容器为 LanguageServicesV1。
+   * Purpose: Declares the input/result contract for apply in LanguageServicesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; token: string; lockToken: string | undefined optional
+   * 输出 / Returns: Promise<{ files: { path: string; content: string; version: string; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "apply": (id: string, token: string, lockToken?: string | undefined) => Promise<{
     files: {
         path: string;
@@ -845,12 +1250,30 @@ export interface LanguageServicesV1 {
         version: string;
     }[];
 }>;
+  /**
+   * 签名 / Signature: LanguageServicesV1.stop.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 stop 的输入与结果契约，所属容器为 LanguageServicesV1。
+   * Purpose: Declares the input/result contract for stop in LanguageServicesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; token: string
+   * 输出 / Returns: Promise<{ stopped: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "stop": (id: string, token: string) => Promise<{
     stopped: boolean;
 }>;
 }
 
 export interface DebugAdapterV1 {
+  /**
+   * 签名 / Signature: DebugAdapterV1.status.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 status 的输入与结果契约，所属容器为 DebugAdapterV1。
+   * Purpose: Declares the input/result contract for status in DebugAdapterV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ active: boolean; needsReview: boolean; error: string; token: string; state: "error" | "running" | "stopped" | "starting" | "terminated"; path: string; directory: str….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "status": (id: string, signal?: AbortSignal | undefined) => Promise<{
     active: boolean;
     needsReview: boolean;
@@ -894,9 +1317,27 @@ export interface DebugAdapterV1 {
     error?: undefined;
     pending?: undefined;
 }>;
+  /**
+   * 签名 / Signature: DebugAdapterV1.install.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 install 的输入与结果契约，所属容器为 DebugAdapterV1。
+   * Purpose: Declares the input/result contract for install in DebugAdapterV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ installed: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "install": (id: string, signal?: AbortSignal | undefined) => Promise<{
     installed: boolean;
 }>;
+  /**
+   * 签名 / Signature: DebugAdapterV1.start.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 start 的输入与结果契约，所属容器为 DebugAdapterV1。
+   * Purpose: Declares the input/result contract for start in DebugAdapterV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: { path: string; breakpoints: number[]; stopOnEntry?: boolean | undefined; args?: stri…; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ active: boolean; token: string; state: "error" | "running" | "stopped" | "starting" | "terminated"; path: string; directory: string; reason: string; threadId: number….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "start": (id: string, input: {
     path: string;
     breakpoints: number[];
@@ -923,6 +1364,15 @@ export interface DebugAdapterV1 {
     startedAt: string;
     needsReview: boolean;
 }>;
+  /**
+   * 签名 / Signature: DebugAdapterV1.command.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 command 的输入与结果契约，所属容器为 DebugAdapterV1。
+   * Purpose: Declares the input/result contract for command in DebugAdapterV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; token: string; action: "next" | "continue" | "stepIn" | "stepOut" | "pause"; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ active: boolean; token: string; state: "error" | "running" | "stopped" | "starting" | "terminated"; path: string; directory: string; reason: string; threadId: number….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "command": (id: string, token: string, action: "next" | "continue" | "stepIn" | "stepOut" | "pause", signal?: AbortSignal | undefined) => Promise<{
     active: boolean;
     token: string;
@@ -944,6 +1394,15 @@ export interface DebugAdapterV1 {
     startedAt: string;
     needsReview: boolean;
 }>;
+  /**
+   * 签名 / Signature: DebugAdapterV1.setBreakpoints.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 setBreakpoints 的输入与结果契约，所属容器为 DebugAdapterV1。
+   * Purpose: Declares the input/result contract for setBreakpoints in DebugAdapterV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; token: string; input: number[]
+   * 输出 / Returns: Promise<{ active: boolean; token: string; state: "error" | "running" | "stopped" | "starting" | "terminated"; path: string; directory: string; reason: string; threadId: number….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "setBreakpoints": (id: string, token: string, input: number[]) => Promise<{
     active: boolean;
     token: string;
@@ -965,6 +1424,15 @@ export interface DebugAdapterV1 {
     startedAt: string;
     needsReview: boolean;
 }>;
+  /**
+   * 签名 / Signature: DebugAdapterV1.inspect.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 inspect 的输入与结果契约，所属容器为 DebugAdapterV1。
+   * Purpose: Declares the input/result contract for inspect in DebugAdapterV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; token: string; frameId: number
+   * 输出 / Returns: Promise<{ active: boolean; token: string; state: "error" | "running" | "stopped" | "starting" | "terminated"; path: string; directory: string; reason: string; threadId: number….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "inspect": (id: string, token: string, frameId: number) => Promise<{
     active: boolean;
     token: string;
@@ -986,9 +1454,27 @@ export interface DebugAdapterV1 {
     startedAt: string;
     needsReview: boolean;
 }>;
+  /**
+   * 签名 / Signature: DebugAdapterV1.expand.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 expand 的输入与结果契约，所属容器为 DebugAdapterV1。
+   * Purpose: Declares the input/result contract for expand in DebugAdapterV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; token: string; reference: number
+   * 输出 / Returns: Promise<{ variables: any; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "expand": (id: string, token: string, reference: number) => Promise<{
     variables: any;
 }>;
+  /**
+   * 签名 / Signature: DebugAdapterV1.stop.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 stop 的输入与结果契约，所属容器为 DebugAdapterV1。
+   * Purpose: Declares the input/result contract for stop in DebugAdapterV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; token: string
+   * 输出 / Returns: Promise<{ active: boolean; stopped: boolean; output: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "stop": (id: string, token: string) => Promise<{
     active: boolean;
     stopped: boolean;
@@ -998,6 +1484,15 @@ export interface DebugAdapterV1 {
 
 export interface CommandPresetsV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: CommandPresetsV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 CommandPresetsV1。
+   * Purpose: Declares the input/result contract for list in CommandPresetsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ name: string; command: string; parameters: { name: string; value: string; }[]; id: string; }[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (id: string) => Promise<{
     name: string;
     command: string;
@@ -1007,6 +1502,15 @@ export interface CommandPresetsV1 {
     }[];
     id: string;
 }[]>;
+  /**
+   * 签名 / Signature: CommandPresetsV1.save.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 save 的输入与结果契约，所属容器为 CommandPresetsV1。
+   * Purpose: Declares the input/result contract for save in CommandPresetsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ name: string; command: string; parameters: { name: string; value: string; }[]; id: string; }[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "save": (id: string, input: unknown) => Promise<{
     name: string;
     command: string;
@@ -1016,6 +1520,15 @@ export interface CommandPresetsV1 {
     }[];
     id: string;
 }[]>;
+  /**
+   * 签名 / Signature: CommandPresetsV1.remove.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 remove 的输入与结果契约，所属容器为 CommandPresetsV1。
+   * Purpose: Declares the input/result contract for remove in CommandPresetsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; presetId: string
+   * 输出 / Returns: Promise<{ name: string; command: string; parameters: { name: string; value: string; }[]; id: string; }[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "remove": (id: string, presetId: string) => Promise<{
     name: string;
     command: string;
@@ -1025,11 +1538,29 @@ export interface CommandPresetsV1 {
     }[];
     id: string;
 }[]>;
+  /**
+   * 签名 / Signature: CommandPresetsV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 CommandPresetsV1。
+   * Purpose: Declares the input/result contract for run in CommandPresetsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; presetId: string; input: unknown
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, presetId: string, input: unknown) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
 }
 
 export interface ContainersV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: ContainersV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 ContainersV1。
+   * Purpose: Declares the input/result contract for view in ContainersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ supported: boolean; installed: boolean; containers: never[]; images: never[]; volumes: never[]; files: never[]; job: import("../../shared/contracts/jobs.ts").JobView….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, signal?: AbortSignal | undefined) => Promise<{
     supported: boolean;
     installed: boolean;
@@ -1185,6 +1716,15 @@ export interface ContainersV1 {
     job: import("../../shared/contracts/jobs.ts").JobView | null;
     error?: undefined;
 }>;
+  /**
+   * 签名 / Signature: ContainersV1.templateMetadata.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 templateMetadata 的输入与结果契约，所属容器为 ContainersV1。
+   * Purpose: Declares the input/result contract for templateMetadata in ContainersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: string; version: string | undefined optional; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ id: string; version: string; name: string; description: string; documentationURL: string; reference: string; sourceMatched: boolean; imageVariant: { default: string;….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "templateMetadata": (id: string, input: string, version?: string | undefined, signal?: AbortSignal | undefined) => Promise<{
     id: string;
     version: string;
@@ -1200,10 +1740,37 @@ export interface ContainersV1 {
     optionalPaths: string[];
     files: string[];
 }>;
+  /**
+   * 签名 / Signature: ContainersV1.logs.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 logs 的输入与结果契约，所属容器为 ContainersV1。
+   * Purpose: Declares the input/result contract for logs in ContainersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; target: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ log: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "logs": (id: string, target: string, signal?: AbortSignal | undefined) => Promise<{
     log: string;
 }>;
+  /**
+   * 签名 / Signature: ContainersV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 ContainersV1。
+   * Purpose: Declares the input/result contract for run in ContainersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
+  /**
+   * 签名 / Signature: ContainersV1.privateDatabase.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 privateDatabase 的输入与结果契约，所属容器为 ContainersV1。
+   * Purpose: Declares the input/result contract for privateDatabase in ContainersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: { database: "postgres" | "redis" | "mysql"; password: string; name?: string | undefin…; signal: AbortSignal; log: (text: string) => void
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "privateDatabase": (id: string, input: {
     database: "postgres" | "redis" | "mysql";
     password: string;
@@ -1216,10 +1783,37 @@ export interface DesktopsV1 {
   readonly "apps": SingleAppWindowsV1;
   readonly "clipboard": X11ClipboardV1;
   readonly "waylandClipboard": WaylandClipboardV1;
+  /**
+   * 签名 / Signature: DesktopsV1.stop.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 stop 的输入与结果契约，所属容器为 DesktopsV1。
+   * Purpose: Declares the input/result contract for stop in DesktopsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ stopped: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "stop": (id: string) => Promise<{
     stopped: boolean;
 }>;
+  /**
+   * 签名 / Signature: DesktopsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 DesktopsV1。
+   * Purpose: Declares the input/result contract for view in DesktopsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; bound: boolean optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/vm.ts").DesktopView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, bound?: boolean) => Promise<import("../../shared/contracts/vm.ts").DesktopView>;
+  /**
+   * 签名 / Signature: DesktopsV1.start.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 start 的输入与结果契约，所属容器为 DesktopsV1。
+   * Purpose: Declares the input/result contract for start in DesktopsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; action: "start" | "install" | "configure"; input: Partial<{ sessionType: "auto" | "x11" | "wayland"; resolution: "1280x800" | "1440x900… optional
+   * 输出 / Returns: import("../../shared/contracts/vm.ts").DesktopView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "start": (id: string, action: "start" | "install" | "configure", input?: Partial<{
     sessionType: "auto" | "x11" | "wayland";
     resolution: "1280x800" | "1440x900" | "1600x1000" | "1920x1080";
@@ -1232,21 +1826,93 @@ export interface DesktopsV1 {
     autoHidePanel: boolean;
     animations: boolean;
 }> | undefined) => import("../../shared/contracts/vm.ts").DesktopView;
+  /**
+   * 签名 / Signature: DesktopsV1.installIme.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 installIme 的输入与结果契约，所属容器为 DesktopsV1。
+   * Purpose: Declares the input/result contract for installIme in DesktopsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal; log: (line: string) => void
+   * 输出 / Returns: Promise<{ stdout: string; stderr: string; code: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "installIme": (id: string, signal: AbortSignal, log: (line: string) => void) => Promise<{
     stdout: string;
     stderr: string;
     code: number;
 }>;
+  /**
+   * 签名 / Signature: DesktopsV1.attach.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 attach 的输入与结果契约，所属容器为 DesktopsV1。
+   * Purpose: Declares the input/result contract for attach in DesktopsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; socket: WebSocket; readOnly: boolean optional; port: number optional; appSession: string | undefined optional; projectId: string | null | undefined optional
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "attach": (id: string, socket: WebSocket, readOnly?: boolean, port?: number, appSession?: string | undefined, projectId?: string | null | undefined) => Promise<void>;
 }
 
 export interface JobsV1 {
   readonly "persistenceError"?: string | undefined;
+  /**
+   * 签名 / Signature: JobsV1.flush.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 flush 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for flush in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "flush": () => Promise<void>;
+  /**
+   * 签名 / Signature: JobsV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for list in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView[].
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": () => import("../../shared/contracts/jobs.ts").JobView[];
+  /**
+   * 签名 / Signature: JobsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for view in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: key: string
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView | null.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (key: string) => import("../../shared/contracts/jobs.ts").JobView | null;
+  /**
+   * 签名 / Signature: JobsV1.get.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 get 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for get in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView | undefined.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "get": (id: string) => import("../../shared/contracts/jobs.ts").JobView | undefined;
+  /**
+   * 签名 / Signature: JobsV1.resolveCleanup.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 resolveCleanup 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for resolveCleanup in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "resolveCleanup": (id: string) => Promise<void>;
+  /**
+   * 签名 / Signature: JobsV1.clearCompletedLogs.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 clearCompletedLogs 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for clearCompletedLogs in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: entries: { id: string; signature: string; }[]; at: string
+   * 输出 / Returns: Promise<{ removedLogs: number; removedBytes: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "clearCompletedLogs": (entries: {
     id: string;
     signature: string;
@@ -1254,16 +1920,79 @@ export interface JobsV1 {
     removedLogs: number;
     removedBytes: number;
 }>;
+  /**
+   * 签名 / Signature: JobsV1.result.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 result 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for result in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<any>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "result": (id: string) => Promise<any>;
+  /**
+   * 签名 / Signature: JobsV1.start.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 start 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for start in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: key: string; work: WorkV1; meta: import("../../shared/contracts/jobs.ts").JobMeta optional
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "start": (key: string, work: WorkV1, meta?: import("../../shared/contracts/jobs.ts").JobMeta) => import("../../shared/contracts/jobs.ts").JobView;
+  /**
+   * 签名 / Signature: JobsV1.track.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 track 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for track in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: key: string; work: (log: (s: string) => void, signal: AbortSignal, update: import("../../shared/contract…; meta: import("../../shared/contracts/jobs.ts").JobMeta optional; external: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "track": <T>(key: string, work: (log: (s: string) => void, signal: AbortSignal, update: import("../../shared/contracts/jobs.ts").JobUpdate) => Promise<T>, meta?: import("../../shared/contracts/jobs.ts").JobMeta, external?: AbortSignal | undefined) => Promise<T>;
+  /**
+   * 签名 / Signature: JobsV1.cancel.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 cancel 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for cancel in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: key: string; reason: unknown optional
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "cancel": (key: string, reason?: unknown) => void;
+  /**
+   * 签名 / Signature: JobsV1.wait.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 wait 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for wait in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: key: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "wait": (key: string) => Promise<void>;
+  /**
+   * 签名 / Signature: JobsV1.close.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 JobsV1。
+   * Purpose: Declares the input/result contract for close in JobsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "close": () => Promise<void>;
 }
 
 export interface X11ClipboardV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: X11ClipboardV1.retireDesktop.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 retireDesktop 的输入与结果契约，所属容器为 X11ClipboardV1。
+   * Purpose: Declares the input/result contract for retireDesktop in X11ClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; proof: { version: 1; identity: { version: 1; phase: "active" | "intent"; registryId: string;…
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "retireDesktop": (id: string, proof: {
     version: 1;
     identity: {
@@ -1349,13 +2078,49 @@ export interface X11ClipboardV1 {
     } | null;
     build: string;
 }) => Promise<void>;
+  /**
+   * 签名 / Signature: X11ClipboardV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 X11ClipboardV1。
+   * Purpose: Declares the input/result contract for view in X11ClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<import("../../shared/x11-clipboard.ts").X11ClipboardView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, signal?: AbortSignal | undefined) => Promise<import("../../shared/x11-clipboard.ts").X11ClipboardView>;
+  /**
+   * 签名 / Signature: X11ClipboardV1.install.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 install 的输入与结果契约，所属容器为 X11ClipboardV1。
+   * Purpose: Declares the input/result contract for install in X11ClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "install": (id: string) => import("../../shared/contracts/jobs.ts").JobView;
+  /**
+   * 签名 / Signature: X11ClipboardV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 X11ClipboardV1。
+   * Purpose: Declares the input/result contract for action in X11ClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<unknown>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, raw: unknown, signal?: AbortSignal | undefined) => Promise<unknown>;
 }
 
 export interface WaylandClipboardV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: WaylandClipboardV1.retireDesktop.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 retireDesktop 的输入与结果契约，所属容器为 WaylandClipboardV1。
+   * Purpose: Declares the input/result contract for retireDesktop in WaylandClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; proof: { version: 1; identity: { version: 1; phase: "active" | "intent"; registryId: string;…
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "retireDesktop": (id: string, proof: {
     version: 1;
     identity: {
@@ -1441,13 +2206,49 @@ export interface WaylandClipboardV1 {
     } | null;
     build: string;
 }) => Promise<void>;
+  /**
+   * 签名 / Signature: WaylandClipboardV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 WaylandClipboardV1。
+   * Purpose: Declares the input/result contract for view in WaylandClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<import("../../shared/x11-clipboard.ts").X11ClipboardView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, signal?: AbortSignal | undefined) => Promise<import("../../shared/x11-clipboard.ts").X11ClipboardView>;
+  /**
+   * 签名 / Signature: WaylandClipboardV1.install.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 install 的输入与结果契约，所属容器为 WaylandClipboardV1。
+   * Purpose: Declares the input/result contract for install in WaylandClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "install": (id: string) => import("../../shared/contracts/jobs.ts").JobView;
+  /**
+   * 签名 / Signature: WaylandClipboardV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 WaylandClipboardV1。
+   * Purpose: Declares the input/result contract for action in WaylandClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<unknown>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, raw: unknown, signal?: AbortSignal | undefined) => Promise<unknown>;
 }
 
 export interface ExtendedFeaturesV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: ExtendedFeaturesV1.catalog.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 catalog 的输入与结果契约，所属容器为 ExtendedFeaturesV1。
+   * Purpose: Declares the input/result contract for catalog in ExtendedFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ features: import("../../shared/catalogs/engineering.ts").ExtendedFeature[]; operations: { id: string; name: string; feature: string; example: Record<string, unknown>….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "catalog": () => Promise<{
     features: import("../../shared/catalogs/engineering.ts").ExtendedFeature[];
     operations: {
@@ -1463,6 +2264,15 @@ export interface ExtendedFeaturesV1 {
     count: number;
     generatedAt: string;
 }>;
+  /**
+   * 签名 / Signature: ExtendedFeaturesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 ExtendedFeaturesV1。
+   * Purpose: Declares the input/result contract for view in ExtendedFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ projectId: string; features: import("../../shared/catalogs/engineering.ts").ExtendedFeature[]; operations: { id: string; name: string; feature: string; example: Reco….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     projectId: string;
     features: import("../../shared/catalogs/engineering.ts").ExtendedFeature[];
@@ -1486,7 +2296,25 @@ export interface ExtendedFeaturesV1 {
     executions: FeatureExecutionV1[];
     jobs: import("../../shared/contracts/jobs.ts").JobView[];
 }>;
+  /**
+   * 签名 / Signature: ExtendedFeaturesV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 ExtendedFeaturesV1。
+   * Purpose: Declares the input/result contract for configure in ExtendedFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<FeatureSettingV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (id: string, input: unknown) => Promise<FeatureSettingV1>;
+  /**
+   * 签名 / Signature: ExtendedFeaturesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 ExtendedFeaturesV1。
+   * Purpose: Declares the input/result contract for action in ExtendedFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView | FeatureSettingV1 | (Record<string, unknown> & { ready: boolean; })>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, input: unknown, signal?: AbortSignal | undefined) => Promise<import("../../shared/contracts/jobs.ts").JobView | FeatureSettingV1 | (Record<string, unknown> & {
     ready: boolean;
 })>;
@@ -1494,25 +2322,96 @@ export interface ExtendedFeaturesV1 {
 
 export interface FilesV1 {
   readonly "uploads": ResumableUploadsV1;
-  readonly "trash"?: ((id: string, path: string, recursive: boolean) => Promise<unknown>) | undefined;
+  readonly "trash"?: (
+  /**
+   * 中文功能：声明语言服务动作联合输入的兼容调用签名，异步返回对应动作结果。
+   * English: Declares the compatibility call signature for union language-service actions and asynchronously returns the action result.
+   * 所属 / Owner: FilesV1."trash".
+   * 输入 / Inputs: id: string; path: string; recursive: boolean.
+   * 结果 / Result: `Promise<unknown>`.
+   */
+  (id: string, path: string, recursive: boolean) => Promise<unknown>) | undefined;
+  /**
+   * 签名 / Signature: FilesV1.info.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 info 的输入与结果契约，所属容器为 FilesV1。
+   * Purpose: Declares the input/result contract for info in FilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string
+   * 输出 / Returns: Promise<{ size: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "info": (id: string, path: string) => Promise<{
     size: number;
 }>;
+  /**
+   * 签名 / Signature: FilesV1.chunk.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 chunk 的输入与结果契约，所属容器为 FilesV1。
+   * Purpose: Declares the input/result contract for chunk in FilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; index: number; signal: AbortSignal
+   * 输出 / Returns: Promise<{ index: number; bytes: number; data: string; sha256: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "chunk": (id: string, path: string, index: number, signal: AbortSignal) => Promise<{
     index: number;
     bytes: number;
     data: string;
     sha256: string;
 }>;
+  /**
+   * 签名 / Signature: FilesV1.preview.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 preview 的输入与结果契约，所属容器为 FilesV1。
+   * Purpose: Declares the input/result contract for preview in FilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<PreviewV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "preview": (id: string, path: string, signal?: AbortSignal | undefined) => Promise<PreviewV1>;
+  /**
+   * 签名 / Signature: FilesV1.upload.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 upload 的输入与结果契约，所属容器为 FilesV1。
+   * Purpose: Declares the input/result contract for upload in FilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; source: import("stream").Readable; overwrite: boolean optional; signal: AbortSignal | undefined optional; expectedVersion: string | undefined optional
+   * 输出 / Returns: Promise<{ bytes: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "upload": (id: string, path: string, source: import("stream").Readable, overwrite?: boolean, signal?: AbortSignal | undefined, expectedVersion?: string | undefined) => Promise<{
     bytes: number;
 }>;
+  /**
+   * 签名 / Signature: FilesV1.download.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 download 的输入与结果契约，所属容器为 FilesV1。
+   * Purpose: Declares the input/result contract for download in FilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; target: import("stream").Writable; headers: (size: number) => void; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "download": (id: string, path: string, target: import("stream").Writable, headers: (size: number) => void, signal?: AbortSignal | undefined) => Promise<void>;
+  /**
+   * 签名 / Signature: FilesV1.operation.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 operation 的输入与结果契约，所属容器为 FilesV1。
+   * Purpose: Declares the input/result contract for operation in FilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; action: "delete" | "rename" | "mkdir"; path: string; destination: string | undefined optional; recursive: boolean optional
+   * 输出 / Returns: Promise<unknown>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "operation": (id: string, action: "delete" | "rename" | "mkdir", path: string, destination?: string | undefined, recursive?: boolean) => Promise<unknown>;
 }
 
 export interface FileHistoryV1 {
+  /**
+   * 签名 / Signature: FileHistoryV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 FileHistoryV1。
+   * Purpose: Declares the input/result contract for list in FileHistoryV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string | undefined optional
+   * 输出 / Returns: Promise<{ id: string; path: string; kind: "version" | "trash"; createdAt: string; bytes: number; ready: boolean; version?: string | undefined; }[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (id: string, path?: string | undefined) => Promise<{
     id: string;
     path: string;
@@ -1522,11 +2421,38 @@ export interface FileHistoryV1 {
     ready: boolean;
     version?: string | undefined;
 }[]>;
+  /**
+   * 签名 / Signature: FileHistoryV1.capture.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 capture 的输入与结果契约，所属容器为 FileHistoryV1。
+   * Purpose: Declares the input/result contract for capture in FileHistoryV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; ftp: import("ssh2").SFTPWrapper; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "capture": (id: string, path: string, ftp: import("ssh2").SFTPWrapper, signal?: AbortSignal | undefined) => Promise<void>;
+  /**
+   * 签名 / Signature: FileHistoryV1.trash.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 trash 的输入与结果契约，所属容器为 FileHistoryV1。
+   * Purpose: Declares the input/result contract for trash in FileHistoryV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; recursive: boolean optional
+   * 输出 / Returns: Promise<{ ok: boolean; historyId: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "trash": (id: string, path: string, recursive?: boolean) => Promise<{
     ok: boolean;
     historyId: string;
 }>;
+  /**
+   * 签名 / Signature: FileHistoryV1.content.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 content 的输入与结果契约，所属容器为 FileHistoryV1。
+   * Purpose: Declares the input/result contract for content in FileHistoryV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; key: string
+   * 输出 / Returns: Promise<{ entry: { id: string; path: string; kind: "version" | "trash"; createdAt: string; bytes: number; ready: boolean; version?: string | undefined; }; content: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "content": (id: string, key: string) => Promise<{
     entry: {
         id: string;
@@ -1539,39 +2465,120 @@ export interface FileHistoryV1 {
     };
     content: string;
 }>;
+  /**
+   * 签名 / Signature: FileHistoryV1.restore.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 restore 的输入与结果契约，所属容器为 FileHistoryV1。
+   * Purpose: Declares the input/result contract for restore in FileHistoryV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; key: string; expectedVersion: string | undefined optional
+   * 输出 / Returns: Promise<{ ok: boolean; path: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "restore": (id: string, key: string, expectedVersion?: string | undefined) => Promise<{
     ok: boolean;
     path: string;
 }>;
+  /**
+   * 签名 / Signature: FileHistoryV1.purge.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 purge 的输入与结果契约，所属容器为 FileHistoryV1。
+   * Purpose: Declares the input/result contract for purge in FileHistoryV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; key: string
+   * 输出 / Returns: Promise<{ ok: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "purge": (id: string, key: string) => Promise<{
     ok: boolean;
 }>;
 }
 
 export interface FileLocksV1 {
+  /**
+   * 签名 / Signature: FileLocksV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 FileLocksV1。
+   * Purpose: Declares the input/result contract for view in FileLocksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: string
+   * 输出 / Returns: { path: string; locked: boolean; expiresAt: string | null; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, input: string) => {
     path: string;
     locked: boolean;
     expiresAt: string | null;
 };
+  /**
+   * 签名 / Signature: FileLocksV1.acquire.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 acquire 的输入与结果契约，所属容器为 FileLocksV1。
+   * Purpose: Declares the input/result contract for acquire in FileLocksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: string
+   * 输出 / Returns: Promise<{ path: string; token: `${string}-${string}-${string}-${string}-${string}`; expiresAt: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "acquire": (id: string, input: string) => Promise<{
     path: string;
     token: `${string}-${string}-${string}-${string}-${string}`;
     expiresAt: string;
 }>;
+  /**
+   * 签名 / Signature: FileLocksV1.renew.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 renew 的输入与结果契约，所属容器为 FileLocksV1。
+   * Purpose: Declares the input/result contract for renew in FileLocksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: string; token: string
+   * 输出 / Returns: Promise<{ path: string; expiresAt: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "renew": (id: string, input: string, token: string) => Promise<{
     path: string;
     expiresAt: string;
 }>;
+  /**
+   * 签名 / Signature: FileLocksV1.release.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 release 的输入与结果契约，所属容器为 FileLocksV1。
+   * Purpose: Declares the input/result contract for release in FileLocksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: string; token: string
+   * 输出 / Returns: Promise<{ released: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "release": (id: string, input: string, token: string) => Promise<{
     released: string;
 }>;
+  /**
+   * 签名 / Signature: FileLocksV1.withMutation.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 withMutation 的输入与结果契约，所属容器为 FileLocksV1。
+   * Purpose: Declares the input/result contract for withMutation in FileLocksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; inputs: string[]; token: string | undefined; action: () => Promise<T>
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "withMutation": <T>(id: string, inputs: string[], token: string | undefined, action: () => Promise<T>) => Promise<T>;
+  /**
+   * 签名 / Signature: FileLocksV1.clear.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 clear 的输入与结果契约，所属容器为 FileLocksV1。
+   * Purpose: Declares the input/result contract for clear in FileLocksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "clear": () => void;
 }
 
 export interface GitWorkbenchV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: GitWorkbenchV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 GitWorkbenchV1。
+   * Purpose: Declares the input/result contract for view in GitWorkbenchV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ projectId: string; repository: boolean; error: string; changes: never[]; branches: never[]; history: never[]; job: import("../../shared/contracts/jobs.ts").JobView |….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, signal?: AbortSignal | undefined) => Promise<{
     projectId: string;
     repository: boolean;
@@ -1615,10 +2622,28 @@ export interface GitWorkbenchV1 {
     job: import("../../shared/contracts/jobs.ts").JobView | null;
     error?: undefined;
 }>;
+  /**
+   * 签名 / Signature: GitWorkbenchV1.diff.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 diff 的输入与结果契约，所属容器为 GitWorkbenchV1。
+   * Purpose: Declares the input/result contract for diff in GitWorkbenchV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; staged: boolean; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ diff: string; truncated: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "diff": (id: string, path: string, staged: boolean, signal?: AbortSignal | undefined) => Promise<{
     diff: string;
     truncated: boolean;
 }>;
+  /**
+   * 签名 / Signature: GitWorkbenchV1.mergeInputs.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 mergeInputs 的输入与结果契约，所属容器为 GitWorkbenchV1。
+   * Purpose: Declares the input/result contract for mergeInputs in GitWorkbenchV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; signal: AbortSignal | undefined optional; project: ProjectV1 | undefined optional
+   * 输出 / Returns: Promise<{ path: string; base: string; ours: string; theirs: string; expectedVersion: string; expectedIndex: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "mergeInputs": (id: string, path: string, signal?: AbortSignal | undefined, project?: ProjectV1 | undefined) => Promise<{
     path: string;
     base: string;
@@ -1627,6 +2652,15 @@ export interface GitWorkbenchV1 {
     expectedVersion: string;
     expectedIndex: string;
 }>;
+  /**
+   * 签名 / Signature: GitWorkbenchV1.conflictChoices.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 conflictChoices 的输入与结果契约，所属容器为 GitWorkbenchV1。
+   * Purpose: Declares the input/result contract for conflictChoices in GitWorkbenchV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; path: string; signal: AbortSignal | undefined optional; project: ProjectV1 | undefined optional
+   * 输出 / Returns: Promise<{ path: string; base: { mode: string; oid: string; }; ours: { mode: string; oid: string; }; theirs: { mode: string; oid: string; }; worktree: string; expectedIndex: st….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "conflictChoices": (id: string, path: string, signal?: AbortSignal | undefined, project?: ProjectV1 | undefined) => Promise<{
     path: string;
     base: {
@@ -1645,10 +2679,28 @@ export interface GitWorkbenchV1 {
     expectedIndex: string;
     expectedWorktree: string;
 }>;
+  /**
+   * 签名 / Signature: GitWorkbenchV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 GitWorkbenchV1。
+   * Purpose: Declares the input/result contract for run in GitWorkbenchV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
 }
 
 export interface IdeV1 {
+  /**
+   * 签名 / Signature: IdeV1.profile.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 profile 的输入与结果契约，所属容器为 IdeV1。
+   * Purpose: Declares the input/result contract for profile in IdeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional; client: "jetbrains" | "openssh" optional
+   * 输出 / Returns: Promise<{ hostKeyVerification?: "project-and-endpoint" | undefined; alias: string; host: string; port: number; username: string; directory: string; identityFile: string; known….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "profile": (id: string, signal?: AbortSignal | undefined, client?: "jetbrains" | "openssh") => Promise<{
     hostKeyVerification?: "project-and-endpoint" | undefined;
     alias: string;
@@ -1665,7 +2717,25 @@ export interface IdeV1 {
     networkIsolation: "host" | "private";
     config: string;
 }>;
+  /**
+   * 签名 / Signature: IdeV1.update.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 update 的输入与结果契约，所属容器为 IdeV1。
+   * Purpose: Declares the input/result contract for update in IdeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "update": () => Promise<void>;
+  /**
+   * 签名 / Signature: IdeV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 IdeV1。
+   * Purpose: Declares the input/result contract for view in IdeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ supported: boolean; running: boolean; vscodeSupported: boolean; alias: string; config: string; command: string; url: string; projectScoped?: undefined; projectId?: u….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     supported: boolean;
     running: boolean;
@@ -1705,6 +2775,15 @@ export interface IdeV1 {
     sshCommand: string;
     url: string;
 }>;
+  /**
+   * 签名 / Signature: IdeV1.install.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 install 的输入与结果契约，所属容器为 IdeV1。
+   * Purpose: Declares the input/result contract for install in IdeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ supported: boolean; running: boolean; vscodeSupported: boolean; alias: string; config: string; command: string; url: string; projectScoped?: undefined; projectId?: u….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "install": (id: string, signal?: AbortSignal | undefined) => Promise<{
     supported: boolean;
     running: boolean;
@@ -1744,6 +2823,15 @@ export interface IdeV1 {
     sshCommand: string;
     url: string;
 }>;
+  /**
+   * 签名 / Signature: IdeV1.stop.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 stop 的输入与结果契约，所属容器为 IdeV1。
+   * Purpose: Declares the input/result contract for stop in IdeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ supported: boolean; running: boolean; vscodeSupported: boolean; alias: string; config: string; command: string; url: string; projectScoped?: undefined; projectId?: u….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "stop": (id: string) => Promise<{
     supported: boolean;
     running: boolean;
@@ -1787,6 +2875,15 @@ export interface IdeV1 {
 
 export interface ImagesV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: ImagesV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 ImagesV1。
+   * Purpose: Declares the input/result contract for list in ImagesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { id: string; name: "Alpine 3.23" | "Debian 12" | "Debian 12 ARM64" | "Ubuntu 24.04 LTS"; ready: boolean; minimumMemory: 256 | 1024; minimumDisk: 2 | 4; job: import("../../sha….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": () => {
     id: string;
     name: "Alpine 3.23" | "Debian 12" | "Debian 12 ARM64" | "Ubuntu 24.04 LTS";
@@ -1795,10 +2892,28 @@ export interface ImagesV1 {
     minimumDisk: 2 | 4;
     job: import("../../shared/contracts/jobs.ts").JobView | null;
 }[];
+  /**
+   * 签名 / Signature: ImagesV1.prepare.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 prepare 的输入与结果契约，所属容器为 ImagesV1。
+   * Purpose: Declares the input/result contract for prepare in ImagesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "prepare": (id: string) => import("../../shared/contracts/jobs.ts").JobView;
 }
 
 export interface DiskImportsV1 {
+  /**
+   * 签名 / Signature: DiskImportsV1.import.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 import 的输入与结果契约，所属容器为 DiskImportsV1。
+   * Purpose: Declares the input/result contract for import in DiskImportsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown; source: import("stream").Readable; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ vm: import("../../shared/contracts/vm.ts").VMView; source: { member?: string | undefined; format: "raw" | "vmdk" | "vhdx" | "ova"; bytes: number; sha256: string; vir….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "import": (input: unknown, source: import("stream").Readable, signal?: AbortSignal | undefined) => Promise<{
     vm: import("../../shared/contracts/vm.ts").VMView;
     source: {
@@ -1813,6 +2928,15 @@ export interface DiskImportsV1 {
 
 export interface MaintenanceV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: MaintenanceV1.storage.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 storage 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for storage in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ total: number; available: number; images: { id: string; name: "Alpine 3.23" | "Debian 12" | "Debian 12 ARM64" | "Ubuntu 24.04 LTS"; bytes: number; }[]; backupBytes: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "storage": () => Promise<{
     total: number;
     available: number;
@@ -1843,7 +2967,25 @@ export interface MaintenanceV1 {
     }[];
     warning: string;
 }>;
+  /**
+   * 签名 / Signature: MaintenanceV1.compact.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 compact 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for compact in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "compact": (id: string) => import("../../shared/contracts/jobs.ts").JobView;
+  /**
+   * 签名 / Signature: MaintenanceV1.diskView.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 diskView 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for diskView in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ job: import("../../shared/contracts/jobs.ts").JobView | null; maintenance: boolean; policy: { enabled: boolean; intervalHours: number; mode: "trim" | "compact" | "bo….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "diskView": (id: string) => Promise<{
     job: import("../../shared/contracts/jobs.ts").JobView | null;
     maintenance: boolean;
@@ -1856,21 +2998,102 @@ export interface MaintenanceV1 {
     attempts: Partial<Record<DiskOperationV1, AttemptV1>>;
     successes: Partial<Record<DiskOperationV1, string>>;
 }>;
+  /**
+   * 签名 / Signature: MaintenanceV1.diskPolicy.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 diskPolicy 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for diskPolicy in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<DiskMaintenanceStateV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "diskPolicy": (id: string, input: unknown) => Promise<DiskMaintenanceStateV1>;
+  /**
+   * 签名 / Signature: MaintenanceV1.diskRun.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 diskRun 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for diskRun in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; operation: DiskOperationV1
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "diskRun": (id: string, operation: DiskOperationV1) => import("../../shared/contracts/jobs.ts").JobView;
+  /**
+   * 签名 / Signature: MaintenanceV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for tick in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: now: number optional
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": (now?: number) => Promise<void>;
+  /**
+   * 签名 / Signature: MaintenanceV1.report.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 report 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for report in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { createdAt: string; checks: DiagnosticCheckV1[]; log: string; } | null.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "report": (id: string) => {
     createdAt: string;
     checks: DiagnosticCheckV1[];
     log: string;
 } | null;
+  /**
+   * 签名 / Signature: MaintenanceV1.diagnose.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 diagnose 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for diagnose in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "diagnose": (id: string) => import("../../shared/contracts/jobs.ts").JobView;
+  /**
+   * 签名 / Signature: MaintenanceV1.resize.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 resize 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for resize in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; size: number
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "resize": (id: string, size: number) => import("../../shared/contracts/jobs.ts").JobView;
+  /**
+   * 签名 / Signature: MaintenanceV1.finishResize.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 finishResize 的输入与结果契约，所属容器为 MaintenanceV1。
+   * Purpose: Declares the input/result contract for finishResize in MaintenanceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView | undefined.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "finishResize": (id: string) => import("../../shared/contracts/jobs.ts").JobView | undefined;
 }
 
 export interface MetricsV1 {
+  /**
+   * 签名 / Signature: MetricsV1.forget.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 forget 的输入与结果契约，所属容器为 MetricsV1。
+   * Purpose: Declares the input/result contract for forget in MetricsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "forget": (id: string) => void;
+  /**
+   * 签名 / Signature: MetricsV1.sample.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sample 的输入与结果契约，所属容器为 MetricsV1。
+   * Purpose: Declares the input/result contract for sample in MetricsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ cpuPercent: number; memoryUsed: number; memoryTotal: number; diskUsed: number; diskTotal: number; networkReceivedBytes: number | null; networkTransmittedBytes: numbe….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "sample": (id: string) => Promise<{
     cpuPercent: number;
     memoryUsed: number;
@@ -1898,6 +3121,15 @@ export interface MetricsV1 {
 export interface DataMigrationV1 {
   readonly "jobs": JobsV1;
   readonly "blocked": boolean;
+  /**
+   * 签名 / Signature: DataMigrationV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 DataMigrationV1。
+   * Purpose: Declares the input/result contract for view in DataMigrationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ source: string; target: string | undefined; restartRequired: boolean; blocked: boolean; job: import("../../shared/contracts/jobs.ts").JobView | null; previous: null;….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => Promise<{
     source: string;
     target: string | undefined;
@@ -1906,6 +3138,15 @@ export interface DataMigrationV1 {
     job: import("../../shared/contracts/jobs.ts").JobView | null;
     previous: null;
 }>;
+  /**
+   * 签名 / Signature: DataMigrationV1.plan.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 plan 的输入与结果契约，所属容器为 DataMigrationV1。
+   * Purpose: Declares the input/result contract for plan in DataMigrationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: string
+   * 输出 / Returns: Promise<{ source: string; target: string; bytes: number; available: number; count: number; token: string; files: MigrationFileV1[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "plan": (input: string) => Promise<{
     source: string;
     target: string;
@@ -1915,7 +3156,25 @@ export interface DataMigrationV1 {
     token: string;
     files: MigrationFileV1[];
 }>;
+  /**
+   * 签名 / Signature: DataMigrationV1.start.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 start 的输入与结果契约，所属容器为 DataMigrationV1。
+   * Purpose: Declares the input/result contract for start in DataMigrationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: string; token: string
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "start": (input: string, token: string) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
+  /**
+   * 签名 / Signature: DataMigrationV1.cancelActivation.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 cancelActivation 的输入与结果契约，所属容器为 DataMigrationV1。
+   * Purpose: Declares the input/result contract for cancelActivation in DataMigrationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ source: string; target: string | undefined; restartRequired: boolean; blocked: boolean; job: import("../../shared/contracts/jobs.ts").JobView | null; previous: null;….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "cancelActivation": () => Promise<{
     source: string;
     target: string | undefined;
@@ -1928,6 +3187,15 @@ export interface DataMigrationV1 {
 
 export interface NetworkProfilesV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: NetworkProfilesV1.state.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 state 的输入与结果契约，所属容器为 NetworkProfilesV1。
+   * Purpose: Declares the input/result contract for state in NetworkProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ config: { dnsServers: string[]; dnsDomains: string[]; dnssec: "no" | "yes" | "inherit" | "allow-downgrade"; httpProxy: string; httpsProxy: string; noProxy: string; n….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "state": (id: string) => Promise<{
     config: {
         dnsServers: string[];
@@ -1988,6 +3256,15 @@ export interface NetworkProfilesV1 {
     } | undefined;
     appliedAt?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: NetworkProfilesV1.profiles.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 profiles 的输入与结果契约，所属容器为 NetworkProfilesV1。
+   * Purpose: Declares the input/result contract for profiles in NetworkProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ id: string; name: string; config: { dnsServers: string[]; dnsDomains: string[]; dnssec: "no" | "yes" | "inherit" | "allow-downgrade"; httpProxy: string; httpsProxy: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "profiles": () => Promise<{
     id: string;
     name: string;
@@ -2043,6 +3320,15 @@ export interface NetworkProfilesV1 {
     };
     updatedAt: string;
 }[]>;
+  /**
+   * 签名 / Signature: NetworkProfilesV1.saveProfile.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 saveProfile 的输入与结果契约，所属容器为 NetworkProfilesV1。
+   * Purpose: Declares the input/result contract for saveProfile in NetworkProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ id: string; updatedAt: string; name: string; config: { dnsServers: string[]; dnsDomains: string[]; dnssec: "no" | "yes" | "inherit" | "allow-downgrade"; httpProxy: s….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "saveProfile": (input: unknown) => Promise<{
     id: string;
     updatedAt: string;
@@ -2098,10 +3384,37 @@ export interface NetworkProfilesV1 {
         } | undefined;
     };
 }>;
+  /**
+   * 签名 / Signature: NetworkProfilesV1.removeProfile.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 removeProfile 的输入与结果契约，所属容器为 NetworkProfilesV1。
+   * Purpose: Declares the input/result contract for removeProfile in NetworkProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ removed: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "removeProfile": (id: string) => Promise<{
     removed: string;
 }>;
+  /**
+   * 签名 / Signature: NetworkProfilesV1.environment.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 environment 的输入与结果契约，所属容器为 NetworkProfilesV1。
+   * Purpose: Declares the input/result contract for environment in NetworkProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<Record<string, string>>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "environment": (id: string) => Promise<Record<string, string>>;
+  /**
+   * 签名 / Signature: NetworkProfilesV1.preview.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 preview 的输入与结果契约，所属容器为 NetworkProfilesV1。
+   * Purpose: Declares the input/result contract for preview in NetworkProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ config: { dnsServers: string[]; dnsDomains: string[]; dnssec: "no" | "yes" | "inherit" | "allow-downgrade"; httpProxy: string; httpsProxy: string; noProxy: string; n….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "preview": (id: string, input: unknown, signal?: AbortSignal | undefined) => Promise<{
     config: {
         dnsServers: string[];
@@ -2173,7 +3486,25 @@ export interface NetworkProfilesV1 {
     } | undefined;
     token: string;
 }>;
+  /**
+   * 签名 / Signature: NetworkProfilesV1.apply.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 apply 的输入与结果契约，所属容器为 NetworkProfilesV1。
+   * Purpose: Declares the input/result contract for apply in NetworkProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; token: string
+   * 输出 / Returns: Promise<NetworkStateV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "apply": (id: string, input: unknown, token: string) => Promise<NetworkStateV1>;
+  /**
+   * 签名 / Signature: NetworkProfilesV1.restore.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 restore 的输入与结果契约，所属容器为 NetworkProfilesV1。
+   * Purpose: Declares the input/result contract for restore in NetworkProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ config: { dnsServers: string[]; dnsDomains: string[]; dnssec: "no" | "yes" | "inherit" | "allow-downgrade"; httpProxy: string; httpsProxy: string; noProxy: string; n….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "restore": (id: string) => Promise<{
     config: {
         dnsServers: string[];
@@ -2234,10 +3565,28 @@ export interface NetworkProfilesV1 {
     } | undefined;
     appliedAt?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: NetworkProfilesV1.test.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 test 的输入与结果契约，所属容器为 NetworkProfilesV1。
+   * Purpose: Declares the input/result contract for test in NetworkProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "test": (id: string, input: unknown) => import("../../shared/contracts/jobs.ts").JobView;
 }
 
 export interface IngressCertificatesV1 {
+  /**
+   * 签名 / Signature: IngressCertificatesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 IngressCertificatesV1。
+   * Purpose: Declares the input/result contract for view in IngressCertificatesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { policy: { autoRotate: boolean; renewBeforeDays: number; }; certificate: { pem: string; fingerprint256: string; validFrom: string; validTo: string; generatedAt: string; } | n….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     policy: {
         autoRotate: boolean;
@@ -2253,19 +3602,55 @@ export interface IngressCertificatesV1 {
     nextRotationAt: string | null;
     rotationError?: string | undefined;
 };
+  /**
+   * 签名 / Signature: IngressCertificatesV1.tlsOptions.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tlsOptions 的输入与结果契约，所属容器为 IngressCertificatesV1。
+   * Purpose: Declares the input/result contract for tlsOptions in IngressCertificatesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { key: string; cert: string; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tlsOptions": () => {
     key: string;
     cert: string;
 };
+  /**
+   * 签名 / Signature: IngressCertificatesV1.onChange.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 onChange 的输入与结果契约，所属容器为 IngressCertificatesV1。
+   * Purpose: Declares the input/result contract for onChange in IngressCertificatesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: listener: (certificate: { key: string; cert: string; generatedAt: string; }) => void
+   * 输出 / Returns: () => boolean.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "onChange": (listener: (certificate: {
     key: string;
     cert: string;
     generatedAt: string;
 }) => void) => () => boolean;
+  /**
+   * 签名 / Signature: IngressCertificatesV1.ensure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 ensure 的输入与结果契约，所属容器为 IngressCertificatesV1。
+   * Purpose: Declares the input/result contract for ensure in IngressCertificatesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: domainAliases: boolean optional
+   * 输出 / Returns: Promise<{ key: string; cert: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "ensure": (domainAliases?: boolean) => Promise<{
     key: string;
     cert: string;
 }>;
+  /**
+   * 签名 / Signature: IngressCertificatesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 IngressCertificatesV1。
+   * Purpose: Declares the input/result contract for action in IngressCertificatesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ policy: { autoRotate: boolean; renewBeforeDays: number; }; certificate: { pem: string; fingerprint256: string; validFrom: string; validTo: string; generatedAt: strin….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (input: unknown) => Promise<{
     policy: {
         autoRotate: boolean;
@@ -2281,6 +3666,15 @@ export interface IngressCertificatesV1 {
     nextRotationAt: string | null;
     rotationError?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: IngressCertificatesV1.rotate.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 rotate 的输入与结果契约，所属容器为 IngressCertificatesV1。
+   * Purpose: Declares the input/result contract for rotate in IngressCertificatesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ policy: { autoRotate: boolean; renewBeforeDays: number; }; certificate: { pem: string; fingerprint256: string; validFrom: string; validTo: string; generatedAt: strin….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "rotate": () => Promise<{
     policy: {
         autoRotate: boolean;
@@ -2299,6 +3693,15 @@ export interface IngressCertificatesV1 {
 }
 
 export interface HttpIngressV1 {
+  /**
+   * 签名 / Signature: HttpIngressV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 HttpIngressV1。
+   * Purpose: Declares the input/result contract for view in HttpIngressV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { entries: { name: string; protocol: "https" | "http"; domainAlias: boolean; listenPort: number; pathPrefix: string; vmId: string; upstreamPort: number; healthPath: string; st….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     entries: {
         name: string;
@@ -2330,7 +3733,25 @@ export interface HttpIngressV1 {
     }[];
     listenerErrors: Record<string, string>;
 };
+  /**
+   * 签名 / Signature: HttpIngressV1.aliasNames.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 aliasNames 的输入与结果契约，所属容器为 HttpIngressV1。
+   * Purpose: Declares the input/result contract for aliasNames in HttpIngressV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: string[].
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "aliasNames": () => string[];
+  /**
+   * 签名 / Signature: HttpIngressV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 HttpIngressV1。
+   * Purpose: Declares the input/result contract for action in HttpIngressV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ entries: { name: string; protocol: "https" | "http"; domainAlias: boolean; listenPort: number; pathPrefix: string; vmId: string; upstreamPort: number; healthPath: st….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (input: unknown) => Promise<{
     entries: {
         name: string;
@@ -2365,6 +3786,15 @@ export interface HttpIngressV1 {
 }
 
 export interface LocalAliasesV1 {
+  /**
+   * 签名 / Signature: LocalAliasesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 LocalAliasesV1。
+   * Purpose: Declares the input/result contract for view in LocalAliasesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ enabled: boolean; supported: boolean; aliases: string[]; installed: string[]; missing: string[]; stale: string[]; error?: string | undefined; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => Promise<{
     enabled: boolean;
     supported: boolean;
@@ -2374,7 +3804,25 @@ export interface LocalAliasesV1 {
     stale: string[];
     error?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: LocalAliasesV1.refresh.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 refresh 的输入与结果契约，所属容器为 LocalAliasesV1。
+   * Purpose: Declares the input/result contract for refresh in LocalAliasesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "refresh": () => Promise<void>;
+  /**
+   * 签名 / Signature: LocalAliasesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 LocalAliasesV1。
+   * Purpose: Declares the input/result contract for action in LocalAliasesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ enabled: boolean; supported: boolean; aliases: string[]; installed: string[]; missing: string[]; stale: string[]; error?: string | undefined; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (input: unknown) => Promise<{
     enabled: boolean;
     supported: boolean;
@@ -2388,7 +3836,25 @@ export interface LocalAliasesV1 {
 
 export interface PipelinesV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: PipelinesV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 PipelinesV1。
+   * Purpose: Declares the input/result contract for list in PipelinesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<PipelineV1[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (id: string) => Promise<PipelineV1[]>;
+  /**
+   * 签名 / Signature: PipelinesV1.save.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 save 的输入与结果契约，所属容器为 PipelinesV1。
+   * Purpose: Declares the input/result contract for save in PipelinesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ id: string; name: string; steps: { name: string; command: string; timeout: number; }[]; artifacts: string[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "save": (id: string, input: unknown) => Promise<{
     id: string;
     name: string;
@@ -2399,17 +3865,62 @@ export interface PipelinesV1 {
     }[];
     artifacts: string[];
 }>;
+  /**
+   * 签名 / Signature: PipelinesV1.remove.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 remove 的输入与结果契约，所属容器为 PipelinesV1。
+   * Purpose: Declares the input/result contract for remove in PipelinesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; key: string
+   * 输出 / Returns: Promise<{ ok: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "remove": (id: string, key: string) => Promise<{
     ok: boolean;
 }>;
+  /**
+   * 签名 / Signature: PipelinesV1.runs.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 runs 的输入与结果契约，所属容器为 PipelinesV1。
+   * Purpose: Declares the input/result contract for runs in PipelinesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<PipelineRunV1[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "runs": (id: string) => Promise<PipelineRunV1[]>;
+  /**
+   * 签名 / Signature: PipelinesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 PipelinesV1。
+   * Purpose: Declares the input/result contract for view in PipelinesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ projectId: string; pipelines: PipelineV1[]; runs: PipelineRunV1[]; job: import("../../shared/contracts/jobs.ts").JobView | null; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     projectId: string;
     pipelines: PipelineV1[];
     runs: PipelineRunV1[];
     job: import("../../shared/contracts/jobs.ts").JobView | null;
 }>;
+  /**
+   * 签名 / Signature: PipelinesV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 PipelinesV1。
+   * Purpose: Declares the input/result contract for run in PipelinesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; pipelineId: string
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, pipelineId: string) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
+  /**
+   * 签名 / Signature: PipelinesV1.artifact.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 artifact 的输入与结果契约，所属容器为 PipelinesV1。
+   * Purpose: Declares the input/result contract for artifact in PipelinesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; runId: string; index: number
+   * 输出 / Returns: Promise<{ file: string; name: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "artifact": (id: string, runId: string, index: number) => Promise<{
     file: string;
     name: string;
@@ -2424,24 +3935,69 @@ export interface NextFeaturesV1 {
   readonly "acmeRenewal": AcmeRenewalV1;
   readonly "teamTemplates": TeamTemplatesV1;
   readonly "haFailureMonitor": HaFailureMonitorV1;
+  /**
+   * 签名 / Signature: NextFeaturesV1.haPolicies.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 haPolicies 的输入与结果契约，所属容器为 NextFeaturesV1。
+   * Purpose: Declares the input/result contract for haPolicies in NextFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ [k: string]: NextSettingV1; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "haPolicies": () => Promise<{
     [k: string]: NextSettingV1;
 }>;
+  /**
+   * 签名 / Signature: NextFeaturesV1.notebookLink.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 notebookLink 的输入与结果契约，所属容器为 NextFeaturesV1。
+   * Purpose: Declares the input/result contract for notebookLink in NextFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ provider: "jupyter" | "marimo"; url: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "notebookLink": (id: string) => Promise<{
     provider: "jupyter" | "marimo";
     url: string;
 }>;
+  /**
+   * 签名 / Signature: NextFeaturesV1.browserIdeLink.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 browserIdeLink 的输入与结果契约，所属容器为 NextFeaturesV1。
+   * Purpose: Declares the input/result contract for browserIdeLink in NextFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ url: string; password: string; expiresAt: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "browserIdeLink": (id: string) => Promise<{
     url: string;
     password: string;
     expiresAt: string;
 }>;
+  /**
+   * 签名 / Signature: NextFeaturesV1.catalog.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 catalog 的输入与结果契约，所属容器为 NextFeaturesV1。
+   * Purpose: Declares the input/result contract for catalog in NextFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ features: import("../../shared/catalogs/platform.ts").NextFeature[]; capabilities: import("../../shared/capability-actions.ts").CapabilityActionView[]; count: number….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "catalog": () => Promise<{
     features: import("../../shared/catalogs/platform.ts").NextFeature[];
     capabilities: import("../../shared/capability-actions.ts").CapabilityActionView[];
     count: number;
     generatedAt: string;
 }>;
+  /**
+   * 签名 / Signature: NextFeaturesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 NextFeaturesV1。
+   * Purpose: Declares the input/result contract for view in NextFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ projectId: string; features: import("../../shared/catalogs/platform.ts").NextFeature[]; capabilities: import("../../shared/capability-actions.ts").CapabilityActionVi….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     projectId: string;
     features: import("../../shared/catalogs/platform.ts").NextFeature[];
@@ -2489,6 +4045,15 @@ export interface NextFeaturesV1 {
     executions: NextExecutionV1[];
     jobs: import("../../shared/contracts/jobs.ts").JobView[];
 }>;
+  /**
+   * 签名 / Signature: NextFeaturesV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 NextFeaturesV1。
+   * Purpose: Declares the input/result contract for configure in NextFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<NextSettingV1 | { enabled: boolean; options: { intervalHours: number; }; updatedAt: string; policy: { vmId: string; enabled: boolean; intervalHours: number; updatedAt:….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (id: string, input: unknown) => Promise<NextSettingV1 | {
     enabled: boolean;
     options: {
@@ -2504,6 +4069,15 @@ export interface NextFeaturesV1 {
         lastAttemptAt?: number | undefined;
     } | null;
 }>;
+  /**
+   * 签名 / Signature: NextFeaturesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 NextFeaturesV1。
+   * Purpose: Declares the input/result contract for action in NextFeaturesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView | { ready: boolean; executed: boolean; featureId: "ipv6" | "resource-presets" | "workspace-search" | "disk-analyzer" |….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, input: unknown, signal?: AbortSignal | undefined) => Promise<import("../../shared/contracts/jobs.ts").JobView | {
     ready: boolean;
     executed: boolean;
@@ -5876,6 +7450,15 @@ export interface NextFeaturesV1 {
 }
 
 export interface ProjectFilesV1 {
+  /**
+   * 签名 / Signature: ProjectFilesV1.scan.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 scan 的输入与结果契约，所属容器为 ProjectFilesV1。
+   * Purpose: Declares the input/result contract for scan in ProjectFilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; query: string optional; content: boolean optional; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ root: string; files: ProjectFileV1[]; matches: SearchMatchV1[]; scanned: number; truncated: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "scan": (id: string, query?: string, content?: boolean, signal?: AbortSignal | undefined) => Promise<{
     root: string;
     files: ProjectFileV1[];
@@ -5888,16 +7471,115 @@ export interface ProjectFilesV1 {
 export interface WorkspacesV1 {
   readonly "jobs": JobsV1;
   readonly "projects": ProjectCatalogV1;
+  /**
+   * 签名 / Signature: WorkspacesV1.beforeAction.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 beforeAction 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for beforeAction in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: hook: (id: string, action: "start" | "stop", service?: string | undefined) => Promise<(succ…
+   * 输出 / Returns: () => void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "beforeAction": (hook: (id: string, action: "start" | "stop", service?: string | undefined) => Promise<(success: boolean) => void>) => () => void;
+  /**
+   * 签名 / Signature: WorkspacesV1.onConfigChange.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 onConfigChange 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for onConfigChange in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: listener: () => Promise<void>
+   * 输出 / Returns: () => void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "onConfigChange": (listener: () => Promise<void>) => () => void;
+  /**
+   * 签名 / Signature: WorkspacesV1.beforeConfigChange.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 beforeConfigChange 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for beforeConfigChange in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: guard: (id: string, previous: ProjectV1, next: ProjectV1) => Promise<void>
+   * 输出 / Returns: () => void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "beforeConfigChange": (guard: (id: string, previous: ProjectV1, next: ProjectV1) => Promise<void>) => () => void;
+  /**
+   * 签名 / Signature: WorkspacesV1.config.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 config 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for config in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<ProjectV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "config": (id: string) => Promise<ProjectV1>;
+  /**
+   * 签名 / Signature: WorkspacesV1.readCommittedConfig.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 readCommittedConfig 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for readCommittedConfig in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<ProjectV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "readCommittedConfig": (id: string) => Promise<ProjectV1>;
+  /**
+   * 签名 / Signature: WorkspacesV1.networkEnvironment.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 networkEnvironment 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for networkEnvironment in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{}>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "networkEnvironment": (id: string) => Promise<{}>;
+  /**
+   * 签名 / Signature: WorkspacesV1.dependencyDownloadAuthentication.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 dependencyDownloadAuthentication 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for dependencyDownloadAuthentication in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; manager: "npm" | "pip"
+   * 输出 / Returns: Promise<ResolvedDependencyAuthenticationV1 | undefined>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "dependencyDownloadAuthentication": (id: string, manager: "npm" | "pip") => Promise<ResolvedDependencyAuthenticationV1 | undefined>;
+  /**
+   * 签名 / Signature: WorkspacesV1.repositoryDownloadAuthentication.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 repositoryDownloadAuthentication 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for repositoryDownloadAuthentication in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; repository: string
+   * 输出 / Returns: Promise<ResolvedDependencyAuthenticationV1 | undefined>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "repositoryDownloadAuthentication": (id: string, repository: string) => Promise<ResolvedDependencyAuthenticationV1 | undefined>;
+  /**
+   * 签名 / Signature: WorkspacesV1.resolvedConfig.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 resolvedConfig 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for resolvedConfig in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<ProjectV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "resolvedConfig": (id: string) => Promise<ProjectV1>;
+  /**
+   * 签名 / Signature: WorkspacesV1.resolveProject.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 resolveProject 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for resolveProject in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; project: ProjectV1
+   * 输出 / Returns: Promise<ProjectV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "resolveProject": (id: string, project: ProjectV1) => Promise<ProjectV1>;
+  /**
+   * 签名 / Signature: WorkspacesV1.save.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 save 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for save in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; allowedDirectory: string | undefined optional; expectedVersion: string | undefined optional; commitGuard: (() => void) | undefined optional
+   * 输出 / Returns: Promise<{ directory: string; template: "none" | "node" | "python" | "rust"; repository: string; setup: string; command: string; previewPort?: number | undefined; networkIsolat….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "save": (id: string, input: unknown, allowedDirectory?: string | undefined, expectedVersion?: string | undefined, commitGuard?: (() => void) | undefined) => Promise<{
     directory: string;
     template: "none" | "node" | "python" | "rust";
@@ -5931,14 +7613,50 @@ export interface WorkspacesV1 {
         } | undefined;
     }[] | undefined;
 }>;
+  /**
+   * 签名 / Signature: WorkspacesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for view in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ project: ProjectV1; version: string; projectId: string; job: import("../../shared/contracts/jobs.ts").JobView | null; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     project: ProjectV1;
     version: string;
     projectId: string;
     job: import("../../shared/contracts/jobs.ts").JobView | null;
 }>;
+  /**
+   * 签名 / Signature: WorkspacesV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for run in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; action: "start" | "stop" | "setup" | "terminal"; service: string | undefined optional; automatic: boolean optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, action: "start" | "stop" | "setup" | "terminal", service?: string | undefined, automatic?: boolean) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
+  /**
+   * 签名 / Signature: WorkspacesV1.runtime.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 runtime 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for runtime in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<ProjectRuntimeV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "runtime": (id: string, signal?: AbortSignal | undefined) => Promise<ProjectRuntimeV1>;
+  /**
+   * 签名 / Signature: WorkspacesV1.metrics.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 metrics 的输入与结果契约，所属容器为 WorkspacesV1。
+   * Purpose: Declares the input/result contract for metrics in WorkspacesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ cpuPercent: number; memoryUsed: number; memoryTotal: number; diskUsed: number; diskTotal: number; networkReceivedBytes: number | null; networkTransmittedBytes: numbe….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "metrics": (id: string) => Promise<{
     cpuPercent: number;
     memoryUsed: number;
@@ -5964,6 +7682,15 @@ export interface WorkspacesV1 {
 }
 
 export interface RecipesV1 {
+  /**
+   * 签名 / Signature: RecipesV1.export.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 export 的输入与结果契约，所属容器为 RecipesV1。
+   * Purpose: Declares the input/result contract for export in RecipesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ version: 1; resources: { cpus?: number | undefined; memoryMiB?: number | undefined; diskGiB?: number | undefined; accelerator?: "auto" | "tcg" | "whpx" | undefined; ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "export": (id: string) => Promise<{
     version: 1;
     resources: {
@@ -6013,6 +7740,15 @@ export interface RecipesV1 {
         }[] | undefined;
     };
 }>;
+  /**
+   * 签名 / Signature: RecipesV1.read.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 read 的输入与结果契约，所属容器为 RecipesV1。
+   * Purpose: Declares the input/result contract for read in RecipesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ version: 1; resources: { cpus?: number | undefined; memoryMiB?: number | undefined; diskGiB?: number | undefined; accelerator?: "auto" | "tcg" | "whpx" | undefined; ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "read": (id: string) => Promise<{
     version: 1;
     resources: {
@@ -6062,6 +7798,15 @@ export interface RecipesV1 {
         }[] | undefined;
     };
 }>;
+  /**
+   * 签名 / Signature: RecipesV1.write.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 write 的输入与结果契约，所属容器为 RecipesV1。
+   * Purpose: Declares the input/result contract for write in RecipesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ version: 1; resources: { cpus?: number | undefined; memoryMiB?: number | undefined; diskGiB?: number | undefined; accelerator?: "auto" | "tcg" | "whpx" | undefined; ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "write": (id: string) => Promise<{
     version: 1;
     resources: {
@@ -6111,7 +7856,25 @@ export interface RecipesV1 {
         }[] | undefined;
     };
 }>;
+  /**
+   * 签名 / Signature: RecipesV1.create.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 create 的输入与结果契约，所属容器为 RecipesV1。
+   * Purpose: Declares the input/result contract for create in RecipesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: name: string; value: unknown
+   * 输出 / Returns: Promise<import("../../shared/contracts/vm.ts").VMView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "create": (name: string, value: unknown) => Promise<import("../../shared/contracts/vm.ts").VMView>;
+  /**
+   * 签名 / Signature: RecipesV1.apply.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 apply 的输入与结果契约，所属容器为 RecipesV1。
+   * Purpose: Declares the input/result contract for apply in RecipesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ project: ProjectV1; version: string; projectId: string; job: import("../../shared/contracts/jobs.ts").JobView | null; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "apply": (id: string, input: unknown) => Promise<{
     project: ProjectV1;
     version: string;
@@ -6122,6 +7885,15 @@ export interface RecipesV1 {
 
 export interface RuntimeVersionsV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: RuntimeVersionsV1.probe.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 probe 的输入与结果契约，所属容器为 RuntimeVersionsV1。
+   * Purpose: Declares the input/result contract for probe in RuntimeVersionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ selected: { python?: string | undefined; node?: string | undefined; }; declared: { node?: string | undefined; python?: string | undefined; }; actual: { node: string;….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "probe": (id: string, signal?: AbortSignal | undefined) => Promise<{
     selected: {
         python?: string | undefined;
@@ -6145,10 +7917,28 @@ export interface RuntimeVersionsV1 {
     };
     job: import("../../shared/contracts/jobs.ts").JobView | null;
 }>;
+  /**
+   * 签名 / Signature: RuntimeVersionsV1.inspect.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 inspect 的输入与结果契约，所属容器为 RuntimeVersionsV1。
+   * Purpose: Declares the input/result contract for inspect in RuntimeVersionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; project: ProjectV1; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ node: string; python: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "inspect": (id: string, project: ProjectV1, signal?: AbortSignal | undefined) => Promise<{
     node: string;
     python: string;
 }>;
+  /**
+   * 签名 / Signature: RuntimeVersionsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 RuntimeVersionsV1。
+   * Purpose: Declares the input/result contract for view in RuntimeVersionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ selected: { python?: string | undefined; node?: string | undefined; }; declared: { node?: string | undefined; python?: string | undefined; }; actual: { node: string;….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, signal?: AbortSignal | undefined) => Promise<{
     selected: {
         python?: string | undefined;
@@ -6172,6 +7962,15 @@ export interface RuntimeVersionsV1 {
     };
     job: import("../../shared/contracts/jobs.ts").JobView | null;
 }>;
+  /**
+   * 签名 / Signature: RuntimeVersionsV1.select.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 select 的输入与结果契约，所属容器为 RuntimeVersionsV1。
+   * Purpose: Declares the input/result contract for select in RuntimeVersionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ directory: string; template: "none" | "node" | "python" | "rust"; repository: string; setup: string; command: string; previewPort?: number | undefined; networkIsolat….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "select": (id: string, input: unknown, signal?: AbortSignal | undefined) => Promise<{
     directory: string;
     template: "none" | "node" | "python" | "rust";
@@ -6205,11 +8004,29 @@ export interface RuntimeVersionsV1 {
         } | undefined;
     }[] | undefined;
 }>;
+  /**
+   * 签名 / Signature: RuntimeVersionsV1.install.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 install 的输入与结果契约，所属容器为 RuntimeVersionsV1。
+   * Purpose: Declares the input/result contract for install in RuntimeVersionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "install": (id: string, input: unknown) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
 }
 
 export interface SandboxesV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: SandboxesV1.artifact.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 artifact 的输入与结果契约，所属容器为 SandboxesV1。
+   * Purpose: Declares the input/result contract for artifact in SandboxesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: runId: string; artifactId: string
+   * 输出 / Returns: Promise<{ base64: string; id: string; name: string; path: string; bytes: number; sha256: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "artifact": (runId: string, artifactId: string) => Promise<{
     base64: string;
     id: string;
@@ -6218,41 +8035,176 @@ export interface SandboxesV1 {
     bytes: number;
     sha256: string;
 }>;
+  /**
+   * 签名 / Signature: SandboxesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 SandboxesV1。
+   * Purpose: Declares the input/result contract for view in SandboxesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<SandboxViewV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<SandboxViewV1>;
+  /**
+   * 签名 / Signature: SandboxesV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 SandboxesV1。
+   * Purpose: Declares the input/result contract for list in SandboxesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<SandboxOverviewV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": () => Promise<SandboxOverviewV1>;
+  /**
+   * 签名 / Signature: SandboxesV1.create.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 create 的输入与结果契约，所属容器为 SandboxesV1。
+   * Purpose: Declares the input/result contract for create in SandboxesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<SandboxViewV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "create": (input: unknown) => Promise<SandboxViewV1>;
+  /**
+   * 签名 / Signature: SandboxesV1.control.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 control 的输入与结果契约，所属容器为 SandboxesV1。
+   * Purpose: Declares the input/result contract for control in SandboxesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; action: "start" | "stop" | "destroy"
+   * 输出 / Returns: Promise<{ ok: true; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "control": (id: string, action: "start" | "stop" | "destroy") => Promise<{
     ok: true;
 }>;
+  /**
+   * 签名 / Signature: SandboxesV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 SandboxesV1。
+   * Purpose: Declares the input/result contract for run in SandboxesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown) => import("../../shared/contracts/jobs.ts").JobView;
 }
 
 export interface SecretsV1 {
+  /**
+   * 签名 / Signature: SecretsV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 SecretsV1。
+   * Purpose: Declares the input/result contract for list in SecretsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ name: string; updatedAt: string; }[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (id: string) => Promise<{
     name: string;
     updatedAt: string;
 }[]>;
+  /**
+   * 签名 / Signature: SecretsV1.rotation.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 rotation 的输入与结果契约，所属容器为 SecretsV1。
+   * Purpose: Declares the input/result contract for rotation in SecretsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<SecretRotationItemV1[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "rotation": (id: string) => Promise<SecretRotationItemV1[]>;
+  /**
+   * 签名 / Signature: SecretsV1.setRotation.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 setRotation 的输入与结果契约，所属容器为 SecretsV1。
+   * Purpose: Declares the input/result contract for setRotation in SecretsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<SecretRotationItemV1[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "setRotation": (id: string, input: unknown) => Promise<SecretRotationItemV1[]>;
+  /**
+   * 签名 / Signature: SecretsV1.save.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 save 的输入与结果契约，所属容器为 SecretsV1。
+   * Purpose: Declares the input/result contract for save in SecretsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ name: string; updatedAt: string; }[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "save": (id: string, input: unknown) => Promise<{
     name: string;
     updatedAt: string;
 }[]>;
+  /**
+   * 签名 / Signature: SecretsV1.remove.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 remove 的输入与结果契约，所属容器为 SecretsV1。
+   * Purpose: Declares the input/result contract for remove in SecretsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; name: string
+   * 输出 / Returns: Promise<{ name: string; updatedAt: string; }[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "remove": (id: string, name: string) => Promise<{
     name: string;
     updatedAt: string;
 }[]>;
+  /**
+   * 签名 / Signature: SecretsV1.value.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 value 的输入与结果契约，所属容器为 SecretsV1。
+   * Purpose: Declares the input/result contract for value in SecretsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; name: string
+   * 输出 / Returns: Promise<string>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "value": (id: string, name: string) => Promise<string>;
+  /**
+   * 签名 / Signature: SecretsV1.resolve.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 resolve 的输入与结果契约，所属容器为 SecretsV1。
+   * Purpose: Declares the input/result contract for resolve in SecretsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; refs: Record<string, string> optional
+   * 输出 / Returns: Promise<any>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "resolve": (id: string, refs?: Record<string, string>) => Promise<any>;
 }
 
 export interface ServiceHealthV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: ServiceHealthV1.expect.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 expect 的输入与结果契约，所属容器为 ServiceHealthV1。
+   * Purpose: Declares the input/result contract for expect in ServiceHealthV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; action: "start" | "stop"; service: string | undefined optional
+   * 输出 / Returns: Promise<(success: boolean) => void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "expect": (id: string, action: "start" | "stop", service?: string | undefined) => Promise<(success: boolean) => void>;
+  /**
+   * 签名 / Signature: ServiceHealthV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 ServiceHealthV1。
+   * Purpose: Declares the input/result contract for view in ServiceHealthV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ services: HealthViewV1[]; job: import("../../shared/contracts/jobs.ts").JobView | null; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     services: HealthViewV1[];
     job: import("../../shared/contracts/jobs.ts").JobView | null;
 }>;
+  /**
+   * 签名 / Signature: ServiceHealthV1.observed.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 observed 的输入与结果契约，所属容器为 ServiceHealthV1。
+   * Purpose: Declares the input/result contract for observed in ServiceHealthV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { projectId: string; name: string; desired: boolean; status: "stopped" | "healthy" | "unhealthy" | "waiting" | "restarting" | "exhausted"; failures: number; restarts: number; ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "observed": (id: string) => {
     projectId: string;
     name: string;
@@ -6264,12 +8216,48 @@ export interface ServiceHealthV1 {
     nextCheck: number;
     error?: string | undefined;
 }[];
+  /**
+   * 签名 / Signature: ServiceHealthV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 ServiceHealthV1。
+   * Purpose: Declares the input/result contract for tick in ServiceHealthV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: now: number optional
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": (now?: number) => Promise<void>;
 }
 
 export interface BundlesV1 {
+  /**
+   * 签名 / Signature: BundlesV1.export.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 export 的输入与结果契约，所属容器为 BundlesV1。
+   * Purpose: Declares the input/result contract for export in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; target: import("stream").Writable; headers: () => void; signal: AbortSignal | undefined optional; bytesPerSecond: number optional; snapshotId: string | undefined optional; onCleanupError: ((error: unknown) => void) | undefined optional
+   * 输出 / Returns: Promise<string>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "export": (id: string, target: import("stream").Writable, headers: () => void, signal?: AbortSignal | undefined, bytesPerSecond?: number, snapshotId?: string | undefined, onCleanupError?: ((error: unknown) => void) | undefined) => Promise<string>;
+  /**
+   * 签名 / Signature: BundlesV1.withExportBudget.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 withExportBudget 的输入与结果契约，所属容器为 BundlesV1。
+   * Purpose: Declares the input/result contract for withExportBudget in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal; work: (diskBytes: number, exportFile: (target: import("stream").Writable, headers: () => vo…; storage: StorageRuntimeV1 optional; snapshotId: string | undefined optional
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "withExportBudget": <T>(id: string, signal: AbortSignal, work: (diskBytes: number, exportFile: (target: import("stream").Writable, headers: () => void, bytesPerSecond?: number | undefined, onCleanupError?: ((error: unknown) => void) | undefined) => Promise<string>) => Promise<T>, storage?: StorageRuntimeV1, snapshotId?: string | undefined) => Promise<T>;
+  /**
+   * 签名 / Signature: BundlesV1.import.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 import 的输入与结果契约，所属容器为 BundlesV1。
+   * Purpose: Declares the input/result contract for import in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: name: string; source: import("stream").Readable; signal: AbortSignal | undefined optional; beforeAdopt: (() => void) | undefined optional; migrationOrigin: { sourceHostId: string; transferId: string; targetName: string; sourceVmId?: string |… optional; onCleanupError: ((error: unknown) => void) | undefined optional; lease: { id: string; release: () => void; assertActive: (checkSignal?: boolean) => void; res… optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/vm.ts").VMView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "import": (name: string, source: import("stream").Readable, signal?: AbortSignal | undefined, beforeAdopt?: (() => void) | undefined, migrationOrigin?: {
     sourceHostId: string;
     transferId: string;
@@ -6279,38 +8267,236 @@ export interface BundlesV1 {
     diskSha256?: string | undefined;
 } | undefined, onCleanupError?: ((error: unknown) => void) | undefined, lease?: {
     id: string;
+    /**
+     * 签名 / Signature: BundlesV1.release.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 release 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for release in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     release: () => void;
+    /**
+     * 签名 / Signature: BundlesV1.assertActive.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 assertActive 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for assertActive in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: checkSignal: boolean optional
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     assertActive: (checkSignal?: boolean) => void;
+    /**
+     * 签名 / Signature: BundlesV1.reserveTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 reserveTemporary 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for reserveTemporary in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string; bytes: number
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     reserveTemporary: (path: string, bytes: number) => Promise<void>;
+    /**
+     * 签名 / Signature: BundlesV1.releaseTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 releaseTemporary 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for releaseTemporary in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     releaseTemporary: (path: string) => Promise<void>;
+    /**
+     * 签名 / Signature: BundlesV1.cleanupPending.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 cleanupPending 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for cleanupPending in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: error: unknown
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     cleanupPending: (error: unknown) => void;
     readonly pendingCleanup: boolean;
+    /**
+     * 签名 / Signature: BundlesV1.transfer.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 transfer 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for transfer in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: owner: string
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     transfer: (owner: string) => void;
 } | undefined) => Promise<import("../../shared/contracts/vm.ts").VMView>;
+  /**
+   * 签名 / Signature: BundlesV1.importExternal.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 importExternal 的输入与结果契约，所属容器为 BundlesV1。
+   * Purpose: Declares the input/result contract for importExternal in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: name: string; source: import("stream").Readable; signal: AbortSignal | undefined optional; lease: { id: string; release: () => void; assertActive: (checkSignal?: boolean) => void; res… optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/vm.ts").VMView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "importExternal": (name: string, source: import("stream").Readable, signal?: AbortSignal | undefined, lease?: {
     id: string;
+    /**
+     * 签名 / Signature: BundlesV1.release.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 release 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for release in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     release: () => void;
+    /**
+     * 签名 / Signature: BundlesV1.assertActive.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 assertActive 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for assertActive in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: checkSignal: boolean optional
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     assertActive: (checkSignal?: boolean) => void;
+    /**
+     * 签名 / Signature: BundlesV1.reserveTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 reserveTemporary 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for reserveTemporary in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string; bytes: number
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     reserveTemporary: (path: string, bytes: number) => Promise<void>;
+    /**
+     * 签名 / Signature: BundlesV1.releaseTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 releaseTemporary 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for releaseTemporary in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     releaseTemporary: (path: string) => Promise<void>;
+    /**
+     * 签名 / Signature: BundlesV1.cleanupPending.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 cleanupPending 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for cleanupPending in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: error: unknown
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     cleanupPending: (error: unknown) => void;
     readonly pendingCleanup: boolean;
+    /**
+     * 签名 / Signature: BundlesV1.transfer.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 transfer 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for transfer in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: owner: string
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     transfer: (owner: string) => void;
 } | undefined) => Promise<import("../../shared/contracts/vm.ts").VMView>;
+  /**
+   * 签名 / Signature: BundlesV1.withDisk.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 withDisk 的输入与结果契约，所属容器为 BundlesV1。
+   * Purpose: Declares the input/result contract for withDisk in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: source: import("stream").Readable; signal: AbortSignal; work: (disk: string, diskEncryption?: import("../../shared/contracts/vm.ts").DiskEncryption…; lease: { id: string; release: () => void; assertActive: (checkSignal?: boolean) => void; res… optional
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "withDisk": <T>(source: import("stream").Readable, signal: AbortSignal, work: (disk: string, diskEncryption?: import("../../shared/contracts/vm.ts").DiskEncryptionConfig | undefined) => Promise<T>, lease?: {
     id: string;
+    /**
+     * 签名 / Signature: BundlesV1.release.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 release 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for release in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     release: () => void;
+    /**
+     * 签名 / Signature: BundlesV1.assertActive.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 assertActive 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for assertActive in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: checkSignal: boolean optional
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     assertActive: (checkSignal?: boolean) => void;
+    /**
+     * 签名 / Signature: BundlesV1.reserveTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 reserveTemporary 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for reserveTemporary in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string; bytes: number
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     reserveTemporary: (path: string, bytes: number) => Promise<void>;
+    /**
+     * 签名 / Signature: BundlesV1.releaseTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 releaseTemporary 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for releaseTemporary in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     releaseTemporary: (path: string) => Promise<void>;
+    /**
+     * 签名 / Signature: BundlesV1.cleanupPending.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 cleanupPending 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for cleanupPending in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: error: unknown
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     cleanupPending: (error: unknown) => void;
     readonly pendingCleanup: boolean;
+    /**
+     * 签名 / Signature: BundlesV1.transfer.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 transfer 的输入与结果契约，所属容器为 BundlesV1。
+     * Purpose: Declares the input/result contract for transfer in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: owner: string
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     transfer: (owner: string) => void;
 } | undefined) => Promise<T>;
+  /**
+   * 签名 / Signature: BundlesV1.clone.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 clone 的输入与结果契约，所属容器为 BundlesV1。
+   * Purpose: Declares the input/result contract for clone in BundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; name: string; snapshot: string | undefined optional; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/vm.ts").VMView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "clone": (id: string, name: string, snapshot?: string | undefined, signal?: AbortSignal | undefined) => Promise<import("../../shared/contracts/vm.ts").VMView>;
 }
 
 export interface SignedBundlesV1 {
+  /**
+   * 签名 / Signature: SignedBundlesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 SignedBundlesV1。
+   * Purpose: Declares the input/result contract for view in SignedBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { revision: number; requireTrustedOnImport: boolean; localKey: { name: string; fingerprint: string; publicKey: string; } | null; trustedKeys: { name: string; fingerprint: stri….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     revision: number;
     requireTrustedOnImport: boolean;
@@ -6325,6 +8511,15 @@ export interface SignedBundlesV1 {
         publicKey: string;
     }[];
 };
+  /**
+   * 签名 / Signature: SignedBundlesV1.signManifest.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 signManifest 的输入与结果契约，所属容器为 SignedBundlesV1。
+   * Purpose: Declares the input/result contract for signManifest in SignedBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: manifest: T
+   * 输出 / Returns: T & { signature?: { algorithm: "Ed25519"; publicKey: string; value: string; } | undefined; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "signManifest": <T extends Record<string, unknown>>(manifest: T) => T & {
     signature?: {
         algorithm: "Ed25519";
@@ -6332,16 +8527,43 @@ export interface SignedBundlesV1 {
         value: string;
     } | undefined;
 };
+  /**
+   * 签名 / Signature: SignedBundlesV1.authorizeExternal.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 authorizeExternal 的输入与结果契约，所属容器为 SignedBundlesV1。
+   * Purpose: Declares the input/result contract for authorizeExternal in SignedBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: signature: { algorithm: "Ed25519"; publicKey: string; value: string; } | undefined optional
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "authorizeExternal": (signature?: {
     algorithm: "Ed25519";
     publicKey: string;
     value: string;
 } | undefined) => void;
+  /**
+   * 签名 / Signature: SignedBundlesV1.withAuthorizedExternal.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 withAuthorizedExternal 的输入与结果契约，所属容器为 SignedBundlesV1。
+   * Purpose: Declares the input/result contract for withAuthorizedExternal in SignedBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: signature: { algorithm: "Ed25519"; publicKey: string; value: string; } | undefined; publish: () => Promise<T>
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "withAuthorizedExternal": <T>(signature: {
     algorithm: "Ed25519";
     publicKey: string;
     value: string;
 } | undefined, publish: () => Promise<T>) => Promise<T>;
+  /**
+   * 签名 / Signature: SignedBundlesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 SignedBundlesV1。
+   * Purpose: Declares the input/result contract for action in SignedBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ revision: number; requireTrustedOnImport: boolean; localKey: { name: string; fingerprint: string; publicKey: string; } | null; trustedKeys: { name: string; fingerpri….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (input: unknown) => Promise<{
     revision: number;
     requireTrustedOnImport: boolean;
@@ -6360,6 +8582,15 @@ export interface SignedBundlesV1 {
 
 export interface GoldenImagesV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: GoldenImagesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 GoldenImagesV1。
+   * Purpose: Declares the input/result contract for view in GoldenImagesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ templates: { version: 1; id: string; name: string; note: string; createdAt: string; sourceId: string; sourceName: string; distro: "alpine" | "debian" | "ubuntu"; dis….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => Promise<{
     templates: {
         version: 1;
@@ -6387,6 +8618,15 @@ export interface GoldenImagesV1 {
     job: import("../../shared/contracts/jobs.ts").JobView | null;
     persistenceError: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: GoldenImagesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 GoldenImagesV1。
+   * Purpose: Declares the input/result contract for action in GoldenImagesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: raw: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ kind: "template" | "vm" | "verified" | "deleted"; id: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (raw: unknown, signal?: AbortSignal | undefined) => Promise<{
     kind: "template" | "vm" | "verified" | "deleted";
     id: string;
@@ -6395,10 +8635,28 @@ export interface GoldenImagesV1 {
 
 export interface RescueV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: RescueV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 RescueV1。
+   * Purpose: Declares the input/result contract for view in RescueV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { runs: import("../../shared/contracts/jobs.ts").JobView[]; persistenceError: string | undefined; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => {
     runs: import("../../shared/contracts/jobs.ts").JobView[];
     persistenceError: string | undefined;
 };
+  /**
+   * 签名 / Signature: RescueV1.artifact.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 artifact 的输入与结果契约，所属容器为 RescueV1。
+   * Purpose: Declares the input/result contract for artifact in RescueV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; run: string; artifact: string
+   * 输出 / Returns: Promise<{ base64: string; id: string; name: string; path: string; bytes: number; sha256: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "artifact": (id: string, run: string, artifact: string) => Promise<{
     base64: string;
     id: string;
@@ -6407,20 +8665,56 @@ export interface RescueV1 {
     bytes: number;
     sha256: string;
 }>;
+  /**
+   * 签名 / Signature: RescueV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 RescueV1。
+   * Purpose: Declares the input/result contract for run in RescueV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown) => import("../../shared/contracts/jobs.ts").JobView;
 }
 
 export interface SnapshotDiffV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: SnapshotDiffV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 SnapshotDiffV1。
+   * Purpose: Declares the input/result contract for view in SnapshotDiffV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { runs: import("../../shared/contracts/jobs.ts").JobView[]; persistenceError: string | undefined; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => {
     runs: import("../../shared/contracts/jobs.ts").JobView[];
     persistenceError: string | undefined;
 };
+  /**
+   * 签名 / Signature: SnapshotDiffV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 SnapshotDiffV1。
+   * Purpose: Declares the input/result contract for run in SnapshotDiffV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, raw: unknown) => import("../../shared/contracts/jobs.ts").JobView;
 }
 
 export interface SnapshotMergeV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: SnapshotMergeV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 SnapshotMergeV1。
+   * Purpose: Declares the input/result contract for view in SnapshotMergeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { persistenceError?: string | undefined; runs: import("../../shared/contracts/jobs.ts").JobView[]; sourceName?: string | undefined; branchOrigin?: { sourceVmId: string; snapsh….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => {
     persistenceError?: string | undefined;
     runs: import("../../shared/contracts/jobs.ts").JobView[];
@@ -6431,13 +8725,49 @@ export interface SnapshotMergeV1 {
         createdAt: string;
     } | undefined;
 };
+  /**
+   * 签名 / Signature: SnapshotMergeV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 SnapshotMergeV1。
+   * Purpose: Declares the input/result contract for run in SnapshotMergeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown
+   * 输出 / Returns: import("../../shared/contracts/jobs.ts").JobView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, raw: unknown) => import("../../shared/contracts/jobs.ts").JobView;
 }
 
 export interface FolderSyncV1 {
+  /**
+   * 签名 / Signature: FolderSyncV1.recoveryTickets.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 recoveryTickets 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for recoveryTickets in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<DomainRecoveryTicket[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "recoveryTickets": () => Promise<DomainRecoveryTicket[]>;
+  /**
+   * 签名 / Signature: FolderSyncV1.recoverTicket.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 recoverTicket 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for recoverTicket in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: ticket: DomainRecoveryTicket
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "recoverTicket": (ticket: DomainRecoveryTicket) => Promise<void>;
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: FolderSyncV1.config.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 config 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for config in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ host: string; guest: string; auto: boolean; mergeText?: boolean | undefined; detectRenames?: boolean | undefined; rollback?: boolean | undefined; watch?: boolean | u….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "config": (id: string) => Promise<{
     host: string;
     guest: string;
@@ -6464,6 +8794,15 @@ export interface FolderSyncV1 {
     bandwidthMiBps?: number | undefined;
     ignore?: string[] | undefined;
 } | null>;
+  /**
+   * 签名 / Signature: FolderSyncV1.save.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 save 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for save in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ host: string; guest: string; auto: boolean; mergeText?: boolean | undefined; detectRenames?: boolean | undefined; rollback?: boolean | undefined; watch?: boolean | u….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "save": (id: string, input: unknown) => Promise<{
     host: string;
     guest: string;
@@ -6490,6 +8829,15 @@ export interface FolderSyncV1 {
     bandwidthMiBps?: number | undefined;
     ignore?: string[] | undefined;
 }>;
+  /**
+   * 签名 / Signature: FolderSyncV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for view in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ projectId: string; config: { host: string; guest: string; auto: boolean; mergeText?: boolean | undefined; detectRenames?: boolean | undefined; rollback?: boolean | u….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     projectId: string;
     config: {
@@ -6531,6 +8879,15 @@ export interface FolderSyncV1 {
     history: SyncHistoryViewV1[];
     watching: SyncWatchViewV1 | null;
 }>;
+  /**
+   * 签名 / Signature: FolderSyncV1.queue.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 queue 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for queue in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; cancel: boolean optional
+   * 输出 / Returns: Promise<{ id: string; requestedAt: string; attempts: number; nextAttemptAt: number; jobId?: string | undefined; lastError?: string | undefined; } | null>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "queue": (id: string, cancel?: boolean) => Promise<{
     id: string;
     requestedAt: string;
@@ -6539,8 +8896,35 @@ export interface FolderSyncV1 {
     jobId?: string | undefined;
     lastError?: string | undefined;
 } | null>;
+  /**
+   * 签名 / Signature: FolderSyncV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for tick in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: now: number optional; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": (now?: number, signal?: AbortSignal | undefined) => Promise<void>;
+  /**
+   * 签名 / Signature: FolderSyncV1.preview.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 preview 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for preview in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal optional
+   * 输出 / Returns: Promise<SyncPreviewV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "preview": (id: string, signal?: AbortSignal) => Promise<SyncPreviewV1>;
+  /**
+   * 签名 / Signature: FolderSyncV1.mergePreview.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 mergePreview 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for mergePreview in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; inputPath: string; token: string; signal: AbortSignal optional
+   * 输出 / Returns: Promise<{ path: string; token: string; base: string; ours: string; theirs: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "mergePreview": (id: string, inputPath: string, token: string, signal?: AbortSignal) => Promise<{
     path: string;
     token: string;
@@ -6548,30 +8932,102 @@ export interface FolderSyncV1 {
     ours: string;
     theirs: string;
 }>;
+  /**
+   * 签名 / Signature: FolderSyncV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for run in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; direction: "push" | "pull" | "both"; token: string | undefined optional; decisions: SyncDecisionsV1 optional; merges: SyncManualMergesV1 optional
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, direction: "push" | "pull" | "both", token?: string | undefined, decisions?: SyncDecisionsV1, merges?: SyncManualMergesV1) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
+  /**
+   * 签名 / Signature: FolderSyncV1.rollback.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 rollback 的输入与结果契约，所属容器为 FolderSyncV1。
+   * Purpose: Declares the input/result contract for rollback in FolderSyncV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; checkpoint: string
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "rollback": (id: string, checkpoint: string) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
 }
 
 export interface ProjectTerminalsV1 {
   "workspaces": Readonly<Pick<WorkspacesV1, "view" | "jobs" | "projects" | "beforeAction" | "onConfigChange" | "beforeConfigChange" | "config" | "readCommittedConfig" | "networkEnvironment" | "dependencyDownloadAuthentication" | "repositoryDownloadAuthentication" | "resolvedConfig" | "resolveProject" | "save" | "run" | "runtime" | "metrics">>;
   "preparation": ProjectPreparationV1;
+  /**
+   * 签名 / Signature: ProjectTerminalsV1.prepareTask.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 prepareTask 的输入与结果契约，所属容器为 ProjectTerminalsV1。
+   * Purpose: Declares the input/result contract for prepareTask in ProjectTerminalsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; projectId: string | null | undefined; signal: AbortSignal | undefined optional; options: { verifyOnly?: boolean | undefined; } optional
+   * 输出 / Returns: Promise<PreparedProjectV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "prepareTask": (id: string, projectId: string | null | undefined, signal?: AbortSignal | undefined, options?: {
     verifyOnly?: boolean | undefined;
 }) => Promise<PreparedProjectV1>;
+  /**
+   * 签名 / Signature: ProjectTerminalsV1.prepare.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 prepare 的输入与结果契约，所属容器为 ProjectTerminalsV1。
+   * Purpose: Declares the input/result contract for prepare in ProjectTerminalsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; projectId: string | null | undefined; session: string | null | undefined optional; readOnly: boolean optional; signal: AbortSignal | undefined optional; expectedTerminalId: string | undefined optional; options: { mode?: "task" | undefined; verifyOnly?: boolean | undefined; } optional
+   * 输出 / Returns: Promise<PreparedProjectV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "prepare": (id: string, projectId: string | null | undefined, session?: string | null | undefined, readOnly?: boolean, signal?: AbortSignal | undefined, expectedTerminalId?: string | undefined, options?: {
     mode?: "task" | undefined;
     verifyOnly?: boolean | undefined;
 }) => Promise<PreparedProjectV1>;
+  /**
+   * 签名 / Signature: ProjectTerminalsV1.validate.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 validate 的输入与结果契约，所属容器为 ProjectTerminalsV1。
+   * Purpose: Declares the input/result contract for validate in ProjectTerminalsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; projectId: string | undefined; session: string
+   * 输出 / Returns: Promise<{ projectId: string; terminalId: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "validate": (id: string, projectId: string | undefined, session: string) => Promise<{
     projectId: string;
     terminalId: string;
 }>;
+  /**
+   * 签名 / Signature: ProjectTerminalsV1.stop.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 stop 的输入与结果契约，所属容器为 ProjectTerminalsV1。
+   * Purpose: Declares the input/result contract for stop in ProjectTerminalsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; projectId: string; session: string | undefined optional; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "stop": (id: string, projectId: string, session?: string | undefined, signal?: AbortSignal | undefined) => Promise<void>;
+  /**
+   * 签名 / Signature: ProjectTerminalsV1.close.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 ProjectTerminalsV1。
+   * Purpose: Declares the input/result contract for close in ProjectTerminalsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "close": () => Promise<void>;
 }
 
 export interface ToolchainsV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: ToolchainsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 ToolchainsV1。
+   * Purpose: Declares the input/result contract for view in ToolchainsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ tools: { id: string; name: "Go" | "Git" | "Node.js / npm" | "Python / pip" | "Rust / Cargo" | "Java JDK" | "PHP"; installed: boolean; version: string; required: bool….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, signal?: AbortSignal | undefined) => Promise<{
     tools: {
         id: string;
@@ -6582,15 +9038,42 @@ export interface ToolchainsV1 {
     }[];
     job: import("../../shared/contracts/jobs.ts").JobView | null;
 }>;
+  /**
+   * 签名 / Signature: ToolchainsV1.install.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 install 的输入与结果契约，所属容器为 ToolchainsV1。
+   * Purpose: Declares the input/result contract for install in ToolchainsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<import("../../shared/contracts/jobs.ts").JobView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "install": (id: string, input: unknown) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
 }
 
 export interface DownloadsV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: DownloadsV1.issue.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 issue 的输入与结果契约，所属容器为 DownloadsV1。
+   * Purpose: Declares the input/result contract for issue in DownloadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ url: string; expiresAt: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "issue": (id: string, input: unknown) => Promise<{
     url: string;
     expiresAt: number;
 }>;
+  /**
+   * 签名 / Signature: DownloadsV1.issueLocal.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 issueLocal 的输入与结果契约，所属容器为 DownloadsV1。
+   * Purpose: Declares the input/result contract for issueLocal in DownloadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; file: { path: string; name: string; }
+   * 输出 / Returns: Promise<{ url: string; expiresAt: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "issueLocal": (id: string, file: {
     path: string;
     name: string;
@@ -6598,32 +9081,149 @@ export interface DownloadsV1 {
     url: string;
     expiresAt: number;
 }>;
+  /**
+   * 签名 / Signature: DownloadsV1.issueStream.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 issueStream 的输入与结果契约，所属容器为 DownloadsV1。
+   * Purpose: Declares the input/result contract for issueStream in DownloadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; content: StreamDownloadV1 & { name: string; }
+   * 输出 / Returns: { url: string; expiresAt: number; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "issueStream": (id: string, content: StreamDownloadV1 & {
     name: string;
 }) => {
     url: string;
     expiresAt: number;
 };
+  /**
+   * 签名 / Signature: DownloadsV1.route.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 route 的输入与结果契约，所属容器为 DownloadsV1。
+   * Purpose: Declares the input/result contract for route in DownloadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: req: import("http").IncomingMessage; res: import("http").ServerResponse<import("http").IncomingMessage>; url: URL
+   * 输出 / Returns: Promise<boolean>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "route": (req: import("http").IncomingMessage, res: import("http").ServerResponse<import("http").IncomingMessage>, url: URL) => Promise<boolean>;
+  /**
+   * 签名 / Signature: DownloadsV1.send.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 send 的输入与结果契约，所属容器为 DownloadsV1。
+   * Purpose: Declares the input/result contract for send in DownloadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: target: DownloadTargetV1; res: import("http").ServerResponse<import("http").IncomingMessage>
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "send": (target: DownloadTargetV1, res: import("http").ServerResponse<import("http").IncomingMessage>) => Promise<void>;
 }
 
 export interface SessionLockV1 {
+  /**
+   * 签名 / Signature: SessionLockV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 SessionLockV1。
+   * Purpose: Declares the input/result contract for view in SessionLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: import("../../shared/session-lock.ts").SessionLockView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => import("../../shared/session-lock.ts").SessionLockView;
+  /**
+   * 签名 / Signature: SessionLockV1.getGeneration.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 getGeneration 的输入与结果契约，所属容器为 SessionLockV1。
+   * Purpose: Declares the input/result contract for getGeneration in SessionLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: number.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "getGeneration": () => number;
+  /**
+   * 签名 / Signature: SessionLockV1.requireUnlocked.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 requireUnlocked 的输入与结果契约，所属容器为 SessionLockV1。
+   * Purpose: Declares the input/result contract for requireUnlocked in SessionLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "requireUnlocked": () => void;
+  /**
+   * 签名 / Signature: SessionLockV1.activity.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 activity 的输入与结果契约，所属容器为 SessionLockV1。
+   * Purpose: Declares the input/result contract for activity in SessionLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: import("../../shared/session-lock.ts").SessionLockView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "activity": () => import("../../shared/session-lock.ts").SessionLockView;
+  /**
+   * 签名 / Signature: SessionLockV1.lock.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 lock 的输入与结果契约，所属容器为 SessionLockV1。
+   * Purpose: Declares the input/result contract for lock in SessionLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: import("../../shared/session-lock.ts").SessionLockView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "lock": () => import("../../shared/session-lock.ts").SessionLockView;
+  /**
+   * 签名 / Signature: SessionLockV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 SessionLockV1。
+   * Purpose: Declares the input/result contract for configure in SessionLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<import("../../shared/session-lock.ts").SessionLockView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (input: unknown) => Promise<import("../../shared/session-lock.ts").SessionLockView>;
+  /**
+   * 签名 / Signature: SessionLockV1.unlock.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 unlock 的输入与结果契约，所属容器为 SessionLockV1。
+   * Purpose: Declares the input/result contract for unlock in SessionLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<import("../../shared/session-lock.ts").SessionLockView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "unlock": (input: unknown) => Promise<import("../../shared/session-lock.ts").SessionLockView>;
+  /**
+   * 签名 / Signature: SessionLockV1.unlockWithPasskey.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 unlockWithPasskey 的输入与结果契约，所属容器为 SessionLockV1。
+   * Purpose: Declares the input/result contract for unlockWithPasskey in SessionLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: expectedGeneration: number
+   * 输出 / Returns: Promise<import("../../shared/session-lock.ts").SessionLockView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "unlockWithPasskey": (expectedGeneration: number) => Promise<import("../../shared/session-lock.ts").SessionLockView>;
 }
 
 export interface AccessControlV1 {
   readonly "enabled": boolean;
+  /**
+   * 签名 / Signature: AccessControlV1.status.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 status 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for status in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { enabled: boolean; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "status": () => {
     enabled: boolean;
 };
+  /**
+   * 签名 / Signature: AccessControlV1.users.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 users 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for users in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { id: string; username: string; role: "member" | "owner" | "viewer"; vmIds: string[]; expiresAt: number | null; createdAt: string; }[].
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "users": () => {
     id: string;
     username: string;
@@ -6632,12 +9232,30 @@ export interface AccessControlV1 {
     expiresAt: number | null;
     createdAt: string;
 }[];
+  /**
+   * 签名 / Signature: AccessControlV1.passkeysFor.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 passkeysFor 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for passkeysFor in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string
+   * 输出 / Returns: { id: string; name: string; createdAt: string; lastUsedAt?: string | undefined; }[].
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "passkeysFor": (accountId: string) => {
     id: string;
     name: string;
     createdAt: string;
     lastUsedAt?: string | undefined;
 }[];
+  /**
+   * 签名 / Signature: AccessControlV1.registeredPasskeysFor.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 registeredPasskeysFor 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for registeredPasskeysFor in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string
+   * 输出 / Returns: { id: string; publicKey: string; counter: number; transports: string[]; name: string; createdAt: string; lastUsedAt?: string | undefined; }[].
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "registeredPasskeysFor": (accountId: string) => {
     id: string;
     publicKey: string;
@@ -6647,6 +9265,15 @@ export interface AccessControlV1 {
     createdAt: string;
     lastUsedAt?: string | undefined;
 }[];
+  /**
+   * 签名 / Signature: AccessControlV1.getPasskey.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 getPasskey 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for getPasskey in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { user: { id: string; username: string; role: "member" | "owner" | "viewer"; credential: { salt: string; hash: string; }; vmIds: string[]; expiresAt: number | null; createdAt:….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "getPasskey": (id: string) => {
     user: {
         id: string;
@@ -6679,35 +9306,134 @@ export interface AccessControlV1 {
         lastUsedAt?: string | undefined;
     };
 } | null;
+  /**
+   * 签名 / Signature: AccessControlV1.enable.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 enable 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for enable in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ enabled: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "enable": (input: unknown) => Promise<{
     enabled: boolean;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.login.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 login 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for login in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ token: string; principal: PrincipalV1; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "login": (input: unknown) => Promise<{
     token: string;
     principal: PrincipalV1;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.completeFederatedLogin.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 completeFederatedLogin 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for completeFederatedLogin in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string; credentialId: string
+   * 输出 / Returns: Promise<{ token: string; principal: PrincipalV1; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "completeFederatedLogin": (accountId: string, credentialId: string) => Promise<{
     token: string;
     principal: PrincipalV1;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.revokeFederatedCredential.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revokeFederatedCredential 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for revokeFederatedCredential in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: credentialId: string
+   * 输出 / Returns: number.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revokeFederatedCredential": (credentialId: string) => number;
+  /**
+   * 签名 / Signature: AccessControlV1.authorize.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 authorize 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for authorize in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: value: unknown
+   * 输出 / Returns: PrincipalV1.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "authorize": (value: unknown) => PrincipalV1;
+  /**
+   * 签名 / Signature: AccessControlV1.logout.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 logout 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for logout in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: value: unknown
+   * 输出 / Returns: { ok: boolean; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "logout": (value: unknown) => {
     ok: boolean;
 };
+  /**
+   * 签名 / Signature: AccessControlV1.revokeAll.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revokeAll 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for revokeAll in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revokeAll": () => void;
+  /**
+   * 签名 / Signature: AccessControlV1.createHandoff.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 createHandoff 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for createHandoff in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: sourceToken: unknown
+   * 输出 / Returns: Promise<{ code: string; expiresAt: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "createHandoff": (sourceToken: unknown) => Promise<{
     code: string;
     expiresAt: number;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.cancelHandoff.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 cancelHandoff 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for cancelHandoff in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: sourceToken: unknown
+   * 输出 / Returns: { cancelled: boolean; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "cancelHandoff": (sourceToken: unknown) => {
     cancelled: boolean;
 };
+  /**
+   * 签名 / Signature: AccessControlV1.redeemHandoff.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 redeemHandoff 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for redeemHandoff in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ sourceToken: string; token: string; principal: PrincipalV1; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "redeemHandoff": (input: unknown) => Promise<{
     sourceToken: string;
     token: string;
     principal: PrincipalV1;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.createViewer.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 createViewer 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for createViewer in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ id: string; username: string; role: "member" | "owner" | "viewer"; vmIds: string[]; expiresAt: number | null; createdAt: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "createViewer": (input: unknown) => Promise<{
     id: string;
     username: string;
@@ -6716,6 +9442,15 @@ export interface AccessControlV1 {
     expiresAt: number | null;
     createdAt: string;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.createMember.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 createMember 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for createMember in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ id: string; username: string; role: "member" | "owner" | "viewer"; vmIds: string[]; expiresAt: number | null; createdAt: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "createMember": (input: unknown) => Promise<{
     id: string;
     username: string;
@@ -6724,53 +9459,161 @@ export interface AccessControlV1 {
     expiresAt: number | null;
     createdAt: string;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.removeViewer.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 removeViewer 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for removeViewer in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ removed: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "removeViewer": (id: string) => Promise<{
     removed: string;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.removeMember.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 removeMember 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for removeMember in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ removed: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "removeMember": (id: string) => Promise<{
     removed: string;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.addPasskey.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 addPasskey 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for addPasskey in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string; input: unknown
+   * 输出 / Returns: Promise<{ id: string; name: string; createdAt: string; lastUsedAt?: string | undefined; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "addPasskey": (accountId: string, input: unknown) => Promise<{
     id: string;
     name: string;
     createdAt: string;
     lastUsedAt?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.removePasskey.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 removePasskey 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for removePasskey in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string; id: string
+   * 输出 / Returns: Promise<{ removed: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "removePasskey": (accountId: string, id: string) => Promise<{
     removed: string;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.completePasskeyLogin.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 completePasskeyLogin 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for completePasskeyLogin in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string; id: string; previousCounter: number; newCounter: number
+   * 输出 / Returns: Promise<{ token: string; principal: PrincipalV1; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "completePasskeyLogin": (accountId: string, id: string, previousCounter: number, newCounter: number) => Promise<{
     token: string;
     principal: PrincipalV1;
 }>;
+  /**
+   * 签名 / Signature: AccessControlV1.changeOwnerPassword.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 changeOwnerPassword 的输入与结果契约，所属容器为 AccessControlV1。
+   * Purpose: Declares the input/result contract for changeOwnerPassword in AccessControlV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ changed: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "changeOwnerPassword": (input: unknown) => Promise<{
     changed: boolean;
 }>;
 }
 
 export interface PasskeysV1 {
+  /**
+   * 签名 / Signature: PasskeysV1.beginRegistration.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 beginRegistration 的输入与结果契约，所属容器为 PasskeysV1。
+   * Purpose: Declares the input/result contract for beginRegistration in PasskeysV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; input: unknown
+   * 输出 / Returns: Promise<{ ceremonyId: string; options: import("@simplewebauthn/server").PublicKeyCredentialCreationOptionsJSON; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "beginRegistration": (principal: PrincipalV1, input: unknown) => Promise<{
     ceremonyId: string;
     options: import("@simplewebauthn/server").PublicKeyCredentialCreationOptionsJSON;
 }>;
+  /**
+   * 签名 / Signature: PasskeysV1.finishRegistration.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 finishRegistration 的输入与结果契约，所属容器为 PasskeysV1。
+   * Purpose: Declares the input/result contract for finishRegistration in PasskeysV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; input: unknown
+   * 输出 / Returns: Promise<{ id: string; name: string; createdAt: string; lastUsedAt?: string | undefined; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "finishRegistration": (principal: PrincipalV1, input: unknown) => Promise<{
     id: string;
     name: string;
     createdAt: string;
     lastUsedAt?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: PasskeysV1.beginAuthentication.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 beginAuthentication 的输入与结果契约，所属容器为 PasskeysV1。
+   * Purpose: Declares the input/result contract for beginAuthentication in PasskeysV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ ceremonyId: string; options: import("@simplewebauthn/server").PublicKeyCredentialRequestOptionsJSON; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "beginAuthentication": () => Promise<{
     ceremonyId: string;
     options: import("@simplewebauthn/server").PublicKeyCredentialRequestOptionsJSON;
 }>;
+  /**
+   * 签名 / Signature: PasskeysV1.beginUnlock.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 beginUnlock 的输入与结果契约，所属容器为 PasskeysV1。
+   * Purpose: Declares the input/result contract for beginUnlock in PasskeysV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: lockGeneration: number
+   * 输出 / Returns: Promise<{ ceremonyId: string; options: import("@simplewebauthn/server").PublicKeyCredentialRequestOptionsJSON; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "beginUnlock": (lockGeneration: number) => Promise<{
     ceremonyId: string;
     options: import("@simplewebauthn/server").PublicKeyCredentialRequestOptionsJSON;
 }>;
+  /**
+   * 签名 / Signature: PasskeysV1.finishAuthentication.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 finishAuthentication 的输入与结果契约，所属容器为 PasskeysV1。
+   * Purpose: Declares the input/result contract for finishAuthentication in PasskeysV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ token: string; principal: PrincipalV1; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "finishAuthentication": (input: unknown) => Promise<{
     token: string;
     principal: PrincipalV1;
 }>;
+  /**
+   * 签名 / Signature: PasskeysV1.finishUnlock.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 finishUnlock 的输入与结果契约，所属容器为 PasskeysV1。
+   * Purpose: Declares the input/result contract for finishUnlock in PasskeysV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ login: { token: string; principal: PrincipalV1; }; lockGeneration: number | undefined; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "finishUnlock": (input: unknown) => Promise<{
     login: {
         token: string;
@@ -6781,12 +9624,48 @@ export interface PasskeysV1 {
 }
 
 export interface SingleSignOnV1 {
+  /**
+   * 签名 / Signature: SingleSignOnV1.cancelPending.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 cancelPending 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for cancelPending in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "cancelPending": () => void;
+  /**
+   * 签名 / Signature: SingleSignOnV1.pendingOrigin.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 pendingOrigin 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for pendingOrigin in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: providerId: "oidc" | "saml"; state: string
+   * 输出 / Returns: string | null.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "pendingOrigin": (providerId: "oidc" | "saml", state: string) => string | null;
+  /**
+   * 签名 / Signature: SingleSignOnV1.providers.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 providers 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for providers in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { oidc: boolean; saml: boolean; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "providers": () => {
     oidc: boolean;
     saml: boolean;
 };
+  /**
+   * 签名 / Signature: SingleSignOnV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for view in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string | undefined optional
+   * 输出 / Returns: { oidc: { issuer: string; clientId: string; authMethod: "none" | "client_secret_basic" | "client_secret_post"; hasSecret: boolean; } | undefined; saml: { issuer: string; entry….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (accountId?: string | undefined) => {
     oidc: {
         issuer: string;
@@ -6811,6 +9690,15 @@ export interface SingleSignOnV1 {
         createdAt: string;
     }[];
 };
+  /**
+   * 签名 / Signature: SingleSignOnV1.configureOidc.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configureOidc 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for configureOidc in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: raw: unknown
+   * 输出 / Returns: Promise<{ oidc: { issuer: string; clientId: string; authMethod: "none" | "client_secret_basic" | "client_secret_post"; hasSecret: boolean; } | undefined; saml: { issuer: strin….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configureOidc": (raw: unknown) => Promise<{
     oidc: {
         issuer: string;
@@ -6835,6 +9723,15 @@ export interface SingleSignOnV1 {
         createdAt: string;
     }[];
 }>;
+  /**
+   * 签名 / Signature: SingleSignOnV1.configureSaml.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configureSaml 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for configureSaml in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: raw: unknown
+   * 输出 / Returns: Promise<{ oidc: { issuer: string; clientId: string; authMethod: "none" | "client_secret_basic" | "client_secret_post"; hasSecret: boolean; } | undefined; saml: { issuer: strin….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configureSaml": (raw: unknown) => Promise<{
     oidc: {
         issuer: string;
@@ -6859,6 +9756,15 @@ export interface SingleSignOnV1 {
         createdAt: string;
     }[];
 }>;
+  /**
+   * 签名 / Signature: SingleSignOnV1.disable.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 disable 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for disable in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: providerId: "oidc" | "saml"
+   * 输出 / Returns: Promise<{ oidc: { issuer: string; clientId: string; authMethod: "none" | "client_secret_basic" | "client_secret_post"; hasSecret: boolean; } | undefined; saml: { issuer: strin….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "disable": (providerId: "oidc" | "saml") => Promise<{
     oidc: {
         issuer: string;
@@ -6883,11 +9789,29 @@ export interface SingleSignOnV1 {
         createdAt: string;
     }[];
 }>;
+  /**
+   * 签名 / Signature: SingleSignOnV1.begin.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 begin 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for begin in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: raw: unknown; sourceToken: string | undefined optional
+   * 输出 / Returns: Promise<{ redirect: string; state: string; expiresAt: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "begin": (raw: unknown, sourceToken?: string | undefined) => Promise<{
     redirect: string;
     state: string;
     expiresAt: number;
 }>;
+  /**
+   * 签名 / Signature: SingleSignOnV1.completeOidc.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 completeOidc 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for completeOidc in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: callback: URL
+   * 输出 / Returns: Promise<{ origin: string; state: string; result: { token: string; principal: PrincipalV1; } | { linked: boolean; binding: { createdAt: string; issuer: string; subject: string;….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "completeOidc": (callback: URL) => Promise<{
     origin: string;
     state: string;
@@ -6906,6 +9830,15 @@ export interface SingleSignOnV1 {
         };
     };
 }>;
+  /**
+   * 签名 / Signature: SingleSignOnV1.completeSaml.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 completeSaml 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for completeSaml in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: { SAMLResponse: string; RelayState: string; }
+   * 输出 / Returns: Promise<{ origin: string; state: string; result: { token: string; principal: PrincipalV1; } | { linked: boolean; binding: { createdAt: string; issuer: string; subject: string;….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "completeSaml": (input: {
     SAMLResponse: string;
     RelayState: string;
@@ -6927,12 +9860,30 @@ export interface SingleSignOnV1 {
         };
     };
 }>;
+  /**
+   * 签名 / Signature: SingleSignOnV1.unlink.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 unlink 的输入与结果契约，所属容器为 SingleSignOnV1。
+   * Purpose: Declares the input/result contract for unlink in SingleSignOnV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string; providerId: "oidc" | "saml"
+   * 输出 / Returns: Promise<{ removed: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "unlink": (accountId: string, providerId: "oidc" | "saml") => Promise<{
     removed: number;
 }>;
 }
 
 export interface TerminalSharingV1 {
+  /**
+   * 签名 / Signature: TerminalSharingV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 TerminalSharingV1。
+   * Purpose: Declares the input/result contract for list in TerminalSharingV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string | undefined optional; vmId: string | undefined optional; projectId: string | undefined optional
+   * 输出 / Returns: { id: string; vmId: string; session: string; viewerId: string; createdAt: string; expiresAt: number; projectId?: string | undefined; terminalId?: string | undefined; }[].
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (accountId?: string | undefined, vmId?: string | undefined, projectId?: string | undefined) => {
     id: string;
     vmId: string;
@@ -6943,6 +9894,15 @@ export interface TerminalSharingV1 {
     projectId?: string | undefined;
     terminalId?: string | undefined;
 }[];
+  /**
+   * 签名 / Signature: TerminalSharingV1.find.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 find 的输入与结果契约，所属容器为 TerminalSharingV1。
+   * Purpose: Declares the input/result contract for find in TerminalSharingV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: viewerId: string; vmId: string; session: string; projectId: string | null | undefined optional
+   * 输出 / Returns: { id: string; vmId: string; session: string; viewerId: string; createdAt: string; expiresAt: number; projectId?: string | undefined; terminalId?: string | undefined; } | null.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "find": (viewerId: string, vmId: string, session: string, projectId?: string | null | undefined) => {
     id: string;
     vmId: string;
@@ -6953,6 +9913,15 @@ export interface TerminalSharingV1 {
     projectId?: string | undefined;
     terminalId?: string | undefined;
 } | null;
+  /**
+   * 签名 / Signature: TerminalSharingV1.create.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 create 的输入与结果契约，所属容器为 TerminalSharingV1。
+   * Purpose: Declares the input/result contract for create in TerminalSharingV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ id: string; vmId: string; session: string; viewerId: string; createdAt: string; expiresAt: number; projectId?: string | undefined; terminalId?: string | undefined; }….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "create": (input: unknown) => Promise<{
     id: string;
     vmId: string;
@@ -6963,13 +9932,40 @@ export interface TerminalSharingV1 {
     projectId?: string | undefined;
     terminalId?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: TerminalSharingV1.revoke.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revoke 的输入与结果契约，所属容器为 TerminalSharingV1。
+   * Purpose: Declares the input/result contract for revoke in TerminalSharingV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ revoked: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revoke": (id: string) => Promise<{
     revoked: string;
 }>;
+  /**
+   * 签名 / Signature: TerminalSharingV1.revokeViewer.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revokeViewer 的输入与结果契约，所属容器为 TerminalSharingV1。
+   * Purpose: Declares the input/result contract for revokeViewer in TerminalSharingV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: viewerId: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revokeViewer": (viewerId: string) => Promise<void>;
 }
 
 export interface JitPrivilegesV1 {
+  /**
+   * 签名 / Signature: JitPrivilegesV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 JitPrivilegesV1。
+   * Purpose: Declares the input/result contract for list in JitPrivilegesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1
+   * 输出 / Returns: { status: "failed" | "expired" | "pending" | "completed" | "revoked" | "approved" | "denied" | "claimed"; id: string; viewerId: string; vmId: string; operation: "start" | "sto….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (principal: PrincipalV1) => {
     status: "failed" | "expired" | "pending" | "completed" | "revoked" | "approved" | "denied" | "claimed";
     id: string;
@@ -6987,6 +9983,15 @@ export interface JitPrivilegesV1 {
     finishedAt?: number | undefined;
     error?: string | undefined;
 }[];
+  /**
+   * 签名 / Signature: JitPrivilegesV1.create.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 create 的输入与结果契约，所属容器为 JitPrivilegesV1。
+   * Purpose: Declares the input/result contract for create in JitPrivilegesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; input: unknown
+   * 输出 / Returns: Promise<{ status: "failed" | "expired" | "pending" | "completed" | "revoked" | "approved" | "denied" | "claimed"; id: string; viewerId: string; vmId: string; operation: "start….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "create": (principal: PrincipalV1, input: unknown) => Promise<{
     status: "failed" | "expired" | "pending" | "completed" | "revoked" | "approved" | "denied" | "claimed";
     id: string;
@@ -7004,6 +10009,15 @@ export interface JitPrivilegesV1 {
     finishedAt?: number | undefined;
     error?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: JitPrivilegesV1.decide.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 decide 的输入与结果契约，所属容器为 JitPrivilegesV1。
+   * Purpose: Declares the input/result contract for decide in JitPrivilegesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; id: string; input: unknown
+   * 输出 / Returns: Promise<{ status: "failed" | "expired" | "pending" | "completed" | "revoked" | "approved" | "denied" | "claimed"; id: string; viewerId: string; vmId: string; operation: "start….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "decide": (principal: PrincipalV1, id: string, input: unknown) => Promise<{
     status: "failed" | "expired" | "pending" | "completed" | "revoked" | "approved" | "denied" | "claimed";
     id: string;
@@ -7021,6 +10035,15 @@ export interface JitPrivilegesV1 {
     finishedAt?: number | undefined;
     error?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: JitPrivilegesV1.execute.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 execute 的输入与结果契约，所属容器为 JitPrivilegesV1。
+   * Purpose: Declares the input/result contract for execute in JitPrivilegesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; id: string
+   * 输出 / Returns: Promise<{ status: "failed" | "expired" | "pending" | "completed" | "revoked" | "approved" | "denied" | "claimed"; id: string; viewerId: string; vmId: string; operation: "start….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "execute": (principal: PrincipalV1, id: string) => Promise<{
     status: "failed" | "expired" | "pending" | "completed" | "revoked" | "approved" | "denied" | "claimed";
     id: string;
@@ -7041,6 +10064,15 @@ export interface JitPrivilegesV1 {
 }
 
 export interface BrowserExtensionsV1 {
+  /**
+   * 签名 / Signature: BrowserExtensionsV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 BrowserExtensionsV1。
+   * Purpose: Declares the input/result contract for list in BrowserExtensionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: ownerId: string
+   * 输出 / Returns: { connected: boolean; expired: boolean; permissions: string[]; id: string; origin: string; ownerId: string; createdAt: number; expiresAt: number; lastSeenAt?: number | undefin….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (ownerId: string) => {
     connected: boolean;
     expired: boolean;
@@ -7052,29 +10084,83 @@ export interface BrowserExtensionsV1 {
     expiresAt: number;
     lastSeenAt?: number | undefined;
 }[];
+  /**
+   * 签名 / Signature: BrowserExtensionsV1.createPairing.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 createPairing 的输入与结果契约，所属容器为 BrowserExtensionsV1。
+   * Purpose: Declares the input/result contract for createPairing in BrowserExtensionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: ownerId: string
+   * 输出 / Returns: { code: string; expiresAt: number; permissions: string[]; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "createPairing": (ownerId: string) => {
     code: string;
     expiresAt: number;
     permissions: string[];
 };
+  /**
+   * 签名 / Signature: BrowserExtensionsV1.connect.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 connect 的输入与结果契约，所属容器为 BrowserExtensionsV1。
+   * Purpose: Declares the input/result contract for connect in BrowserExtensionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: originValue: unknown; input: unknown
+   * 输出 / Returns: Promise<{ token: string; id: string; expiresAt: number; permissions: string[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "connect": (originValue: unknown, input: unknown) => Promise<{
     token: string;
     id: string;
     expiresAt: number;
     permissions: string[];
 }>;
+  /**
+   * 签名 / Signature: BrowserExtensionsV1.authorize.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 authorize 的输入与结果契约，所属容器为 BrowserExtensionsV1。
+   * Purpose: Declares the input/result contract for authorize in BrowserExtensionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: originValue: unknown; token: unknown
+   * 输出 / Returns: { id: string; expiresAt: number; permissions: string[]; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "authorize": (originValue: unknown, token: unknown) => {
     id: string;
     expiresAt: number;
     permissions: string[];
 };
+  /**
+   * 签名 / Signature: BrowserExtensionsV1.revoke.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revoke 的输入与结果契约，所属容器为 BrowserExtensionsV1。
+   * Purpose: Declares the input/result contract for revoke in BrowserExtensionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: ownerId: string; id: string
+   * 输出 / Returns: Promise<{ revoked: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revoke": (ownerId: string, id: string) => Promise<{
     revoked: string;
 }>;
+  /**
+   * 签名 / Signature: BrowserExtensionsV1.revokeAll.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revokeAll 的输入与结果契约，所属容器为 BrowserExtensionsV1。
+   * Purpose: Declares the input/result contract for revokeAll in BrowserExtensionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revokeAll": () => Promise<void>;
 }
 
 export interface RemoteAuditLockV1 {
+  /**
+   * 签名 / Signature: RemoteAuditLockV1.status.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 status 的输入与结果契约，所属容器为 RemoteAuditLockV1。
+   * Purpose: Declares the input/result contract for status in RemoteAuditLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ hostId: string; target: { bucket: string; region: string; prefix: string; retentionDays: number; endpoint?: string | undefined; } | null; last: { key: string; versio….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "status": () => Promise<{
     hostId: string;
     target: {
@@ -7108,6 +10194,15 @@ export interface RemoteAuditLockV1 {
     lastVerifiedAt: string | undefined;
     lastError: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: RemoteAuditLockV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 RemoteAuditLockV1。
+   * Purpose: Declares the input/result contract for configure in RemoteAuditLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ hostId: string; target: { bucket: string; region: string; prefix: string; retentionDays: number; endpoint?: string | undefined; } | null; last: { key: string; versio….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (input: unknown, signal?: AbortSignal | undefined) => Promise<{
     hostId: string;
     target: {
@@ -7141,6 +10236,15 @@ export interface RemoteAuditLockV1 {
     lastVerifiedAt: string | undefined;
     lastError: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: RemoteAuditLockV1.disable.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 disable 的输入与结果契约，所属容器为 RemoteAuditLockV1。
+   * Purpose: Declares the input/result contract for disable in RemoteAuditLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ hostId: string; target: { bucket: string; region: string; prefix: string; retentionDays: number; endpoint?: string | undefined; } | null; last: { key: string; versio….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "disable": () => Promise<{
     hostId: string;
     target: {
@@ -7174,6 +10278,15 @@ export interface RemoteAuditLockV1 {
     lastVerifiedAt: string | undefined;
     lastError: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: RemoteAuditLockV1.verify.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 verify 的输入与结果契约，所属容器为 RemoteAuditLockV1。
+   * Purpose: Declares the input/result contract for verify in RemoteAuditLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ hostId: string; target: { bucket: string; region: string; prefix: string; retentionDays: number; endpoint?: string | undefined; } | null; last: { key: string; versio….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "verify": (signal?: AbortSignal | undefined) => Promise<{
     hostId: string;
     target: {
@@ -7207,6 +10320,15 @@ export interface RemoteAuditLockV1 {
     lastVerifiedAt: string | undefined;
     lastError: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: RemoteAuditLockV1.sync.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sync 的输入与结果契约，所属容器为 RemoteAuditLockV1。
+   * Purpose: Declares the input/result contract for sync in RemoteAuditLockV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ hostId: string; target: { bucket: string; region: string; prefix: string; retentionDays: number; endpoint?: string | undefined; } | null; last: { key: string; versio….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "sync": (signal?: AbortSignal | undefined) => Promise<{
     hostId: string;
     target: {
@@ -7243,6 +10365,15 @@ export interface RemoteAuditLockV1 {
 }
 
 export interface FeatureRolloutsV1 {
+  /**
+   * 签名 / Signature: FeatureRolloutsV1.decision.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 decision 的输入与结果契约，所属容器为 FeatureRolloutsV1。
+   * Purpose: Declares the input/result contract for decision in FeatureRolloutsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; draft: { pluginId: string; enabled: boolean; percentage: number; cohortVersion: string; } | … optional
+   * 输出 / Returns: { policy?: { pluginId: string; enabled: boolean; percentage: number; cohortVersion: string; } | undefined; pluginId: string; allowed: boolean; bucket: number | null; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "decision": (id: string, draft?: {
     pluginId: string;
     enabled: boolean;
@@ -7259,6 +10390,15 @@ export interface FeatureRolloutsV1 {
     allowed: boolean;
     bucket: number | null;
 };
+  /**
+   * 签名 / Signature: FeatureRolloutsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 FeatureRolloutsV1。
+   * Purpose: Declares the input/result contract for view in FeatureRolloutsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { hostId: string; plugins: { policy?: { pluginId: string; enabled: boolean; percentage: number; cohortVersion: string; } | undefined; pluginId: string; allowed: boolean; bucke….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     hostId: string;
     plugins: {
@@ -7283,6 +10423,15 @@ export interface FeatureRolloutsV1 {
         updatedAt: number;
     }[];
 };
+  /**
+   * 签名 / Signature: FeatureRolloutsV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 FeatureRolloutsV1。
+   * Purpose: Declares the input/result contract for configure in FeatureRolloutsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ policy?: { pluginId: string; enabled: boolean; percentage: number; cohortVersion: string; } | undefined; pluginId: string; allowed: boolean; bucket: number | null; }….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (input: unknown) => Promise<{
     policy?: {
         pluginId: string;
@@ -7320,6 +10469,15 @@ export interface FeatureRolloutsV1 {
 }
 
 export interface ProjectExecutionV1 {
+  /**
+   * 签名 / Signature: ProjectExecutionV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 ProjectExecutionV1。
+   * Purpose: Declares the input/result contract for run in ProjectExecutionV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; projectId: string | null | undefined optional; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ stdout: string; stderr: string; code: number; scope: "instance"; } | { scope: "project"; projectId: string; directory: string; networkIsolation: "host" | "private"; ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown, projectId?: string | null | undefined, signal?: AbortSignal | undefined) => Promise<{
     stdout: string;
     stderr: string;
@@ -7337,7 +10495,25 @@ export interface ProjectExecutionV1 {
 }
 
 export interface UsbHotplugV1 {
+  /**
+   * 签名 / Signature: UsbHotplugV1.reconcile.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 reconcile 的输入与结果契约，所属容器为 UsbHotplugV1。
+   * Purpose: Declares the input/result contract for reconcile in UsbHotplugV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "reconcile": () => Promise<void>;
+  /**
+   * 签名 / Signature: UsbHotplugV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 UsbHotplugV1。
+   * Purpose: Declares the input/result contract for view in UsbHotplugV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: Promise<{ ready: boolean; hostDevices: string; hostError: string; rules: { id: string; vmId: string; vendorId: number; productId: number; createdAt: string; mediaKind?: "camer….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (vmId: string) => Promise<{
     ready: boolean;
     hostDevices: string;
@@ -7364,6 +10540,15 @@ export interface UsbHotplugV1 {
         error?: string | undefined;
     }[];
 }>;
+  /**
+   * 签名 / Signature: UsbHotplugV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 UsbHotplugV1。
+   * Purpose: Declares the input/result contract for action in UsbHotplugV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; input: unknown
+   * 输出 / Returns: Promise<{ ready: boolean; hostDevices: string; hostError: string; rules: { id: string; vmId: string; vendorId: number; productId: number; createdAt: string; mediaKind?: "camer….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (vmId: string, input: unknown) => Promise<{
     ready: boolean;
     hostDevices: string;
@@ -7393,6 +10578,15 @@ export interface UsbHotplugV1 {
 }
 
 export interface MediaDevicesV1 {
+  /**
+   * 签名 / Signature: MediaDevicesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 MediaDevicesV1。
+   * Purpose: Declares the input/result contract for view in MediaDevicesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ vmId: string; vmName: string; status: import("../../shared/contracts/vm.ts").VMStatus; audio: "none" | "hda-duplex"; audioBackend: "none" | "dsound"; support: Record….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     vmId: string;
     vmName: string;
@@ -7432,6 +10626,15 @@ export interface MediaDevicesV1 {
         }[];
     };
 }>;
+  /**
+   * 签名 / Signature: MediaDevicesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 MediaDevicesV1。
+   * Purpose: Declares the input/result contract for action in MediaDevicesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ vmId: string; vmName: string; status: import("../../shared/contracts/vm.ts").VMStatus; audio: "none" | "hda-duplex"; audioBackend: "none" | "dsound"; support: Record….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, input: unknown) => Promise<{
     vmId: string;
     vmName: string;
@@ -7544,6 +10747,15 @@ export interface MediaDevicesV1 {
 }
 
 export interface MemoryReclaimV1 {
+  /**
+   * 签名 / Signature: MemoryReclaimV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 MemoryReclaimV1。
+   * Purpose: Declares the input/result contract for view in MemoryReclaimV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ policy: { enabled: boolean; minMiB: number; }; effectiveMinMiB: number; currentTargetMiB: number; observation: ObservationV1 | null; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     policy: {
         enabled: boolean;
@@ -7553,6 +10765,15 @@ export interface MemoryReclaimV1 {
     currentTargetMiB: number;
     observation: ObservationV1 | null;
 }>;
+  /**
+   * 签名 / Signature: MemoryReclaimV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 MemoryReclaimV1。
+   * Purpose: Declares the input/result contract for action in MemoryReclaimV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown
+   * 输出 / Returns: Promise<{ policy: { enabled: boolean; minMiB: number; }; effectiveMinMiB: number; currentTargetMiB: number; observation: ObservationV1 | null; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, raw: unknown) => Promise<{
     policy: {
         enabled: boolean;
@@ -7562,10 +10783,28 @@ export interface MemoryReclaimV1 {
     currentTargetMiB: number;
     observation: ObservationV1 | null;
 }>;
+  /**
+   * 签名 / Signature: MemoryReclaimV1.sample.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sample 的输入与结果契约，所属容器为 MemoryReclaimV1。
+   * Purpose: Declares the input/result contract for sample in MemoryReclaimV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "sample": (id: string) => Promise<void>;
 }
 
 export interface HostMountsV1 {
+  /**
+   * 签名 / Signature: HostMountsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 HostMountsV1。
+   * Purpose: Declares the input/result contract for view in HostMountsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ policy: { enabled: boolean; hostPath: string; readOnly: boolean; }; guestPath: string; running: boolean; mounted: boolean; observation: HostMountObservationV1 | null….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     policy: {
         enabled: boolean;
@@ -7577,6 +10816,15 @@ export interface HostMountsV1 {
     mounted: boolean;
     observation: HostMountObservationV1 | null;
 }>;
+  /**
+   * 签名 / Signature: HostMountsV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 HostMountsV1。
+   * Purpose: Declares the input/result contract for action in HostMountsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown
+   * 输出 / Returns: Promise<{ policy: { enabled: boolean; hostPath: string; readOnly: boolean; }; guestPath: string; running: boolean; mounted: boolean; observation: HostMountObservationV1 | null….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, raw: unknown) => Promise<{
     policy: {
         enabled: boolean;
@@ -7591,6 +10839,15 @@ export interface HostMountsV1 {
 }
 
 export interface VirtioFsSharesV1 {
+  /**
+   * 签名 / Signature: VirtioFsSharesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 VirtioFsSharesV1。
+   * Purpose: Declares the input/result contract for view in VirtioFsSharesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ policy: { enabled: boolean; hostPath: string; readOnly: boolean; }; guestPath: string; tag: string; stopped: boolean; running: boolean; attached: boolean; mounted: b….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     policy: {
         enabled: boolean;
@@ -7605,6 +10862,15 @@ export interface VirtioFsSharesV1 {
     mounted: boolean;
     observation: VirtioFsObservationV1 | null;
 }>;
+  /**
+   * 签名 / Signature: VirtioFsSharesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 VirtioFsSharesV1。
+   * Purpose: Declares the input/result contract for action in VirtioFsSharesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown
+   * 输出 / Returns: Promise<{ policy: { enabled: boolean; hostPath: string; readOnly: boolean; }; guestPath: string; tag: string; stopped: boolean; running: boolean; attached: boolean; mounted: b….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, raw: unknown) => Promise<{
     policy: {
         enabled: boolean;
@@ -7622,8 +10888,35 @@ export interface VirtioFsSharesV1 {
 }
 
 export interface TrustedBootServiceV1 {
+  /**
+   * 签名 / Signature: TrustedBootServiceV1.capture.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 capture 的输入与结果契约，所属容器为 TrustedBootServiceV1。
+   * Purpose: Declares the input/result contract for capture in TrustedBootServiceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; snapshotId: string | undefined optional
+   * 输出 / Returns: Promise<TrustedBootFilesV1 | undefined>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "capture": (id: string, snapshotId?: string | undefined) => Promise<TrustedBootFilesV1 | undefined>;
+  /**
+   * 签名 / Signature: TrustedBootServiceV1.restore.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 restore 的输入与结果契约，所属容器为 TrustedBootServiceV1。
+   * Purpose: Declares the input/result contract for restore in TrustedBootServiceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; snapshot: TrustedBootFilesV1
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "restore": (id: string, snapshot: TrustedBootFilesV1) => Promise<void>;
+  /**
+   * 签名 / Signature: TrustedBootServiceV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 TrustedBootServiceV1。
+   * Purpose: Declares the input/result contract for view in TrustedBootServiceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ policy: { enabled: boolean; }; stopped: boolean; attached: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => Promise<{
     policy: {
         enabled: boolean;
@@ -7631,6 +10924,15 @@ export interface TrustedBootServiceV1 {
     stopped: boolean;
     attached: boolean;
 }>;
+  /**
+   * 签名 / Signature: TrustedBootServiceV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 TrustedBootServiceV1。
+   * Purpose: Declares the input/result contract for action in TrustedBootServiceV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown
+   * 输出 / Returns: Promise<{ policy: { enabled: boolean; }; stopped: boolean; attached: boolean; } | { policy: { enabled: boolean; }; ready: boolean; executed: boolean; firmware: "bios" | "uefi"….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, raw: unknown) => Promise<{
     policy: {
         enabled: boolean;
@@ -7664,6 +10966,15 @@ export interface TrustedBootServiceV1 {
 }
 
 export interface GpuProfilesV1 {
+  /**
+   * 签名 / Signature: GpuProfilesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 GpuProfilesV1。
+   * Purpose: Declares the input/result contract for view in GpuProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ profiles: { name: string; graphics: "virtio-gpu" | "virgl"; outputs: number; width: number; height: number; hostMemoryMiB: number; minVmMemoryMiB: number; id: string….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => Promise<{
     profiles: {
         name: string;
@@ -7690,6 +11001,15 @@ export interface GpuProfilesV1 {
         appliedAt: string;
     }[];
 }>;
+  /**
+   * 签名 / Signature: GpuProfilesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 GpuProfilesV1。
+   * Purpose: Declares the input/result contract for action in GpuProfilesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ name: string; graphics: "virtio-gpu" | "virgl"; outputs: number; width: number; height: number; hostMemoryMiB: number; minVmMemoryMiB: number; id: string; revision: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (input: unknown) => Promise<{
     name: string;
     graphics: "virtio-gpu" | "virgl";
@@ -7818,6 +11138,15 @@ export interface GpuProfilesV1 {
 
 export interface BuildFarmV1 {
   readonly "jobs": JobsV1;
+  /**
+   * 签名 / Signature: BuildFarmV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 BuildFarmV1。
+   * Purpose: Declares the input/result contract for view in BuildFarmV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { nodes: { vmName: string | null; status: string; busy: number; vmId: string; slots: number; labels: string[]; enabled: boolean; projectId?: string | undefined; }[]; tasks: { ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     nodes: {
         vmName: string | null;
@@ -7854,6 +11183,15 @@ export interface BuildFarmV1 {
     }[];
     persistenceError: string | undefined;
 };
+  /**
+   * 签名 / Signature: BuildFarmV1.projects.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 projects 的输入与结果契约，所属容器为 BuildFarmV1。
+   * Purpose: Declares the input/result contract for projects in BuildFarmV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: Promise<{ active: string; projects: { id: string; name: string; }[]; vmId: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "projects": (vmId: string) => Promise<{
     active: string;
     projects: {
@@ -7862,6 +11200,15 @@ export interface BuildFarmV1 {
     }[];
     vmId: string;
 }>;
+  /**
+   * 签名 / Signature: BuildFarmV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 BuildFarmV1。
+   * Purpose: Declares the input/result contract for action in BuildFarmV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ name: string; command: string; labels: string[]; timeoutSeconds: number; id: string; status: "error" | "cancelled" | "interrupted" | "running" | "done" | "queued"; c….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (input: unknown) => Promise<{
     name: string;
     command: string;
@@ -7895,6 +11242,15 @@ export interface BuildFarmV1 {
 }
 
 export interface ProjectPermissionsV1 {
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for view in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; projectId: string
+   * 输出 / Returns: Promise<{ version: string; roles: { id: string; name: string; permissions: ("write" | "read" | "execute" | "approve")[]; }[]; grants: { accountId: string; roleId: string; }[];….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (vmId: string, projectId: string) => Promise<{
     version: string;
     roles: {
@@ -7910,7 +11266,25 @@ export interface ProjectPermissionsV1 {
     vmId: string;
     projectId: string;
 }>;
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.version.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 version 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for version in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; projectId: string
+   * 输出 / Returns: string.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "version": (vmId: string, projectId: string) => string;
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for configure in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; projectId: string; input: unknown; expectedVersion: string | undefined optional
+   * 输出 / Returns: Promise<{ version: string; vmId: string; projectId: string; roles: { id: string; name: string; permissions: ("write" | "read" | "execute" | "approve")[]; }[]; grants: { accoun….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (vmId: string, projectId: string, input: unknown, expectedVersion?: string | undefined) => Promise<{
     version: string;
     vmId: string;
@@ -7927,6 +11301,15 @@ export interface ProjectPermissionsV1 {
     approvalRequired: boolean;
     revision: number;
 }>;
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.accessible.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 accessible 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for accessible in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1
+   * 输出 / Returns: Promise<{ vmId: string; vmName: string; projectId: string; projectName: string; roleId: string; permissions: ("write" | "read" | "execute" | "approve")[]; approvalRequired: bo….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "accessible": (principal: PrincipalV1) => Promise<{
     vmId: string;
     vmName: string;
@@ -7936,15 +11319,78 @@ export interface ProjectPermissionsV1 {
     permissions: ("write" | "read" | "execute" | "approve")[];
     approvalRequired: boolean;
 }[]>;
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.require.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 require 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for require in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; vmId: string; projectId: string; required: "write" | "read" | "execute" | "approve"
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "require": (principal: PrincipalV1, vmId: string, projectId: string, required: "write" | "read" | "execute" | "approve") => Promise<void>;
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.requireCommitted.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 requireCommitted 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for requireCommitted in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; vmId: string; projectId: string; required: "write" | "read" | "execute" | "approve"
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "requireCommitted": (principal: PrincipalV1, vmId: string, projectId: string, required: "write" | "read" | "execute" | "approve") => Promise<void>;
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.requiresApproval.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 requiresApproval 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for requiresApproval in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; projectId: string
+   * 输出 / Returns: boolean.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "requiresApproval": (vmId: string, projectId: string) => boolean;
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.liveApprover.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 liveApprover 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for liveApprover in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string; vmId: string; projectId: string
+   * 输出 / Returns: Promise<boolean>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "liveApprover": (accountId: string, vmId: string, projectId: string) => Promise<boolean>;
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.revokeMember.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revokeMember 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for revokeMember in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: accountId: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revokeMember": (accountId: string) => Promise<void>;
+  /**
+   * 签名 / Signature: ProjectPermissionsV1.revokeVm.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revokeVm 的输入与结果契约，所属容器为 ProjectPermissionsV1。
+   * Purpose: Declares the input/result contract for revokeVm in ProjectPermissionsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revokeVm": (vmId: string) => Promise<void>;
 }
 
 export interface PolicyBundlesV1 {
+  /**
+   * 签名 / Signature: PolicyBundlesV1.keys.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 keys 的输入与结果契约，所属容器为 PolicyBundlesV1。
+   * Purpose: Declares the input/result contract for keys in PolicyBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { revision: number; localKey: { name: string; fingerprint: string; publicKey: string; }; trustedKeys: { name: string; fingerprint: string; publicKey: string; }[]; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "keys": () => {
     revision: number;
     localKey: {
@@ -7958,6 +11404,15 @@ export interface PolicyBundlesV1 {
         publicKey: string;
     }[];
 };
+  /**
+   * 签名 / Signature: PolicyBundlesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 PolicyBundlesV1。
+   * Purpose: Declares the input/result contract for action in PolicyBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ revision: number; localKey: { name: string; fingerprint: string; publicKey: string; }; trustedKeys: { name: string; fingerprint: string; publicKey: string; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (input: unknown) => Promise<{
     revision: number;
     localKey: {
@@ -7971,6 +11426,15 @@ export interface PolicyBundlesV1 {
         publicKey: string;
     }[];
 }>;
+  /**
+   * 签名 / Signature: PolicyBundlesV1.export.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 export 的输入与结果契约，所属容器为 PolicyBundlesV1。
+   * Purpose: Declares the input/result contract for export in PolicyBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; projectId: string
+   * 输出 / Returns: Promise<{ format: "sakura-project-policy/v1"; source: { vmId: string; projectId: string; }; policy: { roles: { id: string; name: string; permissions: ("write" | "read" | "exec….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "export": (vmId: string, projectId: string) => Promise<{
     format: "sakura-project-policy/v1";
     source: {
@@ -7995,6 +11459,15 @@ export interface PolicyBundlesV1 {
         value: string;
     };
 }>;
+  /**
+   * 签名 / Signature: PolicyBundlesV1.preview.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 preview 的输入与结果契约，所属容器为 PolicyBundlesV1。
+   * Purpose: Declares the input/result contract for preview in PolicyBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown; target: unknown
+   * 输出 / Returns: Promise<{ source: { vmId: string; projectId: string; }; target: { vmId: string; projectId: string; }; signer: string; trusted: boolean; expectedVersion: string; current: { rol….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "preview": (input: unknown, target: unknown) => Promise<{
     source: {
         vmId: string;
@@ -8032,6 +11505,15 @@ export interface PolicyBundlesV1 {
         approvalRequired: boolean;
     };
 }>;
+  /**
+   * 签名 / Signature: PolicyBundlesV1.apply.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 apply 的输入与结果契约，所属容器为 PolicyBundlesV1。
+   * Purpose: Declares the input/result contract for apply in PolicyBundlesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ signer: string; source: { vmId: string; projectId: string; }; policy: { version: string; vmId: string; projectId: string; roles: { id: string; name: string; permissi….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "apply": (input: unknown) => Promise<{
     signer: string;
     source: {
@@ -8058,6 +11540,15 @@ export interface PolicyBundlesV1 {
 }
 
 export interface ChangeApprovalsV1 {
+  /**
+   * 签名 / Signature: ChangeApprovalsV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 ChangeApprovalsV1。
+   * Purpose: Declares the input/result contract for list in ChangeApprovalsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1
+   * 输出 / Returns: Promise<{ status: "failed" | "expired" | "pending" | "applied" | "approved" | "denied" | "claimed"; id: string; vmId: string; projectId: string; requesterId: string; summary: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (principal: PrincipalV1) => Promise<{
     status: "failed" | "expired" | "pending" | "applied" | "approved" | "denied" | "claimed";
     id: string;
@@ -8107,6 +11598,15 @@ export interface ChangeApprovalsV1 {
     finishedAt?: number | undefined;
     error?: string | undefined;
 }[]>;
+  /**
+   * 签名 / Signature: ChangeApprovalsV1.create.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 create 的输入与结果契约，所属容器为 ChangeApprovalsV1。
+   * Purpose: Declares the input/result contract for create in ChangeApprovalsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; input: unknown
+   * 输出 / Returns: Promise<{ status: "failed" | "expired" | "pending" | "applied" | "approved" | "denied" | "claimed"; id: string; vmId: string; projectId: string; requesterId: string; summary: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "create": (principal: PrincipalV1, input: unknown) => Promise<{
     status: "failed" | "expired" | "pending" | "applied" | "approved" | "denied" | "claimed";
     id: string;
@@ -8156,6 +11656,15 @@ export interface ChangeApprovalsV1 {
     finishedAt?: number | undefined;
     error?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: ChangeApprovalsV1.decide.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 decide 的输入与结果契约，所属容器为 ChangeApprovalsV1。
+   * Purpose: Declares the input/result contract for decide in ChangeApprovalsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; id: string; input: unknown
+   * 输出 / Returns: Promise<{ status: "failed" | "expired" | "pending" | "applied" | "approved" | "denied" | "claimed"; id: string; vmId: string; projectId: string; requesterId: string; summary: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "decide": (principal: PrincipalV1, id: string, input: unknown) => Promise<{
     status: "failed" | "expired" | "pending" | "applied" | "approved" | "denied" | "claimed";
     id: string;
@@ -8205,6 +11714,15 @@ export interface ChangeApprovalsV1 {
     finishedAt?: number | undefined;
     error?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: ChangeApprovalsV1.apply.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 apply 的输入与结果契约，所属容器为 ChangeApprovalsV1。
+   * Purpose: Declares the input/result contract for apply in ChangeApprovalsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: principal: PrincipalV1; id: string
+   * 输出 / Returns: Promise<{ status: "failed" | "expired" | "pending" | "applied" | "approved" | "denied" | "claimed"; id: string; vmId: string; projectId: string; requesterId: string; summary: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "apply": (principal: PrincipalV1, id: string) => Promise<{
     status: "failed" | "expired" | "pending" | "applied" | "approved" | "denied" | "claimed";
     id: string;
@@ -8257,6 +11775,15 @@ export interface ChangeApprovalsV1 {
 }
 
 export interface ProcessInteropV1 {
+  /**
+   * 签名 / Signature: ProcessInteropV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 ProcessInteropV1。
+   * Purpose: Declares the input/result contract for action in ProcessInteropV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; options: unknown; phase: "check" | "run"; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ message: string; reason?: string | undefined; ready: boolean; executed: boolean; enabled: boolean; installed: boolean; programs: { programId: string; executable: str….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, options: unknown, phase: "check" | "run", signal?: AbortSignal | undefined) => Promise<{
     message: string;
     reason?: string | undefined;
@@ -8319,6 +11846,15 @@ export interface ProcessInteropV1 {
     sha256?: undefined;
     reason?: undefined;
 }>;
+  /**
+   * 签名 / Signature: ProcessInteropV1.guest.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 guest 的输入与结果契约，所属容器为 ProcessInteropV1。
+   * Purpose: Declares the input/result contract for guest in ProcessInteropV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: request: unknown; token: string | undefined; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ exitCode: number; stdout: string; stderr: string; programId: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "guest": (request: unknown, token: string | undefined, signal?: AbortSignal | undefined) => Promise<{
     exitCode: number;
     stdout: string;
@@ -8328,6 +11864,15 @@ export interface ProcessInteropV1 {
 }
 
 export interface HostPeersV1 {
+  /**
+   * 签名 / Signature: HostPeersV1.registerMigrationSession.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 registerMigrationSession 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for registerMigrationSession in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: requesterId: string; ports: Record<MigrationChannelV1, number> & { sessionId?: string | undefined; qmp?: number |…
+   * 输出 / Returns: `${string}-${string}-${string}-${string}-${string}`.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "registerMigrationSession": (requesterId: string, ports: Record<MigrationChannelV1, number> & {
     sessionId?: string | undefined;
     qmp?: number | undefined;
@@ -8335,20 +11880,110 @@ export interface HostPeersV1 {
     targetVmId?: string | undefined;
     transferId?: string | undefined;
 }) => `${string}-${string}-${string}-${string}-${string}`;
+  /**
+   * 签名 / Signature: HostPeersV1.matchesMigrationSession.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 matchesMigrationSession 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for matchesMigrationSession in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; requesterId: string; targetVmId: string; transferId: string
+   * 输出 / Returns: boolean.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "matchesMigrationSession": (id: string, requesterId: string, targetVmId: string, transferId: string) => boolean;
+  /**
+   * 签名 / Signature: HostPeersV1.closeMigrationSession.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 closeMigrationSession 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for closeMigrationSession in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "closeMigrationSession": (id: string) => void;
+  /**
+   * 签名 / Signature: HostPeersV1.openMigrationForward.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 openMigrationForward 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for openMigrationForward in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; sessionId: string; channel: MigrationChannelV1
+   * 输出 / Returns: Promise<{ port: number; close: () => Promise<void>; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "openMigrationForward": (peerId: string, sessionId: string, channel: MigrationChannelV1) => Promise<{
     port: number;
+    /**
+     * 签名 / Signature: HostPeersV1.close.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 HostPeersV1。
+     * Purpose: Declares the input/result contract for close in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     close: () => Promise<void>;
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.targetMigrationQmp.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 targetMigrationQmp 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for targetMigrationQmp in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; sessionId: string; command: string; args: Record<string, unknown> | undefined optional; timeoutMs: number optional
+   * 输出 / Returns: Promise<unknown>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "targetMigrationQmp": (peerId: string, sessionId: string, command: string, args?: Record<string, unknown> | undefined, timeoutMs?: number) => Promise<unknown>;
+  /**
+   * 签名 / Signature: HostPeersV1.prepareLiveTarget.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 prepareLiveTarget 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for prepareLiveTarget in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; raw: unknown
+   * 输出 / Returns: Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationPrepareReceipt>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "prepareLiveTarget": (peerId: string, raw: unknown) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationPrepareReceipt>;
+  /**
+   * 签名 / Signature: HostPeersV1.completeLiveTarget.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 completeLiveTarget 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for completeLiveTarget in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; raw: unknown
+   * 输出 / Returns: Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "completeLiveTarget": (peerId: string, raw: unknown) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>;
+  /**
+   * 签名 / Signature: HostPeersV1.abortLiveTarget.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 abortLiveTarget 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for abortLiveTarget in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; raw: unknown
+   * 输出 / Returns: Promise<{ targetVmId: string; aborted: true; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "abortLiveTarget": (peerId: string, raw: unknown) => Promise<{
     targetVmId: string;
     aborted: true;
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.inspectLiveTarget.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 inspectLiveTarget 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for inspectLiveTarget in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; raw: unknown
+   * 输出 / Returns: Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "inspectLiveTarget": (peerId: string, raw: unknown) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>;
+  /**
+   * 签名 / Signature: HostPeersV1.rolloutStatus.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 rolloutStatus 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for rolloutStatus in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string
+   * 输出 / Returns: Promise<{ hostId: string; policies: { pluginId: string; enabled: boolean; percentage: number; cohortVersion: string; revision: number; updatedAt: number; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "rolloutStatus": (peerId: string) => Promise<{
     hostId: string;
     policies: {
@@ -8360,6 +11995,15 @@ export interface HostPeersV1 {
         updatedAt: number;
     }[];
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.publishRollout.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 publishRollout 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for publishRollout in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; input: unknown
+   * 输出 / Returns: Promise<{ hostId: string; policies: { pluginId: string; enabled: boolean; percentage: number; cohortVersion: string; revision: number; updatedAt: number; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "publishRollout": (peerId: string, input: unknown) => Promise<{
     hostId: string;
     policies: {
@@ -8371,6 +12015,15 @@ export interface HostPeersV1 {
         updatedAt: number;
     }[];
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.importStatus.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 importStatus 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for importStatus in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; transferId: string
+   * 输出 / Returns: Promise<{ id: string; name: string; sha256?: string | undefined; sourceVmId?: string | undefined; snapshotId?: string | undefined; } | null>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "importStatus": (peerId: string, transferId: string) => Promise<{
     id: string;
     name: string;
@@ -8378,28 +12031,82 @@ export interface HostPeersV1 {
     sourceVmId?: string | undefined;
     snapshotId?: string | undefined;
 } | null>;
+  /**
+   * 签名 / Signature: HostPeersV1.activateImport.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 activateImport 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for activateImport in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; input: unknown
+   * 输出 / Returns: Promise<{ id: string; status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping"; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "activateImport": (peerId: string, input: unknown) => Promise<{
     id: string;
     status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping";
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.checkImportActivation.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 checkImportActivation 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for checkImportActivation in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; input: unknown
+   * 输出 / Returns: Promise<{ ready: true; id: string; status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping"; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "checkImportActivation": (peerId: string, input: unknown) => Promise<{
     ready: true;
     id: string;
     status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping";
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.checkReplicaActivation.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 checkReplicaActivation 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for checkReplicaActivation in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; input: unknown
+   * 输出 / Returns: Promise<{ ready: true; id: string; status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping"; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "checkReplicaActivation": (peerId: string, input: unknown) => Promise<{
     ready: true;
     id: string;
     status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping";
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.activateReplica.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 activateReplica 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for activateReplica in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; input: unknown
+   * 输出 / Returns: Promise<{ id: string; status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping"; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "activateReplica": (peerId: string, input: unknown) => Promise<{
     id: string;
     status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping";
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.retireReplica.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 retireReplica 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for retireReplica in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; input: unknown
+   * 输出 / Returns: Promise<{ id: string; retired: true; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "retireReplica": (peerId: string, input: unknown) => Promise<{
     id: string;
     retired: true;
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for view in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { hostId: string; name: string; fingerprint: string; listener: { error?: string | undefined; active: boolean; enabled: boolean; host: "127.0.0.1" | "0.0.0.0"; port: number; };….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     hostId: string;
     name: string;
@@ -8435,6 +12142,15 @@ export interface HostPeersV1 {
         createdAt: number;
     }[];
 };
+  /**
+   * 签名 / Signature: HostPeersV1.status.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 status 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for status in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ version: 1; id: string; name: string; platform: string; arch: string; cpus: number; memoryTotal: number; memoryFree: number; load: number[]; vmCount: number; running….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "status": () => Promise<{
     version: 1;
     id: string;
@@ -8449,6 +12165,15 @@ export interface HostPeersV1 {
     runningVms: number;
     checkedAt: string;
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.score.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 score 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for score in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ requirements: { cpus: number; memoryMiB: number; }; scoredAt: string; candidates: { id: string; name: string; source: "local" | "peer"; eligible: boolean; score: num….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "score": (input: unknown) => Promise<{
     requirements: {
         cpus: number;
@@ -8484,6 +12209,15 @@ export interface HostPeersV1 {
         observedAt: number | null;
     }[];
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.upload.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 upload 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for upload in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: peerId: string; transferId: string; name: string; produce: (target: import("stream").Writable, signal: AbortSignal) => Promise<unknown>; signal: AbortSignal; origin: { sourceVmId: string; snapshotId: string; } | undefined optional
+   * 输出 / Returns: Promise<{ id: string; name: string; sha256?: string | undefined; sourceVmId?: string | undefined; snapshotId?: string | undefined; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "upload": (peerId: string, transferId: string, name: string, produce: (target: import("stream").Writable, signal: AbortSignal) => Promise<unknown>, signal: AbortSignal, origin?: {
     sourceVmId: string;
     snapshotId: string;
@@ -8494,6 +12228,15 @@ export interface HostPeersV1 {
     sourceVmId?: string | undefined;
     snapshotId?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for configure in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ requirements: { cpus: number; memoryMiB: number; }; scoredAt: string; candidates: { id: string; name: string; source: "local" | "peer"; eligible: boolean; score: num….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (input: unknown) => Promise<{
     requirements: {
         cpus: number;
@@ -8563,10 +12306,28 @@ export interface HostPeersV1 {
         createdAt: number;
     }[];
 }>;
+  /**
+   * 签名 / Signature: HostPeersV1.refresh.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 refresh 的输入与结果契约，所属容器为 HostPeersV1。
+   * Purpose: Declares the input/result contract for refresh in HostPeersV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "refresh": () => Promise<void>;
 }
 
 export interface MobileCompanionV1 {
+  /**
+   * 签名 / Signature: MobileCompanionV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 MobileCompanionV1。
+   * Purpose: Declares the input/result contract for view in MobileCompanionV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: ownerId: string
+   * 输出 / Returns: { devices: { expired: boolean; connected: boolean; id: string; name: string; ownerId: string; policy: { enabled: boolean; vmIds: string[]; kinds: ("cpu" | "memory" | "secret" ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (ownerId: string) => {
     devices: {
         expired: boolean;
@@ -8584,6 +12345,15 @@ export interface MobileCompanionV1 {
         lastSeenAt?: number | undefined;
     }[];
 };
+  /**
+   * 签名 / Signature: MobileCompanionV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 MobileCompanionV1。
+   * Purpose: Declares the input/result contract for action in MobileCompanionV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: ownerId: string; input: unknown
+   * 输出 / Returns: Promise<{ devices: { expired: boolean; connected: boolean; id: string; name: string; ownerId: string; policy: { enabled: boolean; vmIds: string[]; kinds: ("cpu" | "memory" | "….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (ownerId: string, input: unknown) => Promise<{
     devices: {
         expired: boolean;
@@ -8604,25 +12374,88 @@ export interface MobileCompanionV1 {
     code: string;
     expiresAt: number;
 }>;
+  /**
+   * 签名 / Signature: MobileCompanionV1.handle.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 handle 的输入与结果契约，所属容器为 MobileCompanionV1。
+   * Purpose: Declares the input/result contract for handle in MobileCompanionV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: request: import("http").IncomingMessage; response: import("http").ServerResponse<import("http").IncomingMessage>
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "handle": (request: import("http").IncomingMessage, response: import("http").ServerResponse<import("http").IncomingMessage>) => Promise<void>;
+  /**
+   * 签名 / Signature: MobileCompanionV1.revokeAll.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revokeAll 的输入与结果契约，所属容器为 MobileCompanionV1。
+   * Purpose: Declares the input/result contract for revokeAll in MobileCompanionV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revokeAll": () => Promise<void>;
 }
 
 export interface LiveMigrationReceiverV1 {
+  /**
+   * 签名 / Signature: LiveMigrationReceiverV1.prepare.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 prepare 的输入与结果契约，所属容器为 LiveMigrationReceiverV1。
+   * Purpose: Declares the input/result contract for prepare in LiveMigrationReceiverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: PrepareInputV1
+   * 输出 / Returns: Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationPrepareReceipt>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "prepare": (input: PrepareInputV1) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationPrepareReceipt>;
+  /**
+   * 签名 / Signature: LiveMigrationReceiverV1.status.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 status 的输入与结果契约，所属容器为 LiveMigrationReceiverV1。
+   * Purpose: Declares the input/result contract for status in LiveMigrationReceiverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: { requesterId: string; transferId: string; targetVmId: string; }
+   * 输出 / Returns: import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "status": (input: {
     requesterId: string;
     transferId: string;
     targetVmId: string;
 }) => import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus;
+  /**
+   * 签名 / Signature: LiveMigrationReceiverV1.verifiedStatus.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 verifiedStatus 的输入与结果契约，所属容器为 LiveMigrationReceiverV1。
+   * Purpose: Declares the input/result contract for verifiedStatus in LiveMigrationReceiverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: { requesterId: string; transferId: string; targetVmId: string }
+   * 输出 / Returns: Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "verifiedStatus": (input: { requesterId: string; transferId: string; targetVmId: string }) =>
     Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>;
+  /**
+   * 签名 / Signature: LiveMigrationReceiverV1.complete.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 complete 的输入与结果契约，所属容器为 LiveMigrationReceiverV1。
+   * Purpose: Declares the input/result contract for complete in LiveMigrationReceiverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: { requesterId: string; transferId: string; targetVmId: string; sessionId: string; }
+   * 输出 / Returns: Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "complete": (input: {
     requesterId: string;
     transferId: string;
     targetVmId: string;
     sessionId: string;
 }) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>;
+  /**
+   * 签名 / Signature: LiveMigrationReceiverV1.abort.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 abort 的输入与结果契约，所属容器为 LiveMigrationReceiverV1。
+   * Purpose: Declares the input/result contract for abort in LiveMigrationReceiverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: { requesterId: string; transferId: string; targetVmId: string; sessionId: string; sou…
+   * 输出 / Returns: Promise<{ targetVmId: string; aborted: true; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "abort": (input: {
     requesterId: string;
     transferId: string;
@@ -8636,6 +12469,15 @@ export interface LiveMigrationReceiverV1 {
 }
 
 export interface FleetPolicyRolloutsV1 {
+  /**
+   * 签名 / Signature: FleetPolicyRolloutsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 FleetPolicyRolloutsV1。
+   * Purpose: Declares the input/result contract for view in FleetPolicyRolloutsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { batches: { id: string; revision: number; policy: { pluginId: string; enabled: boolean; percentage: number; cohortVersion: string; }; targets: { peerId: string; hostId: strin….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     batches: {
         id: string;
@@ -8659,6 +12501,15 @@ export interface FleetPolicyRolloutsV1 {
         updatedAt: string;
     }[];
 };
+  /**
+   * 签名 / Signature: FleetPolicyRolloutsV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 FleetPolicyRolloutsV1。
+   * Purpose: Declares the input/result contract for configure in FleetPolicyRolloutsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ id: string; revision: number; policy: { pluginId: string; enabled: boolean; percentage: number; cohortVersion: string; }; targets: { peerId: string; hostId: string; ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (input: unknown) => Promise<{
     id: string;
     revision: number;
@@ -8683,6 +12534,15 @@ export interface FleetPolicyRolloutsV1 {
 }
 
 export interface NotebookEnvironmentsV1 {
+  /**
+   * 签名 / Signature: NotebookEnvironmentsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 NotebookEnvironmentsV1。
+   * Purpose: Declares the input/result contract for view in NotebookEnvironmentsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown optional; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; installed: boolean; projectId: string; session: { provider: "jupyter" | "marimo"; directory: string; guestPort: number; hostPort: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, input?: unknown, signal?: AbortSignal | undefined) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -8699,7 +12559,25 @@ export interface NotebookEnvironmentsV1 {
     } | null;
     message: string;
 }>;
+  /**
+   * 签名 / Signature: NotebookEnvironmentsV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 NotebookEnvironmentsV1。
+   * Purpose: Declares the input/result contract for run in NotebookEnvironmentsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal; log: (line: string) => void
+   * 输出 / Returns: Promise<NotebookResponseV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown, signal: AbortSignal, log: (line: string) => void) => Promise<NotebookResponseV1>;
+  /**
+   * 签名 / Signature: NotebookEnvironmentsV1.link.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 link 的输入与结果契约，所属容器为 NotebookEnvironmentsV1。
+   * Purpose: Declares the input/result contract for link in NotebookEnvironmentsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ provider: "jupyter" | "marimo"; url: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "link": (id: string) => Promise<{
     provider: "jupyter" | "marimo";
     url: string;
@@ -8707,6 +12585,15 @@ export interface NotebookEnvironmentsV1 {
 }
 
 export interface BrowserIdeV1 {
+  /**
+   * 签名 / Signature: BrowserIdeV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 BrowserIdeV1。
+   * Purpose: Declares the input/result contract for view in BrowserIdeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown optional; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; supported: boolean; installed: boolean; projectId: string; session: { directory: string; hostPort: number; guestPort: number; star….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string, input?: unknown, signal?: AbortSignal | undefined) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -8724,6 +12611,15 @@ export interface BrowserIdeV1 {
     } | null;
     message: string;
 }>;
+  /**
+   * 签名 / Signature: BrowserIdeV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 BrowserIdeV1。
+   * Purpose: Declares the input/result contract for run in BrowserIdeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal; log: (line: string) => void
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; supported: boolean; installed: boolean; projectId: string; session: { directory: string; hostPort: number; guestPort: number; star….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown, signal: AbortSignal, log: (line: string) => void) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -8763,6 +12659,15 @@ export interface BrowserIdeV1 {
     message: string;
     installed?: undefined;
 }>;
+  /**
+   * 签名 / Signature: BrowserIdeV1.link.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 link 的输入与结果契约，所属容器为 BrowserIdeV1。
+   * Purpose: Declares the input/result contract for link in BrowserIdeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ url: string; password: string; expiresAt: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "link": (id: string) => Promise<{
     url: string;
     password: string;
@@ -8771,8 +12676,35 @@ export interface BrowserIdeV1 {
 }
 
 export interface ColdMigrationsV1 {
+  /**
+   * 签名 / Signature: ColdMigrationsV1.recoveryTickets.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 recoveryTickets 的输入与结果契约，所属容器为 ColdMigrationsV1。
+   * Purpose: Declares the input/result contract for recoveryTickets in ColdMigrationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<DomainRecoveryTicket[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "recoveryTickets": () => Promise<DomainRecoveryTicket[]>;
+  /**
+   * 签名 / Signature: ColdMigrationsV1.recoverTicket.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 recoverTicket 的输入与结果契约，所属容器为 ColdMigrationsV1。
+   * Purpose: Declares the input/result contract for recoverTicket in ColdMigrationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: ticket: DomainRecoveryTicket
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "recoverTicket": (ticket: DomainRecoveryTicket) => Promise<void>;
+  /**
+   * 签名 / Signature: ColdMigrationsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 ColdMigrationsV1。
+   * Purpose: Declares the input/result contract for view in ColdMigrationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { enabled: boolean; entries: { vmId: string; transferId: string; peerId: string; targetName: string; status: "queued" | "review" | "transferring" | "copied" | "moved"; created….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     enabled: boolean;
     entries: {
@@ -8787,6 +12719,15 @@ export interface ColdMigrationsV1 {
         error?: string | undefined;
     }[];
 };
+  /**
+   * 签名 / Signature: ColdMigrationsV1.preview.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 preview 的输入与结果契约，所属容器为 ColdMigrationsV1。
+   * Purpose: Declares the input/result contract for preview in ColdMigrationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; reason: string; queue: { vmId: string; transferId: string; peerId: string; targetName: string; fingerprint: { recordHash: string; ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "preview": (id: string, input: unknown) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -8843,6 +12784,15 @@ export interface ColdMigrationsV1 {
     message: string;
     reason?: undefined;
 }>;
+  /**
+   * 签名 / Signature: ColdMigrationsV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 ColdMigrationsV1。
+   * Purpose: Declares the input/result contract for run in ColdMigrationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; phase: string; transferId: string; sourceVmId: string; remoteVmId: string; targetHostId: string; sourceRemoved: boolean; message: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown, signal: AbortSignal) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -8869,6 +12819,15 @@ export interface ColdMigrationsV1 {
     sourceRemoved: boolean;
     queuePersisted: boolean;
 }>;
+  /**
+   * 签名 / Signature: ColdMigrationsV1.previewDrain.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 previewDrain 的输入与结果契约，所属容器为 ColdMigrationsV1。
+   * Purpose: Declares the input/result contract for previewDrain in ColdMigrationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ message: string; ready: boolean; executed: boolean; machines: ({ remoteVmId: string | undefined; id: string; name: string; targetName: string; ready: boolean; } | { ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "previewDrain": (input: unknown) => Promise<{
     message: string;
     ready: boolean;
@@ -8904,6 +12863,15 @@ export interface ColdMigrationsV1 {
         ready: boolean;
     })[];
 }>;
+  /**
+   * 签名 / Signature: ColdMigrationsV1.runDrain.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 runDrain 的输入与结果契约，所属容器为 ColdMigrationsV1。
+   * Purpose: Declares the input/result contract for runDrain in ColdMigrationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown; signal: AbortSignal
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; phase: string; completed: { sourceVmId: string; name: string; targetName: string; remoteVmId: string; sourceRemoved: boolean; }[];….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "runDrain": (input: unknown, signal: AbortSignal) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -8921,6 +12889,15 @@ export interface ColdMigrationsV1 {
 }
 
 export interface SnapshotReplicationsV1 {
+  /**
+   * 签名 / Signature: SnapshotReplicationsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 SnapshotReplicationsV1。
+   * Purpose: Declares the input/result contract for view in SnapshotReplicationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { enabled: boolean; entries: { vmId: string; snapshotId: string; peerId: string; transferId: string; targetName: string; sourceFingerprint: string; status: "queued" | "review"….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     enabled: boolean;
     entries: {
@@ -8939,6 +12916,15 @@ export interface SnapshotReplicationsV1 {
         error?: string | undefined;
     }[];
 };
+  /**
+   * 签名 / Signature: SnapshotReplicationsV1.preview.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 preview 的输入与结果契约，所属容器为 SnapshotReplicationsV1。
+   * Purpose: Declares the input/result contract for preview in SnapshotReplicationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; reason: string; snapshot?: undefined; target?: undefined; existingRemoteVmId?: undefined; existingSha256?: undefined; message?: un….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "preview": (id: string, input: unknown) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -8966,6 +12952,15 @@ export interface SnapshotReplicationsV1 {
     message: string;
     reason?: undefined;
 }>;
+  /**
+   * 签名 / Signature: SnapshotReplicationsV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 SnapshotReplicationsV1。
+   * Purpose: Declares the input/result contract for run in SnapshotReplicationsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; signal: AbortSignal
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; transferId: string; sourceVmId: string; snapshotId: string; remoteVmId: string; targetHostId: string; sha256: string | undefined; ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown, signal: AbortSignal) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -8980,7 +12975,25 @@ export interface SnapshotReplicationsV1 {
 }
 
 export interface HaHostFailoverV1 {
+  /**
+   * 签名 / Signature: HaHostFailoverV1.configured.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configured 的输入与结果契约，所属容器为 HaHostFailoverV1。
+   * Purpose: Declares the input/result contract for configured in HaHostFailoverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: boolean.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configured": () => boolean;
+  /**
+   * 签名 / Signature: HaHostFailoverV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 HaHostFailoverV1。
+   * Purpose: Declares the input/result contract for view in HaHostFailoverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { configured: boolean; armed: boolean; phase: string | null; targetVmId: string | null; failback: "pending" | "completed" | null; recoveryHeld: boolean; statusPending: boolean….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => {
     configured: boolean;
     armed: boolean;
@@ -8991,9 +13004,45 @@ export interface HaHostFailoverV1 {
     statusPending: boolean;
     error: string | null;
 };
+  /**
+   * 签名 / Signature: HaHostFailoverV1.authorizeStart.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 authorizeStart 的输入与结果契约，所属容器为 HaHostFailoverV1。
+   * Purpose: Declares the input/result contract for authorizeStart in HaHostFailoverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "authorizeStart": (id: string) => Promise<void>;
+  /**
+   * 签名 / Signature: HaHostFailoverV1.disarm.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 disarm 的输入与结果契约，所属容器为 HaHostFailoverV1。
+   * Purpose: Declares the input/result contract for disarm in HaHostFailoverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; failureThreshold: number
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "disarm": (id: string, failureThreshold: number) => Promise<void>;
+  /**
+   * 签名 / Signature: HaHostFailoverV1.sample.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sample 的输入与结果契约，所属容器为 HaHostFailoverV1。
+   * Purpose: Declares the input/result contract for sample in HaHostFailoverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "sample": () => Promise<void>;
+  /**
+   * 签名 / Signature: HaHostFailoverV1.witnessStatus.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 witnessStatus 的输入与结果契约，所属容器为 HaHostFailoverV1。
+   * Purpose: Declares the input/result contract for witnessStatus in HaHostFailoverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ phase?: string | undefined; armed?: boolean | undefined; lastHeartbeatAt?: number | undefined; targetVmId?: string | null | undefined; targetHostId?: string | undefi….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "witnessStatus": (id: string) => Promise<{
     phase?: string | undefined;
     armed?: boolean | undefined;
@@ -9012,6 +13061,15 @@ export interface HaHostFailoverV1 {
     recoveredRetiredVmIds?: string[] | undefined;
     configured: boolean;
 }>;
+  /**
+   * 签名 / Signature: HaHostFailoverV1.rejoin.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 rejoin 的输入与结果契约，所属容器为 HaHostFailoverV1。
+   * Purpose: Declares the input/result contract for rejoin in HaHostFailoverV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; dataReconciled: boolean
+   * 输出 / Returns: Promise<{ message: string; released?: boolean | undefined; retiredRemoteVmId?: string | undefined; failback?: "pending" | "completed" | undefined; recovered?: boolean | undefi….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "rejoin": (id: string, dataReconciled: boolean) => Promise<{
     message: string;
     released?: boolean | undefined;
@@ -9025,11 +13083,47 @@ export interface HaHostFailoverV1 {
 }
 
 export interface HaLocalFailoversV1 {
+  /**
+   * 签名 / Signature: HaLocalFailoversV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 HaLocalFailoversV1。
+   * Purpose: Declares the input/result contract for view in HaLocalFailoversV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { error: string | null; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => {
     error: string | null;
 };
+  /**
+   * 签名 / Signature: HaLocalFailoversV1.hasObservedLive.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 hasObservedLive 的输入与结果契约，所属容器为 HaLocalFailoversV1。
+   * Purpose: Declares the input/result contract for hasObservedLive in HaLocalFailoversV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: boolean.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "hasObservedLive": (id: string) => boolean;
+  /**
+   * 签名 / Signature: HaLocalFailoversV1.sample.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sample 的输入与结果契约，所属容器为 HaLocalFailoversV1。
+   * Purpose: Declares the input/result contract for sample in HaLocalFailoversV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "sample": () => Promise<void>;
+  /**
+   * 签名 / Signature: HaLocalFailoversV1.rejoin.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 rejoin 的输入与结果契约，所属容器为 HaLocalFailoversV1。
+   * Purpose: Declares the input/result contract for rejoin in HaLocalFailoversV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; dataReconciled: boolean
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; retiredRemoteVmId: string; message: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "rejoin": (id: string, dataReconciled: boolean) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -9039,6 +13133,15 @@ export interface HaLocalFailoversV1 {
 }
 
 export interface DisasterRecoveryDrillV1 {
+  /**
+   * 签名 / Signature: DisasterRecoveryDrillV1.status.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 status 的输入与结果契约，所属容器为 DisasterRecoveryDrillV1。
+   * Purpose: Declares the input/result contract for status in DisasterRecoveryDrillV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ backups: { id: string; createdAt: string; bytes: number; encrypted: boolean | undefined; storage: "blocks" | undefined; verifiedAt: string | null; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "status": (id: string) => Promise<{
     backups: {
         id: string;
@@ -9049,6 +13152,15 @@ export interface DisasterRecoveryDrillV1 {
         verifiedAt: string | null;
     }[];
 }>;
+  /**
+   * 签名 / Signature: DisasterRecoveryDrillV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 DisasterRecoveryDrillV1。
+   * Purpose: Declares the input/result contract for run in DisasterRecoveryDrillV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; action: "check" | "run"; signal: AbortSignal | undefined optional; log: (line: string) => void optional
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; backups: { id: string; createdAt: string; bytes: number; encrypted: boolean | undefined; storage: "blocks" | undefined; verifiedAt….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown, action: "check" | "run", signal?: AbortSignal | undefined, log?: (line: string) => void) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -9078,8 +13190,35 @@ export interface DisasterRecoveryDrillV1 {
 }
 
 export interface NativeIntegrationV1 {
+  /**
+   * 签名 / Signature: NativeIntegrationV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 NativeIntegrationV1。
+   * Purpose: Declares the input/result contract for view in NativeIntegrationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<import("../../shared/native-integration.ts").NativeView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => Promise<import("../../shared/native-integration.ts").NativeView>;
+  /**
+   * 签名 / Signature: NativeIntegrationV1.revoke.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revoke 的输入与结果契约，所属容器为 NativeIntegrationV1。
+   * Purpose: Declares the input/result contract for revoke in NativeIntegrationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revoke": () => void;
+  /**
+   * 签名 / Signature: NativeIntegrationV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 NativeIntegrationV1。
+   * Purpose: Declares the input/result contract for action in NativeIntegrationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<import("../../shared/native-integration.ts").NativeView | import("../../shared/native-integration.ts").NativeHandoff | { ticket: `${string}-${string}-${string}-${strin….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (input: unknown) => Promise<import("../../shared/native-integration.ts").NativeView | import("../../shared/native-integration.ts").NativeHandoff | {
     ticket: `${string}-${string}-${string}-${string}-${string}`;
     url: string;
@@ -9096,7 +13235,25 @@ export interface NativeIntegrationV1 {
 }
 
 export interface NativeClipboardV1 {
+  /**
+   * 签名 / Signature: NativeClipboardV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 NativeClipboardV1。
+   * Purpose: Declares the input/result contract for view in NativeClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: import("../../shared/native-clipboard.ts").NativeClipboardView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => import("../../shared/native-clipboard.ts").NativeClipboardView;
+  /**
+   * 签名 / Signature: NativeClipboardV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 NativeClipboardV1。
+   * Purpose: Declares the input/result contract for action in NativeClipboardV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: value: unknown
+   * 输出 / Returns: Promise<import("../../shared/native-clipboard.ts").NativeClipboardView | { process: { pid: number; created: string; image: string; bits: 0 | 32 | 64; }; view: import("../../sh….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (value: unknown) => Promise<import("../../shared/native-clipboard.ts").NativeClipboardView | {
     process: {
         pid: number;
@@ -9112,21 +13269,93 @@ export interface NativeClipboardV1 {
 }
 
 export interface LocalAssistantV1 {
+  /**
+   * 签名 / Signature: LocalAssistantV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 LocalAssistantV1。
+   * Purpose: Declares the input/result contract for view in LocalAssistantV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: import("../../shared/assistant.ts").AssistantView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => import("../../shared/assistant.ts").AssistantView;
+  /**
+   * 签名 / Signature: LocalAssistantV1.revoke.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 revoke 的输入与结果契约，所属容器为 LocalAssistantV1。
+   * Purpose: Declares the input/result contract for revoke in LocalAssistantV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "revoke": () => void;
+  /**
+   * 签名 / Signature: LocalAssistantV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 LocalAssistantV1。
+   * Purpose: Declares the input/result contract for configure in LocalAssistantV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: version: number; input: unknown
+   * 输出 / Returns: Promise<import("../../shared/assistant.ts").AssistantView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (version: number, input: unknown) => Promise<import("../../shared/assistant.ts").AssistantView>;
+  /**
+   * 签名 / Signature: LocalAssistantV1.preview.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 preview 的输入与结果契约，所属容器为 LocalAssistantV1。
+   * Purpose: Declares the input/result contract for preview in LocalAssistantV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: import("../../shared/assistant.ts").AssistantPreview.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "preview": (input: unknown) => import("../../shared/assistant.ts").AssistantPreview;
+  /**
+   * 签名 / Signature: LocalAssistantV1.models.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 models 的输入与结果契约，所属容器为 LocalAssistantV1。
+   * Purpose: Declares the input/result contract for models in LocalAssistantV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ models: { name: string; size: number; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "models": (signal?: AbortSignal | undefined) => Promise<{
     models: {
         name: string;
         size: number;
     }[];
 }>;
+  /**
+   * 签名 / Signature: LocalAssistantV1.generate.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 generate 的输入与结果契约，所属容器为 LocalAssistantV1。
+   * Purpose: Declares the input/result contract for generate in LocalAssistantV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<import("../../shared/assistant.ts").AssistantResult>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "generate": (id: string, signal?: AbortSignal | undefined) => Promise<import("../../shared/assistant.ts").AssistantResult>;
 }
 
 export interface CommunityPluginsV1 {
+  /**
+   * 签名 / Signature: CommunityPluginsV1.recoverCleanup.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 recoverCleanup 的输入与结果契约，所属容器为 CommunityPluginsV1。
+   * Purpose: Declares the input/result contract for recoverCleanup in CommunityPluginsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: pluginId: string; generation: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   readonly recoverCleanup: (pluginId: string, generation: string) => Promise<void>;
+  /**
+   * 签名 / Signature: CommunityPluginsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 CommunityPluginsV1。
+   * Purpose: Declares the input/result contract for view in CommunityPluginsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { publishers: { fingerprint: string; name: string; addedAt: number; }[]; sources: { id: string; name: string; url: string; addedAt: number; }[]; installed: { name: string; id:….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => {
     publishers: {
         fingerprint: string;
@@ -9246,6 +13475,15 @@ export interface CommunityPluginsV1 {
         instances: import("../../shared/contracts/plugin-runtime.ts").PluginInstanceView[];
     };
 };
+  /**
+   * 签名 / Signature: CommunityPluginsV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 CommunityPluginsV1。
+   * Purpose: Declares the input/result contract for action in CommunityPluginsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: raw: unknown
+   * 输出 / Returns: Promise<{ publishers: { fingerprint: string; name: string; addedAt: number; }[]; sources: { id: string; name: string; url: string; addedAt: number; }[]; installed: { name: str….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (raw: unknown) => Promise<{
     publishers: {
         fingerprint: string;
@@ -9369,16 +13607,52 @@ export interface CommunityPluginsV1 {
     version: string;
     result: unknown;
 }>;
+  /**
+   * 签名 / Signature: CommunityPluginsV1.invokeRoute.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 invokeRoute 的输入与结果契约，所属容器为 CommunityPluginsV1。
+   * Purpose: Declares the input/result contract for invokeRoute in CommunityPluginsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: rawPluginId: string; rawRouteId: string; body: unknown
+   * 输出 / Returns: Promise<{ pluginId: string; version: string; result: unknown; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "invokeRoute": (rawPluginId: string, rawRouteId: string, body: unknown) => Promise<{
     pluginId: string;
     version: string;
     result: unknown;
 }>;
+  /**
+   * 签名 / Signature: CommunityPluginsV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 CommunityPluginsV1。
+   * Purpose: Declares the input/result contract for tick in CommunityPluginsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": () => Promise<void>;
 }
 
 export interface WebhooksV1 {
+  /**
+   * 签名 / Signature: WebhooksV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 WebhooksV1。
+   * Purpose: Declares the input/result contract for view in WebhooksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: import("../../shared/webhooks.ts").WebhookView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => import("../../shared/webhooks.ts").WebhookView;
+  /**
+   * 签名 / Signature: WebhooksV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 WebhooksV1。
+   * Purpose: Declares the input/result contract for configure in WebhooksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<{ secret?: string | undefined; subscriptions: import("../../shared/webhooks.ts").WebhookSubscription[]; deliveries: import("../../shared/webhooks.ts").WebhookDelivery[….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (input: unknown) => Promise<{
     secret?: string | undefined;
     subscriptions: import("../../shared/webhooks.ts").WebhookSubscription[];
@@ -9393,12 +13667,48 @@ export interface WebhooksV1 {
         sourceHours: number;
     };
 }>;
+  /**
+   * 签名 / Signature: WebhooksV1.collect.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 collect 的输入与结果契约，所属容器为 WebhooksV1。
+   * Purpose: Declares the input/result contract for collect in WebhooksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "collect": () => Promise<void>;
+  /**
+   * 签名 / Signature: WebhooksV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 WebhooksV1。
+   * Purpose: Declares the input/result contract for tick in WebhooksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": () => Promise<void>;
 }
 
 export interface AutomationRulesV1 {
+  /**
+   * 签名 / Signature: AutomationRulesV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 AutomationRulesV1。
+   * Purpose: Declares the input/result contract for view in AutomationRulesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: AutomationViewV1.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => AutomationViewV1;
+  /**
+   * 签名 / Signature: AutomationRulesV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 AutomationRulesV1。
+   * Purpose: Declares the input/result contract for configure in AutomationRulesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<AutomationViewV1 | { matches: { event: import("../../shared/webhooks.ts").WebhookEvent; targetVmId: string | null; action: "start" | "stop" | "suspend" | "resume" | "r….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": (input: unknown) => Promise<AutomationViewV1 | {
     matches: {
         event: import("../../shared/webhooks.ts").WebhookEvent;
@@ -9433,11 +13743,38 @@ export interface AutomationRulesV1 {
         updatedAt: number;
     };
 }>;
+  /**
+   * 签名 / Signature: AutomationRulesV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 AutomationRulesV1。
+   * Purpose: Declares the input/result contract for tick in AutomationRulesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": () => Promise<void>;
 }
 
 export interface LogRetentionV1 {
+  /**
+   * 签名 / Signature: LogRetentionV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 LogRetentionV1。
+   * Purpose: Declares the input/result contract for view in LogRetentionV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: import("../../shared/log-retention.ts").LogRetentionView.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": () => import("../../shared/log-retention.ts").LogRetentionView;
+  /**
+   * 签名 / Signature: LogRetentionV1.preview.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 preview 的输入与结果契约，所属容器为 LogRetentionV1。
+   * Purpose: Declares the input/result contract for preview in LogRetentionV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: { token: string; stores: number; completedLogs: number; completedBytes: number; protectedLogs: number; protectedBytes: number; removeLogs: number; removeBytes: number; expired….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "preview": (input: unknown) => {
     token: string;
     stores: number;
@@ -9451,11 +13788,38 @@ export interface LogRetentionV1 {
     capacityLogs: number;
     remainingBytes: number;
 };
+  /**
+   * 签名 / Signature: LogRetentionV1.save.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 save 的输入与结果契约，所属容器为 LogRetentionV1。
+   * Purpose: Declares the input/result contract for save in LogRetentionV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown; token: string
+   * 输出 / Returns: Promise<import("../../shared/log-retention.ts").LogRetentionView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "save": (input: unknown, token: string) => Promise<import("../../shared/log-retention.ts").LogRetentionView>;
+  /**
+   * 签名 / Signature: LogRetentionV1.sweep.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sweep 的输入与结果契约，所属容器为 LogRetentionV1。
+   * Purpose: Declares the input/result contract for sweep in LogRetentionV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<import("../../shared/log-retention.ts").LogRetentionView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "sweep": () => Promise<import("../../shared/log-retention.ts").LogRetentionView>;
 }
 
 export interface GraphApiV1 {
+  /**
+   * 签名 / Signature: GraphApiV1.query.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 query 的输入与结果契约，所属容器为 GraphApiV1。
+   * Purpose: Declares the input/result contract for query in GraphApiV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown; external: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ status: number; body: import("graphql").FormattedExecutionResult<Record<string, unknown>, Record<string, unknown>>; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "query": (input: unknown, external?: AbortSignal | undefined) => Promise<{
     status: number;
     body: import("graphql").FormattedExecutionResult<Record<string, unknown>, Record<string, unknown>>;
@@ -9463,6 +13827,15 @@ export interface GraphApiV1 {
 }
 
 export interface PackageWorkbenchV1 {
+  /**
+   * 签名 / Signature: PackageWorkbenchV1.query.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 query 的输入与结果契约，所属容器为 PackageWorkbenchV1。
+   * Purpose: Declares the input/result contract for query in PackageWorkbenchV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ vmId: string; mode: "installed" | "updates" | "search"; manager: "apk" | "apt"; query: string; page: number; total: number; items: ItemV1[]; hasMore: boolean; warnin….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "query": (id: string, raw: unknown, signal?: AbortSignal | undefined) => Promise<{
     vmId: string;
     mode: "installed" | "updates" | "search";
@@ -9474,6 +13847,15 @@ export interface PackageWorkbenchV1 {
     hasMore: boolean;
     warning: string;
 }>;
+  /**
+   * 签名 / Signature: PackageWorkbenchV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 PackageWorkbenchV1。
+   * Purpose: Declares the input/result contract for action in PackageWorkbenchV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ job: unknown; token?: undefined; expiresAt?: undefined; manager?: undefined; plan?: undefined; change?: undefined; name?: undefined; } | { token: `${string}-${string….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, raw: unknown, signal?: AbortSignal | undefined) => Promise<{
     job: unknown;
     token?: undefined;
@@ -9543,6 +13925,15 @@ export type BackupDownloadV1 = {
     type: "stream";
     name: string;
     bytes: number;
+    /**
+     * 签名 / Signature: BackupDownloadV1.write.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 write 的输入与结果契约，所属容器为 BackupDownloadV1。
+     * Purpose: Declares the input/result contract for write in BackupDownloadV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: output: import("stream").Writable; signal: AbortSignal
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     write: (output: import("stream").Writable, signal: AbortSignal) => Promise<void>;
 };
 
@@ -9599,11 +13990,38 @@ export type VariableV1 = {
 };
 
 export interface SingleAppWindowsV1 {
+  /**
+   * 签名 / Signature: SingleAppWindowsV1.onSessionInvalidated.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 onSessionInvalidated 的输入与结果契约，所属容器为 SingleAppWindowsV1。
+   * Purpose: Declares the input/result contract for onSessionInvalidated in SingleAppWindowsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; sessionId: string; listener: () => void
+   * 输出 / Returns: () => void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "onSessionInvalidated": (id: string, sessionId: string, listener: () => void) => () => void;
+  /**
+   * 签名 / Signature: SingleAppWindowsV1.clipboardPolicies.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 clipboardPolicies 的输入与结果契约，所属容器为 SingleAppWindowsV1。
+   * Purpose: Declares the input/result contract for clipboardPolicies in SingleAppWindowsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<Record<string, { copy: boolean; paste: boolean; }>>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "clipboardPolicies": (id: string) => Promise<Record<string, {
     copy: boolean;
     paste: boolean;
 }>>;
+  /**
+   * 签名 / Signature: SingleAppWindowsV1.saveClipboardPolicy.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 saveClipboardPolicy 的输入与结果契约，所属容器为 SingleAppWindowsV1。
+   * Purpose: Declares the input/result contract for saveClipboardPolicy in SingleAppWindowsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; program: string; raw: unknown
+   * 输出 / Returns: Promise<{ program: string; clipboard: { copy: boolean; paste: boolean; }; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "saveClipboardPolicy": (id: string, program: string, raw: unknown) => Promise<{
     program: string;
     clipboard: {
@@ -9611,10 +14029,28 @@ export interface SingleAppWindowsV1 {
         paste: boolean;
     };
 }>;
+  /**
+   * 签名 / Signature: SingleAppWindowsV1.removeClipboardPolicy.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 removeClipboardPolicy 的输入与结果契约，所属容器为 SingleAppWindowsV1。
+   * Purpose: Declares the input/result contract for removeClipboardPolicy in SingleAppWindowsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; program: string
+   * 输出 / Returns: Promise<{ removed: boolean; program: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "removeClipboardPolicy": (id: string, program: string) => Promise<{
     removed: boolean;
     program: string;
 }>;
+  /**
+   * 签名 / Signature: SingleAppWindowsV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 SingleAppWindowsV1。
+   * Purpose: Declares the input/result contract for list in SingleAppWindowsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ id: string; vmId: string; program: string; display: number; port: number; resolution: string; clipboard: { copy: boolean; paste: boolean; }; startedAt: string; passw….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (id: string) => Promise<{
     id: string;
     vmId: string;
@@ -9644,8 +14080,35 @@ export interface SingleAppWindowsV1 {
     } | undefined;
     lastError?: string | undefined;
 }[]>;
+  /**
+   * 签名 / Signature: SingleAppWindowsV1.port.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 port 的输入与结果契约，所属容器为 SingleAppWindowsV1。
+   * Purpose: Declares the input/result contract for port in SingleAppWindowsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; sessionId: string
+   * 输出 / Returns: Promise<number>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "port": (id: string, sessionId: string) => Promise<number>;
+  /**
+   * 签名 / Signature: SingleAppWindowsV1.connectionCommand.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 connectionCommand 的输入与结果契约，所属容器为 SingleAppWindowsV1。
+   * Purpose: Declares the input/result contract for connectionCommand in SingleAppWindowsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; sessionId: string; port: number
+   * 输出 / Returns: Promise<string>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "connectionCommand": (id: string, sessionId: string, port: number) => Promise<string>;
+  /**
+   * 签名 / Signature: SingleAppWindowsV1.start.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 start 的输入与结果契约，所属容器为 SingleAppWindowsV1。
+   * Purpose: Declares the input/result contract for start in SingleAppWindowsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ id: string; vmId: string; program: string; display: number; port: number; resolution: string; clipboard: { copy: boolean; paste: boolean; }; startedAt: string; passw….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "start": (id: string, raw: unknown, signal?: AbortSignal | undefined) => Promise<{
     id: string;
     vmId: string;
@@ -9675,11 +14138,29 @@ export interface SingleAppWindowsV1 {
     } | undefined;
     lastError?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: SingleAppWindowsV1.stop.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 stop 的输入与结果契约，所属容器为 SingleAppWindowsV1。
+   * Purpose: Declares the input/result contract for stop in SingleAppWindowsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; sessionId: string
+   * 输出 / Returns: Promise<{ stopped: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "stop": (id: string, sessionId: string) => Promise<{
     stopped: boolean;
 }>;
 }
 
+/**
+ * 签名 / Signature: WorkV1.WorkV1.
+ * 功能：为维护独立于实现的 V1 公共服务接口声明 WorkV1 的输入与结果契约，所属容器为 WorkV1。
+ * Purpose: Declares the input/result contract for WorkV1 in WorkV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+ * 输入 / Inputs: log: (text: string) => void; signal: AbortSignal; update: import("../../shared/contracts/jobs.ts").JobUpdate; result: (value: unknown) => Promise<void>
+ * 输出 / Returns: Promise<void>.
+ * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+ * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+ */
 export type WorkV1 = (log: (text: string) => void, signal: AbortSignal, update: import("../../shared/contracts/jobs.ts").JobUpdate, result: (value: unknown) => Promise<void>) => Promise<void>;
 
 export type FeatureSettingV1 = {
@@ -9698,6 +14179,15 @@ export type FeatureExecutionV1 = {
 };
 
 export interface ResumableUploadsV1 {
+  /**
+   * 签名 / Signature: ResumableUploadsV1.create.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 create 的输入与结果契约，所属容器为 ResumableUploadsV1。
+   * Purpose: Declares the input/result contract for create in ResumableUploadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; input: unknown
+   * 输出 / Returns: Promise<{ received: number[]; chunkBytes: number; path: string; size: number; chunks: string[]; overwrite: boolean; id: string; vmId: string; fingerprint: string; createdAt: s….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "create": (vmId: string, input: unknown) => Promise<{
     received: number[];
     chunkBytes: number;
@@ -9719,6 +14209,15 @@ export interface ResumableUploadsV1 {
         sha256: string;
     } | undefined;
 }>;
+  /**
+   * 签名 / Signature: ResumableUploadsV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 ResumableUploadsV1。
+   * Purpose: Declares the input/result contract for view in ResumableUploadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; id: string
+   * 输出 / Returns: Promise<{ received: number[]; chunkBytes: number; path: string; size: number; chunks: string[]; overwrite: boolean; id: string; vmId: string; fingerprint: string; createdAt: s….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (vmId: string, id: string) => Promise<{
     received: number[];
     chunkBytes: number;
@@ -9740,14 +14239,41 @@ export interface ResumableUploadsV1 {
         sha256: string;
     } | undefined;
 }>;
+  /**
+   * 签名 / Signature: ResumableUploadsV1.chunk.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 chunk 的输入与结果契约，所属容器为 ResumableUploadsV1。
+   * Purpose: Declares the input/result contract for chunk in ResumableUploadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; id: string; index: number; input: import("stream").Readable; signal: AbortSignal
+   * 输出 / Returns: Promise<{ index: number; bytes: number; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "chunk": (vmId: string, id: string, index: number, input: import("stream").Readable, signal: AbortSignal) => Promise<{
     index: number;
     bytes: number;
 }>;
+  /**
+   * 签名 / Signature: ResumableUploadsV1.commit.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 commit 的输入与结果契约，所属容器为 ResumableUploadsV1。
+   * Purpose: Declares the input/result contract for commit in ResumableUploadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; id: string; signal: AbortSignal
+   * 输出 / Returns: Promise<{ bytes: number; sha256: string; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "commit": (vmId: string, id: string, signal: AbortSignal) => Promise<{
     bytes: number;
     sha256: string;
 }>;
+  /**
+   * 签名 / Signature: ResumableUploadsV1.remove.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 remove 的输入与结果契约，所属容器为 ResumableUploadsV1。
+   * Purpose: Declares the input/result contract for remove in ResumableUploadsV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; id: string
+   * 输出 / Returns: Promise<{ removed: boolean; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "remove": (vmId: string, id: string) => Promise<{
     removed: boolean;
 }>;
@@ -9949,6 +14475,15 @@ export type PipelineRunV1 = {
 };
 
 export interface StorageTieringV1 {
+  /**
+   * 签名 / Signature: StorageTieringV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 StorageTieringV1。
+   * Purpose: Declares the input/result contract for view in StorageTieringV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string | undefined optional
+   * 输出 / Returns: Promise<{ policy: { enabled: boolean; hotPoolId: string; coldPoolId: string; idleHours: number; intervalHours: number; } | null; lastRunAt: string | null; lastError: string | ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id?: string | undefined) => Promise<{
     policy: {
         enabled: boolean;
@@ -9994,7 +14529,25 @@ export interface StorageTieringV1 {
     }[];
     running: boolean;
 }>;
+  /**
+   * 签名 / Signature: StorageTieringV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 StorageTieringV1。
+   * Purpose: Declares the input/result contract for tick in StorageTieringV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": (signal?: AbortSignal | undefined) => Promise<void>;
+  /**
+   * 签名 / Signature: StorageTieringV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 StorageTieringV1。
+   * Purpose: Declares the input/result contract for run in StorageTieringV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; action: "check" | "run"; signal: AbortSignal | undefined optional; log: (text: string) => void optional
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; policy: { enabled: boolean; hotPoolId: string; coldPoolId: string; idleHours: number; intervalHours: number; } | null; lastRunAt: ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown, action: "check" | "run", signal?: AbortSignal | undefined, log?: (text: string) => void) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -10172,6 +14725,15 @@ export interface StorageTieringV1 {
 }
 
 export interface ServiceMeshV1 {
+  /**
+   * 签名 / Signature: ServiceMeshV1.status.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 status 的输入与结果契约，所属容器为 ServiceMeshV1。
+   * Purpose: Declares the input/result contract for status in ServiceMeshV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ reason?: string | undefined; projectId: string; policy: { name: string; listenPort: number; upstreamPort: number; updatedAt: string; }; guestRunning: boolean; envoyI….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "status": (id: string, signal?: AbortSignal | undefined) => Promise<{
     reason?: string | undefined;
     projectId: string;
@@ -10201,8 +14763,35 @@ export interface ServiceMeshV1 {
     ready: boolean;
     executed: false;
 }>;
+  /**
+   * 签名 / Signature: ServiceMeshV1.assertNoRunning.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 assertNoRunning 的输入与结果契约，所属容器为 ServiceMeshV1。
+   * Purpose: Declares the input/result contract for assertNoRunning in ServiceMeshV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "assertNoRunning": (id: string) => Promise<void>;
+  /**
+   * 签名 / Signature: ServiceMeshV1.configure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 configure 的输入与结果契约，所属容器为 ServiceMeshV1。
+   * Purpose: Declares the input/result contract for configure in ServiceMeshV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; enabled: boolean; save: () => Promise<T>
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "configure": <T>(id: string, enabled: boolean, save: () => Promise<T>) => Promise<T>;
+  /**
+   * 签名 / Signature: ServiceMeshV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 ServiceMeshV1。
+   * Purpose: Declares the input/result contract for action in ServiceMeshV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown; action: "check" | "run"; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ reason?: string | undefined; projectId: string; policy: { name: string; listenPort: number; upstreamPort: number; updatedAt: string; }; guestRunning: boolean; envoyI….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, raw: unknown, action: "check" | "run", signal?: AbortSignal | undefined) => Promise<{
     reason?: string | undefined;
     projectId: string;
@@ -10293,6 +14882,15 @@ export interface ServiceMeshV1 {
 }
 
 export interface VtpmEnrollmentV1 {
+  /**
+   * 签名 / Signature: VtpmEnrollmentV1.status.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 status 的输入与结果契约，所属容器为 VtpmEnrollmentV1。
+   * Purpose: Declares the input/result contract for status in VtpmEnrollmentV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; at: Date optional
+   * 输出 / Returns: { ready: boolean; executed: boolean; records: { rotateDueAt: string; overdue: boolean; dueSoon: boolean; fingerprint: string; label: string; enrolledAt: string; rotateAfterDay….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "status": (id: string, at?: Date) => {
     ready: boolean;
     executed: boolean;
@@ -10310,6 +14908,15 @@ export interface VtpmEnrollmentV1 {
     dueSoonCount: number;
     message: string;
 };
+  /**
+   * 签名 / Signature: VtpmEnrollmentV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 VtpmEnrollmentV1。
+   * Purpose: Declares the input/result contract for action in VtpmEnrollmentV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; raw: unknown; action: "check" | "run"
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; records: { rotateDueAt: string; overdue: boolean; dueSoon: boolean; fingerprint: string; label: string; enrolledAt: string; rotate….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, raw: unknown, action: "check" | "run") => Promise<{
     ready: boolean;
     executed: boolean;
@@ -10330,6 +14937,15 @@ export interface VtpmEnrollmentV1 {
 }
 
 export interface AcmeRenewalV1 {
+  /**
+   * 签名 / Signature: AcmeRenewalV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 AcmeRenewalV1。
+   * Purpose: Declares the input/result contract for view in AcmeRenewalV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { policy: { vmId: string; enabled: boolean; intervalHours: number; updatedAt: string; nextAttemptAt: number; lastAttemptAt?: number | undefined; } | null; attempts: { vmId: st….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => {
     policy: {
         vmId: string;
@@ -10348,6 +14964,15 @@ export interface AcmeRenewalV1 {
     }[];
     running: boolean;
 };
+  /**
+   * 签名 / Signature: AcmeRenewalV1.save.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 save 的输入与结果契约，所属容器为 AcmeRenewalV1。
+   * Purpose: Declares the input/result contract for save in AcmeRenewalV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; policy: { vmId: string; enabled: boolean; intervalHours: number; updatedAt: string; nextAttemptAt: number; lastAttemptAt?: number ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "save": (id: string, input: unknown) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -10368,6 +14993,15 @@ export interface AcmeRenewalV1 {
     }[];
     running: boolean;
 }>;
+  /**
+   * 签名 / Signature: AcmeRenewalV1.check.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 check 的输入与结果契约，所属容器为 AcmeRenewalV1。
+   * Purpose: Declares the input/result contract for check in AcmeRenewalV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ reason?: string | undefined; ready: boolean; executed: boolean; policy: { vmId: string; enabled: boolean; intervalHours: number; updatedAt: string; nextAttemptAt: nu….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "check": (id: string, signal?: AbortSignal | undefined) => Promise<{
     reason?: string | undefined;
     ready: boolean;
@@ -10389,6 +15023,15 @@ export interface AcmeRenewalV1 {
     }[];
     running: boolean;
 }>;
+  /**
+   * 签名 / Signature: AcmeRenewalV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 AcmeRenewalV1。
+   * Purpose: Declares the input/result contract for run in AcmeRenewalV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; action: "check" | "run"; signal: AbortSignal | undefined optional
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; policy: { vmId: string; enabled: boolean; intervalHours: number; updatedAt: string; nextAttemptAt: number; lastAttemptAt?: number ….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": (id: string, input: unknown, action: "check" | "run", signal?: AbortSignal | undefined) => Promise<{
     ready: boolean;
     executed: boolean;
@@ -10409,10 +15052,28 @@ export interface AcmeRenewalV1 {
     }[];
     running: boolean;
 }>;
+  /**
+   * 签名 / Signature: AcmeRenewalV1.tick.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 tick 的输入与结果契约，所属容器为 AcmeRenewalV1。
+   * Purpose: Declares the input/result contract for tick in AcmeRenewalV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "tick": () => Promise<void>;
 }
 
 export interface TeamTemplatesV1 {
+  /**
+   * 签名 / Signature: TeamTemplatesV1.action.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 action 的输入与结果契约，所属容器为 TeamTemplatesV1。
+   * Purpose: Declares the input/result contract for action in TeamTemplatesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; input: unknown; action: "check" | "run"
+   * 输出 / Returns: Promise<{ ready: boolean; executed: boolean; unchanged: boolean; template: { id: string; name: string; version: number; fingerprint: string; content: { resources: { cpus: numb….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "action": (id: string, input: unknown, action: "check" | "run") => Promise<{
     ready: boolean;
     executed: boolean;
@@ -10593,8 +15254,35 @@ export interface TeamTemplatesV1 {
 }
 
 export interface HaFailureMonitorV1 {
+  /**
+   * 签名 / Signature: HaFailureMonitorV1.sample.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sample 的输入与结果契约，所属容器为 HaFailureMonitorV1。
+   * Purpose: Declares the input/result contract for sample in HaFailureMonitorV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "sample": () => Promise<void>;
+  /**
+   * 签名 / Signature: HaFailureMonitorV1.reconfigure.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 reconfigure 的输入与结果契约，所属容器为 HaFailureMonitorV1。
+   * Purpose: Declares the input/result contract for reconfigure in HaFailureMonitorV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "reconfigure": (id: string) => Promise<void>;
+  /**
+   * 签名 / Signature: HaFailureMonitorV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 HaFailureMonitorV1。
+   * Purpose: Declares the input/result contract for view in HaFailureMonitorV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: { suspected: boolean; sampleIntervalSeconds: number; armed: boolean; consecutiveFailures: number; observedState: "error" | "running" | "stopped" | "starting" | "paused" | "sto….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "view": (id: string) => {
     suspected: boolean;
     sampleIntervalSeconds: number;
@@ -10678,8 +15366,35 @@ export type SearchMatchV1 = {
 };
 
 export interface ProjectCatalogV1 {
+  /**
+   * 签名 / Signature: ProjectCatalogV1.current.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 current 的输入与结果契约，所属容器为 ProjectCatalogV1。
+   * Purpose: Declares the input/result contract for current in ProjectCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: string.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "current": (id: string) => string;
+  /**
+   * 签名 / Signature: ProjectCatalogV1.key.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 key 的输入与结果契约，所属容器为 ProjectCatalogV1。
+   * Purpose: Declares the input/result contract for key in ProjectCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: string.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "key": (id: string) => string;
+  /**
+   * 签名 / Signature: ProjectCatalogV1.list.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 ProjectCatalogV1。
+   * Purpose: Declares the input/result contract for list in ProjectCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ active: string; projects: { id: string; name: string; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "list": (id: string) => Promise<{
     active: string;
     projects: {
@@ -10687,6 +15402,15 @@ export interface ProjectCatalogV1 {
         name: string;
     }[];
 }>;
+  /**
+   * 签名 / Signature: ProjectCatalogV1.readCommittedList.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 readCommittedList 的输入与结果契约，所属容器为 ProjectCatalogV1。
+   * Purpose: Declares the input/result contract for readCommittedList in ProjectCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ active: string; projects: { id: string; name: string; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "readCommittedList": (id: string) => Promise<{
     active: string;
     projects: {
@@ -10694,8 +15418,35 @@ export interface ProjectCatalogV1 {
         name: string;
     }[];
 }>;
+  /**
+   * 签名 / Signature: ProjectCatalogV1.with.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 with 的输入与结果契约，所属容器为 ProjectCatalogV1。
+   * Purpose: Declares the input/result contract for with in ProjectCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; requested: string | null | undefined; action: () => Promise<T>
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "with": <T>(id: string, requested: string | null | undefined, action: () => Promise<T>) => Promise<T>;
+  /**
+   * 签名 / Signature: ProjectCatalogV1.inScope.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 inScope 的输入与结果契约，所属容器为 ProjectCatalogV1。
+   * Purpose: Declares the input/result contract for inScope in ProjectCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; projectId: string; action: () => T
+   * 输出 / Returns: T.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "inScope": <T>(id: string, projectId: string, action: () => T) => T;
+  /**
+   * 签名 / Signature: ProjectCatalogV1.create.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 create 的输入与结果契约，所属容器为 ProjectCatalogV1。
+   * Purpose: Declares the input/result contract for create in ProjectCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; name: string; initialize: () => Promise<void>
+   * 输出 / Returns: Promise<{ active: string; projects: { id: string; name: string; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "create": (id: string, name: string, initialize: () => Promise<void>) => Promise<{
     active: string;
     projects: {
@@ -10703,6 +15454,15 @@ export interface ProjectCatalogV1 {
         name: string;
     }[];
 }>;
+  /**
+   * 签名 / Signature: ProjectCatalogV1.update.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 update 的输入与结果契约，所属容器为 ProjectCatalogV1。
+   * Purpose: Declares the input/result contract for update in ProjectCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; project: string; name: string | undefined optional
+   * 输出 / Returns: Promise<{ active: string; projects: { id: string; name: string; }[]; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "update": (id: string, project: string, name?: string | undefined) => Promise<{
     active: string;
     projects: {
@@ -10897,24 +15657,150 @@ export type HealthViewV1 = {
 };
 
 export interface StorageRuntimeV1 {
+  /**
+   * 签名 / Signature: StorageRuntimeV1.acquire.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 acquire 的输入与结果契约，所属容器为 StorageRuntimeV1。
+   * Purpose: Declares the input/result contract for acquire in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: request: StorageRequestV1
+   * 输出 / Returns: Promise<{ id: string; release: () => void; assertActive: (checkSignal?: boolean) => void; reserveTemporary: (path: string, bytes: number) => Promise<void>; releaseTemporary: (….
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "acquire": (request: StorageRequestV1) => Promise<{
     id: string;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.release.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 release 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for release in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     release: () => void;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.assertActive.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 assertActive 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for assertActive in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: checkSignal: boolean optional
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     assertActive: (checkSignal?: boolean) => void;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.reserveTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 reserveTemporary 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for reserveTemporary in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string; bytes: number
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     reserveTemporary: (path: string, bytes: number) => Promise<void>;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.releaseTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 releaseTemporary 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for releaseTemporary in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     releaseTemporary: (path: string) => Promise<void>;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.cleanupPending.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 cleanupPending 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for cleanupPending in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: error: unknown
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     cleanupPending: (error: unknown) => void;
     readonly pendingCleanup: boolean;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.transfer.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 transfer 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for transfer in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: owner: string
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     transfer: (owner: string) => void;
 }>;
+  /**
+   * 签名 / Signature: StorageRuntimeV1.run.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 run 的输入与结果契约，所属容器为 StorageRuntimeV1。
+   * Purpose: Declares the input/result contract for run in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: request: StorageRequestV1; work: (lease: { id: string; release: () => void; assertActive: (checkSignal?: boolean) => v…
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "run": <T>(request: StorageRequestV1, work: (lease: {
     id: string;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.release.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 release 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for release in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     release: () => void;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.assertActive.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 assertActive 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for assertActive in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: checkSignal: boolean optional
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     assertActive: (checkSignal?: boolean) => void;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.reserveTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 reserveTemporary 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for reserveTemporary in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string; bytes: number
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     reserveTemporary: (path: string, bytes: number) => Promise<void>;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.releaseTemporary.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 releaseTemporary 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for releaseTemporary in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: path: string
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     releaseTemporary: (path: string) => Promise<void>;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.cleanupPending.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 cleanupPending 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for cleanupPending in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: error: unknown
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     cleanupPending: (error: unknown) => void;
     readonly pendingCleanup: boolean;
+    /**
+     * 签名 / Signature: StorageRuntimeV1.transfer.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 transfer 的输入与结果契约，所属容器为 StorageRuntimeV1。
+     * Purpose: Declares the input/result contract for transfer in StorageRuntimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: owner: string
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     transfer: (owner: string) => void;
 }) => Promise<T>) => Promise<T>;
 }
@@ -10970,17 +15856,71 @@ export type SyncManualMergesV1 = {
 export interface ProjectPreparationV1 {
   readonly "workspaces": Readonly<Pick<WorkspacesV1, "view" | "jobs" | "projects" | "beforeAction" | "onConfigChange" | "beforeConfigChange" | "config" | "readCommittedConfig" | "networkEnvironment" | "dependencyDownloadAuthentication" | "repositoryDownloadAuthentication" | "resolvedConfig" | "resolveProject" | "save" | "run" | "runtime" | "metrics">>;
   readonly "signal": AbortSignal;
+  /**
+   * 签名 / Signature: ProjectPreparationV1.serial.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 serial 的输入与结果契约，所属容器为 ProjectPreparationV1。
+   * Purpose: Declares the input/result contract for serial in ProjectPreparationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; signal: AbortSignal; action: (signal: AbortSignal) => Promise<T>
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "serial": <T>(id: string, signal: AbortSignal, action: (signal: AbortSignal) => Promise<T>) => Promise<T>;
+  /**
+   * 签名 / Signature: ProjectPreparationV1.hasTerminal.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 hasTerminal 的输入与结果契约，所属容器为 ProjectPreparationV1。
+   * Purpose: Declares the input/result contract for hasTerminal in ProjectPreparationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: vmId: string; terminalId: string
+   * 输出 / Returns: boolean.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "hasTerminal": (vmId: string, terminalId: string) => boolean;
+  /**
+   * 签名 / Signature: ProjectPreparationV1.prepare.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 prepare 的输入与结果契约，所属容器为 ProjectPreparationV1。
+   * Purpose: Declares the input/result contract for prepare in ProjectPreparationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; projectId: string | null | undefined; signal: AbortSignal | undefined; options: { task: boolean; readOnly?: boolean | undefined; verifyOnly?: boolean | undefined; }; action: (context: PreparationContextV1) => Promise<T>
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "prepare": <T>(id: string, projectId: string | null | undefined, signal: AbortSignal | undefined, options: {
     task: boolean;
     readOnly?: boolean | undefined;
     verifyOnly?: boolean | undefined;
 }, action: (context: PreparationContextV1) => Promise<T>) => Promise<T>;
+  /**
+   * 签名 / Signature: ProjectPreparationV1.retain.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 retain 的输入与结果契约，所属容器为 ProjectPreparationV1。
+   * Purpose: Declares the input/result contract for retain in ProjectPreparationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: context: PreparationContextV1; task: boolean; terminalId: string | undefined optional; stop: (() => Promise<void>) | undefined optional
+   * 输出 / Returns: () => void | Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "retain": (context: PreparationContextV1, task: boolean, terminalId?: string | undefined, stop?: (() => Promise<void>) | undefined) => () => void | Promise<void>;
+  /**
+   * 签名 / Signature: ProjectPreparationV1.prepareTask.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 prepareTask 的输入与结果契约，所属容器为 ProjectPreparationV1。
+   * Purpose: Declares the input/result contract for prepareTask in ProjectPreparationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string; projectId: string | null | undefined; signal: AbortSignal | undefined optional; options: { verifyOnly?: boolean | undefined; } optional
+   * 输出 / Returns: Promise<PreparedProjectV1>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "prepareTask": (id: string, projectId: string | null | undefined, signal?: AbortSignal | undefined, options?: {
     verifyOnly?: boolean | undefined;
 }) => Promise<PreparedProjectV1>;
+  /**
+   * 签名 / Signature: ProjectPreparationV1.close.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 ProjectPreparationV1。
+   * Purpose: Declares the input/result contract for close in ProjectPreparationV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "close": () => Promise<void>;
 }
 
@@ -10989,6 +15929,15 @@ export type PreparedProjectV1 = {
     projectId: string;
     networkIsolation: string;
     terminalId?: string | undefined;
+    /**
+     * 签名 / Signature: PreparedProjectV1.release.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 release 的输入与结果契约，所属容器为 PreparedProjectV1。
+     * Purpose: Declares the input/result contract for release in PreparedProjectV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: void | Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     release: () => void | Promise<void>;
     signal?: AbortSignal | undefined;
     captured?: {
@@ -11009,6 +15958,15 @@ export type PreparedProjectV1 = {
 
 export type StreamDownloadV1 = {
     bytes: number;
+    /**
+     * 签名 / Signature: StreamDownloadV1.write.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 write 的输入与结果契约，所属容器为 StreamDownloadV1。
+     * Purpose: Declares the input/result contract for write in StreamDownloadV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: output: import("stream").Writable; signal: AbortSignal
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     write: (output: import("stream").Writable, signal: AbortSignal) => Promise<void>;
 };
 
@@ -11382,6 +16340,15 @@ export interface VmLifetimeV1 {
   readonly "lastObservedBootId": string | undefined;
   readonly "active": number;
   readonly "admitting": boolean;
+  /**
+   * 签名 / Signature: VmLifetimeV1.capture.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 capture 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for capture in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Readonly<{ vmId: string; vmProcessId: string; executionGeneration: string; bootId?: string | undefined; networkGeneration?: string | undefined; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "capture": () => Readonly<{
     vmId: string;
     vmProcessId: string;
@@ -11389,6 +16356,15 @@ export interface VmLifetimeV1 {
     bootId?: string | undefined;
     networkGeneration?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: VmLifetimeV1.assert.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 assert 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for assert in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: identity: Readonly<{ vmId: string; vmProcessId: string; executionGeneration: string; bootId?: s…
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "assert": (identity: Readonly<{
     vmId: string;
     vmProcessId: string;
@@ -11396,7 +16372,25 @@ export interface VmLifetimeV1 {
     bootId?: string | undefined;
     networkGeneration?: string | undefined;
 }>) => void;
+  /**
+   * 签名 / Signature: VmLifetimeV1.observeBoot.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 observeBoot 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for observeBoot in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: bootId: string
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "observeBoot": (bootId: string) => void;
+  /**
+   * 签名 / Signature: VmLifetimeV1.advanceExecution.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 advanceExecution 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for advanceExecution in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Readonly<{ vmId: string; vmProcessId: string; executionGeneration: string; bootId?: string | undefined; networkGeneration?: string | undefined; }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "advanceExecution": () => Readonly<{
     vmId: string;
     vmProcessId: string;
@@ -11404,10 +16398,46 @@ export interface VmLifetimeV1 {
     bootId?: string | undefined;
     networkGeneration?: string | undefined;
 }>;
+  /**
+   * 签名 / Signature: VmLifetimeV1.setNetwork.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 setNetwork 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for setNetwork in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: lease: VmNetworkLeaseV1
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "setNetwork": (lease: VmNetworkLeaseV1) => Promise<void>;
+  /**
+   * 签名 / Signature: VmLifetimeV1.own.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 own 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for own in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: name: string; resource: T; order: number optional
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "own": <T extends {
+    /**
+     * 签名 / Signature: VmLifetimeV1.T.close.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 VmLifetimeV1.T。
+     * Purpose: Declares the input/result contract for close in VmLifetimeV1.T. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: unknown.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     close(): unknown;
 }>(name: string, resource: T, order?: number) => Promise<T>;
+  /**
+   * 签名 / Signature: VmLifetimeV1.enter.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 enter 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for enter in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: identity: Readonly<{ vmId: string; vmProcessId: string; executionGeneration: string; bootId?: s… optional; options: { persistent?: boolean | undefined; } optional
+   * 输出 / Returns: { signal: AbortSignal; release: () => void; cleanupPending: (error: unknown) => void; }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "enter": (identity?: Readonly<{
     vmId: string;
     vmProcessId: string;
@@ -11418,12 +16448,66 @@ export interface VmLifetimeV1 {
     persistent?: boolean | undefined;
 }) => {
     signal: AbortSignal;
+    /**
+     * 签名 / Signature: VmLifetimeV1.release.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 release 的输入与结果契约，所属容器为 VmLifetimeV1。
+     * Purpose: Declares the input/result contract for release in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     release: () => void;
+    /**
+     * 签名 / Signature: VmLifetimeV1.cleanupPending.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 cleanupPending 的输入与结果契约，所属容器为 VmLifetimeV1。
+     * Purpose: Declares the input/result contract for cleanupPending in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: error: unknown
+     * 输出 / Returns: void.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     cleanupPending: (error: unknown) => void;
 };
+  /**
+   * 签名 / Signature: VmLifetimeV1.exclusive.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 exclusive 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for exclusive in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: work: () => Promise<T>; allowFailed: boolean optional
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "exclusive": <T>(work: () => Promise<T>, allowFailed?: boolean) => Promise<T>;
+  /**
+   * 签名 / Signature: VmLifetimeV1.barrier.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 barrier 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for barrier in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: work: () => Promise<T>; cancel: boolean optional; allowFailed: boolean optional
+   * 输出 / Returns: Promise<T>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "barrier": <T>(work: () => Promise<T>, cancel?: boolean, allowFailed?: boolean) => Promise<T>;
+  /**
+   * 签名 / Signature: VmLifetimeV1.end.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 end 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for end in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: reason: unknown optional
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "end": (reason?: unknown) => void;
+  /**
+   * 签名 / Signature: VmLifetimeV1.close.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 VmLifetimeV1。
+   * Purpose: Declares the input/result contract for close in VmLifetimeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "close": () => Promise<void>;
 }
 
@@ -11445,44 +16529,269 @@ export type VmNetworkLeaseV1 = {
         worker: string;
         backend?: string | undefined;
     }> | undefined;
+    /**
+     * 签名 / Signature: VmNetworkLeaseV1.setConnected.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 setConnected 的输入与结果契约，所属容器为 VmNetworkLeaseV1。
+     * Purpose: Declares the input/result contract for setConnected in VmNetworkLeaseV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: connected: boolean
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     setConnected(connected: boolean): Promise<void>;
+    /**
+     * 签名 / Signature: VmNetworkLeaseV1.forward.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 forward 的输入与结果契约，所属容器为 VmNetworkLeaseV1。
+     * Purpose: Declares the input/result contract for forward in VmNetworkLeaseV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: verb: "remove" | "add"; port: { host: number; guest: number; }
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     forward(verb: "remove" | "add", port: {
         host: number;
         guest: number;
     }): Promise<void>;
+    /**
+     * 签名 / Signature: VmNetworkLeaseV1.renew.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 renew 的输入与结果契约，所属容器为 VmNetworkLeaseV1。
+     * Purpose: Declares the input/result contract for renew in VmNetworkLeaseV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: generation: string
+     * 输出 / Returns: Promise<VmNetworkLeaseV1>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     renew(generation: string): Promise<VmNetworkLeaseV1>;
+    /**
+     * 签名 / Signature: VmNetworkLeaseV1.close.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 VmNetworkLeaseV1。
+     * Purpose: Declares the input/result contract for close in VmNetworkLeaseV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: Promise<void>.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     close(): Promise<void>;
 };
 
 export interface ResourceScopeV1 {
   readonly "signal": AbortSignal;
+  /**
+   * 签名 / Signature: ResourceScopeV1.defer.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 defer 的输入与结果契约，所属容器为 ResourceScopeV1。
+   * Purpose: Declares the input/result contract for defer in ResourceScopeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: name: string; dispose: () => unknown; order: number optional; requires: readonly string[] optional
+   * 输出 / Returns: () => void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "defer": (name: string, dispose: () => unknown, order?: number, requires?: readonly string[]) => () => void;
+  /**
+   * 签名 / Signature: ResourceScopeV1.own.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 own 的输入与结果契约，所属容器为 ResourceScopeV1。
+   * Purpose: Declares the input/result contract for own in ResourceScopeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: name: string; value: T; order: number optional
+   * 输出 / Returns: T.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "own": <T extends {
+    /**
+     * 签名 / Signature: ResourceScopeV1.T.close.
+     * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 ResourceScopeV1.T。
+     * Purpose: Declares the input/result contract for close in ResourceScopeV1.T. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: unknown.
+     * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+     * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+     */
     close(): unknown;
 }>(name: string, value: T, order?: number) => T;
+  /**
+   * 签名 / Signature: ResourceScopeV1.child.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 child 的输入与结果契约，所属容器为 ResourceScopeV1。
+   * Purpose: Declares the input/result contract for child in ResourceScopeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: name: string; order: number optional; owner: string optional
+   * 输出 / Returns: ResourceScopeV1.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "child": (name: string, order?: number, owner?: string) => ResourceScopeV1;
+  /**
+   * 签名 / Signature: ResourceScopeV1.retryCleanup.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 retryCleanup 的输入与结果契约，所属容器为 ResourceScopeV1。
+   * Purpose: Declares the input/result contract for retryCleanup in ResourceScopeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "retryCleanup": () => Promise<void>;
+  /**
+   * 签名 / Signature: ResourceScopeV1.close.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 ResourceScopeV1。
+   * Purpose: Declares the input/result contract for close in ResourceScopeV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   "close": () => Promise<void>;
 }
 
 export interface CapabilityChecksV1 {
+  /**
+   * 签名 / Signature: CapabilityChecksV1.acmeAllowed.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 acmeAllowed 的输入与结果契约，所属容器为 CapabilityChecksV1。
+   * Purpose: Declares the input/result contract for acmeAllowed in CapabilityChecksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: boolean.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   acmeAllowed(): boolean;
+  /**
+   * 签名 / Signature: CapabilityChecksV1.mutation.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 mutation 的输入与结果契约，所属容器为 CapabilityChecksV1。
+   * Purpose: Declares the input/result contract for mutation in CapabilityChecksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: delta: number
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   mutation(delta: number): void;
+  /**
+   * 签名 / Signature: CapabilityChecksV1.scoreHosts.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 scoreHosts 的输入与结果契约，所属容器为 CapabilityChecksV1。
+   * Purpose: Declares the input/result contract for scoreHosts in CapabilityChecksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: ReturnType<HostPeersV1['score']>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   scoreHosts(input: unknown): ReturnType<HostPeersV1['score']>;
+  /**
+   * 签名 / Signature: CapabilityChecksV1.sharedDesktopCheck.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sharedDesktopCheck 的输入与结果契约，所属容器为 CapabilityChecksV1。
+   * Purpose: Declares the input/result contract for sharedDesktopCheck in CapabilityChecksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ ready: boolean; reason?: string }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   sharedDesktopCheck(id: string): Promise<{ ready: boolean; reason?: string }>;
+  /**
+   * 签名 / Signature: CapabilityChecksV1.sharedTerminalCheck.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 sharedTerminalCheck 的输入与结果契约，所属容器为 CapabilityChecksV1。
+   * Purpose: Declares the input/result contract for sharedTerminalCheck in CapabilityChecksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<{ ready: boolean; reason?: string }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   sharedTerminalCheck(id: string): Promise<{ ready: boolean; reason?: string }>;
+  /**
+   * 签名 / Signature: CapabilityChecksV1.passkeyCheck.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 passkeyCheck 的输入与结果契约，所属容器为 CapabilityChecksV1。
+   * Purpose: Declares the input/result contract for passkeyCheck in CapabilityChecksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { ready: boolean; registered: number; reason?: string }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   passkeyCheck(): { ready: boolean; registered: number; reason?: string };
+  /**
+   * 签名 / Signature: CapabilityChecksV1.accountModeReady.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 accountModeReady 的输入与结果契约，所属容器为 CapabilityChecksV1。
+   * Purpose: Declares the input/result contract for accountModeReady in CapabilityChecksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: boolean.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   accountModeReady(): boolean;
+  /**
+   * 签名 / Signature: CapabilityChecksV1.mobileCheck.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 mobileCheck 的输入与结果契约，所属容器为 CapabilityChecksV1。
+   * Purpose: Declares the input/result contract for mobileCheck in CapabilityChecksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: { ready: boolean; devices: number; reason?: string }.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   mobileCheck(): { ready: boolean; devices: number; reason?: string };
+  /**
+   * 签名 / Signature: CapabilityChecksV1.remoteAuditCheck.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 remoteAuditCheck 的输入与结果契约，所属容器为 CapabilityChecksV1。
+   * Purpose: Declares the input/result contract for remoteAuditCheck in CapabilityChecksV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<{ ready: boolean; configured: boolean; anchoredSequence: number; reason?: string }>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   remoteAuditCheck(): Promise<{ ready: boolean; configured: boolean; anchoredSequence: number; reason?: string }>;
 }
 
 /** Management access keeps the domain's recovery authority behind its versioned interface. */
 export interface RecoveryCatalogV1 {
+  /**
+   * 签名 / Signature: RecoveryCatalogV1.refresh.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 refresh 的输入与结果契约，所属容器为 RecoveryCatalogV1。
+   * Purpose: Declares the input/result contract for refresh in RecoveryCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<RecoveryView[]>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   refresh(): Promise<RecoveryView[]>;
+  /**
+   * 签名 / Signature: RecoveryCatalogV1.view.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 RecoveryCatalogV1。
+   * Purpose: Declares the input/result contract for view in RecoveryCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: RecoveryView[].
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   view(): RecoveryView[];
+  /**
+   * 签名 / Signature: RecoveryCatalogV1.diagnostics.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 diagnostics 的输入与结果契约，所属容器为 RecoveryCatalogV1。
+   * Purpose: Declares the input/result contract for diagnostics in RecoveryCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: RecoveryDiagnostics.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   diagnostics(): RecoveryDiagnostics;
+  /**
+   * 签名 / Signature: RecoveryCatalogV1.retry.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 retry 的输入与结果契约，所属容器为 RecoveryCatalogV1。
+   * Purpose: Declares the input/result contract for retry in RecoveryCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<RecoveryView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   retry(input: unknown): Promise<RecoveryView>;
+  /**
+   * 签名 / Signature: RecoveryCatalogV1.rebuild.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 rebuild 的输入与结果契约，所属容器为 RecoveryCatalogV1。
+   * Purpose: Declares the input/result contract for rebuild in RecoveryCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: Promise<RecoveryCatalogView>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   rebuild(input: unknown): Promise<RecoveryCatalogView>;
+  /**
+   * 签名 / Signature: RecoveryCatalogV1.close.
+   * 功能：为维护独立于实现的 V1 公共服务接口声明 close 的输入与结果契约，所属容器为 RecoveryCatalogV1。
+   * Purpose: Declares the input/result contract for close in RecoveryCatalogV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   close(): Promise<void>;
 }

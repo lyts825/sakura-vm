@@ -1,4 +1,5 @@
-/** 使用独立 VS Code Remote-SSH 用户配置与探针扩展核对项目远端身份，并保存真实客户端证据。 */
+/** 使用独立 VS Code Remote-SSH 用户配置与探针扩展核对项目远端身份，并保存真实客户端证据。
+ * Drive a real VS Code client against the owned workspace and verify remote project identity. */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
@@ -12,6 +13,8 @@ const run = promisify(execFile);
 type Project = { id: string; name: string; path: string; alias: string; home: string; uid: number; gid: number };
 
 /** Runs an actual desktop Remote-SSH window with an isolated profile and workspace extension. */
+/** 定位真实桌面 Code CLI 并建立自有便携配置、扩展和 SSH 设置；按项目运行远端扩展主机探针，核验编辑保存、UID/网络隔离，保留记录并清理自有进程。
+ * Locate the real desktop Code CLI and prepare owned portable profiles/extensions/SSH settings; run per-project remote-extension probes for editing/saves/UID/network isolation, retaining evidence and cleaning owned processes. */
 export async function projectVscodeClientSmoke(root: string, sshConfig: string,
   projects: Project[], external: (alias: string, script: string, timeout?: number) => Promise<string>) {
   const executable = process.env.SAKURA_SSH_VSCODE_CLIENT;
@@ -137,6 +140,8 @@ export async function projectVscodeClientSmoke(root: string, sshConfig: string,
   await writeFile(join(root, 'vscode-client-evidence.json'), JSON.stringify(evidence, null, 2));
 }
 
+/** 生成在远端 VS Code 扩展主机运行的探针，验证 Linux/SSH 上下文、项目账号与文件映射；通过真实编辑 API 保存文件，并观察子进程域和外网阻断。
+ * Generate a remote VS Code extension-host probe validating Linux/SSH context/project account/file mapping; save through real editor APIs and observe child domains/external-network denial. */
 function workspaceProbe(project: Project, output: string, nonce: string) {
   // This code executes in the Linux workspace extension host of the real desktop client.
   return `const vscode=require('vscode'), fs=require('node:fs'), cp=require('node:child_process'), net=require('node:net');

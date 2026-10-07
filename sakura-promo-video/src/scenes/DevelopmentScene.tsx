@@ -1,9 +1,12 @@
-/** 开发章节的编辑、Git 差异、运行与调试示意，按旁白 cue 逐步呈现工作流程。 */
+/** 开发章节的编辑、Git 差异、运行与调试示意，按旁白 cue 逐步呈现工作流程。
+ * Illustrate editing/Git differences/run/debug workflows incrementally at narration cues. */
 import {Interactive} from 'remotion';
 import {Icon} from '../components';
 import {Badge, Chapter, ScenePaper, type SceneProps, SoftFocus, Terminal, Typed, useScene, Window} from '../stage';
 import {colors, font} from '../theme';
 
+/** 按局部旁白时间推进模板选择、编辑差异和终端运行的示意状态，表达开发插件间的工作流。
+ * Advance template selection, edit differences and terminal-run states from local narration cues to illustrate the development-plugin workflow. */
 const DevelopmentInner: React.FC<SceneProps> = ({style}) => {
   const {seconds, cue} = useScene('development');
   const edited = seconds > cue(1) + 1;

@@ -1,4 +1,5 @@
-/** 校验插件清单、整合包和操作声明的对应关系，并结合源码契约与版本服务接口检查可用边界。 */
+/** 校验插件清单、整合包和操作声明的对应关系，并结合源码契约与版本服务接口检查可用边界。
+ * Validate plugin/pack/operation declarations against source contracts and versioned public service interfaces. */
 import { strict as assert } from 'node:assert';
 import { existsSync } from 'node:fs';
 import { loaders, validateRegistry } from '../server/plugins/registry.ts';

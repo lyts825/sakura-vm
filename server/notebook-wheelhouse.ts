@@ -1,5 +1,6 @@
 /**
  * 模块职责：声明固定 Notebook 包来源并构造离线安装命令，校验 wheelhouse 租约与路径一致性。
+ * Module purpose: Declares pinned Notebook packages and offline installation commands, checking wheelhouse lease/path identity.
  */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -24,6 +25,17 @@ export const notebookWheelLeaseSchema = z.object({ version: z.literal(1), leaseI
 });
 export type NotebookWheelLease = z.infer<typeof notebookWheelLeaseSchema>;
 export type NotebookWheelRequest = { leaseId: string; bootId: string; provider: NotebookProvider };
+/**
+ * 入口 / Entry: notebookWheelRequest.
+ * 功能：在声明固定 Notebook 包来源并构造离线安装命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `({ leaseId: randomUUID(), bootId: z.uuid().parse(bootId), provider: notebookProviderSchema.parse(provider), })` 供上层消费（`notebook-wheelhouse.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `notebook-wheelhouse.ts`; this entry produces `({ leaseId: randomUUID(), bootId: z.uuid().parse(bootId), provider: notebookProviderSchema.parse(provider), })` for its caller. Module context: Declares pinned Notebook packages and offline installation commands, checking wheelhouse lease/path identity.
+ * 处理：通过 `randomUUID`, `z.uuid().parse`, `z.uuid`, `notebookProviderSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `randomUUID`, `z.uuid().parse`, `z.uuid`, `notebookProviderSchema.parse`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: bootId: string; provider: NotebookProvider
+ * 输出 / Returns: NotebookWheelRequest；结果来自 / values from `({ leaseId: randomUUID(), bootId: z.uuid().parse(bootId), provider: notebookProviderSchema.parse(provider), })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const notebookWheelRequest = (bootId: string, provider: NotebookProvider): NotebookWheelRequest => ({
   leaseId: randomUUID(), bootId: z.uuid().parse(bootId), provider: notebookProviderSchema.parse(provider),
 });
@@ -84,6 +96,18 @@ def verified(lease,with_manifest=False):
 `;
 
 /** Fixed administrator environment, package names and public index; no project configuration. */
+/**
+ * 入口 / Entry: notebookWheelhouseCommand.
+ * 功能：在声明固定 Notebook 包来源并构造离线安装命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `command` 供上层消费（`notebook-wheelhouse.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `notebook-wheelhouse.ts`; this entry produces `command` for its caller. Module context: Declares pinned Notebook packages and offline installation commands, checking wheelhouse lease/path identity.
+ * 处理：通过 `notebookWheelLeaseSchema.parse`, `z.object().strict().parse`, `z.object().strict`, `z.object` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `notebookWheelLeaseSchema.parse`, `z.object().strict().parse`, `z.object().strict`, `z.object`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `operation === 'cleanup'`.
+ * 输入 / Inputs: operation: 'download' | 'cleanup'; request: ReturnType<typeof notebookWheelRequest> | NotebookWheelLease
+ * 输出 / Returns: `command`.
+ * 副作用 / Effects: 更新 / updates `value`.
+ * 拒绝 / Refusals: 条件 / conditions `Buffer.byteLength(command, 'utf8') > 16384`; 异常 / errors `new AppError('Notebook 固定管理员命令超过运输边界', 413, 'NOTEBOOK_PREPARE_FAILED')`.
+ */
 export function notebookWheelhouseCommand(operation: 'download' | 'cleanup', request:
   ReturnType<typeof notebookWheelRequest> | NotebookWheelLease) {
   let value;
@@ -159,6 +183,17 @@ else:
 }
 
 /** The verifier and every project path run only after the native UID/GID drop. */
+/**
+ * 入口 / Entry: notebookInstallExecution.
+ * 功能：在声明固定 Notebook 包来源并构造离线安装命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'set -eu\numask 077\n' + '/usr/bin/python3 -I -S -c ' + quote(check) + '\n' + '/usr/bin/python3 -I -m venv --without-pip ' + …` 供上层消费（`notebook-wheelhouse.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `notebook-wheelhouse.ts`; this entry produces `'set -eu\numask 077\n' + '/usr/bin/python3 -I -S -c ' + quote(check) + '\n' + '/usr/bin/python3 -I -m venv --without-pip ' + …` for its caller. Module context: Declares pinned Notebook packages and offline installation commands, checking wheelhouse lease/path identity.
+ * 处理：通过 `notebookWheelLeaseSchema.parse`, `lease.files.filter`, `identity.directory.replace`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `notebookWheelLeaseSchema.parse`, `lease.files.filter`, `identity.directory.replace`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: identity: ProjectIdentity; lease: NotebookWheelLease
+ * 输出 / Returns: `'set -eu\numask 077\n' + '/usr/bin/python3 -I -S -c ' + quote(check) + '\n' + '/usr/bin/python3 -I -m venv --without-pip ' + …`.
+ * 副作用 / Effects: `identity.directory.replace`; 更新 / updates `lease`.
+ * 拒绝 / Refusals: 条件 / conditions `pip.length !== 1`; 异常 / errors `new AppError('Notebook 缺少唯一已核对 pip wheel', 409, 'NOTEBOOK_PREPARE_FAILED')`.
+ */
 export function notebookInstallExecution(identity: ProjectIdentity, lease: NotebookWheelLease) {
   lease = notebookWheelLeaseSchema.parse(lease);
   const pip = lease.files.filter(file => /^pip-[0-9][A-Za-z0-9_.+\-]*\.whl$/.test(file.name));
@@ -189,6 +224,15 @@ export function notebookInstallExecution(identity: ProjectIdentity, lease: Noteb
 }
 
 /** Read project-generated metadata without running its Python, imports or executable. */
+/**
+ * 入口 / Entry: notebookInstalledCommand.
+ * 功能：从当前输入或状态计算 `'# SAKURA_NOTEBOOK_INSTALLED\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -…`，供调用方后续验证或使用。
+ * Purpose: Computes `'# SAKURA_NOTEBOOK_INSTALLED\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: identity: ProjectIdentity; provider: NotebookProvider
+ * 输出 / Returns: `'# SAKURA_NOTEBOOK_INSTALLED\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function notebookInstalledCommand(identity: ProjectIdentity, provider: NotebookProvider) {
   const expected = { version: 1, provider, registryId: identity.registryId, identityId: identity.identityId,
     revision: identity.revision, uid: identity.uid, gid: identity.gid,

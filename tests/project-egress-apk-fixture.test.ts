@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - APK fixture serves only frozen binary files and actually closes all sockets
- * - APK fixture rejects changed bytes, duplicate entries and nonofficial source URLs before serving
- * - APK fixture requires both indexes, refuses path traversal and records changed cache after serving
+ * 模块职责：共享测试夹具模块，围绕 `project-egress-apk-fixture` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Shared test fixture for `project-egress-apk-fixture`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: APK fixture serves only frozen binary files and actually closes all sockets; APK fixture rejects changed bytes, duplicate entries and nonofficial source URLs before serving.
  */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -13,6 +14,16 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { startAlpineApkFixture } from '../scripts/project-egress-apk-fixture.ts';
 
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回受控对象，公开字段包括 `root, path, manifest`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `root, path, manifest`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `Buffer.from`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'sakura-apk-fixture-'));
   const files: Array<{ repo: string; name: string; size: number; sha256: string; url: string }> = [];
@@ -33,6 +44,13 @@ async function fixture() {
   await writeFile(path, JSON.stringify(manifest), { flag: 'wx' });
   return { root, path, manifest };
 }
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: port: number; path: string; method = 'GET'。
+ * 结果：返回分支计算值（`await new Promise<{ code: number; bytes: Buffer }>((done, reject) => { const cli…`），以 Promise 交付。
+ * Result: Return the branch-computed value (`await new Promise<{ code: number; bytes: Buffer }>((done, reject) => { const cli…`) through a Promise.
+ */
 async function fetchFixture(port: number, path: string, method = 'GET') {
   return await new Promise<{ code: number; bytes: Buffer }>((done, reject) => {
     const client = request({ hostname: '127.0.0.1', port, path, method }, response => {
@@ -46,6 +64,18 @@ async function fetchFixture(port: number, path: string, method = 'GET') {
   });
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: APK fixture serves only frozen binary files and actually closes all sockets
+ * 协作入口 / Collaborators: `fixture`, `startAlpineApkFixture`, `fetchFixture`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.equal(binary.code, 200)`; `assert.deepEqual(binary.bytes, Buffer.from([0, 255, 10, 13, 42]))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('APK fixture serves only frozen binary files and actually closes all sockets', async () => {
   const local = await fixture();
   const server = await startAlpineApkFixture(local.path);
@@ -71,6 +101,19 @@ test('APK fixture serves only frozen binary files and actually closes all socket
   }));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: APK fixture rejects changed bytes, duplicate entries and nonofficial source URLs before serving
+ * 状态影响 / State effects: `wrongSource.manifest.files[0].url`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `writeFile`, `join`, `Buffer.alloc`.
+ * 检查边界 / Checked boundaries: `assert.rejects(startAlpineApkFixture(changed.path), /digest mismatch/)`; `assert.rejects(startAlpineApkFixture(duplicate.path), /duplicate/)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('APK fixture rejects changed bytes, duplicate entries and nonofficial source URLs before serving', async () => {
   const changed = await fixture();
   await writeFile(join(changed.root, 'main/x86_64/test-package-1.0-r0.apk'), Buffer.alloc(5, 1));
@@ -85,6 +128,19 @@ test('APK fixture rejects changed bytes, duplicate entries and nonofficial sourc
   await assert.rejects(startAlpineApkFixture(wrongSource.path));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: APK fixture requires both indexes, refuses path traversal and records changed cache after serving
+ * 状态影响 / State effects: `missing.manifest.files`, `traversal.manifest.files[0].name`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `fixture`, `missing.manifest.files.filter`, `writeFile`, `JSON.stringify`.
+ * 检查边界 / Checked boundaries: `assert.rejects(startAlpineApkFixture(missing.path))`; `assert.rejects(startAlpineApkFixture(traversal.path))`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('APK fixture requires both indexes, refuses path traversal and records changed cache after serving', async () => {
   const missing = await fixture();
   missing.manifest.files = missing.manifest.files.filter(entry => entry.repo !== 'community');

@@ -1,5 +1,8 @@
 /**
- * 模块职责：“项目工作区”插件的项目切换、配置、运行状态与目录迁移工作台，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“项目工作区”插件的项目切换、配置、运行状态与目录迁移工作台，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for project configuration, identities and running services.
+ * 详细范围（中文）：公开入口包括 ProjectPanel, tabs；职责覆盖项目配置、账号与运行服务的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include ProjectPanel, tabs. The scope covers UI interaction and state presentation for project configuration, identities and running services. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { embeddedPluginComponent } from '../../src/plugin-client';
 import { ExternalLink, Play, Save, Square } from 'lucide-react';
@@ -13,10 +16,24 @@ import { executeProjectAction, type ProjectAction } from '../../src/project-acti
 import { workspaceRequest } from '../../src/workspace-request';
 import { TerminalPanel } from '../../src/TerminalPanel';
 import { EnvironmentEditor, ProjectConnections, ServiceEditor } from './editors';
+/**
+ * 中文：懒加载 ../service-health/client 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码
+ * English: Lazily load ../service-health/client and adapt its selected export as the default React component, deferring this feature's UI code download
+ */
 const loadHealthPanel = () =>
   import('../service-health/client').then((module) => ({ default: module.HealthPanel }));
+/**
+ * 中文：懒加载 ../secrets/client 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码
+ * English: Lazily load ../secrets/client and adapt its selected export as the default React component, deferring this feature's UI code download
+ */
 const loadSecretReferences = () =>
   import('../secrets/client').then((module) => ({ default: module.SecretReferences }));
+/**
+ * 中文：把服务运行、退出、准备和迁移等状态映射为明确显示文字，未知值显示未确认，避免误称已启动。
+ * English: Map running/exited/prepared/migration service states to explicit display text and unknown values to unconfirmed, avoiding false started claims.
+ * 中文：输入：status：签名所示 string 业务值
+ * English: Inputs: status: the string domain value in the signature
+ */
 const serviceStatus = (status: string) =>
   (
     ({
@@ -30,6 +47,24 @@ const serviceStatus = (status: string) =>
     }) as Record<string, string>
   )[status] || '状态未确认';
 
+/**
+ * 中文：呈现项目配置、账号与运行服务的界面交互与状态呈现中的 DirectoryPermissions 界面，订阅 endpoint，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the DirectoryPermissions surface for UI interaction and state presentation for project configuration, identities and running services, subscribing to endpoint. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  request,
+  vmId,
+  enabled,
+  networkPrivate,
+  applied,
+} 提供 request（带身份和权限作用域的传输能力）、vmId（当前实例标识）、enabled（是否启用本能力或读取流程）、networkPrivate（networkPrivate 状态）、applied（applied 状态） 上下文字段
+ * English: Inputs: {
+  request,
+  vmId,
+  enabled,
+  networkPrivate,
+  applied,
+} provides context fields request (transport capability bound to identity/authority scope), vmId (current VM identifier), enabled (whether this capability/read flow is enabled), networkPrivate (networkPrivate state), applied (applied state)
+ */
 function DirectoryPermissions({
   request,
   vmId,
@@ -41,14 +76,14 @@ function DirectoryPermissions({
   vmId: string;
   enabled: boolean;
   networkPrivate: boolean;
-  applied: () => void;
+  applied: /** 中文：在配置应用后通知外层恢复最新视图；这是 DirectoryPermissions 的调用契约 | English: Notify the outer owner to restore current views after configuration application; this is the callable contract of DirectoryPermissions | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ () => void;
 }) {
   const endpoint = `/vms/${vmId}/project-directory-migration`;
   const remote = useRemote<DirectoryMigrationView>(request, endpoint, enabled, 5000);
   const action = useAction(),
     plan = remote.data?.plan;
   const [reviewed, setReviewed] = useState(false);
-  useEffect(() => setReviewed(false), [plan?.sha256, remote.data?.projectId]);
+  useEffect(/** 中文：当依赖 [plan?.sha256, remote.data?.projectId] 变化时reviewed 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [plan?.sha256, remote.data?.projectId] change, reviewed state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership */ () => setReviewed(false), [plan?.sha256, remote.data?.projectId]);
   return (
     <details className="feature-card">
       <summary>目录账户权限</summary>
@@ -65,7 +100,7 @@ function DirectoryPermissions({
           className="secondary compact"
           disabled={!enabled || action.busy}
           onClick={() =>
-            void action.run(async (signal) => {
+            void action.run(/** 中文：提交 POST endpoint，完成项目配置、账号与运行服务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST endpoint for UI interaction and state presentation for project configuration, identities and running services. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
               await request(endpoint, 'POST', { action: 'preview', version: 1 }, signal);
               remote.reload();
             })
@@ -136,7 +171,7 @@ function DirectoryPermissions({
                 className="secondary compact"
                 disabled={!enabled || action.busy || !reviewed}
                 onClick={() =>
-                  void action.run(async (signal) => {
+                  void action.run(/** 中文：提交 POST endpoint，完成项目配置、账号与运行服务的界面交互与状态呈现的数据交互并更新reviewed 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST endpoint for UI interaction and state presentation for project configuration, identities and running services and update reviewed state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断 | English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately */ async (signal) => {
                     try {
                       await request(
                         endpoint,
@@ -168,6 +203,12 @@ function DirectoryPermissions({
   );
 }
 
+/**
+ * 中文：呈现项目配置、账号与运行服务的界面交互与状态呈现中的 ProjectPanel 界面，订阅 /vms/{vm.id}/project、/vms/{vm.id}/projects、/vms/{vm.id}/project-runtime，组合 EnvironmentEditor、ServiceEditor、Save、Play、Square、ExternalLink、TerminalPanel、DirectoryPermissions，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ProjectPanel surface for UI interaction and state presentation for project configuration, identities and running services, subscribing to /vms/{vm.id}/project, /vms/{vm.id}/projects, /vms/{vm.id}/project-runtime and composing EnvironmentEditor, ServiceEditor, Save, Play, Square, ExternalLink, TerminalPanel, DirectoryPermissions. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：props：签名所示 FeatureProps 业务值
+ * English: Inputs: props: the FeatureProps domain value in the signature
+ */
 export function ProjectPanel(props: FeatureProps) {
   const { vm, request: baseRequest, refresh, projectId: selectedProjectId, onProjectChange } = props;
   const request = useMemo(
@@ -191,7 +232,7 @@ export function ProjectPanel(props: FeatureProps) {
     [loadedProjectId, setLoadedProjectId] = useState('');
   const [shellProjectId, setShellProjectId] = useState<string | null>(null);
   const action = useAction();
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [loadedProjectId, onProjectChange, project, remote.data] 变化时project 状态，loadedProjectId 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [loadedProjectId, onProjectChange, project, remote.data] change, project state, loadedProjectId state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (!remote.data) return;
     const nextId = remote.data.projectId || 'default';
     onProjectChange?.(nextId);
@@ -201,13 +242,25 @@ export function ProjectPanel(props: FeatureProps) {
       setLoadedProjectId(nextId);
     }
   }, [loadedProjectId, onProjectChange, project, remote.data]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [onProjectChange, projects.data] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [onProjectChange, projects.data] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (projects.data) onProjectChange?.(projects.data.active);
   }, [onProjectChange, projects.data]);
-  useEffect(() => setShellProjectId(null), [remote.data?.projectId]);
+  useEffect(/** 中文：当依赖 [remote.data?.projectId] 变化时shellProjectId 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data?.projectId] change, shellProjectId state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership */ () => setShellProjectId(null), [remote.data?.projectId]);
+  /**
+   * 中文：在项目配置、账号与运行服务的界面交互与状态呈现流程中project 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In UI interaction and state presentation for project configuration, identities and running services, project state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：patch：只包含修改字段的增量
+   * English: Inputs: patch: delta containing modified fields only
+   */
   const edit = (patch: Partial<Project>) => setProject((p) => p && { ...p, ...patch });
+  /**
+   * 中文：执行登记的 插件 任务，将任务上下文和校验后的资源参数交给 action.run；进度和失败通过原任务服务契约交付
+   * English: Execute the registered plugin job, delegating its context and validated resource arguments to action.run; deliver progress/failure through the existing job-service contract
+   * 中文：输入：kind：签名所示 ProjectAction 业务值
+   * English: Inputs: kind: the ProjectAction domain value in the signature
+   */
   const execute = (kind: ProjectAction) =>
-    action.run(async (signal) => {
+    action.run(/** 中文：在项目配置、账号与运行服务的界面交互与状态呈现流程中触发所属资源重新读取；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In UI interaction and state presentation for project configuration, identities and running services, trigger rereading of the owned resource. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：取消边界：执行前或关键异步步骤检查已取消信号，取消后不继续提交下一步工作 | English: Cancellation boundary: check aborted signals before execution/key asynchronous steps; canceled work must not submit the next step */ async (signal) => {
       if (!project) return;
       await executeProjectAction({ request, vm, project, kind, refresh, signal });
       signal.throwIfAborted();
@@ -257,7 +310,7 @@ export function ProjectPanel(props: FeatureProps) {
             <select
               value={projects.data.active}
               onChange={(e) =>
-                void action.run(async (signal) => {
+                void action.run(/** 中文：提交 POST /vms/{vm.id}/projects，完成项目配置、账号与运行服务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/projects for UI interaction and state presentation for project configuration, identities and running services. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                   const next = await request<{ active: string; projects: { id: string; name: string }[] }>(
                     `/vms/${vm.id}/projects`,
                     'POST',
@@ -280,10 +333,17 @@ export function ProjectPanel(props: FeatureProps) {
           <button
             className="secondary compact"
             disabled={action.busy}
-            onClick={() => {
+            onClick={/**
+             * 中文功能：取得非空新项目名称，经可取消 POST 创建项目，切换到返回的 active 项并刷新项目与配置视图。
+             * English: Obtain a nonempty new project name, create it through cancellable POST, select the returned active project and refresh project/configuration views.
+             * 输入 / Inputs: 无 / none.
+             * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+             * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+             */
+            () => {
               const name = prompt('新项目名称');
               if (name?.trim())
-                void action.run(async (signal) => {
+                void action.run(/** 中文：提交 POST /vms/{vm.id}/projects，完成项目配置、账号与运行服务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/projects for UI interaction and state presentation for project configuration, identities and running services. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                   const next = await request<{ active: string; projects: { id: string; name: string }[] }>(
                     `/vms/${vm.id}/projects`,
                     'POST',
@@ -301,10 +361,17 @@ export function ProjectPanel(props: FeatureProps) {
           <button
             className="text-button"
             disabled={action.busy}
-            onClick={() => {
+            onClick={/**
+             * 中文功能：取得非空的新名称，为当前 active 项目提交重命名，再刷新项目列表。
+             * English: Obtain a nonempty new name, submit a rename for the active project and refresh the project list.
+             * 输入 / Inputs: 无 / none.
+             * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+             * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+             */
+            () => {
               const name = prompt('项目新名称');
               if (name?.trim())
-                void action.run(async (signal) => {
+                void action.run(/** 中文：提交 POST /vms/{vm.id}/projects，完成项目配置、账号与运行服务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/projects for UI interaction and state presentation for project configuration, identities and running services. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                   await request(
                     `/vms/${vm.id}/projects`,
                     'POST',
@@ -416,7 +483,7 @@ export function ProjectPanel(props: FeatureProps) {
               className="secondary compact"
               disabled={action.busy || remote.data?.job?.status === 'running'}
               onClick={() =>
-                void action.run(async () => {
+                void action.run(/** 中文：提交 PUT /vms/{vm.id}/project，完成项目配置、账号与运行服务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform PUT /vms/{vm.id}/project for UI interaction and state presentation for project configuration, identities and running services. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                   await request(`/vms/${vm.id}/project`, 'PUT', project);
                   remote.reload();
                 }, '项目配置已保存')
@@ -536,7 +603,7 @@ export function ProjectPanel(props: FeatureProps) {
                 key={kind}
                 disabled={action.busy || remote.data?.job?.status === 'running'}
                 onClick={() =>
-                  void action.run(async () => {
+                  void action.run(/** 中文：提交 POST /vms/{vm.id}/project，完成项目配置、账号与运行服务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/project for UI interaction and state presentation for project configuration, identities and running services. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                     await request(`/vms/${vm.id}/project`, 'POST', { action: kind, service: service.name });
                     remote.reload();
                     runtime.reload();

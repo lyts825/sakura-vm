@@ -1,4 +1,5 @@
-/** HA 烟雾验证的独立目标服务进程，启动生产接收器、公开配对与来宾应用观测，并响应关闭指令。 */
+/** HA 烟雾验证的独立目标服务进程，启动生产接收器、公开配对与来宾应用观测，并响应关闭指令。
+ * Run the independent target service for HA smoke checks, exposing production receiver pairing/guest observations and controlled shutdown. */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import assert from 'node:assert/strict';
 import { randomUUID, X509Certificate } from 'node:crypto';
@@ -20,6 +21,8 @@ const { freePort } = await import('../server/qmp.ts');
 
 type Request = { id: number; action: 'grant' | 'inspect' | 'ready' | 'write' | 'http' | 'stop' | 'lock' | 'shutdown';
   requesterId?: string; targetVmId?: string };
+/** 经父子 IPC 返回关联请求结果；没有 IPC 连接时可选调用不产生额外发送。
+ * Return correlated results over parent/child IPC; an absent IPC channel produces no additional send. */
 const send = (payload: unknown) => process.send?.(payload);
 let engine: Awaited<ReturnType<typeof createRuntime>> | undefined;
 let machines: InstanceType<typeof Machines> | undefined;
@@ -31,6 +34,8 @@ let closing: Promise<void> | undefined;
 const appToken = process.env.SAKURA_HA_TEST_APP_TOKEN!;
 assert.match(appToken, /^[a-f0-9]{64}$/);
 
+/** 校验实例 UUID，在来宾查询回环应用健康接口并严格解析 ready/marker/bootId/pid；执行失败或响应形状异常均拒绝。
+ * Validate the VM UUID, query its loopback application and strictly parse ready/marker/bootId/pid; execution failures or malformed responses reject. */
 async function guestHttp(id: string) {
   z.uuid().parse(id);
   const result = await machines!.exec(id,
@@ -41,6 +46,8 @@ async function guestHttp(id: string) {
     .strict().parse(JSON.parse(result.stdout));
 }
 
+/** 复用唯一关闭 Promise，先停 HTTPS 观测入口，再释放实例、对等主机、会话锁和运行时，防止重复关闭交错。
+ * Reuse one shutdown promise, stopping HTTPS observations before closing machines/peers/session/runtime to avoid interleaved duplicate teardown. */
 function close() {
   return closing ||= (async () => {
     if (application?.listening) await new Promise<void>((done) => application!.close(() => done()));
@@ -50,6 +57,8 @@ function close() {
 
 try {
   engine = await createRuntime(); machines = new Machines(engine); await machines.init();
+  /** 返回此目标进程的主机资源和当前实例计数，供真实对等监听器报告；不启动或修改实例。
+   * Report target host resources and current VM counts for the real peer listener without starting or mutating VMs. */
   const status = async () => ({ platform: process.platform, arch: process.arch,
     cpus: cpus().length, memoryTotal: totalmem(), memoryFree: freemem(), load: [0, 0, 0],
     vmCount: machines!.records.size, runningVms: machines!.live.size });
@@ -59,13 +68,19 @@ try {
   await peers.close(); peers = new HostPeers(status, file, 'HA integration target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {}); await peers.init(true);
   const bundles = new Bundles(machines);
   session = new SessionLock(); await session.init(false);
-  peerHandlers.set(peers, { ...peerHandlers.get(peers), importReceiver: createHostImportReceiver(machines, { bundles: () => bundles,
+  peerHandlers.set(peers, { ...peerHandlers.get(peers), importReceiver: createHostImportReceiver(machines, { /** 提供已初始化的目标 Bundles 实例给接收器，按需解析依赖而不创建第二份状态。
+ * Provide the initialized target Bundles instance to the receiver, resolving the dependency on demand without duplicating state. */ bundles: () => bundles,
+    /** 本隔离 HA 场景没有额外迁移阻塞，返回 false；真实会话锁检查仍由独立入口执行。
+     * Return false because this isolated HA scenario adds no migration block; the separate callback still enforces the real session lock. */
     migrationBlocked: () => false,
+    /** 委托目标会话锁检查控制面是否解锁，锁定时抛错阻断接收器的敏感操作。
+     * Delegate to the target session lock, throwing while locked to block sensitive receiver operations. */
     requireSessionUnlocked: () => session!.requireUnlocked() }) });
   const cert = await generate([{ name: 'commonName', value: 'localhost' }], {
     keyType: 'ec', curve: 'P-256', algorithm: 'sha256',
     notBeforeDate: new Date(Date.now() - 60_000), notAfterDate: new Date(Date.now() + 3600_000) });
-  application = createServer({ cert: cert.cert, key: cert.private }, (req, res) => void (async () => {
+  application = createServer({ cert: cert.cert, key: cert.private }, (req, res) => void (/** 受应用令牌保护的健康端点只检查精确 VM 的就绪标记；来宾访问或协议校验失败返回 503，避免把进程存在误作业务就绪。
+ * The application-token-protected health endpoint checks readiness markers for the exact VM; guest access/protocol failures return 503 instead of treating process existence as application readiness. */ async () => {
     try {
       if (req.headers.authorization !== `Bearer ${appToken}`) {
         res.writeHead(401); res.end(); return;
@@ -86,8 +101,10 @@ try {
   send({ type: 'ready', port, fingerprint: peers.view().fingerprint, hostId: peers.view().hostId,
     code: code.pairing.value, applicationUrl: `https://127.0.0.1:${address.port}/health`,
     applicationFingerprint: new X509Certificate(cert.cert).fingerprint256 });
-  process.on('message', (raw: Request) => {
-    work = work.then(async () => {
+  process.on('message', /** 把父进程 IPC 请求追加到串行工作链，避免授权、锁定、写入和停机交叠；请求 ID 随成功/失败回应回传，shutdown 在清理后断开。
+ * Queue parent IPC requests on one work chain so grants, locking, writes and shutdown do not overlap; echo request IDs in success/failure replies and disconnect only after shutdown cleanup. */ (raw: Request) => {
+    work = work.then(/** 按 action 执行接管授权、控制面锁定、精确目标检查及来宾写入；检查中验证普通 start 受限，异常转成当前 ID 的失败回应，不中断后续队列。
+ * Execute grants, control-plane locking, exact-target inspection and guest writes by action; inspection proves ordinary start is denied, while exceptions become failed replies for this ID without breaking later queued work. */ async () => {
       try {
         let result: unknown;
         if (raw.action === 'grant') {

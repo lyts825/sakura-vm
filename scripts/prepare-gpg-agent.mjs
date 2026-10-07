@@ -1,4 +1,5 @@
-/** 将来宾 GPG agent 固定辅助源码复制为服务器资源，计算文件摘要及整体构建身份。 */
+/** 将来宾 GPG agent 固定辅助源码复制为服务器资源，计算文件摘要及整体构建身份。
+ * Package fixed GnuPG guest resources with source provenance so project forwarding uses the verified implementation. */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

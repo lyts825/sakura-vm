@@ -1,4 +1,5 @@
-/** 烟雾验收：验证编译版 HTTP/网络入口及独立 worker 在安装布局中的行为。 */
+/** 烟雾验收：验证编译版 HTTP/网络入口及独立 worker 在安装布局中的行为。
+ * Smoke acceptance for compiled HTTP/network entries and standalone workers in installed layout. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { copyFile, mkdtemp, mkdir, readFile, writeFile, symlink, unlink, rm } from 'node:fs/promises';
@@ -11,6 +12,8 @@ import { WebSocket } from 'ws';
 import { request as httpRequest, createServer as createHttpServer } from 'node:http';
 
 const root = process.cwd();
+/** 以自有临时状态运行指定插件组合的真实生产包，植入过期任务与损坏恢复记录验收启动清理；收集服务状态/退出/close，finally 关闭并核实目录边界。
+ * Run the real production package with selected plugins in owned temporary state, seed expired jobs/damaged recovery for startup-cleanup checks and capture status/exit/close; finally stop and verify cleanup boundaries. */
 async function probe(selected, expected) {
   const startedAt = new Date().toISOString();
   const data = await mkdtemp(join(tmpdir(), 'sakura-production-'));
@@ -404,7 +407,8 @@ async function probe(selected, expected) {
         assert.equal(await panel.getByRole('alert').count(), 0);
         console.log('Accessibility audit runs under the production CSP without unsafe-eval.');
         assert.match(document.headers()['content-security-policy'], /media-src 'self' blob:;/);
-        const videoCheck = await page.evaluate(async () => {
+        const videoCheck = await page.evaluate(/** 在浏览器真实编码 canvas WebM 再用 blob URL 解码，验证生产 CSP 与媒体能力；编码/解码各有限等待，finally 停 recorder/轨道、移除 video 并释放 URL。
+ * Encode real canvas WebM in the browser and decode a blob URL to verify production CSP/media support, bounding both waits and stopping recorder/tracks, removing video and revoking the URL in finally. */ async () => {
           const canvas = window.document.createElement('canvas');
           canvas.width = canvas.height = 64;
           const paint = canvas.getContext('2d');
@@ -415,17 +419,21 @@ async function probe(selected, expected) {
           const draw = setInterval(() => paint.fillRect(0, 0, 64, 64), 50);
           let url, video;
           try {
-            const blob = await new Promise((resolve, reject) => {
+            const blob = await new Promise(/** 收集 MediaRecorder 非空片段直到真实 stop，再生成同 MIME Blob；编码错误或五秒截止拒绝，外层 finally 负责活动 recorder 和轨道回收。
+ * Collect nonempty MediaRecorder chunks until actual stop and build a same-MIME Blob; reject encoder errors/five-second deadline while outer finally reclaims active recorder/tracks. */ (resolve, reject) => {
               const parts = [],
                 timeout = setTimeout(() => reject(new Error('Encoder timeout')), 5000);
-              recorder.ondataavailable = (event) => {
+              recorder.ondataavailable = /** 仅收集非空编码片段，供停止事件按原 MIME 合成完整媒体 Blob。
+ * Collect only nonempty encoded chunks so the stop event can assemble the complete media Blob with its original MIME. */ (event) => {
                 if (event.data.size) parts.push(event.data);
               };
-              recorder.onerror = () => {
+              recorder.onerror = /** 编码失败时清除编码截止计时器并拒绝等待，外层清理仍需停止采集轨道。
+ * Clear the encoding deadline and reject on encoder failure; outer cleanup still stops capture tracks. */ () => {
                 clearTimeout(timeout);
                 reject(new Error('Encoder failed'));
               };
-              recorder.onstop = () => {
+              recorder.onstop = /** 真实 recorder 停止后撤销编码截止，将全部片段合成原 MIME Blob 兑现，不以固定等待时间假设编码已完成。
+ * On actual recorder stop clear the encoding deadline and resolve all chunks as the original-MIME Blob rather than assuming a fixed delay proves completion. */ () => {
                 clearTimeout(timeout);
                 resolve(new Blob(parts, { type: recorder.mimeType }));
               };
@@ -438,11 +446,13 @@ async function probe(selected, expected) {
             url = URL.createObjectURL(blob);
             const decoded = new Promise((resolve, reject) => {
               const timeout = setTimeout(() => reject(new Error('Video decode timeout')), 5000);
-              video.onloadeddata = () => {
+              video.onloadeddata = /** 首帧加载后撤销解码截止并返回 videoWidth，以非零图像宽度证明 blob 能实际解码。
+ * After initial frame load clear the decode deadline and return videoWidth, using image width as actual blob-decoding evidence. */ () => {
                 clearTimeout(timeout);
                 resolve(video.videoWidth);
               };
-              video.onerror = () => {
+              video.onerror = /** CSP 或媒体解码失败时撤销截止并拒绝等待，不把成功生成 Blob 等同于可播放。
+ * Clear the deadline and reject CSP/media-decoding failures instead of equating Blob generation with playback capability. */ () => {
                 clearTimeout(timeout);
                 reject(new Error('CSP or decoder rejected video'));
               };
@@ -696,7 +706,8 @@ async function probe(selected, expected) {
         await new Promise((done) => receiver.close(done));
       }
       const modelCalls = [];
-      const modelServer = createHttpServer(async (req, res) => {
+      const modelServer = createHttpServer(/** 记录本轮模型协议路径/JSON 输入，按 show/tags/chat 返回固定夹具响应；仅验证生产请求协议和 UI 流程，回复不宣称真实推理。
+ * Record model-protocol paths/JSON input and return fixed show/tags/chat fixture responses, testing production request protocol/UI flows without claiming actual inference. */ async (req, res) => {
         let raw = '';
         for await (const chunk of req) raw += chunk;
         modelCalls.push({ path: req.url, body: raw ? JSON.parse(raw) : undefined });
@@ -765,6 +776,8 @@ async function probe(selected, expected) {
     failure = String(error);
     throw error;
   } finally {
+    /** 对实际 close Promise 加有限等待，超时返回 false，finally 清理计时器，供分级终止判断。
+     * Bound waiting for the actual close promise, returning false on expiry and clearing the timer in finally for termination escalation. */
     async function waitForClose(milliseconds) {
       let timeout;
       try { return await Promise.race([closed, new Promise(done => { timeout = setTimeout(() => done(false), milliseconds); })]); }

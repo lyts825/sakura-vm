@@ -1,6 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - migration fence is written only at QEMU switchover and blocks source restart after recovery
+ * 模块职责：回归验证模块，围绕 `live-migration-fence` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `live-migration-fence`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: migration fence is written only at QEMU switchover and blocks source restart after recovery.
  */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
@@ -24,8 +27,34 @@ after(async () => {
 });
 
 for (const stopMode of ['ordinary', 'completion', 'incident'] as const)
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 状态影响 / State effects: `machines.exec`, `live.incoming`, `live.status`, `restored.get(id).liveMigrationFence`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `machines.init`, `randomUUID`, `new Date().toISOString`, `mkdir`.
+ * 检查边界 / Checked boundaries: `assert.rejects(machines.suspend(id), { code: 'LIVE_MIGRATION_SOURCE_FENCED' })`; `assert.rejects(machines.memorySnapshot(id, 'fenced'), { code: 'LIVE_MIGRATION_SOURCE_FENCED' })`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test(`manual run transitions honor a fence and ${stopMode} stop persists native exit for host restart`, async () => {
-  const engine = { whpxAvailable: false, runtime: { close: async () => {} },
+  const engine = { whpxAvailable: false, runtime: { /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   */
+  close: async () => {} },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _tool: string; _args: string[]; options: { signal: AbortSignal }。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     */
     run: async (_tool: string, _args: string[], options: { signal: AbortSignal }) => {
       await new Promise<void>(resolve => options.signal.addEventListener('abort', () => resolve(), { once: true }));
     },
@@ -41,7 +70,15 @@ test(`manual run transitions honor a fence and ${stopMode} stop persists native 
       status: 'prepared', createdAt: now, updatedAt: now,
     } });
   let gracefulExecutions = 0;
-  machines.exec = async () => { gracefulExecutions++; throw new Error('fenced source must not execute'); };
+  machines.exec = /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 失败 / Failure: `new Error('fenced source must not execute')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   */
+  async () => { gracefulExecutions++; throw new Error('fenced source must not execute'); };
   try {
     await machines.startIncoming(id);
     const live = machines.live.get(id)!;
@@ -81,8 +118,29 @@ test(`manual run transitions honor a fence and ${stopMode} stop persists native 
   } finally { await machines.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: migration fence is written only at QEMU switchover and blocks source restart after recovery
+ * 状态影响 / State effects: `state`, `migration`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `machines.init`, `randomUUID`, `new Date().toISOString`, `machines.records.set`.
+ * 检查边界 / Checked boundaries: `assert.rejects(machines.fenceForLiveMigration(id, identity, query), /尚未在迁移切换点暂停/)`; `assert.equal(machines.get(id).liveMigrationFence, undefined)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('migration fence is written only at QEMU switchover and blocks source restart after recovery', async () => {
-  const engine = { runtime: { close: async () => {} } } as Engine;
+  const engine = { runtime: { /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: migration fence is written only at QEMU switchover and blocks source restart after recovery
+   */
+  close: async () => {} } } as Engine;
   const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
@@ -93,6 +151,14 @@ test('migration fence is written only at QEMU switchover and blocks source resta
   const identity = { targetHostId: randomUUID(), targetVmId: randomUUID(),
     transferId: randomUUID() };
   let state = { running: true }, migration = { status: 'active' };
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: _port: number; command: string。
+   * 结果：返回分支计算值（`command === 'query-status' ? state : migration`），以 Promise 交付。
+   * Result: Return the branch-computed value (`command === 'query-status' ? state : migration`) through a Promise.
+   * 验证场景 / Scenario: migration fence is written only at QEMU switchover and blocks source restart after recovery
+   */
   const query = async (_port: number, command: string) =>
     command === 'query-status' ? state : migration;
   try {

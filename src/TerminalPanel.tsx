@@ -1,5 +1,8 @@
 /**
- * 模块职责：装配 xterm 终端、尺寸适配和 WebSocket 连接，处理输入、剪贴板与终端资源释放。
+ * 模块职责（中文）：装配 xterm 终端、尺寸适配和 WebSocket 连接，处理输入、剪贴板与终端资源释放。
+ * Module responsibility (English): Composing xterm, WebSocket transport, resize handling and input cleanup.
+ * 详细范围（中文）：公开入口包括 TerminalPanel；职责覆盖装配 xterm、WebSocket、尺寸适配和输入清理，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include TerminalPanel. The scope covers Composing xterm, WebSocket transport, resize handling and input cleanup. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
@@ -10,6 +13,24 @@ import { controllerSession } from './controller-session';
 import { connectTerminal } from './terminal-connection';
 import { socketPath } from '../shared/socket-client.ts';
 
+/**
+ * 中文：呈现装配 xterm、WebSocket、尺寸适配和输入清理中的 TerminalPanel 界面，组合 Minus、Plus、Trash2、RefreshCw、Unplug、TerminalSquare、Play，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the TerminalPanel surface for Composing xterm, WebSocket transport, resize handling and input cleanup and composing Minus, Plus, Trash2, RefreshCw, Unplug, TerminalSquare, Play. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{
+  vm,
+  start,
+  busy,
+  session,
+  projectId,
+} 提供 vm（vm 状态）、start（start 状态）、busy（忙碌标记）、session（目标终端或桌面会话）、projectId（当前项目标识） 上下文字段
+ * English: Inputs: {
+  vm,
+  start,
+  busy,
+  session,
+  projectId,
+} provides context fields vm (vm state), start (start state), busy (busy flag), session (target terminal/desktop session), projectId (current project identifier)
+ */
 export function TerminalPanel({
   vm,
   start,
@@ -18,15 +39,15 @@ export function TerminalPanel({
   projectId,
 }: {
   vm: VMView;
-  start: () => unknown;
+  start: /** 中文：请求启动客户机，兑现后由外层更新状态；这是 TerminalPanel 的调用契约 | English: Request guest startup, allowing the owner to update state after fulfillment; this is the callable contract of TerminalPanel | 中文：结果：unknown；调用者依赖此类型约定 | English: Result: unknown; callers depend on this type contract */ () => unknown;
   busy: boolean;
   session?: string;
   projectId?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null),
     terminal = useRef<Terminal | null>(null);
-  const fitTerminal = useRef<(() => void) | null>(null);
-  const [fontSize, setFontSize] = useState(() => {
+  const fitTerminal = useRef<(/** 中文：请求 xterm 重新测量可用尺寸并发送对应终端大小；这是 TerminalPanel 的调用契约 | English: Request xterm to remeasure available size and send the terminal dimensions; this is the callable contract of TerminalPanel | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ () => void) | null>(null);
+  const [fontSize, setFontSize] = useState(/** 中文：在装配 xterm、WebSocket、尺寸适配和输入清理流程中读取浏览器缓存值；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Composing xterm, WebSocket transport, resize handling and input cleanup, read a browser-cache value. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation */ () => {
     try {
       const saved = Number(localStorage.getItem('sakura-terminal-font-size'));
       return Number.isInteger(saved) && saved >= 11 && saved <= 18 ? saved : 13;
@@ -40,7 +61,7 @@ export function TerminalPanel({
   const [networkMode, setNetworkMode] = useState<'host' | 'private' | null>(null);
   const mode = vm.status === 'running' ? 'terminal' : 'logs';
   // 终端实例与监听器由此 effect 成对创建/释放；实例、会话或项目切换会结束原连接并建立新的作用域。
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [vm.id, vm.status, mode, retry, session, projectId, disconnected] 变化时networkMode 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [vm.id, vm.status, mode, retry, session, projectId, disconnected] change, networkMode state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     setNetworkMode(null);
     if (!ref.current || vm.status === 'stopped' || disconnected) return;
     const monoFamily = getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim();
@@ -81,7 +102,17 @@ export function TerminalPanel({
     term.open(ref.current);
     terminal.current = term;
     const connection = connectTerminal({
+      /**
+       * 中文：向当前控制面会话申请或复用凭证，供终端连接管理器建连。
+       * English: Request/reuse credentials from the current controller session for the terminal connection manager.
+       */
       authenticate: () => controllerSession.authenticate(),
+      /**
+       * 中文：按页面协议和 terminal/logs 模式构建通道，终端附项目作用域而日志仅附实例会话；凭证通过通道查询编码。
+       * English: Construct a channel from page protocol/terminal-logs mode, attaching project scope to terminals and only VM session to logs, encoding credentials in channel query fields.
+       * 中文：输入：token：当前传输认证凭证
+       * English: Inputs: token: current transport credential
+       */
       socket: (token) =>
         new WebSocket(
           `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}` +
@@ -89,8 +120,22 @@ export function TerminalPanel({
               { token, session: session || undefined, project: projectId || undefined }) :
               socketPath('logs', { vmId: vm.id }, { token, session: session || undefined })),
         ),
+      /**
+       * 中文：在装配 xterm、WebSocket、尺寸适配和输入清理流程中把数据写入当前输出；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+       * English: In Composing xterm, WebSocket transport, resize handling and input cleanup, write data into the current output. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+       * 中文：输入：text：待处理的文本内容
+       * English: Inputs: text: text content to process
+       */
       data: (text) => term.write(text),
       report: setConnection,
+      /**
+       * 中文：在装配 xterm、WebSocket、尺寸适配和输入清理流程中networkMode 状态，把输入焦点移到目标元素；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+       * English: In Composing xterm, WebSocket transport, resize handling and input cleanup, networkMode state, move input focus to the target. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+       * 中文：输入：context：当前调用所属的应用或工作区上下文
+       * English: Inputs: context: application/workspace context for the call
+       * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+       * English: Result: deliver through the described state/resource effects without returning business data
+       */
       ready: (context) => {
         if (context && typeof context === 'object' && 'networkIsolation' in context &&
             (context.networkIsolation === 'host' || context.networkIsolation === 'private'))
@@ -105,6 +150,12 @@ export function TerminalPanel({
       },
       logs: mode === 'logs',
     });
+    /**
+     * 中文：在装配 xterm、WebSocket、尺寸适配和输入清理流程中向活动传输交付数据；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Composing xterm, WebSocket transport, resize handling and input cleanup, deliver data to an active transport. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     const resize = () => {
       if (disposed || !ref.current?.clientWidth) return;
       fit.fit();
@@ -127,6 +178,12 @@ export function TerminalPanel({
         // Keep the system monospace fallback if a font cannot be loaded.
       });
     const data = term.onData((data) => connection.send({ type: 'input', data }));
+    /**
+     * 中文：在装配 xterm、WebSocket、尺寸适配和输入清理流程中关闭所属连接或存储对象，释放所属连接或界面寿命，断开当前客户端；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Composing xterm, WebSocket transport, resize handling and input cleanup, close the owned connection/storage object, dispose owned connection/UI lifetimes, disconnect the current client. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);
@@ -139,7 +196,7 @@ export function TerminalPanel({
     };
   }, [vm.id, vm.status, mode, retry, session, projectId, disconnected]);
   // Resize the existing terminal without replacing its SSH connection or scrollback.
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [fontSize] 变化时持久化浏览器缓存值；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [fontSize] change, persist a browser-cache value. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (terminal.current) {
       terminal.current.options.fontSize = fontSize;
       fitTerminal.current?.();

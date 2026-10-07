@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实构建任务的项目目录、环境、并发槽、取消和重启绑定。 */
+/** 烟雾验收：验证真实构建任务的项目目录、环境、并发槽、取消和重启绑定。
+ * Smoke acceptance for real build directories/environments/concurrency/cancellation and post-restart binding. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,8 @@ let terminals: InstanceType<typeof ProjectTerminals> | undefined;
 let vmId = '';
 const secret = 'sakura-farm-secret-' + randomUUID();
 
+/** 按任务 ID 等待指定最终状态，遇到其他终态或百秒期限失败；返回最终 Farm 记录用于结果断言。
+ * Await the specified final state by task ID, failing on another terminal state/the hundred-second deadline; return the final Farm record for assertions. */
 async function settled(id: string, expected = 'done') {
   const deadline = Date.now() + 100000;
   while (true) {
@@ -39,6 +42,8 @@ async function settled(id: string, expected = 'done') {
     await delay(100);
   }
 }
+/** 通过正式 Farm 入口提交带发行版标签和六十秒期限的构建，允许场景提供额外字段，返回任务 ID。
+ * Submit a build through production Farm with distribution label/sixty-second timeout and scenario overrides, returning its task ID. */
 async function submit(name: string, command: string, extra: Record<string, unknown> = {}) {
   return await farm!.action({ operation: 'submit', build: {
     name, command, labels: [distro], timeoutSeconds: 60, ...extra } }) as { id: string };
@@ -65,6 +70,8 @@ try {
   const migrations = new ProjectDirectoryMigrations(machines, workspaces);
   // This script created this VM above. Review only its two new fixture roots;
   // never reuse or change an existing project directory implicitly.
+  /** 仅创建事前不存在的私有目录，并在目标项目上下文预览/确认精确迁移计划，形成真实目录授权。
+   * Create only an absent private directory and preview/confirm the exact migration plan in its project context to establish real directory authorization. */
   const prepareDirectory = async (projectId: string, path: '/workspace/private' | '/workspace/other') => {
     const created = await machines!.exec(vmId, `set -eu\ntest ! -e ${path}\nmkdir -m 0700 ${path}`, 10000);
     assert.equal(created.code, 0, created.stderr);
@@ -82,6 +89,8 @@ try {
   })).active;
   await prepareDirectory(alpha, '/workspace/private');
   terminals = new ProjectTerminals(machines, workspaces);
+  /** 用本验收的实例与终端依赖构造 Farm，供生命周期关闭/重建验证，避免共享用户服务。
+   * Construct Farm from this fixture’s machines/terminals for close/recreate checks without sharing user services. */
   const create = () => new BuildFarm(machines!, undefined, undefined, undefined, undefined, terminals);
   farm = create();
   await farm.init();

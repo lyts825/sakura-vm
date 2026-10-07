@@ -1,10 +1,24 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - task center distinguishes queued, cancelling, retained cleanup and interrupted work on mobile
+ * 模块职责：浏览器回归模块，围绕 `resource-states` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Browser regression for `resource-states`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: task center distinguishes queued, cancelling, retained cleanup and interrupted work on mobile.
  */
 import { expect, test } from '@playwright/test';
 import { emptySelection, PLUGINS, PLUGIN_PACKS } from '../shared/plugins.ts';
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: task center distinguishes queued, cancelling, retained cleanup and interrupted work on mobile
+ * 协作入口 / Collaborators: `page.setViewportSize`, `page.route`, `page.goto`, `page.getByRole('button', { name: '任务中心', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('task center distinguishes queued, cancelling, retained cleanup and interrupted work on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const base = { startedAt: '2026-10-04T00:00:00.000Z', log: '', action: 'verify' };

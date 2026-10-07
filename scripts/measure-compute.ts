@@ -1,10 +1,13 @@
-/** 运行可重复的计算预览夹具并测量耗时，供受控计算路径的性能对比使用。 */
+/** 运行可重复的计算预览夹具并测量耗时，供受控计算路径的性能对比使用。
+ * Measure real guest compute in an explicitly owned preview fixture and report elapsed results tied to its runtime. */
 import { gzipSync } from 'node:zlib';
 import { previewFile } from '../server/file-preview.ts';
 import { engineeringInvocation, engineeringSource } from '../server/engineering-runner.ts';
 import { previewInWorker } from '../server/file-preview-runtime.ts';
 
 // Valid, bounded worst-case preview: many empty TAR entries, not a decompression bomb.
+/** 构造重复合法 tar 头的 64 MiB 内存样本并 gzip，供预览解压路径测量；校验和按 tar 规范计算，不读真实文件。
+ * Build/gzip a 64-MiB in-memory sample of repeated valid tar headers for preview/decompression measurement, computing the tar checksum without reading real files. */
 export function previewFixture() {
   const header = Buffer.alloc(512);
   header.write('empty.txt'); header.write('00000000000\0', 124); header[156] = 48;
@@ -16,6 +19,8 @@ export function previewFixture() {
   return gzipSync(archive);
 }
 
+/** 执行给定计算并记录耗时，同时安排零延迟心跳测出事件循环阻塞；返回取整毫秒，计算错误直接传播。
+ * Execute supplied work and measure elapsed time plus a zero-delay heartbeat to expose event-loop blocking; return rounded milliseconds and propagate work failures. */
 async function measure(name: string, work: () => unknown | Promise<unknown>) {
   const before = performance.now();
   const heartbeat = new Promise<number>((resolve) => setTimeout(() => resolve(performance.now() - before), 0));

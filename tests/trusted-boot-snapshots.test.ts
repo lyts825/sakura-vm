@@ -1,7 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - stopped snapshots keep TPM and NVRAM with their disk and reject damaged or legacy state
- * - online disk snapshots reject active TPM state before freezing the guest
+ * 模块职责：回归验证模块，围绕 `trusted-boot-snapshots` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `trusted-boot-snapshots`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: stopped snapshots keep TPM and NVRAM with their disk and reject damaged or legacy state; online disk snapshots reject active TPM state before freezing the guest.
  */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
@@ -23,9 +25,39 @@ after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: stopped snapshots keep TPM and NVRAM with their disk and reject damaged or legacy state
+ * 状态影响 / State effects: `archive.files[0].sha256`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `machines.init`, `randomUUID`, `machines.records.set`, `createSchema.parse`.
+ * 检查边界 / Checked boundaries: `assert.equal(original?.enabled, true)`; `assert.deepEqual(original?.files.map((file) => file.name), ['uefi-secure-vars.fd', 'tpm2/tpm2-00.permall'])`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('stopped snapshots keep TPM and NVRAM with their disk and reject damaged or legacy state', async (t) => {
   const commands: string[][] = [];
-  const machines = new Machines({ runtime: { close: async () => {} },
+  const machines = new Machines({ runtime: { /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: stopped snapshots keep TPM and NVRAM with their disk and reject damaged or legacy state
+   */
+  close: async () => {} },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _tool; args。
+     * 结果：返回分支计算值（`''`），以 Promise 交付。
+     * Result: Return the branch-computed value (`''`) through a Promise.
+     * 验证场景 / Scenario: stopped snapshots keep TPM and NVRAM with their disk and reject damaged or legacy state
+     * 协作入口 / Collaborators: `commands.push`.
+     */
     run: async (_tool, args) => { commands.push(args); return ''; } } as Engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
@@ -86,8 +118,36 @@ test('stopped snapshots keep TPM and NVRAM with their disk and reject damaged or
   await assert.rejects(readFile(join(directory, 'tpm2', 'later')), { code: 'ENOENT' });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: t。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: online disk snapshots reject active TPM state before freezing the guest
+ * 协作入口 / Collaborators: `machines.init`, `randomUUID`, `machines.records.set`, `createSchema.parse`.
+ * 检查边界 / Checked boundaries: `assert.rejects(machines.onlineSnapshot(id, 'unsafe'), /需要停机快照/)`; `assert.equal(machines.get(id).snapshots.length, 0)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('online disk snapshots reject active TPM state before freezing the guest', async (t) => {
-  const machines = new Machines({ runtime: { close: async () => {} },
+  const machines = new Machines({ runtime: { /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: online disk snapshots reject active TPM state before freezing the guest
+   */
+  close: async () => {} },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _tool; _args。
+     * 结果：返回分支计算值（`''`），以 Promise 交付。
+     * Result: Return the branch-computed value (`''`) through a Promise.
+     * 验证场景 / Scenario: online disk snapshots reject active TPM state before freezing the guest
+     */
     run: async (_tool, _args) => '' } as Engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();

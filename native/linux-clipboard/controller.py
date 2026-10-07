@@ -1,4 +1,5 @@
 # X11 应用的 root 控制面：校验源摘要、桌面来源和项目网络，发布策略并管理本次应用的 cgroup 生命周期。
+# Root control plane for X11 applications: verify source hashes/desktop provenance/project networks, publish policy and manage the exact application cgroup lifecycle.
 """Root controller for explicitly launched X11 apps in the managed desktop.
 
 No ptrace, compositor modification, system-wide preload or clipboard contents.
@@ -30,10 +31,14 @@ BASE = Path("/var/lib/sakura/x11-clipboard")
 UUID = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")
 DIGEST = re.compile(r"^[a-f0-9]{64}$")
 
+# 条件失败立即报告控制错误，阻止后续授权或资源变更。
+# Raise the control error immediately when a condition fails, preventing further authorization/resource mutation.
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
 
+# 逐级检查绝对目录的 root 所有权与不可写权限；仅明确 create 模式创建目录，拒绝链接替代。
+# Check root ownership/nonwritable permissions component by component; create only when explicitly requested and reject link replacements.
 def secure_directory(path, create=False, mode=0o755):
     require(path.is_absolute(), "目录不是绝对路径")
     current = Path("/")
@@ -46,6 +51,8 @@ def secure_directory(path, create=False, mode=0o755):
                 "受管目录的身份或权限不符")
     return path
 
+# 无跟随有界读取 root 控制普通文件，核对实际长度，变化或权限不符拒绝。
+# Read a bounded root-controlled regular file without links, checking actual length and refusing changes/unsafe permissions.
 def read_bytes(path, maximum=65536):
     descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
     try:
@@ -58,6 +65,8 @@ def read_bytes(path, maximum=65536):
     finally:
         os.close(descriptor)
 
+# 独占创建临时文件，写入并同步后替换目标，再同步父目录；失败仅清理本次临时文件。
+# Exclusively create a temporary, write/fsync it, replace the target and sync the parent; failures clean only this temporary.
 def atomic(path, value, mode=0o600):
     temporary = path.parent / ("." + str(uuid.uuid4()) + ".new")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
@@ -75,6 +84,8 @@ def atomic(path, value, mode=0o600):
     finally:
         temporary.unlink(missing_ok=True)
 
+# 从固定 FD 计算有界 SHA-256，前后检查 inode、大小与修改时间，拒绝读取期间变化。
+# Hash bounded bytes from a pinned FD and bracket reads with inode/size/mtime checks to reject changes.
 def digest_fd(descriptor):
     os.lseek(descriptor, 0, os.SEEK_SET)
     before = os.fstat(descriptor)
@@ -90,6 +101,8 @@ def digest_fd(descriptor):
             (after.st_ino, after.st_size, after.st_mtime_ns), "应用文件正在变化")
     return value.hexdigest()
 
+# 无跟随打开文件并计算固定 FD 摘要，总是关闭描述符。
+# Open the file without following links, hash its pinned FD and always close the descriptor.
 def digest(path):
     descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
     try:
@@ -97,6 +110,8 @@ def digest(path):
     finally:
         os.close(descriptor)
 
+# 规范绝对应用路径，拒绝 setuid/setgid 与文件能力，固定文件并返回映像摘要和物理身份。
+# Canonicalize the absolute image, reject setuid/setgid/file capabilities and return pinned image hash/physical identity.
 def identify(image):
     require(isinstance(image, str) and image.startswith("/") and len(image) <= 1024
             and not re.search(r"[\x00-\x1f]", image), "需要完整 Linux 应用路径")
@@ -127,6 +142,8 @@ def identify(image):
         os.close(descriptor)
     return {"image": str(resolved), "sha256": digest(resolved)}
 
+# 核对固定原生库清单、构建和 DLL 摘要，返回可发布的库 SHA-256。
+# Verify the pinned library manifest/build/hash and return its publishable SHA-256.
 def library_valid():
     secure_directory(LIBRARY.parent)
     manifest = json.loads(read_bytes(LIBRARY.parent / "library.json"))
@@ -134,6 +151,8 @@ def library_valid():
             and digest(LIBRARY) == manifest["sha256"], "原生剪贴板代理摘要不符")
     return manifest["sha256"]
 
+# 严格校验方向/格式布尔值和文本预算，再编码含构建与代次的固定策略 ABI。
+# Validate direction/format booleans and text budgets, then encode the fixed policy ABI with build/generation.
 def rule_bytes(rule, build, generation, enabled=True):
     require(set(rule) == {"copy", "paste", "files", "sensitive", "maxTextBytes"}
             and all(type(rule[key]) is bool for key in ["copy", "paste", "files", "sensitive"])
@@ -143,6 +162,8 @@ def rule_bytes(rule, build, generation, enabled=True):
              int(rule["sensitive"]) << 3 | (16 if enabled else 0))
     return struct.pack("<IIIIQ65s39x", MAGIC, 1, flags, rule["maxTextBytes"], generation, build.encode())
 
+# 读取内核创建 ticks、UID、映像与网络身份，退出进程返回 None，供精确归属检查。
+# Read kernel birth ticks, UID, image and network identity; exited processes return None for ownership checks.
 def process(pid):
     root = Path("/proc") / str(pid)
     raw = (root / "stat").read_text()
@@ -152,9 +173,13 @@ def process(pid):
     return {"pid": pid, "created": fields[19], "uid": root.stat().st_uid,
             "image": os.readlink(root / "exe"), "network": os.readlink(root / "ns/net")}
 
+# 将服务 owner 和会话 UUID 编入固定应用 cgroup 名称，隔离不同启动的运行域。
+# Derive a fixed application cgroup from service owner/session UUID to isolate launch domains.
 def cgroup_path(owner, session):
     return Path("/sys/fs/cgroup") / ("sakura-clipboard-" + owner.replace("-", "") + "-" + session.replace("-", ""))
 
+# 核实可信、可写的 cgroup v2 根挂载，缺少真实挂载或控制器支持拒绝运行。
+# Verify the trusted writable cgroup-v2 root; absent real mount/controller support refuses execution.
 def cgroup_root():
     root = secure_directory(Path("/sys/fs/cgroup"))
     mounts = [line.split() for line in Path("/proc/self/mountinfo").read_text().splitlines()]
@@ -163,6 +188,8 @@ def cgroup_root():
     require(os.access(root, os.W_OK), "客户机 cgroup v2 挂载不可写")
     return root
 
+# 核对项目 ID 与固定 netns 名称，检查内核命名空间及路由后返回应用网络身份。
+# Validate project ID/fixed netns name and kernel namespace/routes before returning application network identity.
 def project_network(request):
     project = request["projectId"]
     require(re.fullmatch(r"default|[a-f0-9]{16}", project), "项目身份无效")
@@ -186,6 +213,8 @@ def project_network(request):
     finally:
         os.close(descriptor)
     # Check the namespace we actually joined, without a second mount switch.
+    # 执行固定系统 ip 工具并限制时间与输出，返回已核实网络诊断文本。
+    # Run the fixed system ip tool with time/output bounds and return verified network diagnostic text.
     def ip(*args):
         program = "/usr/sbin/ip" if Path("/usr/sbin/ip").is_file() else "/sbin/ip"
         result = subprocess.run([program, *args], capture_output=True, timeout=5, check=True)
@@ -197,6 +226,8 @@ def project_network(request):
             "项目网络已有额外接口或路由，拒绝启动应用")
     return expected
 
+# 读取可信会话收据，核对 owner、会话 UUID、构建/源摘要和原桌面证明，拒绝其他会话或替代资源。
+# Read a trusted receipt and validate owner/session/build/source hashes and original desktop proof, refusing other sessions/replacements.
 def metadata(directory, owner):
     secure_directory(directory)
     value = json.loads(read_bytes(directory / "session.json"))
@@ -210,6 +241,8 @@ def metadata(directory, owner):
             and value['desktop']['run']['bootId'] == value['bootId'], '应用实际 UID 与原 Desktop owner 不符')
     return value
 
+# 读取原会话及精确 cgroup 中进程，返回策略/身份观察和有界错误，不收养未知进程。
+# Observe the original session/exact-cgroup processes and return policy/identity/errors without adopting unknown processes.
 def view(directory, owner):
     value = metadata(directory, owner)
     group = cgroup_path(owner, value["id"])
@@ -256,6 +289,8 @@ def view(directory, owner):
             "blockedCopy": status[3], "blockedPaste": status[4],
             **({"error": "; ".join(errors) or "应用已退出或剪贴板代理未加载，请停止并重新启动"} if errors or (rows and not controlled) else {})}
 
+# 根据原会话收据退休精确应用 cgroup，成功返回 stopped。
+# Retire the exact application cgroup from its original receipt and return stopped on success.
 def stop(directory, owner):
     value = metadata(directory, owner)
     application_retire(cgroup_path(owner, value['id']), value, value['uid'], value['network'])
@@ -264,9 +299,13 @@ def stop(directory, owner):
 # Shared verbatim by the fixed Desktop adapter and both Linux clipboard controllers.
 # This file is a draft generator input, not a guest-installed authority record.
 
+# 将暂未就绪条件转换为带固定前缀的可重试桌面错误。
+# Convert an unready condition into a retryable desktop error with a fixed prefix.
 def desktop_wait(condition, reason):
     if not condition: raise RuntimeError('SAKURA_DESKTOP_NOT_READY:' + reason)
 
+# 核实原项目桌面的内层 XWayland display 与私有 Xauthority，拒绝宿主共享 display 或替代凭据。
+# Validate the original project desktop’s nested XWayland display/private Xauthority, excluding shared displays/replaced credentials.
 def desktop_nested_x11(source, identity, run):
     display, filename = source.get('DISPLAY', ''), source.get('XAUTHORITY', '')
     match = re.fullmatch(r':([0-9]{1,5})(?:\.0)?', display)
@@ -330,10 +369,14 @@ def desktop_nested_x11(source, identity, run):
                 'socketInode': str(before.st_ino), 'kernelInode': listeners[0], 'peerPid': pid,
                 'peerCreated': actor['created'], 'peerImage': actor['image']}
     finally: peer.close()
+# 加载固定摘要目录的原生身份实现，逐项核实源文件及聚合摘要后提供校验函数。
+# Load native identity code from its fixed digest directory only after source/aggregate hash validation.
 def desktop_native(build):
     require(isinstance(build, str) and re.fullmatch('[a-f0-9]{64}', build), 'Desktop native build 无效')
     folder = Path('/usr/local/lib/sakura-project-identity') / build
     secure_directory(folder)
+    # 无跟随读取单链接 0600 root 文件并限制大小，读取长度变化拒绝。
+    # Read a bounded single-link 0600 root file without links and refuse changed read length.
     def protected(path, maximum=262144):
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
@@ -366,6 +409,8 @@ def desktop_native(build):
     require(namespace['sources']() == build, 'Desktop native launcher 不符')
     return namespace
 
+# 核实活动桌面进程的真实 UID 槽、创建 ticks、cgroup 及网络归属。
+# Verify a live desktop process’s UID slots, birth ticks, cgroup and network ownership.
 def desktop_process(pid, identity, run):
     require(type(pid) is int and pid > 1, 'Desktop PID 无效')
     root = Path('/proc') / str(pid)
@@ -380,6 +425,8 @@ def desktop_process(pid, identity, run):
             'Desktop 进程网络身份不符')
     return {'pid': pid, 'created': fields[19], 'image': os.readlink(root / 'exe')}
 
+# 交叉核实完整桌面票据、绑定/运行记录、Plasma 进程和私有运行目录；返回持有目录 FD 的可信上下文。
+# Cross-check complete desktop receipts, binding/run records, Plasma process and private runtime, returning a trusted context with pinned directory FD.
 def desktop_authority(proof):
     require(isinstance(proof, dict) and set(proof) == {'version', 'identity', 'run', 'record', 'sha256', 'runtime', 'endpoint'}
             and type(proof['version']) is int and proof['version'] == 1, '需要 Desktop 完整会话票据；旧共享账户不能接管')
@@ -467,6 +514,8 @@ def desktop_authority(proof):
                 and guard.get('build') == run['build'] and (guard.get('runtimeDevice'), guard.get('runtimeInode')) == (str(info.st_dev), str(info.st_ino))
                 and (guard.get('networkDevice'), guard.get('networkInode')) == (run['networkDevice'], run['networkInode']),
                 'Desktop 固定 adapter 原 runtime/网络证明已变化')
+        # 读取项目桌面私有凭据，核实 UID、单链接、权限和字节上限，真实未就绪按桌面状态报告。
+        # Read private desktop credentials with UID/link/mode/size checks, reporting genuine unready state through desktop errors.
         def credential(name, limit):
             try: fd = os.open(runtime / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
             except FileNotFoundError:
@@ -540,6 +589,8 @@ def desktop_authority(proof):
 
 # Pin the actual sandbox domain; a project ticket describes its Desktop owner,
 # never a substitute UID for an independent Wayland application.
+# 按收据的原设备/inode 与 boot 打开应用 cgroup，缺少原证明仅允许真正不存在，替代域不接管。
+# Open the application cgroup by recorded device/inode/boot; missing proof allows only actual absence, never replacement adoption.
 def application_group(group, value, field='cgroup'):
     proof = value[field]
     if proof is None:
@@ -561,6 +612,8 @@ def application_group(group, value, field='cgroup'):
     except BaseException:
         os.close(fd); raise
 
+# 固定可信 cgroup 并返回其设备/inode 收据，总是关闭观察 FD。
+# Pin a trusted cgroup and return its device/inode receipt, always closing the observation FD.
 def group_proof(group):
     secure_directory(group)
     fd = os.open(group, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
@@ -569,14 +622,20 @@ def group_proof(group):
         return {'device': str(info.st_dev), 'inode': str(info.st_ino)}
     finally: os.close(fd)
 
+# 将当前子进程加入已固定 cgroup，随后关闭管理 FD，避免泄露给应用。
+# Join the pinned cgroup in the child, then close management FDs before application execution.
 def application_join(domain):
     fd = os.open('cgroup.procs', os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=domain)
     try: os.write(fd, str(os.getpid()).encode())
     finally: os.close(fd); os.close(domain)
 
+# 核对原运行域及全部成员的 UID/网络，结束精确 cgroup 并等待空域；未知成员或 inode 变化拒绝。
+# Verify the original domain and all member UID/network identities, terminate the exact cgroup and await emptiness; unknown members/replacements refuse.
 def application_retire(group, value, uid, network, field='cgroup'):
     domain = application_group(group, value, field)
     if domain is None: return
+    # 相对原 cgroup FD 有界读取控制字段，拒绝超限并关闭读 FD。
+    # Read bounded control fields relative to the original cgroup FD, refusing excess and closing the read FD.
     def content(name, maximum=65536):
         fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=domain)
         try:
@@ -619,6 +678,8 @@ def application_retire(group, value, uid, network, field='cgroup'):
             time.sleep(.05)
     finally: os.close(domain)
 
+# 用原完整桌面票据筛选并停止所属应用会话，有界遍历且不按项目名称接管其他运行。
+# Select/stop application sessions using the original complete desktop receipt with bounded traversal, never adopting by project name.
 def retire_desktop(base, owner, proof):
     require(isinstance(proof, dict) and set(proof) == {'version','identity','run','record','sha256','runtime','endpoint'}
             and proof['version'] == 1 and isinstance(proof['run'], dict) and UUID.fullmatch(proof['run']['runId'])
@@ -649,6 +710,8 @@ def retire_desktop(base, owner, proof):
                     for row in root.iterdir()), 'Desktop 存在缺少完整记录的应用域，拒绝模糊清理')
     return {'stopped': True, 'sessions': stopped}
 
+# 由完整桌面证明构建受限环境，固定原网络、私有凭据和项目目录，不使用任意 root 环境。
+# Build bounded environment from complete desktop proof, pinning network/private credentials/project directory rather than arbitrary root environment.
 def desktop_environment(network, expected, proof):
     checked = desktop_authority(proof)
     try:
@@ -682,6 +745,8 @@ def desktop_environment(network, expected, proof):
         os.close(checked["directoryFd"]); raise
 
 # 启动仅接受明确选择且核实过的应用/桌面，在自身运行域注入策略，不接管已有连接。
+# 重核应用/库摘要、参数、原桌面与网络；先发布会话/cgroup 身份再以项目 UID 启动，失败停止本次域。
+# Revalidate image/library/args/desktop/network, publish session/cgroup identity before project-UID launch and stop the owned domain on failure.
 def launch(base, owner, request):
     library_hash = library_valid()
     application = identify(request["image"])
@@ -712,6 +777,8 @@ def launch(base, owner, request):
     environment.update(LD_PRELOAD=str(LIBRARY), SAKURA_CLIPBOARD_POLICY=str(directory / "policy"),
                        SAKURA_CLIPBOARD_STATUS_FD=str(descriptor))
     # A private bus prevents forwarding to an uninstrumented, existing app.
+    # 加入原应用域，设置 NNP、清空补充组并降为项目账号，再进入已固定项目目录。
+    # Join the original application domain, set NNP, clear groups/drop to the project account and enter the pinned directory.
     def child():
         application_join(group_descriptor)
         require(ctypes.CDLL(None, use_errno=True).prctl(38, 1, 0, 0, 0) == 0, "无法禁用提权")
@@ -763,6 +830,8 @@ def launch(base, owner, request):
         os.close(descriptor)
         os.close(checked["directoryFd"])
 
+# 检查 cgroup 与已校验原生资产，返回 ready/build 或有界错误详情，能力观察不等于启动成功。
+# Check cgroup/validated native assets and return ready/build or bounded errors; capability observation is not launch success.
 def readiness():
     try:
         cgroup_root()
@@ -770,6 +839,8 @@ def readiness():
     except Exception as error:
         return {"ready": False, "build": BUILD, "error": str(error)[:256]}
 
+# 核实 root/构建与 owner，按只读或写入动作取得会话锁并路由准入、策略、列举和停止。
+# Validate root/build/owner, acquire the action-appropriate session lock and route admission/policy/list/stop operations.
 def main(request):
     require(os.geteuid() == 0 and DIGEST.fullmatch(BUILD), "需要已校验的客户机原生控制器")
     require(UUID.fullmatch(request["owner"]), "控制服务身份无效")

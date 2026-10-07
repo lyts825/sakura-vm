@@ -1,5 +1,6 @@
 /**
  * 模块职责：生成客户机桌面安装、启动、显示和输入法脚本，项目环境在切换账户后才导出。
+ * Module purpose: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
  */
 import {
   defaultDesktopPreferences,
@@ -71,6 +72,15 @@ export const desktopMonitorSetup = String.raw`if [ "$MONITOR_LAYOUT" != single ]
   }
 fi`;
 
+/**
+ * 入口 / Entry: shellLiteral.
+ * 功能：从当前输入或状态计算 ``'${value.replaceAll("'", "'\\''")}'``，供调用方后续验证或使用。
+ * Purpose: Computes ``'${value.replaceAll("'", "'\\''")}'`` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: value: string
+ * 输出 / Returns: ``'${value.replaceAll("'", "'\\''")}'``.
+ * 副作用 / Effects: `value.replaceAll`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function shellLiteral(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -78,6 +88,17 @@ function shellLiteral(value: string) {
 const desktopDebianPackages = 'kde-plasma-desktop plasma-workspace-wayland kwin-x11 kwin-wayland qtwayland5 systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd python3 iproute2 util-linux'.split(' ');
 const imeDebianPackages = ['fcitx5', 'fcitx5-chinese-addons', 'fcitx5-frontend-gtk3', 'fcitx5-frontend-qt5'];
 
+/**
+ * 入口 / Entry: aptPrepare.
+ * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 `String.raw`export DEBIAN_FRONTEND=noninteractive sakura_packages_ready=1 for sakura_package in ${names}; do if ! sakura_packa…` 供上层消费（`desktop-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces `String.raw`export DEBIAN_FRONTEND=noninteractive sakura_packages_ready=1 for sakura_package in ${names}; do if ! sakura_packa…` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+ * 处理：通过 `packages.map().join`, `packages.map`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `packages.map().join`, `packages.map`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: packages: readonly string[]; noRecommends: default=true
+ * 输出 / Returns: `String.raw`export DEBIAN_FRONTEND=noninteractive sakura_packages_ready=1 for sakura_package in ${names}; do if ! sakura_packa…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function aptPrepare(packages: readonly string[], noRecommends = true) {
   const names = packages.map(quote).join(' ');
   const statusFormat = quote('${db:Status-Status} ${db:Status-Eflag}');
@@ -98,6 +119,17 @@ if [ "$sakura_packages_ready" != 1 ]; then
 fi`;
 }
 
+/**
+ * 入口 / Entry: desktopConfigScript.
+ * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 `String.raw`mkdir -p /etc/sakura cat > /etc/sakura/desktop-preferences <<'SAKURA_PREFERENCES' DESKTOP=kde-plasma SESSION_TYPE=…` 供上层消费（`desktop-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces `String.raw`mkdir -p /etc/sakura cat > /etc/sakura/desktop-preferences <<'SAKURA_PREFERENCES' DESKTOP=kde-plasma SESSION_TYPE=…` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+ * 处理：通过 `desktopPreferencesSchema.parse`, `inline.toFixed().replace().replace`, `inline.toFixed().replace`, `inline.toFixed` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `desktopPreferencesSchema.parse`, `inline.toFixed().replace().replace`, `inline.toFixed().replace`, `inline.toFixed`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: input: DesktopPreferences
+ * 输出 / Returns: `String.raw`mkdir -p /etc/sakura cat > /etc/sakura/desktop-preferences <<'SAKURA_PREFERENCES' DESKTOP=kde-plasma SESSION_TYPE=…`.
+ * 副作用 / Effects: `inline.toFixed().replace().replace`; `inline.toFixed().replace`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function desktopConfigScript(input: DesktopPreferences) {
   const p = desktopPreferencesSchema.parse(input);
   const factor = (p.scale / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
@@ -334,6 +366,17 @@ echo 'Starting the desktop session…'
 echo 'KDE Plasma desktop is ready.'
 SAKURA_INSTALL`;
 
+/**
+ * 入口 / Entry: desktopCommands.
+ * 功能：按发行版与偏好生成桌面安装、启动、配置和探测命令集合。
+ * Purpose: Builds distribution/preference-specific desktop install/start/configure/probe commands.
+ * 设计：这是固定脚本生成，调用本身不执行客户机命令；Alpine 与 Debian 路径分别适配服务管理和包工具。
+ * Design: This constructs fixed scripts without executing them; Alpine/Debian paths adapt their own service and package managers.
+ * 输入 / Inputs: distro: default='alpine'; input: Partial<DesktopPreferences> default=defaultDesktopPreferences; project: Project optional
+ * 输出 / Returns: `{ probe: scope(desktopProbe), preferencesProbe: desktopPreferencesProbe, versionProbe, start: scope(desktopStart), startWithP…`; `{ probe: scope(probe), preferencesProbe: desktopPreferencesProbe, versionProbe, start: scope(start), startWithPreferences: sc…`.
+ * 副作用 / Effects: `desktopInstall.replace().replace`; `desktopInstall.replace`; `startWithPreferences`; `desktopProbe.replace`; `desktopStart.replace`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function desktopCommands(distro = 'alpine', input: Partial<DesktopPreferences> = defaultDesktopPreferences, project?: Project) {
   const preferences = desktopPreferencesSchema.parse(input);
   const sessionAvailable = preferences.sessionType === 'wayland'
@@ -342,10 +385,41 @@ export function desktopCommands(distro = 'alpine', input: Partial<DesktopPrefere
       ? 'command -v startplasma-x11 >/dev/null 2>&1'
       : '(command -v startplasma-x11 >/dev/null 2>&1 || command -v startplasma-wayland >/dev/null 2>&1)';
   const versionProbe = `grep -qx '5' /etc/sakura/desktop-version 2>/dev/null && ${sessionAvailable}`;
+  /**
+   * 入口 / Entry: desktopCommands.scope.
+   * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 `project?.networkIsolation === 'private' ? script.replaceAll(displayReady, projectNetworkCommand(project, displayReady)) : scr…` 供上层消费（`desktop-guest.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces `project?.networkIsolation === 'private' ? script.replaceAll(displayReady, projectNetworkCommand(project, displayReady)) : scr…` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+   * 处理：通过 `script.replaceAll`, `projectNetworkCommand` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `script.replaceAll`, `projectNetworkCommand`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: script: string
+   * 输出 / Returns: `project?.networkIsolation === 'private' ? script.replaceAll(displayReady, projectNetworkCommand(project, displayReady)) : scr…`.
+   * 副作用 / Effects: `script.replaceAll`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const scope = (script: string) => project?.networkIsolation === 'private'
     ? script.replaceAll(displayReady, projectNetworkCommand(project, displayReady)) : script;
+  /**
+   * 入口 / Entry: desktopCommands.prepare.
+   * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 `install.replace(start, '') .replace("echo 'KDE Plasma desktop is ready.'", "echo 'KDE Plasma installation prepared.'")` 供上层消费（`desktop-guest.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces `install.replace(start, '') .replace("echo 'KDE Plasma desktop is ready.'", "echo 'KDE Plasma installation prepared.'")` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+   * 处理：通过 `install.replace().replace`, `install.replace` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `install.replace().replace`, `install.replace`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: install: string; start: string
+   * 输出 / Returns: `install.replace(start, '') .replace("echo 'KDE Plasma desktop is ready.'", "echo 'KDE Plasma installation prepared.'")`.
+   * 副作用 / Effects: `install.replace().replace`; `install.replace`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const prepare = (install: string, start: string) => install.replace(start, '')
     .replace("echo 'KDE Plasma desktop is ready.'", "echo 'KDE Plasma installation prepared.'");
+  /**
+   * 入口 / Entry: desktopCommands.startWithPreferences.
+   * 功能：从当前输入或状态计算 `String.raw`set -eu if ! { ${versionProbe}; }; then ${install} else ${desktopConfigScript(preferences)} ${start} fi``，供调用方后续验证或使用。
+   * Purpose: Computes `String.raw`set -eu if ! { ${versionProbe}; }; then ${install} else ${desktopConfigScript(preferences)} ${start} fi`` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: start: string; install: string
+   * 输出 / Returns: `String.raw`set -eu if ! { ${versionProbe}; }; then ${install} else ${desktopConfigScript(preferences)} ${start} fi``.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const startWithPreferences = (start: string, install: string) => String.raw`set -eu
 if ! { ${versionProbe}; }; then
 ${install}
@@ -353,6 +427,15 @@ else
 ${desktopConfigScript(preferences)}
 ${start}
 fi`;
+  /**
+   * 入口 / Entry: desktopCommands.configure.
+   * 功能：从当前输入或状态计算 `String.raw`set -eu test -f /etc/sakura/desktop-version if ! { ${versionProbe}; }; then echo 'Upgrading KDE Plasma desktop for…`，供调用方后续验证或使用。
+   * Purpose: Computes `String.raw`set -eu test -f /etc/sakura/desktop-version if ! { ${versionProbe}; }; then echo 'Upgrading KDE Plasma desktop for…` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: start: string; install: string
+   * 输出 / Returns: `String.raw`set -eu test -f /etc/sakura/desktop-version if ! { ${versionProbe}; }; then echo 'Upgrading KDE Plasma desktop for…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const configure = (start: string, install: string) => String.raw`set -eu
 test -f /etc/sakura/desktop-version
 if ! { ${versionProbe}; }; then
@@ -437,6 +520,17 @@ SAKURA_SERVICE`;
   };
 }
 
+/**
+ * 入口 / Entry: imeInstall.
+ * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( `set -eu\nid sakura-desktop >/dev/null\n${install}\n` + String.raw` mkdir -p /home/sakura-desktop/.config/autostart /home/s…` 供上层消费（`desktop-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces `( `set -eu\nid sakura-desktop >/dev/null\n${install}\n` + String.raw` mkdir -p /home/sakura-desktop/.config/autostart /home/s…` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+ * 处理：通过 `aptPrepare`, `desktopCommands` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `aptPrepare`, `desktopCommands`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: distro: default='alpine'
+ * 输出 / Returns: `( `set -eu\nid sakura-desktop >/dev/null\n${install}\n` + String.raw` mkdir -p /home/sakura-desktop/.config/autostart /home/s…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function imeInstall(distro = 'alpine') {
   const install =
     distro === 'alpine'
@@ -484,6 +578,17 @@ echo 'Chinese input installed. Restarting desktop; use Ctrl+Space to switch.'
 }
 
 /** This administration task has no project environment, cwd, HOME or startup hook. */
+/**
+ * 入口 / Entry: desktopProjectImePrepare.
+ * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 `'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('set -eu\ncd /\n' + packages)` 供上层消费（`desktop-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces `'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('set -eu\ncd /\n' + packages)` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+ * 处理：通过 `aptPrepare`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `aptPrepare`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: distro: string
+ * 输出 / Returns: `'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('set -eu\ncd /\n' + packages)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function desktopProjectImePrepare(distro: string) {
   const packages = distro === 'alpine'
     ? 'apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/community fcitx5 fcitx5-chinese-addons fcitx5-gtk fcitx5-qt'
@@ -525,10 +630,30 @@ SAKURA_UID_IME
 `;
 
 /** The complete session body is transported to the native UID launcher as data. */
+/**
+ * 入口 / Entry: desktopUidCommand.
+ * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``set -eu\numask 077\nexport SAKURA_DESKTOP_RUNTIME=${quote('/run/sakura-desktop-uid/' + uid + '/' + runId)}\n` + `test "$(id …` 供上层消费（`desktop-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces ``set -eu\numask 077\nexport SAKURA_DESKTOP_RUNTIME=${quote('/run/sakura-desktop-uid/' + uid + '/' + runId)}\n` + `test "$(id …` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+ * 处理：通过 `z.uuid().parse`, `z.uuid`, `z.number().int().min().max().parse`, `z.number().int().min().max` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`, `z.number().int().min().max().parse`, `z.number().int().min().max`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: runId: string; input: DesktopPreferences; distro: string; uid: number
+ * 输出 / Returns: ``set -eu\numask 077\nexport SAKURA_DESKTOP_RUNTIME=${quote('/run/sakura-desktop-uid/' + uid + '/' + runId)}\n` + `test "$(id …`.
+ * 副作用 / Effects: `session.replace().replace`; `session.replace`; 更新 / updates `session`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function desktopUidCommand(runId: string, input: DesktopPreferences, distro: string, uid: number) {
   z.uuid().parse(runId);
   z.number().int().min(20000).max(59999).parse(uid);
   const preferences = desktopPreferencesSchema.parse(input);
+  /**
+   * 入口 / Entry: desktopUidCommand.body.
+   * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 `match[1]` 供上层消费（`desktop-guest.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces `match[1]` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+   * 输入 / Inputs: marker: string
+   * 输出 / Returns: `match[1]`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!match`; 异常 / errors `new Error('Desktop trusted adapter body missing: ' + marker)`.
+   */
   const body = (marker: string) => {
     const match = new RegExp(`<<'${marker}'\\n([\\s\\S]*?)\\n${marker}`).exec(desktopInstall);
     if (!match) throw new Error('Desktop trusted adapter body missing: ' + marker);
@@ -537,6 +662,17 @@ export function desktopUidCommand(runId: string, input: DesktopPreferences, dist
   // Preserve Plasma preferences, nested Wayland, monitor layout and IME hooks.
   // Every transformed path belongs to the real native project HOME, and every
   // hook is read only after the C launcher has dropped UID/GID and all authority FDs.
+  /**
+   * 入口 / Entry: desktopUidCommand.transform.
+   * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 `script.replaceAll('/home/sakura-desktop', '$HOME') .replaceAll('/run/sakura-desktop', '$SAKURA_DESKTOP_RUNTIME') .replaceAll(…` 供上层消费（`desktop-guest.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces `script.replaceAll('/home/sakura-desktop', '$HOME') .replaceAll('/run/sakura-desktop', '$SAKURA_DESKTOP_RUNTIME') .replaceAll(…` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+   * 处理：通过 `script.replaceAll().replaceAll().replaceAll().replaceAll().replaceAll().replaceAll().replace`, `script.replaceAll().replaceAll().replaceAll().replaceAll().replaceAll().replaceAll`, `script.replaceAll().replaceAll().replaceAll().replaceAll().replaceAll`, `script.replaceAll().replaceAll().replaceAll().replaceAll` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `script.replaceAll().replaceAll().replaceAll().replaceAll().replaceAll().replaceAll().replace`, `script.replaceAll().replaceAll().replaceAll().replaceAll().replaceAll().replaceAll`, `script.replaceAll().replaceAll().replaceAll().replaceAll().replaceAll`, `script.replaceAll().replaceAll().replaceAll().replaceAll`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: script: string
+   * 输出 / Returns: `script.replaceAll('/home/sakura-desktop', '$HOME') .replaceAll('/run/sakura-desktop', '$SAKURA_DESKTOP_RUNTIME') .replaceAll(…`.
+   * 副作用 / Effects: `script.replaceAll().replaceAll().replaceAll().replaceAll().replaceAll().replaceAll().replace`; `script.replaceAll().replaceAll().replaceAll().replaceAll().replaceAll().replaceAll`; `script.replaceAll().replaceAll().replaceAll().replaceAll().replaceAll`; `script.replaceAll().replaceAll().replaceAll().replaceAll`; `script.replaceAll().replaceAll().replaceAll`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const transform = (script: string) => script.replaceAll('/home/sakura-desktop', '$HOME')
     .replaceAll('/run/sakura-desktop', '$SAKURA_DESKTOP_RUNTIME')
     .replaceAll('/etc/sakura/desktop-preferences', '$SAKURA_DESKTOP_RUNTIME/preferences')
@@ -544,6 +680,17 @@ export function desktopUidCommand(runId: string, input: DesktopPreferences, dist
     .replaceAll('/usr/local/libexec/sakura-apply-layout', '$SAKURA_DESKTOP_RUNTIME/apply-layout')
     .replaceAll('file://$HOME/', 'file://$HOME/')
     .replace('Xvnc :1', (distro === 'alpine' ? '/usr/bin/Xvnc' : '/usr/bin/Xtigervnc') + ' :1');
+  /**
+   * 入口 / Entry: desktopUidCommand.interpreterEntry.
+   * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 `script.replace(direct, interpreted)` 供上层消费（`desktop-guest.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces `script.replace(direct, interpreted)` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+   * 处理：通过 `script.split`, `script.replace` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `script.split`, `script.replace`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: script: string; direct: string; interpreted: string
+   * 输出 / Returns: `script.replace(direct, interpreted)`.
+   * 副作用 / Effects: `script.replace`.
+   * 拒绝 / Refusals: 条件 / conditions `script.split(direct).length !== 2`; 异常 / errors `new Error('Desktop trusted runtime entry changed')`.
+   */
   const interpreterEntry = (script: string, direct: string, interpreted: string) => {
     if (script.split(direct).length !== 2) throw new Error('Desktop trusted runtime entry changed');
     return script.replace(direct, interpreted);
@@ -576,11 +723,30 @@ export function desktopUidCommand(runId: string, input: DesktopPreferences, dist
     'exec /bin/sh "$SAKURA_DESKTOP_RUNTIME/session"';
 }
 
+/**
+ * 入口 / Entry: desktopProjectEnvironment.
+ * 功能：从当前输入或状态计算 `Object.fromEntries(Object.entries(environment).filter(([key]) => !/^(?:HOME$|USER$|LOGNAME$|SAKURA_DESKTOP_|DISPLAY$|XAUTHORI…`，供调用方后续验证或使用。
+ * Purpose: Computes `Object.fromEntries(Object.entries(environment).filter(([key]) => !/^(?:HOME$|USER$|LOGNAME$|SAKURA_DESKTOP_|DISPLAY$|XAUTHORI…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: environment: Record<string, string> default={}
+ * 输出 / Returns: `Object.fromEntries(Object.entries(environment).filter(([key]) => !/^(?:HOME$|USER$|LOGNAME$|SAKURA_DESKTOP_|DISPLAY$|XAUTHORI…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export function desktopProjectEnvironment(environment: Record<string, string> = {}) {
   return Object.fromEntries(Object.entries(environment).filter(([key]) => !/^(?:HOME$|USER$|LOGNAME$|SAKURA_DESKTOP_|DISPLAY$|XAUTHORITY$|DBUS_|WAYLAND_|XDG_RUNTIME_DIR$|SESSION_MANAGER$)/.test(key)));
 }
 
 /** Packages and system adapters never receive project cwd, PATH, environment or hooks. */
+/**
+ * 入口 / Entry: desktopProjectPrepare.
+ * 功能：在生成客户机桌面安装、启动、显示和输入法脚本中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ${quote(script)}`` 供上层消费（`desktop-guest.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-guest.ts`; this entry produces ``env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ${quote(script)}`` for its caller. Module context: Generates guest desktop installation, display and input-method scripts; project environment is exported only after UID switching.
+ * 处理：通过 `desktopPreferencesSchema.parse`, `desktopInstall.match`, `aptPrepare`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `desktopPreferencesSchema.parse`, `desktopInstall.match`, `aptPrepare`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: distro: string; input: DesktopPreferences
+ * 输出 / Returns: ``env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ${quote(script)}``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function desktopProjectPrepare(distro: string, input: DesktopPreferences) {
   desktopPreferencesSchema.parse(input);
   const packages = distro === 'alpine' ? desktopInstall.match(/apk add --no-cache[\s\S]*?xauth xdpyinfo xrandr python3 iproute2 setpriv/)![0] + ' tmux iptables' :

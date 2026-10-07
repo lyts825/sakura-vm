@@ -1,4 +1,5 @@
-/** 沿 TypeScript 导入图检查浏览器、服务、插件及网络边界，并核对打包脚本入口与受约束资源访问。 */
+/** 沿 TypeScript 导入图检查浏览器、服务、插件及网络边界，并核对打包脚本入口与受约束资源访问。
+ * Inspect browser/service/plugin/network boundaries along the TypeScript import graph and verify packaged script entry points and constrained resource access. */
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
 import { isBuiltin } from 'node:module';
@@ -21,6 +22,8 @@ const files = (
   )
 ).flat();
 const known = new Set(files);
+/** 将源码绝对路径转为统一斜线的工作区相对诊断标签。
+ * Format source paths as slash-normalized workspace-relative diagnostic labels. */
 const label = (file: string) => relative(process.cwd(), file).replaceAll('\\', '/');
 const graph = new Map<string, string[]>();
 const builtins = new Map<string, string[]>();
@@ -76,6 +79,8 @@ for (const file of files) {
 // Follow client helper modules as well as entry points, so an intermediate
 // plugin module cannot hide a browser-to-server dependency.
 const browserVisited = new Set<string>();
+/** 遍历浏览器运行时导入闭包，避免重复并报告 Node builtin 与服务端代码依赖。
+ * Walk the browser runtime dependency closure once and report Node builtins/server-code imports. */
 function visitBrowser(file: string) {
   if (browserVisited.has(file)) return;
   browserVisited.add(file);
@@ -98,6 +103,8 @@ const index = new Map<string, number>(),
   low = new Map<string, number>();
 const stack: string[] = [],
   active = new Set<string>();
+/** 用 Tarjan 索引/低链接与活动栈计算导入强连通分量，报告多节点或自环依赖。
+ * Compute import strongly connected components with Tarjan indices/lowlinks/active stack, reporting cycles/self-loops. */
 function visit(file: string) {
   index.set(file, next);
   low.set(file, next++);
@@ -124,6 +131,8 @@ for (const file of files) if (!index.has(file)) visit(file);
 // Unlike the initialization graph, network ownership also covers lazy imports,
 // plugin server helpers, JS helpers, and every script shipped in the release.
 const networkVisited = new Set<string>();
+/** 从受约束源码递归检查网络导入，跳过已有独立校验的依赖/编译产物，并核实发行脚本实际闭包。
+ * Recursively check source network imports, excluding independently checked dependencies/bundles and validating actual release-script closure. */
 async function visitNetwork(file: string) {
   // Dependencies and generated bundles have their own adapter/build checks.
   // Scanning the compiled network core would also erase its source boundary.
@@ -145,6 +154,8 @@ async function visitNetwork(file: string) {
   errors.push(...pluginBoundaryErrors(label(file), source));
   errors.push(...domainBoundaryErrors(label(file), source));
   const dependencies: string[] = [];
+  /** 识别静态 import/export、import-equals 与动态加载表达式，收集实际运行依赖而跳过纯类型边界。
+   * Recognize import/export/import-equals/dynamic loads and collect runtime dependencies rather than type-only edges. */
   function collect(node: ts.Node) {
     if (
       (ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly) ||
@@ -210,6 +221,8 @@ const releaseScripts = new Set([
   'ha-witness.ts',
 ]);
 const packageSource = ts.createSourceFile('package-release.mjs', packaging, ts.ScriptTarget.Latest, true);
+/** 从源码字符串常量收集固定 mjs 发行入口名，供安装布局依赖核对。
+ * Collect fixed mjs release-entry names from source string literals for install-layout checks. */
 function packagedScripts(node: ts.Node) {
   if (ts.isStringLiteralLike(node) && /^[a-z][a-z0-9-]*\.mjs$/.test(node.text)) releaseScripts.add(node.text);
   ts.forEachChild(node, packagedScripts);

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/** Sakura 本机管理 CLI：解析实例与工作区命令，取得认证并调用服务 API，路由开发和沙箱子命令。 */
+/** Sakura 本机管理 CLI：解析实例与工作区命令，取得认证并调用服务 API，路由开发和沙箱子命令。
+ * The local Sakura management CLI parses instance/workspace commands, obtains authentication, calls service APIs and dispatches development/sandbox subcommands. */
 import { networkFor } from './network-client.mjs';
 const { fetch, webSocket } = networkFor('tool:cli');
 import { WebSocket } from 'ws';
@@ -10,6 +11,8 @@ import { pipeline } from 'node:stream/promises';
 import { guestArguments, guestExecution } from './guest-cli.mjs';
 const base = `http://127.0.0.1:${process.env.SAKURA_PORT || 7337}`;
 const [action = 'help', name, ...args] = process.argv.slice(2);
+/** 解析 CLI 命令并通过已认证本机 API 调用基础或可选插件能力；交互终端接管输入与窗口尺寸，长任务响应取消。参数和服务错误向顶层传播，退出时释放终端状态。
+ * Dispatch CLI arguments through authenticated local APIs to core or optional plugin capabilities; interactive terminals take over input/size and long work supports cancellation. Argument/service errors propagate and exit restores terminal state. */
 async function main() {
   if (action === 'help') {
     if (name !== 'all') {
@@ -40,6 +43,8 @@ async function main() {
   try {
     const guest = ['exec', 'shell'].includes(action) ? guestArguments(action, args) : null;
     const abort = new AbortController();
+    /** 取消本轮请求的 AbortController；中断长任务分支还设置 130 退出码，使调用方能区分用户中断。
+     * Abort this request controller; the long-task branch also sets exit code 130 so callers can distinguish user interruption. */
     const cancel = () => { process.exitCode = 130; abort.abort(); };
     process.on('SIGINT', cancel);
     process.on('SIGTERM', cancel);
@@ -51,6 +56,8 @@ async function main() {
       if (!authentication.ok) throw new Error(bootstrap.error || '无法获取控制凭证；账户模式请设置 SAKURA_TOKEN');
       if (typeof bootstrap.token !== 'string' || !bootstrap.token) throw new Error('服务返回了无效的访问凭证');
     }
+    /** 把路径、HTTP 方法与可选 JSON 发送到当前 bootstrap 令牌对应的本机 API，共享取消信号；解析结果并在 HTTP 失败时抛出服务错误。
+     * Send path/method/optional JSON to the local API with the current bootstrap token and shared cancellation signal; parse the result and throw the service error on HTTP failure. */
     async function api(path, method = 'GET', data) {
       const response = await fetch(`${base}/api${path}`, {
         method,
@@ -478,6 +485,8 @@ async function main() {
       // Reserve the destination before asking the server to prepare a large disk.
       const file = await open(args[0], 'wx', 0o600);
       const controller = new AbortController();
+      /** 取消本轮请求的 AbortController；中断长任务分支还设置 130 退出码，使调用方能区分用户中断。
+       * Abort this request controller; the long-task branch also sets exit code 130 so callers can distinguish user interruption. */
       const cancel = () => controller.abort();
       let complete = false;
       let identity;
@@ -585,13 +594,19 @@ async function main() {
         (guest?.project ? `&project=${encodeURIComponent(guest.project)}` : ''),
     );
     const rawMode = Boolean(process.stdin.isTTY);
+    /** 关闭本次启用的原始输入模式并暂停 stdin，防止终端退出后遗留无法正常编辑的控制台。
+     * Disable raw input enabled by this session and pause stdin so terminal exit does not leave the console in an unusable editing state. */
     const restore = () => {
       if (rawMode) process.stdin.setRawMode(false);
       process.stdin.pause();
     };
+    /** 只在 WebSocket 已打开时发送 JSON 控制消息，忽略尚未建立或已经关闭的终端传输。
+     * Send a JSON control message only while the WebSocket is open, ignoring terminal transports not yet connected or already closed. */
     const send = (data) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data));
     };
+    /** 把当前行列数发送给来宾 PTY，无尺寸信息时使用 24 行、100 列的稳定默认值。
+     * Send current rows/columns to the guest PTY, using stable 24-row/100-column defaults when dimensions are unavailable. */
     const resize = () =>
       send({ type: 'resize', rows: process.stdout.rows || 24, cols: process.stdout.columns || 100 });
     socket.on('message', (data) => {
@@ -616,6 +631,8 @@ async function main() {
       process.exitCode = 1;
       socket.close();
     });
+    /** 先恢复控制台输入，再关闭本次终端 WebSocket；可用于信号和正常结束的同一清理路径。
+     * Restore console input before closing this terminal WebSocket, sharing cleanup between signals and normal completion. */
     const close = () => {
       restore();
       socket.close();

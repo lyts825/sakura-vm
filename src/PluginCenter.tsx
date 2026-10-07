@@ -1,5 +1,8 @@
 /**
- * 模块职责：展示插件/插件包依赖、启用选择、生命周期和恢复入口，提交用户的插件配置。
+ * 模块职责（中文）：展示插件/插件包依赖、启用选择、生命周期和恢复入口，提交用户的插件配置。
+ * Module responsibility (English): Managing plugin selection, dependencies, lifecycle and recovery entry points.
+ * 详细范围（中文）：公开入口包括 PluginCenter；职责覆盖管理插件选择、依赖、生命周期与恢复入口，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include PluginCenter. The scope covers Managing plugin selection, dependencies, lifecycle and recovery entry points. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -32,9 +35,17 @@ import './plugins.css';
 import { CommunityPluginCenter } from './CommunityPluginCenter';
 import { PluginErrorBoundary } from './plugin-boundary';
 
+/**
+ * 中文：呈现管理插件选择、依赖、生命周期与恢复入口中的 DeferredRecoveryPanel 界面，组合 Panel，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the DeferredRecoveryPanel surface for Managing plugin selection, dependencies, lifecycle and recovery entry points and composing Panel. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 function DeferredRecoveryPanel({ request }: { request: Request }) {
   const [attempt, retry] = useState(0);
-  const Panel = useMemo(() => lazy(() => import('./RecoveryPanel').then(module => ({ default: module.RecoveryPanel }))), [attempt]);
+  const Panel = useMemo(/** 中文：在 memo 中创建恢复面板 lazy 组件，延后下载恢复代码并保持同一依赖周期内组件类型稳定。 | English: Create the recovery-panel lazy component inside memo, deferring its code download and retaining stable component identity within the dependency lifetime. */ () => lazy(/** 中文：在 memo 中创建恢复面板 lazy 组件，延后下载恢复代码并保持同一依赖周期内组件类型稳定。 | English: Create the recovery-panel lazy component inside memo, deferring its code download and retaining stable component identity within the dependency lifetime. */ () => import('./RecoveryPanel').then(module => ({ default: module.RecoveryPanel }))), [attempt]);
   return <PluginErrorBoundary key={attempt} label="资源恢复" retryLabel="重试恢复面板" retry={() => retry(value => value + 1)}>
     <Suspense fallback={<p role="status">正在加载恢复目录…</p>}>
       <Panel request={request} />
@@ -76,6 +87,14 @@ const systemServiceNames: Record<string, string> = {
   graph: 'GraphQL',
 };
 
+/**
+ * 中文：为管理插件选择、依赖、生命周期与恢复入口构造包含 label、tone、icon 的局部数据对象，字段取自本次输入和明确默认值，供后续表单或状态流程使用
+ * English: Build a local data object containing label, tone, icon for Managing plugin selection, dependencies, lifecycle and recovery entry points, using current inputs/explicit defaults for subsequent form/state processing
+ * 中文：输入：status：签名所示 PluginStatus 业务值；id：目标资源标识
+ * English: Inputs: status: the PluginStatus domain value in the signature; id: target resource identifier
+ * 中文：结果：包含 label、tone、icon 的对象，字段供调用者读取状态或调用操作
+ * English: Result: an object containing label, tone, icon for caller state reads/operations
+ */
 function pluginState(status: PluginStatus, id: string) {
   const instance = status.runtime?.instances.find(item => item.source === 'official' && item.pluginId === id);
   if (instance?.phase === 'cleanup-pending') return { label: '清理待恢复', tone: 'error', icon: CircleAlert };
@@ -95,6 +114,12 @@ function pluginState(status: PluginStatus, id: string) {
   return { label: '未启用', tone: 'idle', icon: Plus };
 }
 
+/**
+ * 中文：把插件声明的页面、实例分区和开发分区转成分类显示标签，未知标签回退插件名。
+ * English: Turn declared pages/VM tabs/development sections into categorized labels, falling back to the plugin name for unknown labels.
+ * 中文：输入：plugin：签名所示 PluginManifest 业务值
+ * English: Inputs: plugin: the PluginManifest domain value in the signature
+ */
 function surfaceLabels(plugin: PluginManifest) {
   return [
     ...plugin.contributes.pages.map((id) => `导航 · ${pageLabels[id] || plugin.name}`),
@@ -103,6 +128,12 @@ function surfaceLabels(plugin: PluginManifest) {
   ];
 }
 
+/**
+ * 中文：呈现管理插件选择、依赖、生命周期与恢复入口中的 PluginCenter 界面，组合 Puzzle、RefreshCw、CircleAlert、LoaderCircle、TerminalSquare、Check、ArrowUpRight、ArrowDownRight，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the PluginCenter surface for Managing plugin selection, dependencies, lifecycle and recovery entry points and composing Puzzle, RefreshCw, CircleAlert, LoaderCircle, TerminalSquare, Check, ArrowUpRight, ArrowDownRight. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ */
 export function PluginCenter({ request }: { request: Request }) {
   const [status, setStatus] = useState<PluginStatus | null>(null);
   const [error, setError] = useState('');
@@ -114,6 +145,16 @@ export function PluginCenter({ request }: { request: Request }) {
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
   const pending = useRef<AbortController | null>(null);
+  /**
+   * 中文：读取 GET /plugins，完成管理插件选择、依赖、生命周期与恢复入口的数据交互并更新忙碌标记、错误反馈、status 状态；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform GET /plugins for Managing plugin selection, dependencies, lifecycle and recovery entry points and update busy flag, error feedback, status state. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+   * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+   * 中文：设计：等待期间身份或版本可能改变，完成后按捕获代次比较再采用结果，避免旧上下文覆盖新状态
+   * English: Design: identity/version may change while awaiting; compare captured generations before adopting completion to avoid old context replacing new state
+   */
   const load = useCallback(async () => {
     if (pending.current) return;
     const abort = new AbortController();
@@ -132,13 +173,31 @@ export function PluginCenter({ request }: { request: Request }) {
       }
     }
   }, [request]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [load] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [load] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     void load();
+    /**
+     * 中文：在管理插件选择、依赖、生命周期与恢复入口流程中取消捕获的异步寿命；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Managing plugin selection, dependencies, lifecycle and recovery entry points, abort the captured asynchronous lifetime. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     return () => {
       pending.current?.abort();
       pending.current = null;
     };
   }, [load]);
+  /**
+   * 中文：提交 PATCH /plugins，完成管理插件选择、依赖、生命周期与恢复入口的数据交互并更新忙碌标记、错误反馈、notice 状态、status 状态；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform PATCH /plugins for Managing plugin selection, dependencies, lifecycle and recovery entry points and update busy flag, error feedback, notice state, status state. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：kind：签名所示 'plugin' | 'pack' 业务值；id：目标资源标识；enabled：是否启用本能力或读取流程
+   * English: Inputs: kind: the 'plugin' | 'pack' domain value in the signature; id: target resource identifier; enabled: whether this capability/read flow is enabled
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+   * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+   * 中文：设计：等待期间身份或版本可能改变，完成后按捕获代次比较再采用结果，避免旧上下文覆盖新状态
+   * English: Design: identity/version may change while awaiting; compare captured generations before adopting completion to avoid old context replacing new state
+   */
   const change = async (kind: 'plugin' | 'pack', id: string, enabled: boolean) => {
     if (pending.current) return;
     const abort = new AbortController();
@@ -175,6 +234,14 @@ export function PluginCenter({ request }: { request: Request }) {
       ),
     [status],
   );
+  /**
+   * 中文：在管理插件选择、依赖、生命周期与恢复入口流程中服务端视图，搜索或查询文本，category 状态，stateFilter 状态，moreOptionsOpen 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Managing plugin selection, dependencies, lifecycle and recovery entry points, server view, search/query text, category state, stateFilter state, moreOptionsOpen state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：next：待采用的新状态或数据
+   * English: Inputs: next: new state/data to adopt
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const chooseView = (next: View) => {
     setView(next);
     setQuery('');
@@ -188,6 +255,12 @@ export function PluginCenter({ request }: { request: Request }) {
   ]
     .filter(Boolean)
     .join(' · ');
+  /**
+   * 中文：从当前目录按插件 ID 查名称，未找到时保留 ID 用于解释依赖与迁移。
+   * English: Find a plugin name in the current catalog by ID, retaining the ID when absent for dependency/migration explanations.
+   * 中文：输入：id：目标资源标识
+   * English: Inputs: id: target resource identifier
+   */
   const pluginName = (id: string) => status?.plugins.find((plugin) => plugin.id === id)?.name || id;
   const added = status?.planned.filter((id) => !status.active.includes(id)) || [];
   const removed = status?.active.filter((id) => !status.planned.includes(id)) || [];
@@ -201,6 +274,12 @@ export function PluginCenter({ request }: { request: Request }) {
     instance.source === 'system' && (['failed', 'cleanup-pending'].includes(instance.phase) ||
       (instance.phase === 'inactive' && !!instance.error))) || [];
   const needle = query.trim().toLocaleLowerCase();
+  /**
+   * 中文：根据  判断管理插件选择、依赖、生命周期与恢复入口中的输入或条目是否符合条件，返回布尔判断供调用者筛选/保护分支
+   * English: Evaluate  to test inputs/entries in Managing plugin selection, dependencies, lifecycle and recovery entry points, returning a boolean for filtering/guard branches
+   * 中文：输入：values：签名所示 string[] 业务值
+   * English: Inputs: values: the string[] domain value in the signature
+   */
   const matches = (values: string[]) => values.join(' ').toLocaleLowerCase().includes(needle);
   const plugins =
     status?.plugins
@@ -235,6 +314,12 @@ export function PluginCenter({ request }: { request: Request }) {
           (packOrder.indexOf(b.id) < 0 ? packOrder.length : packOrder.indexOf(b.id)),
       ) || [];
 
+  /**
+   * 中文：按显式选择、计划、活动状态和依赖根渲染插件卡片；仍被其他根需要的插件不能简单取消，入口同时显示贡献、风险和权限信息。
+   * English: Render a plugin card from explicit selection, plan, active state and dependency roots. A plugin still required by other roots cannot simply be deselected; show contributions/risks/authority information.
+   * 中文：输入：plugin：签名所示 PluginManifest 业务值
+   * English: Inputs: plugin: the PluginManifest domain value in the signature
+   */
   const renderPlugin = (plugin: PluginManifest) => {
     if (!status) return null;
     const selected = status.selection.plugins.includes(plugin.id);
@@ -375,6 +460,12 @@ export function PluginCenter({ request }: { request: Request }) {
       </article>
     );
   };
+  /**
+   * 中文：预解析切换插件包后的选择，显示新增/移除和仍由其他选择保留的成员；卡片预览不直接改变服务生命周期。
+   * English: Pre-resolve selection after toggling a pack and show added/removed members plus those retained by other roots; card preview does not directly change service lifetimes.
+   * 中文：输入：pack：签名所示 PluginStatus['packs'][number] 业务值
+   * English: Inputs: pack: the PluginStatus['packs'][number] domain value in the signature
+   */
   const renderPack = (pack: PluginStatus['packs'][number]) => {
     if (!status) return null;
     const selected = status.selection.packs.includes(pack.id);

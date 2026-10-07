@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目 SSH 配置变更失败后的回滚、凭据和运行域状态。 */
+/** 烟雾验收：验证项目 SSH 配置变更失败后的回滚、凭据和运行域状态。
+ * Smoke acceptance for rollback of failed SSH configuration changes, credentials and runtime domains. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -68,6 +69,8 @@ const service = new ProjectSsh(machines, spaces, { identities, scopes });
 const nativeExec = machines.exec.bind(machines);
 const nativePrepare = identities.prepareSsh.bind(identities);
 const nativeRecover = scopes.recoverSshTicket.bind(scopes);
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string, timeout = 30000) => {
   const result = await nativeExec(vm.id, command, timeout);
   assert.equal(result.code, 0, result.stderr + result.stdout);
@@ -82,6 +85,8 @@ const childSchema = z.object({
   cgroupName: z.string(), cgroupDevice: decimal, cgroupInode: decimal,
 }).strict();
 type OwnedChild = z.infer<typeof childSchema>;
+/** 核验 bootId、PID 出生、全部 UID/GID、cgroup inode、网络 inode 和会话 ID 后判断原子进程存活，身份变化立即失败。
+ * Check bootId/PID birth/all UID-GID/cgroup inode/network inode/session ID before original-process liveness, failing on identity changes. */
 const alive = async (child: OwnedChild) => (await run('python3 -I -S -c ' + quote([
   'import json,os',
   'wanted=json.loads(' + JSON.stringify(JSON.stringify(child)) + ')',
@@ -103,6 +108,8 @@ const alive = async (child: OwnedChild) => (await run('python3 -I -S -c ' + quot
   '  print(True)',
   'except (FileNotFoundError,ProcessLookupError): print(False)',
 ].join('\n')))) === 'True';
+/** 有限次轮询自有应用的结果文件，出现后返回；期限内未发布则失败，避免使用上一阶段缺失结果。
+ * Poll the owned application result file for a bounded number of attempts, returning when published and failing on absence rather than using missing prior-stage evidence. */
 const waitFile = async (file: string) => {
   for (let attempt = 0; attempt < 80; ++attempt) {
     if ((await nativeExec(vm.id, 'test -f ' + quote(file), 5000)).code === 0) return;
@@ -110,6 +117,8 @@ const waitFile = async (file: string) => {
   }
   throw new Error('Owned detached UID child did not publish its receipt');
 };
+/** 暂时把原 live SSH 端口指向未监听端口，断言连接拒绝/超时，finally 恢复原端口以验证回复丢失后的恢复。
+ * Temporarily point the original live SSH port at an unlistened port, assert refusal/timeout and restore it in finally to exercise recovery after lost replies. */
 const failConnection = async (command: string) => {
   const live = machines.live.get(vm.id)!;
   const saved = live.sshPort;
@@ -181,7 +190,8 @@ try {
     const events: string[] = [];
     const marker = directory + '/child-' + randomUUID() + '.json';
     const lostAck = new Error('Owned original SSH native issuance acknowledgement lost');
-    scopes.recoverSshTicket = async (id, projectId, runId, signal) => {
+    scopes.recoverSshTicket = /** 正式 recoverSsh 后核对精确 VM/project/run 和完整原票据，host 必须已固定 active；记录恢复事件，回滚所有权不得从 intent/null run 推测。
+ * After formal recoverSsh verify exact VM/project/run/full original receipt and host-pinned active state; record recovery so rollback ownership is never inferred from intent/null run. */ async (id, projectId, runId, signal) => {
       const ticket = await nativeRecover(id, projectId, runId, signal);
       assert.ok(issued && original && ticket?.run, 'Rollback must recover the issued native ticket');
       assert.equal(id, vm.id);
@@ -195,7 +205,8 @@ try {
       events.push('original-full-native-ticket-recovered-and-host-pinned');
       return ticket;
     };
-    identities.prepareSsh = async (id, requestedIdentity, options, signal) => {
+    identities.prepareSsh = /** 真实 SSH 入场后保留 host intent，借经原票据验证的临时桥启动真实项目 UID 脱离子进程并固定出生/cgroup/网络；关临时桥后子进程仍活，再丢 ACK，测试正式回滚必须完整恢复原票据。
+ * After real SSH admission retain host intent, use a receipt-verified temporary bridge to start/pin a real project-UID detached child with birth/cgroup/network evidence; close the bridge while it lives, then lose ACK so formal rollback must recover the full original receipt. */ async (id, requestedIdentity, options, signal) => {
       assert.equal(issued, false, 'This case must inject exactly one native issuance ACK loss');
       assert.equal(id, vm.id);
       assert.deepEqual(requestedIdentity, identity);
@@ -240,6 +251,8 @@ try {
           client.once('ready', resolve).once('error', reject);
           client.connect({
             host: '127.0.0.1', port, username: 'root', privateKey: clientKey, readyTimeout: 10000,
+            /** 只接受落盘精确公钥的原始 SSH 字节，拒绝替代主机密钥。
+             * Accept only raw SSH bytes matching the pinned public key and reject replacements. */
             hostVerifier: (key: Buffer) => key.equals(pin.getPublicSSH()),
           });
         });
@@ -261,9 +274,12 @@ try {
         ].join('\n');
         const spawn = 'import subprocess\nsubprocess.Popen(["/usr/bin/python3","-I","-S","-c",' +
           JSON.stringify(childSource) + '],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True,close_fds=True)';
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>(/** 以真实 SSH 命令启动自有脱离子进程，最多等 30 秒，排空输出避免背压；finish 清计时器并按真实退出码处理错误。
+ * Launch the owned detached child via real SSH with a thirty-second deadline and drain output to avoid backpressure; finish clears the timer and evaluates actual exit status. */ (resolve, reject) => {
           const timer = setTimeout(() => reject(new Error('Owned SSH child command timed out')), 30000);
           timer.unref();
+          /** 清理本次等待计时器，再按可选错误兑现或拒绝 Promise，防止连接等待保留超时资源。
+           * Clear the wait timer before resolving/rejecting from the optional error to avoid retained timeout resources. */
           const finish = (error?: Error) => {
             clearTimeout(timer);
             error ? reject(error) : resolve();
@@ -303,7 +319,8 @@ try {
       events.push('test-bridge-closed-original-host-intent-still-unacknowledged');
       throw lostAck;
     };
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 回滚检查/停止前要求完整票据已恢复，再仅对指定阶段注入真实连接失败；失败后原 UID 子进程应仍活，证明错误没有被误当作清理成功。
+ * Require full receipt recovery before rollback checks/stops, injecting real connection failure only at selected stages; prove the original UID child remains alive after failure rather than misreporting cleanup success. */ async (id, command, timeout, signal, output, agent) => {
       if (issued && command.startsWith('# SAKURA_PROJECT_SSH_ROLLBACK_CHECK')) {
         ++checks;
         assert.ok(original && child);

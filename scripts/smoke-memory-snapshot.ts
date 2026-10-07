@@ -1,4 +1,5 @@
-/** 烟雾验收：验证RAM、进程和磁盘状态的多次恢复及来宾重启后的恢复。 */
+/** 烟雾验收：验证RAM、进程和磁盘状态的多次恢复及来宾重启后的恢复。
+ * Smoke acceptance for repeated RAM/process/disk restoration and post-guest-reboot recovery. */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,6 +19,8 @@ const { networkRuntime } = await import('../server/network/index.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 270_000;
@@ -28,6 +31,8 @@ async function boot(id: string) {
   }
 }
 
+/** 读取内存快照标记并探测记录 PID 存活，断言文本与预期 alive/dead 同时匹配，以区分磁盘和内存恢复。
+ * Read the memory-snapshot marker/probe recorded PID liveness and assert text plus expected alive/dead together to distinguish disk/memory restoration. */
 async function check(id: string, expected: string, processAlive: boolean) {
   const result = await machines.exec(id,
     'cat /workspace/memory-snapshot.txt; echo; kill -0 "$(cat /workspace/memory-snapshot.pid)" 2>/dev/null && echo alive || echo dead');

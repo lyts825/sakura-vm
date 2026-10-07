@@ -1,10 +1,13 @@
-/** 核对明确拥有的项目夹具并授权其迁移/执行作用域，防止烟雾脚本误用既有实例数据。 */
+/** 核对明确拥有的项目夹具并授权其迁移/执行作用域，防止烟雾脚本误用既有实例数据。
+ * Validate explicit authorization and exact source/runtime identity before reusing an owned project fixture. */
 import assert from 'node:assert/strict';
 import type { VmAccess } from '../server/vm-access.ts';
 import type { Workspaces } from '../server/workspaces.ts';
 import { quote } from '../server/shell.ts';
 
 /** Only freshly created, disposable VM fixtures call this explicit directory authorization. */
+/** 只为 /workspace 下的无上级逃逸自有夹具目录保留项目身份；隔离 Python 验证物理路径、无链接和 root/项目 UID 所有权后授权，再通过正式身份入口核验。
+ * Reserve project identity only for owned nonescaping /workspace fixtures; isolated Python verifies physical paths/no links/root-or-project ownership before authorization, then the production identity entry confirms it. */
 export async function authorizeOwnedProjectFixture(
   machines: VmAccess,
   workspaces: Pick<Workspaces, 'config'>,

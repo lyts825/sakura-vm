@@ -1,5 +1,8 @@
 /**
- * 模块职责：核心 API 响应 DTO 的运行时 Schema，供响应契约、文档和客户端类型生成复用。
+ * 模块职责（中文）：核心 API 响应 DTO 的运行时 Schema，供响应契约、文档和客户端类型生成复用。
+ * Module responsibility (English): runtime schemas for core API response DTOs.
+ * 详细范围（中文）：公开入口包括 jobView_executionVariant0Schema, jobViewSchema, accountUsersSchema, passkeyListSchema, accountCreateSchema, accountRemoveSchema, accountEnableSchema, accountPasswordSchema, passkeyRegistration_options_authenticatorSelectionVariant0Schema, passkeyRegisteredSchema, ssoProvidersSchema, ssoViewSchema, ssoStartSchema, ssoUnlinkSchema, terminalSharesSchema, terminalShareSchema；职责覆盖核心 API 响应 DTO 的运行时 Schema，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include jobView_executionVariant0Schema, jobViewSchema, accountUsersSchema, passkeyListSchema, accountCreateSchema, accountRemoveSchema, accountEnableSchema, accountPasswordSchema, passkeyRegistration_options_authenticatorSelectionVariant0Schema, passkeyRegisteredSchema, ssoProvidersSchema, ssoViewSchema, ssoStartSchema, ssoUnlinkSchema, terminalSharesSchema, terminalShareSchema. The scope covers runtime schemas for core API response DTOs. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 import { haPromotionSchema, haRetirementSchema, haWitnessEnrollmentSchema, liveMigrationFenceSchema, liveMigrationOriginSchema } from './vm.ts';

@@ -1,5 +1,8 @@
 /**
- * 模块职责：编辑 GPU/vGPU 配置档案，预览设备分配并向实例应用所选配置。
+ * 模块职责（中文）：编辑 GPU/vGPU 配置档案，预览设备分配并向实例应用所选配置。
+ * Module responsibility (English): Editing GPU profiles and previewing and applying resource allocation.
+ * 详细范围（中文）：公开入口包括 GpuProfilesSettings；职责覆盖编辑 GPU 档案并预览和应用资源分配，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include GpuProfilesSettings. The scope covers Editing GPU profiles and previewing and applying resource allocation. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
@@ -15,9 +18,23 @@ type View = { profiles: Profile[];
   assignments: { vmId: string; vmName: string | null; profileId: string;
     profileName: string; profileRevision: number; drifted: boolean }[] };
 type VM = { id: string; name: string; status: string };
+/**
+ * 中文：返回新 GPU 档案表单默认值，包括 virtio-gpu、单输出、尺寸和最低内存，不保存档案。
+ * English: Return new GPU-profile form defaults including virtio-gpu, one output, dimensions and minimum memory without persisting a profile.
+ * 中文：结果：Input，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: Input carrying the described computation/transport result; throwing branches do not provide success
+ */
 const empty = (): Input => ({ name: '', graphics: 'virtio-gpu', outputs: 1,
   width: 1280, height: 800, hostMemoryMiB: 256, minVmMemoryMiB: 512 });
 
+/**
+ * 中文：呈现编辑 GPU 档案并预览和应用资源分配中的 GpuProfilesSettings 界面，订阅 /gpu-profiles、/vms，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the GpuProfilesSettings surface for Editing GPU profiles and previewing and applying resource allocation, subscribing to /gpu-profiles, /vms. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function GpuProfilesSettings({ request }: { request: Request }) {
   const remote = useRemote<View>(request, '/gpu-profiles', true, 15000);
   const vms = useRemote<VM[]>(request, '/vms', true, 5000);
@@ -28,21 +45,41 @@ export function GpuProfilesSettings({ request }: { request: Request }) {
   const [review, setReview] = useState<Preview | null>(null);
   const currentTarget = target || vms.data?.[0]?.id || '';
   const selected = remote.data?.profiles.find((profile) => profile.id === review?.profileId);
-  const save = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /gpu-profiles，完成编辑 GPU 档案并预览和应用资源分配的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /gpu-profiles for Editing GPU profiles and previewing and applying resource allocation. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const save = () => void action.run(/** 中文：提交 POST /gpu-profiles，完成编辑 GPU 档案并预览和应用资源分配的数据交互并更新editing 状态、编辑草稿、review 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /gpu-profiles for Editing GPU profiles and previewing and applying resource allocation and update editing state, editing draft, review state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     await request('/gpu-profiles', 'POST', { operation: 'save',
       ...(editing ? { id: editing.id, revision: editing.revision } : {}), profile: draft }, signal);
     setEditing(null); setDraft(empty()); setReview(null); remote.reload();
   }, 'GPU 档案已保存');
-  const preview = (profile: Profile) => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /gpu-profiles，完成编辑 GPU 档案并预览和应用资源分配的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /gpu-profiles for Editing GPU profiles and previewing and applying resource allocation. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：profile：签名所示 Profile 业务值
+   * English: Inputs: profile: the Profile domain value in the signature
+   */
+  const preview = (profile: Profile) => void action.run(/** 中文：提交 POST /gpu-profiles，完成编辑 GPU 档案并预览和应用资源分配的数据交互并更新review 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /gpu-profiles for Editing GPU profiles and previewing and applying resource allocation and update review state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     setReview(await request<Preview>('/gpu-profiles', 'POST',
       { operation: 'preview', id: profile.id, vmId: currentTarget }, signal));
   });
-  const apply = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /gpu-profiles，完成编辑 GPU 档案并预览和应用资源分配的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /gpu-profiles for Editing GPU profiles and previewing and applying resource allocation. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const apply = () => void action.run(/** 中文：提交 POST /gpu-profiles，完成编辑 GPU 档案并预览和应用资源分配的数据交互并更新review 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /gpu-profiles for Editing GPU profiles and previewing and applying resource allocation and update review state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     await request('/gpu-profiles', 'POST', { operation: 'apply', id: review!.profileId,
       vmId: currentTarget, previewToken: review!.previewToken }, signal);
     setReview(null); remote.reload(); vms.reload();
   }, 'GPU 档案已应用；下次启动实例时生效');
-  const remove = (profile: Profile) => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /gpu-profiles，完成编辑 GPU 档案并预览和应用资源分配的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /gpu-profiles for Editing GPU profiles and previewing and applying resource allocation. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：profile：签名所示 Profile 业务值
+   * English: Inputs: profile: the Profile domain value in the signature
+   */
+  const remove = (profile: Profile) => void action.run(/** 中文：提交 POST /gpu-profiles，完成编辑 GPU 档案并预览和应用资源分配的数据交互并更新editing 状态、编辑草稿、review 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /gpu-profiles for Editing GPU profiles and previewing and applying resource allocation and update editing state, editing draft, review state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     await request('/gpu-profiles', 'POST',
       { operation: 'remove', id: profile.id, revision: profile.revision }, signal);
     if (editing?.id === profile.id) { setEditing(null); setDraft(empty()); }

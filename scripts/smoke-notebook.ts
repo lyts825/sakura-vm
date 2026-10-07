@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实 Notebook 进程的项目 UID、作用域、会话和清理。 */
+/** 烟雾验收：验证真实 Notebook 进程的项目 UID、作用域、会话和清理。
+ * Smoke acceptance for real Notebook project UID/scope/session and cleanup. */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
@@ -112,7 +113,8 @@ try {
           (isolated ? `s = socket.socket()\ntry:\n s.connect(('10.0.2.2', 80))\n raise AssertionError('private kernel reached shared guest network')\nexcept OSError:\n pass\nfinally:\n s.close()\n` : '') +
           `print('SAKURA_KERNEL_NAMESPACE_OK')`;
         const msgId = randomUUID();
-        const executed = new Promise<void>((resolve, reject) => {
+        const executed = new Promise<void>(/** 只接受本 msgId 的 Jupyter 回包，累积 stream 并要求 execute_reply 成功及命名空间标记；30 秒截止或 WebSocket 错误拒绝，避免别的 kernel 请求误满足验证。
+ * Accept Jupyter replies only for this msgId, accumulate streams and require successful execute_reply plus namespace marker; reject at thirty seconds/on WebSocket error so unrelated kernel requests cannot satisfy verification. */ (resolve, reject) => {
           let output = '';
           const timer = setTimeout(() => reject(new Error('kernel execution timed out')), 30000);
           ws.on('message', (data) => {

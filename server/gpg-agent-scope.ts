@@ -1,5 +1,6 @@
 /**
  * 模块职责：部署固定 GPG 代理并维护任务资源票据，准备与清理核对宿主及客户机运行身份。
+ * Module purpose: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -27,15 +28,76 @@ const fixedEnvironment = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=
 export const gpgAgentControlRoot = '/run/sakura-gpg-forwards';
 export const gpgAgentSocketRoot = '/run/sakura-gpg-sockets';
 export const gpgAgentHomeRoot = '/run/sakura-gpg-data';
+/**
+ * 入口 / Entry: gpgAgentSocketPath.
+ * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``${gpgAgentSocketRoot}/${z.uuid().parse(leaseId)}/agent`` 供上层消费（`gpg-agent-scope.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-scope.ts`; this entry produces ``${gpgAgentSocketRoot}/${z.uuid().parse(leaseId)}/agent`` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+ * 处理：通过 `z.uuid().parse`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: leaseId: string
+ * 输出 / Returns: ``${gpgAgentSocketRoot}/${z.uuid().parse(leaseId)}/agent``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const gpgAgentSocketPath = (leaseId: string) => `${gpgAgentSocketRoot}/${z.uuid().parse(leaseId)}/agent`;
+/**
+ * 入口 / Entry: gpgAgentSourcePath.
+ * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``${gpgAgentControlRoot}/sources/${z.uuid().parse(leaseId)}/agent`` 供上层消费（`gpg-agent-scope.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-scope.ts`; this entry produces ``${gpgAgentControlRoot}/sources/${z.uuid().parse(leaseId)}/agent`` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+ * 处理：通过 `z.uuid().parse`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: leaseId: string
+ * 输出 / Returns: ``${gpgAgentControlRoot}/sources/${z.uuid().parse(leaseId)}/agent``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const gpgAgentSourcePath = (leaseId: string) => `${gpgAgentControlRoot}/sources/${z.uuid().parse(leaseId)}/agent`;
+/**
+ * 入口 / Entry: gpgAgentHomePath.
+ * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``${gpgAgentHomeRoot}/${z.uuid().parse(leaseId)}/home`` 供上层消费（`gpg-agent-scope.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-scope.ts`; this entry produces ``${gpgAgentHomeRoot}/${z.uuid().parse(leaseId)}/home`` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+ * 处理：通过 `z.uuid().parse`, `z.uuid` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: leaseId: string
+ * 输出 / Returns: ``${gpgAgentHomeRoot}/${z.uuid().parse(leaseId)}/home``.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const gpgAgentHomePath = (leaseId: string) => `${gpgAgentHomeRoot}/${z.uuid().parse(leaseId)}/home`;
 
 type HostOwner = { bridge: OwnedGpgForward; context: GpgAgentContext;
   live: NonNullable<ReturnType<Machines['live']['get']>>; cleaned: boolean };
 const owners = new WeakMap<Machines, Map<string, HostOwner>>();
+/**
+ * 入口 / Entry: same.
+ * 功能：从当前输入或状态计算 `JSON.stringify(a) === JSON.stringify(b)`，供调用方后续验证或使用。
+ * Purpose: Computes `JSON.stringify(a) === JSON.stringify(b)` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: a: unknown; b: unknown
+ * 输出 / Returns: `JSON.stringify(a) === JSON.stringify(b)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/**
+ * 入口 / Entry: ownerKey.
+ * 功能：从当前输入或状态计算 `vmId + ':' + context.owner.runId`，供调用方后续验证或使用。
+ * Purpose: Computes `vmId + ':' + context.owner.runId` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: vmId: string; context: GpgAgentContext
+ * 输出 / Returns: `vmId + ':' + context.owner.runId`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const ownerKey = (vmId: string, context: GpgAgentContext) => vmId + ':' + context.owner.runId;
+/**
+ * 入口 / Entry: bindTaskGpg.
+ * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；本入口产生 `() => { if (value.cleaned && registry.get(key) === value) registry.delete(key); }` 供上层消费（`gpg-agent-scope.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-scope.ts`; this entry produces `() => { if (value.cleaned && registry.get(key) === value) registry.delete(key); }` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+ * 处理：通过 `gpgAgentContextSchema.parse`, `machines.live.get`, `owners.get`, `owners.set` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `gpgAgentContextSchema.parse`, `machines.live.get`, `owners.get`, `owners.set`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!registry`.
+ * 输入 / Inputs: machines: Machines; vmId: string; context: GpgAgentContext; bridge: OwnedGpgForward; live: HostOwner['live']
+ * 输出 / Returns: `() => { if (value.cleaned && registry.get(key) === value) registry.delete(key); }`.
+ * 副作用 / Effects: `owners.set`; `registry.set`; 更新 / updates `context`, `registry`.
+ * 拒绝 / Refusals: 条件 / conditions `!(bridge instanceof OwnedGpgForward) || bridge.hostSourceSha256 !== context.resource.hostSourceSha256 || bridge.hostHelperSha…`; `registry.has(key)`; 异常 / errors `new AppError('GPG Agent 宿主归属或客户机运行身份不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`; `new AppError('本次 GPG Agent 运行已被登记', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`.
+ */
 export function bindTaskGpg(machines: Machines, vmId: string, context: GpgAgentContext,
   bridge: OwnedGpgForward, live: HostOwner['live']) {
   context = gpgAgentContextSchema.parse(context);
@@ -49,6 +111,17 @@ export function bindTaskGpg(machines: Machines, vmId: string, context: GpgAgentC
   const value: HostOwner = { context: structuredClone(context), bridge, live, cleaned: false }; registry.set(key, value);
   return () => { if (value.cleaned && registry.get(key) === value) registry.delete(key); };
 }
+/**
+ * 入口 / Entry: isOwnedTaskGpg.
+ * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；本入口产生 `bridge instanceof OwnedGpgForward && value?.bridge === bridge && same(value.context, context) && value.live === machines.live…` 供上层消费（`gpg-agent-scope.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpg-agent-scope.ts`; this entry produces `bridge instanceof OwnedGpgForward && value?.bridge === bridge && same(value.context, context) && value.live === machines.live…` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+ * 处理：通过 `owners.get().get`, `owners.get`, `ownerKey`, `gpgAgentContextSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `owners.get().get`, `owners.get`, `ownerKey`, `gpgAgentContextSchema.parse`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: machines: Machines; vmId: string; context: GpgAgentContext; bridge: unknown
+ * 输出 / Returns: `bridge instanceof OwnedGpgForward && value?.bridge === bridge && same(value.context, context) && value.live === machines.live…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function isOwnedTaskGpg(machines: Machines, vmId: string, context: GpgAgentContext, bridge: unknown) {
   const value = owners.get(machines)?.get(ownerKey(vmId, gpgAgentContextSchema.parse(context)));
   return bridge instanceof OwnedGpgForward && value?.bridge === bridge && same(value.context, context) &&
@@ -117,7 +190,28 @@ verify(target); print(json.dumps({'version':1,'ok':True,'sha256':request['sha256
 `;
 
 export class GpgAgentScopes {
+  /**
+   * 入口 / Entry: GpgAgentScopes.constructor.
+   * 功能：建立 GpgAgentScopes 的部署固定 GPG 代理并维护任务资源票据上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the GpgAgentScopes context for this module's responsibility: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; options: { sourceDirectory?: string } default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(private machines: Machines, private options: { sourceDirectory?: string } = {}) {}
+  /**
+   * 入口 / Entry: GpgAgentScopes.asset.
+   * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ...manifest, source }` 供上层消费（`GpgAgentScopes`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `GpgAgentScopes`; this entry produces `{ ...manifest, source }` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+   * 处理：通过 `join`, `manifestSchema.parse`, `readFile`, `createHash().update().digest` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `join`, `manifestSchema.parse`, `readFile`, `createHash().update().digest`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ ...manifest, source }`.
+   * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+   * 拒绝 / Refusals: 条件 / conditions `source.length !== manifest.size || createHash('sha256').update(source).digest('hex') !== manifest.sha256`; 异常 / errors `new Error('asset mismatch')`; `new AppError('GPG Agent broker 资产缺失或摘要不符', 503, 'PROJECT_IDENTITY_AGENT_ASSET_INVALID')`.
+   * 失败处理：catch 分支执行 `throw new AppError('GPG Agent broker 资产缺失或摘要不符', 503, 'PROJECT_IDENTITY_AGENT_ASSET_INVALID');`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `throw new AppError('GPG Agent broker 资产缺失或摘要不符', 503, 'PROJECT_IDENTITY_AGENT_ASSET_INVALID');`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async asset() {
     const directory = this.options.sourceDirectory || join(ROOT, '.sakura-server/assets/gpg-agent');
     try {
@@ -128,11 +222,33 @@ export class GpgAgentScopes {
       return { ...manifest, source };
     } catch { throw new AppError('GPG Agent broker 资产缺失或摘要不符', 503, 'PROJECT_IDENTITY_AGENT_ASSET_INVALID'); }
   }
+  /**
+   * 入口 / Entry: GpgAgentScopes.resource.
+   * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；本入口产生 `gpgAgentResourceSchema.parse({ version: 1, kind: 'gpg-agent', leaseId: randomUUID(), brokerSha256: (await this.asset()).sha25…` 供上层消费（`GpgAgentScopes`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `GpgAgentScopes`; this entry produces `gpgAgentResourceSchema.parse({ version: 1, kind: 'gpg-agent', leaseId: randomUUID(), brokerSha256: (await this.asset()).sha25…` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+   * 处理：通过 `gpgAgentResourceSchema.parse`, `randomUUID`, `this.asset` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `gpgAgentResourceSchema.parse`, `randomUUID`, `this.asset`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: timeoutSeconds: number; host: Pick<GpgHostSnapshot, 'hostSourceSha256' | 'hostHelperSha256'>
+   * 输出 / Returns: `gpgAgentResourceSchema.parse({ version: 1, kind: 'gpg-agent', leaseId: randomUUID(), brokerSha256: (await this.asset()).sha25…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async resource(timeoutSeconds: number, host: Pick<GpgHostSnapshot, 'hostSourceSha256' | 'hostHelperSha256'>) {
     return gpgAgentResourceSchema.parse({ version: 1, kind: 'gpg-agent', leaseId: randomUUID(),
       brokerSha256: (await this.asset()).sha256, timeoutSeconds,
       hostSourceSha256: host.hostSourceSha256, hostHelperSha256: host.hostHelperSha256 });
   }
+  /**
+   * 入口 / Entry: GpgAgentScopes.install.
+   * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`GpgAgentScopes`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `GpgAgentScopes`; the calls and state transitions below complete the operation. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+   * 处理：通过 `this.asset`, `deflateSync`, `quote`, `this.machines.execInput` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.asset`, `deflateSync`, `quote`, `this.machines.execInput`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string; resource: GpgAgentResource; signal: AbortSignal
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.machines.execInput`.
+   * 拒绝 / Refusals: 条件 / conditions `asset.sha256 !== resource.brokerSha256`; `reply.code !== 0 || !value.success || value.data.sha256 !== resource.brokerSha256`; 异常 / errors `new AppError('Agent 资产在任务准备后改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`; `new AppError('GPG Agent broker 私有 generation 安装未确认', 503, 'PROJECT_IDENTITY_AGENT_ASSET_INVALID')`.
+   */
   async install(vmId: string, resource: GpgAgentResource, signal: AbortSignal) {
     const asset = await this.asset();
     if (asset.sha256 !== resource.brokerSha256) throw new AppError('Agent 资产在任务准备后改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
@@ -143,6 +259,17 @@ export class GpgAgentScopes {
     if (reply.code !== 0 || !value.success || value.data.sha256 !== resource.brokerSha256)
       throw new AppError('GPG Agent broker 私有 generation 安装未确认', 503, 'PROJECT_IDENTITY_AGENT_ASSET_INVALID');
   }
+  /**
+   * 入口 / Entry: GpgAgentScopes.command.
+   * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``# SAKURA_GPG_AGENT_${action.toUpperCase()}\n${fixedEnvironment} /usr/bin/python3 -I -S -c ${quote(bootstrap)} ${quote(data)}…` 供上层消费（`GpgAgentScopes`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `GpgAgentScopes`; this entry produces ``# SAKURA_GPG_AGENT_${action.toUpperCase()}\n${fixedEnvironment} /usr/bin/python3 -I -S -c ${quote(bootstrap)} ${quote(data)}…` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+   * 处理：通过 `gpgAgentContextSchema.parse`, `action.toUpperCase`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `gpgAgentContextSchema.parse`, `action.toUpperCase`, `quote`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: action: 'prepare' | 'run' | 'cleanup' | 'read'; context: GpgAgentContext; launcher: string optional
+   * 输出 / Returns: ``# SAKURA_GPG_AGENT_${action.toUpperCase()}\n${fixedEnvironment} /usr/bin/python3 -I -S -c ${quote(bootstrap)} ${quote(data)}…`.
+   * 副作用 / Effects: 更新 / updates `context`.
+   * 拒绝 / Refusals: 条件 / conditions `action === 'run' && !launcher`; `action !== 'run' && launcher !== undefined`; 异常 / errors `new Error('missing fixed launcher')`; `new Error('launcher only belongs to run')`.
+   */
   command(action: 'prepare' | 'run' | 'cleanup' | 'read', context: GpgAgentContext, launcher?: string) {
     context = gpgAgentContextSchema.parse(context);
     if (action === 'run' && !launcher) throw new Error('missing fixed launcher');
@@ -150,6 +277,17 @@ export class GpgAgentScopes {
     if (action !== 'run' && launcher !== undefined) throw new Error('launcher only belongs to run');
     return `# SAKURA_GPG_AGENT_${action.toUpperCase()}\n${fixedEnvironment} /usr/bin/python3 -I -S -c ${quote(bootstrap)} ${quote(data)}`;
   }
+  /**
+   * 入口 / Entry: GpgAgentScopes.prepare.
+   * 功能：在部署固定 GPG 代理并维护任务资源票据中，执行此领域的具体处理步骤并返回其结果；本入口产生 `parsed.data.result` 供上层消费（`GpgAgentScopes`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `GpgAgentScopes`; this entry produces `parsed.data.result` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+   * 处理：通过 `gpgAgentContextSchema.parse`, `signal.throwIfAborted`, `this.machines.live.get`, `this.machines.exec` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `gpgAgentContextSchema.parse`, `signal.throwIfAborted`, `this.machines.live.get`, `this.machines.exec`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string; context: GpgAgentContext; signal: AbortSignal
+   * 输出 / Returns: `parsed.data.result`.
+   * 副作用 / Effects: `this.machines.exec`; 更新 / updates `context`.
+   * 拒绝 / Refusals: 条件 / conditions `!live`; `reply.code !== 0 || !parsed.success || !same(parsed.data.result.context, context) || parsed.data.result.sourcePath !== gpgAge…`; 异常 / errors `new AppError('GPG Agent 准备缺少客户机运行身份', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`; `new AppError('GPG Agent source 准备未确认，原记录保留', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED')`.
+   */
   async prepare(vmId: string, context: GpgAgentContext, signal: AbortSignal) {
     context = gpgAgentContextSchema.parse(context); signal.throwIfAborted();
     const live = this.machines.live.get(vmId);
@@ -161,6 +299,20 @@ export class GpgAgentScopes {
       throw new AppError('GPG Agent source 准备未确认，原记录保留', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
     return parsed.data.result;
   }
+  /**
+   * 入口 / Entry: GpgAgentScopes.cleanup.
+   * 功能：在部署固定 GPG 代理并维护任务资源票据中，结束、撤销或清理本次拥有的领域资源；本入口产生 `void` 供上层消费（`GpgAgentScopes`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `GpgAgentScopes`; this entry produces `void` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+   * 处理：通过 `gpgAgentContextSchema.parse`, `owners.get().get`, `owners.get`, `ownerKey` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `gpgAgentContextSchema.parse`, `owners.get().get`, `owners.get`, `ownerKey`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!live || this.machines.live.get(vmId) !== live`; `this.machines.live.get(vmId) !== live`; `refused`.
+   * 输入 / Inputs: vmId: string; context: GpgAgentContext
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `owner.bridge.close`; `closeGpgHostLease`; `this.machines.exec`; `inline.delete`; 更新 / updates `context`, `failure`, `reply`, `owner.cleaned`.
+   * 拒绝 / Refusals: 条件 / conditions `owner`; `!same(owner.context, context)`; 异常 / errors `new AppError('本次 Agent 宿主归属已改变', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED')`; `new AppError(`本次 GPG Agent 资源清理未确认，原运行回执保留：${failure}`, 503, 'PROJECT_IDENTITY_CLEANUP_FAILED')`.
+   * 失败处理：catch 分支执行 `failure = 'Agent cleanup transport failed';`; `continue;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `failure = 'Agent cleanup transport failed';`; `continue;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async cleanup(vmId: string, context: GpgAgentContext) {
     context = gpgAgentContextSchema.parse(context);
     const owner = owners.get(this.machines)?.get(ownerKey(vmId, context));
@@ -201,6 +353,17 @@ export class GpgAgentScopes {
     throw new AppError(`本次 GPG Agent 资源清理未确认，原运行回执保留：${failure}`,
       503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
   }
+  /**
+   * 入口 / Entry: GpgAgentScopes.readonly.
+   * 功能：在部署固定 GPG 代理并维护任务资源票据中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `parsed.data.result` 供上层消费（`GpgAgentScopes`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `GpgAgentScopes`; this entry produces `parsed.data.result` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+   * 处理：通过 `gpgAgentContextSchema.parse`, `this.machines.live.get`, `this.machines.exec`, `this.command` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `gpgAgentContextSchema.parse`, `this.machines.live.get`, `this.machines.exec`, `this.command`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vmId: string; context: GpgAgentContext
+   * 输出 / Returns: `parsed.data.result`.
+   * 副作用 / Effects: `this.machines.exec`; 更新 / updates `context`.
+   * 拒绝 / Refusals: 条件 / conditions `!live || this.machines.live.get(vmId) !== live || reply.code !== 0 || !parsed.success || !same(parsed.data.result.context, co…`; 异常 / errors `new AppError('GPG Agent 资源回执读取未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED')`.
+   */
   async readonly(vmId: string, context: GpgAgentContext) {
     context = gpgAgentContextSchema.parse(context);
     const live = this.machines.live.get(vmId);
@@ -216,6 +379,15 @@ const unixObject = z.object({ device: numberText, inode: numberText,
   uid: z.number().int().nonnegative(), gid: z.number().int().nonnegative(),
   mode: z.number().int().min(0).max(0o7777), type: z.number().int() }).strict();
 const processSchema = z.object({ pid: z.number().int().min(2), startTicks: numberText }).strict();
+/**
+ * 入口 / Entry: callback@231.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.object().strict().superRefine）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.object().strict().superRefine).
+ * 输入 / Inputs: value; ctx
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `ctx.addIssue`; `createHash().update().digest`; `createHash().update`; `createHash`; `paths.add`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const gpgAgentRecordSchema = z.object({ version: z.literal(1), context: gpgAgentContextSchema,
   phase: z.enum(['prepared', 'preparing', 'ready', 'failed', 'closed']),
   scope: z.object({ device: numberText, inode: numberText, controlToken: z.uuid() }).strict().nullable(),
@@ -307,7 +479,29 @@ hostSourceSha256 hostHelperSha256 identity registryId projectId identityId revis
 directoryDevice directoryInode homeDevice homeInode networkIsolation owner runId bootId sha256 record scope device
 inode controlToken sourceDirectory source path parent socket peer pid startTicks endpointDirectory endpoint broker
 homeDirectory redirect object homeCleanup frozenHome directories original frozen failure mode type`.split(/\s+/));
+/**
+ * 入口 / Entry: cleanupExecCode.
+ * 功能：从当前输入或状态计算 `Number.isSafeInteger(code) ? String(code) : 'invalid'`，供调用方后续验证或使用。
+ * Purpose: Computes `Number.isSafeInteger(code) ? String(code) : 'invalid'` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: code: number
+ * 输出 / Returns: `Number.isSafeInteger(code) ? String(code) : 'invalid'`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const cleanupExecCode = (code: number) => Number.isSafeInteger(code) ? String(code) : 'invalid';
+/**
+ * 入口 / Entry: cleanupReplyFailure.
+ * 功能：在部署固定 GPG 代理并维护任务资源票据中，结束、撤销或清理本次拥有的领域资源；本入口产生 ``${prefix}; reply JSON invalid`` / ``${prefix}; broker refusal ${refused.data.code}`` 供上层消费（`gpg-agent-scope.ts`）。
+ * Purpose: Ends, revokes or cleans resources owned by this domain action in `gpg-agent-scope.ts`; this entry produces ``${prefix}; reply JSON invalid`` / ``${prefix}; broker refusal ${refused.data.code}`` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+ * 处理：通过 `cleanupExecCode`, `brokerRefusal.safeParse`, `cleanupReply.safeParse`, `parsed.error.issues.slice().map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `cleanupExecCode`, `brokerRefusal.safeParse`, `cleanupReply.safeParse`, `parsed.error.issues.slice().map`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `refused.success`; `!parsed.success`; `reply.code !== 0`.
+ * 输入 / Inputs: reply: { code: number; stdout: string }; context: GpgAgentContext
+ * 输出 / Returns: ``${prefix}; reply JSON invalid``; ``${prefix}; broker refusal ${refused.data.code}``; ``${prefix}; reply schema path ${paths.join(', ')}``；另有分支返回 / additional branch-specific returns.
+ * 副作用 / Effects: 更新 / updates `value`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ * 失败处理：catch 分支执行 `return `${prefix}; reply JSON invalid`;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `return `${prefix}; reply JSON invalid`;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 function cleanupReplyFailure(reply: { code: number; stdout: string }, context: GpgAgentContext) {
   const prefix = `Agent cleanup exec code ${cleanupExecCode(reply.code)}`;
   let value: unknown;
@@ -334,4 +528,14 @@ const prepareReply = z.object({ version: z.literal(1), ok: z.literal(true), resu
         value.sourcePath !== gpgAgentSourcePath(value.context.resource.leaseId))
       ctx.addIssue({ code: 'custom', message: 'Agent prepared 回复归属不符' });
   }) }).strict();
+/**
+ * 入口 / Entry: parseJson.
+ * 功能：在部署固定 GPG 代理并维护任务资源票据中，转换协议或持久数据表示并保持调用边界；本入口产生 `JSON.parse(text)` / `null` 供上层消费（`gpg-agent-scope.ts`）。
+ * Purpose: Converts protocol or durable data representations at the call boundary in `gpg-agent-scope.ts`; this entry produces `JSON.parse(text)` / `null` for its caller. Module context: Deploys fixed GPG brokers and task resource tickets, checking host and guest runtime identities for preparation and cleanup.
+ * 输入 / Inputs: text: string
+ * 输出 / Returns: `JSON.parse(text)`; `null`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败处理：catch 分支执行 `return null;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `return null;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 const parseJson = (text: string) => { try { return JSON.parse(text); } catch { return null; } };

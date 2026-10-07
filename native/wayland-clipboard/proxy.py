@@ -1,4 +1,5 @@
 # Wayland 消息和 FD 代理：仅暴露已固定的协议，核实会话对端，并在 EOF 与完整内容检查后释放有预算限制的剪贴板数据。
+# Proxy only pinned Wayland protocols/FDs, verify session peers and release clipboard bytes only after EOF/full-body checks under explicit budgets and commit locks.
 """Wayland wire/FD proxy for one explicitly owned application session.
 
 Clipboard bytes stay in bounded private memory until EOF and a complete check.
@@ -67,11 +68,15 @@ SECRET_PATTERNS = tuple(re.compile(value, re.I) for value in [
 ])
 
 
+# 条件失败终止当前 wire/授权处理，避免继续转发不完整证明。
+# Abort wire/authorization processing on failed conditions rather than forwarding incomplete proof.
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
 
 
+# 尽力关闭已持有 FD，清理阶段容忍已经关闭的描述符。
+# Best-effort close held FDs, tolerating already-closed descriptors during cleanup.
 def close_fd(fd):
     try:
         os.close(fd)
@@ -79,6 +84,8 @@ def close_fd(fd):
         pass
 
 
+# 逐级无跟随核实绝对目录 root 所有权与不可写权限。
+# Validate absolute directories componentwise without links for root ownership/nonwritable modes.
 def secure_directory(path):
     path = Path(path)
     require(path.is_absolute(), "Directory must be absolute")
@@ -91,6 +98,8 @@ def secure_directory(path):
     return path
 
 
+# 固定 root 普通文件并有界读取，前后核对大小/身份/修改信息，拒绝策略读取期间替换。
+# Pin/read bounded root regular files with bracketed identity/size/mtime checks to reject policy changes during reading.
 def protected_bytes(path, maximum):
     fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
     try:
@@ -111,6 +120,8 @@ def protected_bytes(path, maximum):
         close_fd(fd)
 
 
+# 读取活动进程的内核创建、父 PID、UID、映像、网络和 cgroup，退出进程拒绝。
+# Read a live process’s kernel birth/parent/UID/image/network/cgroup, refusing exited processes.
 def process_identity(pid):
     directory = Path("/proc") / str(pid)
     raw = (directory / "stat").read_bytes()
@@ -122,6 +133,8 @@ def process_identity(pid):
             "cgroup": (directory / "cgroup").read_text().splitlines()}
 
 
+# 有界解析 UNIX socket 表，要求目标路径恰有一个活动 listener inode。
+# Boundedly parse UNIX sockets and require exactly one live listener inode for the endpoint.
 def listening_inode(pid, endpoint):
     raw = (Path("/proc") / str(pid) / "net/unix").read_bytes()
     require(len(raw) <= 1048576, "Compositor socket table exceeded")
@@ -134,6 +147,8 @@ def listening_inode(pid, endpoint):
     return matches[0]
 
 
+# 有界枚举真实 FD，确认进程持有目标 socket inode，正常消失可略过。
+# Boundedly enumerate actual FDs to prove socket-inode ownership, tolerating normal disappearance.
 def owns_socket(pid, inode):
     files = list((Path("/proc") / str(pid) / "fd").iterdir())
     require(len(files) <= 4096, "Compositor descriptor budget exceeded")
@@ -155,6 +170,8 @@ class Rule:
     maximum: int
     generation: int
 
+    # 核对策略 ABI、构建、预算和代次，禁用策略按明确开放规则解释，畸形策略拒绝。
+    # Validate policy ABI/build/budget/generation, interpret disabled policy as explicit permissive rules and refuse malformed data.
     @classmethod
     def parse(cls, raw, build):
         require(len(raw) == POLICY.size, "Policy length changed")
@@ -167,10 +184,14 @@ class Rule:
         return cls(bool(flags & 1), bool(flags & 2), bool(flags & 4), bool(flags & 8), maximum, generation)
 
     # 未提交传输仅能收紧，后续放宽策略不能重新授权已经开始收集的受限内容。
+    # 合并等待中的策略只收紧：方向/文件取 AND、敏感过滤取 OR、字节上限取更小值。
+    # Merge pending policies monotonically: AND permissions, OR sensitive filtering and minimum byte limit.
     def tightened(self, other):
         return Rule(self.copy and other.copy, self.paste and other.paste, self.files and other.files,
                     self.sensitive or other.sensitive, min(self.maximum, other.maximum), other.generation)
 
+    # 按方向、MIME/编码、内容大小与敏感模式决定完整传输是否可放行，portal 文件票据始终拒绝。
+    # Decide transfer permission from direction/MIME/encoding/body size/sensitive patterns, always refusing portal file-transfer tickets.
     def permits(self, direction, mime, body=None):
         if not getattr(self, direction):
             return False
@@ -191,6 +212,8 @@ class Rule:
                 (not self.sensitive or not any(pattern.search(text) for pattern in SECRET_PATTERNS)))
 
 
+# 验证有界 MIME 并解析支持的文本 charset，未知格式或重复/非法参数返回 None。
+# Validate bounded MIME and supported text charset, returning None for unknown formats or duplicate/invalid parameters.
 def text_encoding(mime):
     if not isinstance(mime, str) or not 1 <= len(mime) <= 256 or re.search(r"[\x00-\x1f\x7f]", mime):
         return None
@@ -233,6 +256,8 @@ class Interface:
 
 
 class Protocols:
+    # 解析固定 XML 协议，禁止实体/DOCTYPE 与重复接口，并保存请求、事件和版本声明。
+    # Parse fixed protocol XML without entities/DOCTYPE or duplicate interfaces, recording request/event/version declarations.
     def __init__(self, documents):
         self.interfaces = {}
         for raw in documents:
@@ -250,6 +275,8 @@ class Protocols:
         require("wl_display" in self.interfaces and "wl_data_offer" in self.interfaces
                 and "zwp_primary_selection_offer_v1" in self.interfaces, "Required protocols are missing")
 
+    # 读取可信源清单并逐一校验固定 XML 文件名、大小和摘要，才构建 wire schema。
+    # Verify trusted protocol inventory and each fixed XML name/size/hash before constructing wire schemas.
     @classmethod
     def installed(cls, folder):
         sources = json.loads(protected_bytes(folder / "sources.json", 32768))
@@ -276,11 +303,15 @@ class Object:
 
 
 class Wire:
+    # 建立连接独立对象表，以固定 wl_display 对象 1 为起点，隔离客户端对象编号状态。
+    # Initialize per-connection object state from fixed wl_display object 1, isolating client object IDs.
     def __init__(self, protocols):
         self.protocols = protocols
         self.objects = {1: Object("wl_display", 1)}
         self.globals = {}
 
+    # 按原对象接口/版本解析对齐 wire 参数，核对长度、对象引用和新对象声明，返回未提交解析结果。
+    # Decode aligned wire arguments using object interface/version, validate lengths/references/new objects and return uncommitted results.
     def decode(self, raw, server):
         ident, header = struct.unpack_from("=II", raw)
         require(header >> 16 == len(raw) and len(raw) >= 8 and len(raw) % 4 == 0, "Invalid wire header")
@@ -294,6 +325,8 @@ class Wire:
         require(message.since <= obj.version, "Wayland method exceeds object version")
         values, news, count, offset = [], [], 0, 8
 
+        # 从当前解析偏移读取一个完整 32 位数并推进偏移，截断拒绝。
+        # Read one complete 32-bit value at the current offset and advance, refusing truncation.
         def number():
             nonlocal offset
             require(offset + 4 <= len(raw), "Truncated Wayland number")
@@ -301,6 +334,8 @@ class Wire:
             offset += 4
             return value
 
+        # 读取带对齐长度的数组或严格 UTF-8 NUL 终止字符串，按 nullable 处理零长度。
+        # Read a padded array or strict UTF-8 NUL-terminated string, applying nullable rules to zero length.
         def blob(string=False, nullable=False):
             nonlocal offset
             length = number()
@@ -352,6 +387,8 @@ class Wire:
         require(len(self.objects) + len(news) <= MAX_OBJECTS, "Object budget exceeded")
         return obj, message, values, news, count
 
+    # 仅在消息被接受后更新对象生命周期、registry globals 与选择归属，维护 delete_id 回收边界。
+    # Update object lifetimes/registry globals/selection ownership only after acceptance, preserving delete_id reclamation boundaries.
     def commit(self, raw, server, decoded):
         obj, message, values, news, _ = decoded
         for value, name, version in news:
@@ -393,6 +430,8 @@ class Packet:
 
 
 class Endpoint:
+    # 将单侧 socket 设为非阻塞并注册读取，建立有界 wire、FD 与待发队列状态。
+    # Make one socket nonblocking/register reads and initialize bounded wire/FD/outgoing state.
     def __init__(self, connection, channel, server):
         self.connection, self.channel, self.server = connection, channel, server
         self.channel.setblocking(False)
@@ -402,10 +441,14 @@ class Endpoint:
         self.incomplete_since = None
         connection.broker.selector.register(channel, selectors.EVENT_READ, self)
 
+    # 仅在有待发数据时增加可写监听，持续保持读取监听，避免空队列忙循环。
+    # Watch writes only while data is queued while retaining reads, avoiding empty-queue busy loops.
     def events(self):
         self.connection.broker.selector.modify(self.channel, selectors.EVENT_READ |
                                                (selectors.EVENT_WRITE if self.outgoing else 0), self)
 
+    # 接收 CLOEXEC SCM_RIGHTS 与字节，拒绝截断/未知 ancillary 和预算超量，失败关闭本次取得 FD。
+    # Receive CLOEXEC SCM_RIGHTS/bytes, refusing truncation/unknown ancillary/excess budgets and closing newly received FDs on failure.
     def receive(self):
         data, ancillary, flags, _ = self.channel.recvmsg(65536, socket.CMSG_SPACE(MAX_FDS * 4), socket.MSG_CMSG_CLOEXEC)
         received = []
@@ -430,6 +473,8 @@ class Endpoint:
             for fd in received:
                 close_fd(fd)
 
+    # 每轮最多处理 128 条完整消息，按 schema 所需 FD 绑定并拦截，再提交对象状态；不完整消息留待下轮。
+    # Process at most 128 complete messages per turn, bind schema-required FDs/intercept/commit state and defer incomplete messages.
     def pump(self):
         for _ in range(128):
             if len(self.buffer) < 8:
@@ -472,6 +517,8 @@ class Endpoint:
                 for fd in descriptors:
                     close_fd(fd)
 
+    # 在 wire/FD 总预算内排队消息并启用可写监听，超限拒绝而不无限缓冲。
+    # Queue messages within aggregate wire/FD bounds and enable writes, refusing excess rather than buffering indefinitely.
     def queue(self, raw, descriptors):
         require(sum(len(packet.data) - packet.offset for packet in self.outgoing) + len(raw) <= MAX_WIRE_BYTES
                 and sum(len(packet.fds) for packet in self.outgoing) + len(descriptors) <= MAX_FDS,
@@ -479,6 +526,8 @@ class Endpoint:
         self.outgoing.append(Packet(raw, descriptors))
         self.events()
 
+    # 有界发送处理部分写入，SCM_RIGHTS 成功发送后立即关闭本端副本且不重复附加，空队列撤销写监听。
+    # Boundedly handle partial sends, close local SCM_RIGHTS copies after successful transmission without reattaching, and disable empty-queue writes.
     def send(self):
         for _ in range(128):
             if not self.outgoing:
@@ -496,6 +545,8 @@ class Endpoint:
                 self.outgoing.popleft()
         self.events()
 
+    # 注销 socket 并关闭所有未消费/未发送 FD，清空队列，避免描述符重用后的陈旧监听。
+    # Unregister/close the socket and all unused/unsent FDs, clearing queues before descriptor reuse.
     def close(self):
         try:
             self.connection.broker.selector.unregister(self.channel)
@@ -512,6 +563,8 @@ class Endpoint:
 
 
 class Transfer:
+    # 把原接收 FD 替换为私有采集管道，保存策略快照与截止时间；内容 EOF 前不向原接收方写入。
+    # Replace the original receiver FD with a private collection pipe and snapshot/deadline; write nothing to the receiver before EOF.
     def __init__(self, connection, direction, mime, original):
         self.connection, self.direction, self.mime, self.original = connection, direction, mime, original
         self.broker = connection.broker
@@ -534,6 +587,8 @@ class Transfer:
         self.broker.transfers.add(self)
         self.broker.dirty = True
 
+    # 尚未提交时将新策略单调收紧，若格式/方向已被拒绝则立即关闭传输。
+    # Tighten policies before commit and close immediately when MIME/direction is newly forbidden.
     def update(self, rule):
         if self.committed or self.closed:
             return
@@ -541,6 +596,8 @@ class Transfer:
         if not self.rule.permits(self.direction, self.mime):
             self.close(True)
 
+    # 有界读完整内容至 EOF，维护单传输和总预算；EOF 后完整检查并转释放阶段，超时/超限关闭。
+    # Collect bounded complete content to EOF under per-transfer/aggregate limits, then validate before release; timeout/excess closes.
     def receive(self):
         for _ in range(32):
             try:
@@ -574,6 +631,8 @@ class Transfer:
                 return
 
     # 第一笔写入是提交点；持共享锁重读策略后才能提交，后续写入仅完成这份已验证缓冲。
+    # 首字节前取得策略 SH 锁重读并检查完整缓冲，与发布 EX 锁确定提交边界；已提交传输只完成原缓冲，处理背压与截止。
+    # Before the first byte, reread/check the full body under SH against publication EX; committed transfers finish that buffer with backpressure/deadlines.
     def release(self):
         if self.closed or self.collecting:
             return
@@ -611,6 +670,8 @@ class Transfer:
             require(count > 0, "Clipboard output closed")
             self.offset += count
 
+    # 幂等注销并关闭自有 FD、释放总缓冲预算和集合记录，按 blocked 更新统计。
+    # Idempotently unregister/close owned FDs, release aggregate buffer budget/membership and count blocked transfers.
     def close(self, blocked):
         if self.closed:
             return
@@ -631,6 +692,8 @@ class Transfer:
 
 
 class Connection:
+    # 建立客户端和上游独立 Endpoint 及 wire 状态，第二侧失败先注销第一侧再让外层关 socket。
+    # Create client/upstream endpoints and wire state, unregistering the first endpoint if second-side construction fails.
     def __init__(self, broker, client, upstream, identity):
         self.broker, self.identity = broker, identity
         self.wire = Wire(broker.protocols)
@@ -647,6 +710,8 @@ class Connection:
                 pass  # Preserve the construction failure for accept().
             raise
 
+    # 跟踪 MIME/选择对象，并把复制或粘贴 FD 换成受检查 Transfer；禁止未固定接口与超量 offer。
+    # Track MIME/selection objects and replace copy/paste FDs with inspected transfers, excluding unpinned interfaces/excess offers.
     def intercept(self, raw, server, decoded, descriptors):
         obj, message, values, _, _ = decoded
         if obj.interface in DATA_SOURCES and not server and message.name == "offer":
@@ -680,6 +745,8 @@ class Connection:
         transfer = Transfer(self, direction, mime, original)
         return raw, [transfer.write_fd]
 
+    # 幂等关闭两侧及本连接所有待传内容，从 broker 集合移除并标记状态需写入。
+    # Idempotently close both sides/all pending transfers, remove broker membership and mark status dirty.
     def close(self):
         if self.closed:
             return
@@ -694,6 +761,8 @@ class Connection:
 
 
 class Broker:
+    # 读取可信会话/协议、固定策略锁和私有 listener，初始化连接/传输预算及自身创建身份。
+    # Load trusted session/protocols, pin the policy lock/private listener and initialize budgets/self birth identity.
     def __init__(self, directory):
         self.directory = secure_directory(Path(directory))
         self.session = json.loads(protected_bytes(self.directory / "session.json", 65536))
@@ -731,9 +800,13 @@ class Broker:
         self.tick_policy()
         require(self.rule is not None, "Initial clipboard policy unavailable")
 
+    # 有界读取固定策略文件并校验当前构建 ABI，返回有效 Rule，否则拒绝。
+    # Read the fixed bounded policy and validate current-build ABI, returning a valid Rule or refusing.
     def read_policy(self):
         return Rule.parse(protected_bytes(self.directory / "policy", POLICY.size), BUILD)
 
+    # 按复制/粘贴方向递增阻断计数，并标记状态需要发布。
+    # Increment copy/paste denial counters and mark status for publication.
     def block(self, direction):
         if direction == "copy":
             self.blocked_copy += 1
@@ -741,6 +814,8 @@ class Broker:
             self.blocked_paste += 1
         self.dirty = True
 
+    # 将内部固定错误映射为阶段诊断，绝不序列化异常文本、MIME 或剪贴板正文，避免敏感内容进入状态。
+    # Map fixed internal failures to stage diagnostics without serializing exception text/MIME/bodies into status.
     def failure(self, phase, error, server=None, interface=None, opcode=None):
         # Never serialize exception strings, untrusted wire strings, MIME values
         # or bodies. The fixed codes and XML-declared interface identify a stage.
@@ -772,6 +847,8 @@ class Broker:
             self.last_failure["opcode"] = opcode
         self.dirty = True
 
+    # 定期核实策略与摘要，更新未提交传输；策略不可用时关闭等待内容并报告错误，保持 fail-closed。
+    # Refresh validated policy/hash and pending transfers; unavailable policy closes waiting content and reports error, failing closed.
     def tick_policy(self):
         try:
             raw = protected_bytes(self.directory / "policy", POLICY.size)
@@ -792,6 +869,8 @@ class Broker:
                 transfer.close(True)
             self.dirty = True
 
+    # 用 SO_PEERCRED 与内核进程证明核对独立 UID、原网络/cgroup 及可选挂载视图，拒绝外部客户端。
+    # Combine SO_PEERCRED/kernel proof to require session UID/original network/cgroup/optional mount view, refusing external clients.
     def client_identity(self, channel):
         pid, uid, _ = struct.unpack("=3i", channel.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
         require(uid == self.session["uid"], "Unowned client UID")
@@ -819,6 +898,8 @@ class Broker:
                     and process_identity(pid)['created'] == identity['created'], 'Application directory namespace changed')
         return identity
 
+    # 重核 compositor 创建、UID、已知映像、网络及唯一 socket 的物理/持有身份。
+    # Revalidate compositor birth/UID/known image/network and sole socket physical/holder identity.
     def compositor_identity(self):
         identity = process_identity(self.session["compositorPid"])
         require(identity["created"] == self.session["compositorCreated"] and
@@ -862,6 +943,8 @@ class Broker:
         require(process_identity(identity["pid"])["created"] == identity["created"], "Compositor process identity changed")
         return identity
 
+    # 在连接预算内先核对客户端和 compositor，再连接固定上游并重核 peercred；失败关闭双方和登记。
+    # Validate client/compositor under the connection budget, connect fixed upstream/recheck peercred and close both sides on failure.
     def accept(self):
         client, _ = self.listener.accept()
         upstream = None
@@ -884,6 +967,8 @@ class Broker:
             if upstream is not None:
                 upstream.close()
 
+    # 只发布计数、代次、摘要与精确客户端身份，使用私有临时文件替换状态，正文不记录。
+    # Publish only counters/generation/hash/exact client identities through private replacement, never clipboard bodies.
     def status(self, ready=True):
         value = {"version": 1, "build": BUILD, "pid": os.getpid(), "created": self.self_identity["created"],
                  "ready": ready, "generation": self.generation, "policySha256": self.policy_sha,
@@ -905,6 +990,8 @@ class Broker:
             temporary.unlink(missing_ok=True)
         self.dirty = False
 
+    # 事件循环定期重核策略和双端身份，限制每轮 wire/内容工作并清理超时，退出关闭全部连接/传输与状态。
+    # Periodically revalidate policy/peer identity, bound per-turn wire/body work and expire transfers; shutdown releases all connections/transfers/status.
     def run(self):
         previous_policy = previous_status = previous_identity = 0
         try:
@@ -985,9 +1072,13 @@ class Broker:
             close_fd(self.policy_lock)
 
 
+# 仅允许 root 固定会话入口，安装终止信号以停止事件循环并走统一资源清理。
+# Allow only root fixed-session startup and install termination handlers that stop the loop for common cleanup.
 def main():
     require(os.geteuid() == 0 and len(sys.argv) == 2, "Requires an owned root controller session")
     broker = Broker(sys.argv[1])
+    # 信号处理仅清除运行标志，让主循环安全退出并执行自身清理。
+    # Only clear the running flag in the handler so the loop exits through its own cleanup.
     def stop(_signum, _frame):
         broker.running = False
     for name in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):

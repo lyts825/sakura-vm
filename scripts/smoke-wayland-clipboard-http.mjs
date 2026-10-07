@@ -1,4 +1,5 @@
-/** 烟雾验收：验证编译 HTTP/SDK 的 Wayland 策略、构建身份、严格输入和自有清理。 */
+/** 烟雾验收：验证编译 HTTP/SDK 的 Wayland 策略、构建身份、严格输入和自有清理。
+ * Smoke acceptance for compiled HTTP/SDK Wayland policy/build identity/strict input and owned cleanup. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile, realpath, writeFile, rm } from 'node:fs/promises';
@@ -49,6 +50,8 @@ const sessions = [], path = { vmId: vm.id }, operation = 'desktop.wayland-clipbo
 server.stdout.on('data', chunk => output = (output + chunk).slice(-65536));
 server.stderr.on('data', chunk => output = (output + chunk).slice(-65536));
 const exited = new Promise((done, fail) => { server.once('exit', done); server.once('error', fail); });
+/** 以本机令牌和三十秒期限发送 HTTP JSON，HTTP 失败附正文，返回成功响应。
+ * Send local-token HTTP JSON within thirty seconds, reporting failed bodies and returning successful responses. */
 async function http(pathname, method = 'GET', body) {
   const response = await fetch(origin + pathname, { method,
     headers: { 'x-sakura-token': token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -56,14 +59,24 @@ async function http(pathname, method = 'GET', body) {
   assert.equal(response.ok, true, await response.clone().text());
   return response.json();
 }
+/** 使用生成 SDK 在 default 项目读取 Wayland 剪贴板视图，执行服务端实际契约校验。
+ * Read the default-project Wayland clipboard view via generated SDK and actual server contract validation. */
 const view = () => sdk.call('desktop.wayland-clipboard-get', { path, query: { project: 'default' } });
+/** 通过生成 SDK 提交指定 Wayland 操作正文，路径与项目固定于自有实例。
+ * Submit Wayland operation bodies via generated SDK with path/project fixed to the owned VM. */
 const action = body => sdk.call(operation, { path, query: { project: 'default' }, body });
+/** 通过 SDK 实例级 exec 执行夹具命令并要求零退出，返回标准输出。
+ * Run fixture commands through SDK instance-level exec, require zero exit and return stdout. */
 async function guest(command) {
   const result = await sdk.call('core.vms.exec', { path, body: { scope: 'instance', command } });
   assert.equal(result.code, 0, result.stderr + result.stdout);
   return result.stdout.trim();
 }
+/** 将输入编码成单个 POSIX shell 字面参数，嵌入单引号用结束/转义/重开方式保留原值；调用方仍负责命令和路径授权。
+ * Encode input as one literal POSIX shell argument, preserving embedded quotes by closing/escaping/reopening; callers still authorize the command/path. */
 const quoted = value => "'" + value.replaceAll("'", "'\\''") + "'";
+/** 最多百轮查询自有结果文件，成功返回标记；未出现即失败，避免把未执行当作空剪贴板。
+ * Probe the owned result file at most a hundred times and return its marker, failing on absence instead of treating nonexecution as an empty clipboard. */
 async function marker(file) {
   for (let n = 0; n < 100; ++n) {
     const result = await sdk.call('core.vms.exec', { path, body: {
@@ -73,6 +86,8 @@ async function marker(file) {
   }
   throw Error('Native Wayland result marker did not arrive.');
 }
+/** 使用固定 X11 桌面位置与 F8 获得 Wayland 夹具焦点，触发真实工具包剪贴板动作。
+ * Use the fixed X11 desktop location/F8 to focus the Wayland fixture and trigger actual toolkit clipboard behavior. */
 const focus = () => guest('sleep .4\nenv DISPLAY=:1 XAUTHORITY=/run/sakura-desktop/Xauthority xdotool mousemove 640 400 click 1 key F8');
 try {
   for (let n = 0; n < 150 && !token; ++n) {

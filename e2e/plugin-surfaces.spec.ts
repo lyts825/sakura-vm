@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
- * - read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
- * - snapshot comparison selects historical and current states, shows file changes and downloads the report
+ * 模块职责：浏览器回归模块，围绕 `plugin-surfaces` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Browser regression for `plugin-surfaces`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile; read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { readFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -37,6 +38,18 @@ import { SignedBundles } from '../server/signed-bundles';
 import { ingressAlias } from '../shared/http-ingress.ts';
 import { defaultClipboardPolicies } from '../shared/clipboard-policy.ts';
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+ * 状态影响 / State effects: `hold`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile', async ({
   page,
 }) => {
@@ -56,14 +69,61 @@ test('backup file recovery selects encrypted backups, clears passwords, download
   let hold = false,
     cleaned = 0;
   const machines = Object.assign(new EventEmitter(), {
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`vm`）。
+     * Result: Return the branch-computed value (`vm`).
+     * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+     */
     get: () => vm,
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+     */
     requireUnlocked: () => {},
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+     */
     requireStopped: () => {},
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: _id: string; signal: AbortSignal; phase: (value: string) => void; run: (id: string, signal: AbortSignal) => Promise<void>。
+     * 结果：返回分支计算值（`await run('temporary', signal)`），以 Promise 交付。
+     * Result: Return the branch-computed value (`await run('temporary', signal)`) through a Promise.
+     * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+     * 协作入口 / Collaborators: `phase`, `delay`, `run`.
+     */
     withRescue: async (
       _id: string,
       signal: AbortSignal,
-      phase: (value: string) => void,
-      run: (id: string, signal: AbortSignal) => Promise<void>,
+      phase: /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: value: string。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      (value: string) => void,
+      run: /**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: id: string; signal: AbortSignal。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      (id: string, signal: AbortSignal) => Promise<void>,
     ) => {
       phase('只读连接备份磁盘');
       try {
@@ -73,17 +133,42 @@ test('backup file recovery selects encrypted backups, clears passwords, download
         cleaned++;
       }
     },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ code: 0, stdout: '', stderr: '' })`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ code: 0, stdout: '', stderr: '' })`) through a Promise.
+     * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+     */
     exec: async () => ({ code: 0, stdout: '', stderr: '' }),
   }) as unknown as Machines;
   const service = new BackupRecovery(
     machines,
     {
+      /**
+       * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+       * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+       * 输入 / Inputs: _id: string; backup: string; password: string; _signal: AbortSignal; work: (file: string) => Promise<void>。
+       * 结果：返回分支计算值（`work(file)`），以 Promise 交付。
+       * Result: Return the branch-computed value (`work(file)`) through a Promise.
+       * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+       * 失败 / Failure: `new Error('备份解密密码不正确')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+       * 协作入口 / Collaborators: `expect(backup).toBe`, `expect`, `work`.
+       */
       withVerifiedFile: async (
         _id: string,
         backup: string,
         password: string,
         _signal: AbortSignal,
-        work: (file: string) => Promise<void>,
+        work: /**
+         * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+         * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+         * 输入 / Inputs: file: string。
+         * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+         * Result: The declared return type defines the result; its test provider supplies the implementation.
+         */
+        (file: string) => Promise<void>,
       ) => {
         expect(backup).toBe(backupId);
         if (password !== 'browser-password') throw new Error('备份解密密码不正确');
@@ -91,7 +176,23 @@ test('backup file recovery selects encrypted backups, clears passwords, download
       },
     } as any,
     {
-      withDisk: async (input: Readable, _signal: AbortSignal, work: (disk: string) => Promise<void>) => {
+      /**
+       * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+       * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+       * 输入 / Inputs: input: Readable; _signal: AbortSignal; work: (disk: string) => Promise<void>。
+       * 结果：返回分支计算值（`work('temporary-disk')`），以 Promise 交付。
+       * Result: Return the branch-computed value (`work('temporary-disk')`) through a Promise.
+       * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+       * 协作入口 / Collaborators: `work`.
+       */
+      withDisk: async (input: Readable, _signal: AbortSignal, work: /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: disk: string。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      (disk: string) => Promise<void>) => {
         for await (const _chunk of input) {
         }
         return work('temporary-disk');
@@ -99,19 +200,60 @@ test('backup file recovery selects encrypted backups, clears passwords, download
     } as any,
     new Jobs(),
     {
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回列表形式的受控数据，供调用者遍历或比较。
+       * Result: Return controlled data as a list for iteration or comparison.
+       * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+       */
       storagePaths: () => [directory],
+      /**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: 无 / none。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+       */
       prune: async () => {},
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: _id: string; _run: string; cwd: string; paths: string[]; save: (value: unknown) => void。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+       * 协作入口 / Collaborators: `expect(cwd).toBe`, `expect`, `save`, `'a'.repeat`.
+       */
       collect: async (
         _id: string,
         _run: string,
         cwd: string,
         paths: string[],
-        save: (value: unknown) => void,
+        save: /**
+         * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+         * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+         * 输入 / Inputs: value: unknown。
+         * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+         * Result: The declared return type defines the result; its test provider supplies the implementation.
+         */
+        (value: unknown) => void,
       ) => {
         expect(cwd).toBe('/mnt/source');
         for (const path of paths)
           save({ id: artifactId, name: 'readme.txt', path, bytes: 8, sha256: 'a'.repeat(64) });
       },
+      /**
+       * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+       * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回分支计算值（`({ id: artifactId, name: 'readme.txt', path: 'workspace/readme.txt', bytes: 8, s…`），以 Promise 交付。
+       * Result: Return the branch-computed value (`({ id: artifactId, name: 'readme.txt', path: 'workspace/readme.txt', bytes: 8, s…`) through a Promise.
+       * 验证场景 / Scenario: backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+       * 协作入口 / Collaborators: `'a'.repeat`, `Buffer.from('restored').toString`, `Buffer.from`.
+       */
       download: async () => ({
         id: artifactId,
         name: 'readme.txt',
@@ -188,6 +330,18 @@ test('backup file recovery selects encrypted backups, clears passwords, download
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+ * 状态影响 / State effects: `hold`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `randomUUID`, `app`, `page.route`, `page.getByRole('tab', { name: '快照', exact: true }).click`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile', async ({
   page,
 }) => {
@@ -195,15 +349,70 @@ test('read-only rescue runs reviewed commands, retains downloadable artifacts, r
     cleaned = 0;
   const commands: string[] = [];
   const machines = {
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`vm`）。
+     * Result: Return the branch-computed value (`vm`).
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     */
     get: () => vm,
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     */
     requireUnlocked: () => {},
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     */
     requireStopped: () => {},
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回布尔判定，供用例选择路径或核对受控条件。
+     * Result: Return a boolean decision for path selection or controlled-condition assertions.
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     */
     isBusy: () => false,
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: _id: string; signal: AbortSignal; phase: (text: string) => void; run: (id: string, signal: AbortSignal) => Promise<void>。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     * 协作入口 / Collaborators: `phase`, `run`.
+     */
     withRescue: async (
       _id: string,
       signal: AbortSignal,
-      phase: (text: string) => void,
-      run: (id: string, signal: AbortSignal) => Promise<void>,
+      phase: /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: text: string。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      (text: string) => void,
+      run: /**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: id: string; signal: AbortSignal。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      (id: string, signal: AbortSignal) => Promise<void>,
     ) => {
       phase('启动临时救援系统');
       try {
@@ -212,12 +421,28 @@ test('read-only rescue runs reviewed commands, retains downloadable artifacts, r
         cleaned++;
       }
     },
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _id: string; command: string; _timeout: number; signal: AbortSignal; log: (text: string) => void。
+     * 结果：返回受控对象，公开字段包括 `code, stdout, stderr`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `code, stdout, stderr`; the actual branch determines its shape.
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     * 协作入口 / Collaborators: `command.startsWith`, `commands.push`, `log`, `delay`.
+     */
     exec: async (
       _id: string,
       command: string,
       _timeout: number,
       signal: AbortSignal,
-      log: (text: string) => void,
+      log: /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: text: string。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      (text: string) => void,
     ) => {
       if (command.startsWith('cd /workspace')) {
         commands.push(command);
@@ -229,16 +454,49 @@ test('read-only rescue runs reviewed commands, retains downloadable artifacts, r
   } as unknown as Machines;
   const artifactId = randomUUID();
   const service = new Rescue(machines, new Jobs(), {
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     */
     prune: async () => {},
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: _id: string; _run: string; _cwd: string; paths: string[]; saved: (item: unknown) => void。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     * 协作入口 / Collaborators: `saved`, `'a'.repeat`.
+     */
     collect: async (
       _id: string,
       _run: string,
       _cwd: string,
       paths: string[],
-      saved: (item: unknown) => void,
+      saved: /**
+       * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+       * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+       * 输入 / Inputs: item: unknown。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      (item: unknown) => void,
     ) => {
       for (const path of paths) saved({ id: artifactId, name: path, path, bytes: 9, sha256: 'a'.repeat(64) });
     },
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ id: artifactId, name: 'report.txt', path: 'report.txt', bytes: 9, sha256: 'a'…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ id: artifactId, name: 'report.txt', path: 'report.txt', bytes: 9, sha256: 'a'…`) through a Promise.
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     * 协作入口 / Collaborators: `'a'.repeat`, `Buffer.from('recovered').toString`, `Buffer.from`.
+     */
     download: async () => ({
       id: artifactId,
       name: 'report.txt',
@@ -250,7 +508,18 @@ test('read-only rescue runs reviewed commands, retains downloadable artifacts, r
   } as any);
   try {
     await app(page, ['snapshots', 'transfers'], true);
-    await page.route('**/api/vms/*/rescue**', async (route) => {
+    await page.route('**/api/vms/*/rescue**', /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: route。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+     * 协作入口 / Collaborators: `route.request().url`, `route.request`, `url.pathname.endsWith`, `service.artifact`.
+     * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+     * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+     */
+    async (route) => {
       const url = new URL(route.request().url());
       try {
         const json = url.pathname.endsWith('/artifact')
@@ -299,6 +568,17 @@ test('read-only rescue runs reviewed commands, retains downloadable artifacts, r
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: snapshot comparison selects historical and current states, shows file changes and downloads the report
+ * 协作入口 / Collaborators: `app`, `randomUUID`, `'a'.repeat`, `'b'.repeat`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('snapshot comparison selects historical and current states, shows file changes and downloads the report', async ({
   page,
 }) => {
@@ -331,7 +611,17 @@ test('snapshot comparison selects historical and current states, shows file chan
       ],
     }),
   );
-  await page.route('**/api/vms/*/snapshot-diff', (route) => {
+  await page.route('**/api/vms/*/snapshot-diff', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: route.request().method() === 'POST' ? { id: jobId, status:…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: route.request().method() === 'POST' ? { id: jobId, status:…`).
+   * 验证场景 / Scenario: snapshot comparison selects historical and current states, shows file changes and downloads the report
+   * 状态影响 / State effects: `submitted`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') submitted = route.request().postDataJSON();
     return route.fulfill({
       json:
@@ -372,6 +662,17 @@ test('snapshot comparison selects historical and current states, shows file chan
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: snapshot branch merge submits a reviewed three-way merge into a new instance
+ * 协作入口 / Collaborators: `app`, `randomUUID`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('snapshot branch merge submits a reviewed three-way merge into a new instance', async ({ page }) => {
   await app(page, ['snapshots', 'transfers'], true);
   const sourceVmId = randomUUID(), snapshotId = randomUUID(), jobId = randomUUID();
@@ -406,6 +707,17 @@ test('snapshot branch merge submits a reviewed three-way merge into a new instan
   await expect(panel.getByText(/新实例 ID/)).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: running instance creates a filesystem-consistent online snapshot from the snapshot tab
+ * 协作入口 / Collaborators: `app`, `randomUUID`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('running instance creates a filesystem-consistent online snapshot from the snapshot tab', async ({ page }) => {
   await app(page, ['snapshots'], true);
   const id = randomUUID();
@@ -429,6 +741,17 @@ test('running instance creates a filesystem-consistent online snapshot from the 
   await expect(page.getByText('文件系统一致性')).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: TCG instance saves and restores a RAM and process snapshot
+ * 协作入口 / Collaborators: `app`, `randomUUID`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('TCG instance saves and restores a RAM and process snapshot', async ({ page }) => {
   await app(page, ['snapshots'], true);
   const id = randomUUID();
@@ -460,6 +783,17 @@ test('TCG instance saves and restores a RAM and process snapshot', async ({ page
   await expect.poll(() => restored).toEqual({ backup: true, memory: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile', async ({
   page,
 }) => {
@@ -470,23 +804,103 @@ test('golden image library saves templates, verifies, restores after refresh, cr
   const derived: any[] = [];
   const machines = {
     records: new Map([[sourceVm.id, sourceVm]]),
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`sourceVm`）。
+     * Result: Return the branch-computed value (`sourceVm`).
+     * 验证场景 / Scenario: golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile
+     */
     get: () => sourceVm,
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile
+     */
     requireUnlocked: () => {},
+    /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile
+     */
     requireStopped: () => {},
   } as unknown as Machines;
   const library = new GoldenImages(
     machines,
     {
-      withExportBudget: async (_id: string, signal: AbortSignal, work: (...args: any[]) => Promise<unknown>) =>
-        work(Buffer.byteLength('golden-browser-content'), async (target: any, headers: () => void) => {
+      /**
+       * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+       * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+       * 输入 / Inputs: _id: string; signal: AbortSignal; work: (...args: any[]) => Promise<unknown>。
+       * 结果：返回分支计算值（`work(Buffer.byteLength('golden-browser-content'), async (target: any, headers: (…`），以 Promise 交付。
+       * Result: Return the branch-computed value (`work(Buffer.byteLength('golden-browser-content'), async (target: any, headers: (…`) through a Promise.
+       * 验证场景 / Scenario: golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile
+       * 协作入口 / Collaborators: `work`, `Buffer.byteLength`.
+       */
+      withExportBudget: async (_id: string, signal: AbortSignal, work: /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: args: any[]。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      (...args: any[]) => Promise<unknown>) =>
+        work(Buffer.byteLength('golden-browser-content'), async (target: any, headers: /**
+         * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+         * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+         * 输入 / Inputs: 无 / none。
+         * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+         * Result: The declared return type defines the result; its test provider supplies the implementation.
+         */
+        () => void) => {
           headers();
           await pipeline(Readable.from(['golden-browser-content']), target, { signal });
         }),
-      export: async (_id: string, target: any, headers: () => void, signal: AbortSignal) => {
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: _id: string; target: any; headers: () => void; signal: AbortSignal。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile
+       * 协作入口 / Collaborators: `headers`, `pipeline`, `Readable.from`.
+       */
+      export: async (_id: string, target: any, headers: /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      () => void, signal: AbortSignal) => {
         headers();
         await pipeline(Readable.from(['golden-browser-content']), target, { signal });
       },
-      import: async (name: string, source: any, _signal: AbortSignal, beforeAdopt: () => void) => {
+      /**
+       * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+       * English: Generate or verify digest and identity material required by this suite.
+       * 输入 / Inputs: name: string; source: any; _signal: AbortSignal; beforeAdopt: () => void。
+       * 结果：返回分支计算值（`created`），以 Promise 交付。
+       * Result: Return the branch-computed value (`created`) through a Promise.
+       * 验证场景 / Scenario: golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile
+       * 状态影响 / State effects: `bytes`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 协作入口 / Collaborators: `expect(bytes).toBe`, `expect`, `beforeAdopt`, `randomUUID`.
+       */
+      import: async (name: string, source: any, _signal: AbortSignal, beforeAdopt: /**
+       * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+       * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+       * Result: The declared return type defines the result; its test provider supplies the implementation.
+       */
+      () => void) => {
         let bytes = '';
         for await (const chunk of source) bytes += chunk;
         expect(bytes).toBe('golden-browser-content');
@@ -548,6 +962,17 @@ test('golden image library saves templates, verifies, restores after refresh, cr
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: signed bundle policy manages trusted keys on snapshot and image pages at desktop and mobile widths
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `policy.init`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('signed bundle policy manages trusted keys on snapshot and image pages at desktop and mobile widths', async ({
   page,
 }) => {
@@ -593,6 +1018,17 @@ test('signed bundle policy manages trusted keys on snapshot and image pages at d
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: image library uploads a selected disk format with provisioning choices and shows integrity result
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '镜像库', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('image library uploads a selected disk format with provisioning choices and shows integrity result', async ({
   page,
 }) => {
@@ -639,6 +1075,17 @@ test('image library uploads a selected disk format with provisioning choices and
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: new Linux instance submits UEFI firmware selection with its resource configuration
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '创建发行版', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('new Linux instance submits UEFI firmware selection with its resource configuration', async ({
   page,
 }) => {
@@ -661,6 +1108,17 @@ test('new Linux instance submits UEFI firmware selection with its resource confi
   expect(created.firmware).toBe('uefi');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: new ARM64 instance selects the matching Debian image, UEFI and TCG
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '创建发行版', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('new ARM64 instance selects the matching Debian image, UEFI and TCG', async ({ page }) => {
   await app(page, ['images']);
   await page.route('**/api/images', (route) => route.fulfill({ json: [
@@ -690,12 +1148,33 @@ test('new ARM64 instance selects the matching Debian image, UEFI and TCG', async
   expect(created.memoryMiB).toBeGreaterThanOrEqual(1024);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: clipboard policy remains enforced in memory when browser persistence is unavailable
+ * 协作入口 / Collaborators: `page.addInitScript`, `app`, `page.getByRole('button', { name: '系统设置', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('clipboard policy remains enforced in memory when browser persistence is unavailable', async ({
   page,
 }) => {
   await page.addInitScript(() => {
     const original = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key, value) {
+    Storage.prototype.setItem = /**
+     * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+     * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+     * 输入 / Inputs: key; value。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: clipboard policy remains enforced in memory when browser persistence is unavailable
+     * 失败 / Failure: `new DOMException('Unavailable', 'QuotaExceededError')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `original.call`.
+     */
+    function (key, value) {
       if (key === 'sakura-clipboard-policies') throw new DOMException('Unavailable', 'QuotaExceededError');
       original.call(this, key, value);
     };
@@ -719,6 +1198,17 @@ test('clipboard policy remains enforced in memory when browser persistence is un
   expect(await page.evaluate(() => localStorage.getItem('sakura-clipboard-policies'))).toBeNull();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: clipboard policies enforce per-app directions and instance overrides before terminal input, persist and reject corrupt state
+ * 协作入口 / Collaborators: `page.routeWebSocket`, `app`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('clipboard policies enforce per-app directions and instance overrides before terminal input, persist and reject corrupt state', async ({
   page,
 }) => {
@@ -742,6 +1232,15 @@ test('clipboard policies enforce per-app directions and instance overrides befor
   await panel.getByLabel('允许复制与剪切到宿主').uncheck();
   await page.getByRole('button', { name: '工作空间', exact: true }).click();
   const terminal = page.locator('.xterm-helper-textarea');
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`terminal.evaluate((element) => { const data = new DataTransfer(); data.setData('…`）。
+   * Result: Return the branch-computed value (`terminal.evaluate((element) => { const data = new DataTransfer(); data.setData('…`).
+   * 验证场景 / Scenario: clipboard policies enforce per-app directions and instance overrides before terminal input, persist and reject corrupt state
+   * 协作入口 / Collaborators: `terminal.evaluate`.
+   */
   const paste = () =>
     terminal.evaluate((element) => {
       const data = new DataTransfer();
@@ -793,6 +1292,18 @@ test('clipboard policies enforce per-app directions and instance overrides befor
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, context, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: real noVNC obeys clipboard policy and records, decodes, exports and persists desktop video
+ * 失败 / Failure: `new Error('Expected local port')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `server.address`, `page.addInitScript`, `server.on`, `app`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('real noVNC obeys clipboard policy and records, decodes, exports and persists desktop video', async ({
   page,
   context,
@@ -805,6 +1316,15 @@ test('real noVNC obeys clipboard policy and records, decodes, exports and persis
   if (!address || typeof address === 'string') throw new Error('Expected local port');
   await page.addInitScript((port) => {
     const Native = window.WebSocket;
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: url: string | URL; protocols: string | string[]。
+     * 结果：返回分支计算值（`new Native(String(url).includes('/desktop?') ? `ws://127.0.0.1:${port}` : url, p…`）。
+     * Result: Return the branch-computed value (`new Native(String(url).includes('/desktop?') ? `ws://127.0.0.1:${port}` : url, p…`).
+     * 验证场景 / Scenario: real noVNC obeys clipboard policy and records, decodes, exports and persists desktop video
+     * 协作入口 / Collaborators: `String(url).includes`, `String`.
+     */
     const Redirect = function (url: string | URL, protocols?: string | string[]) {
       return new Native(String(url).includes('/desktop?') ? `ws://127.0.0.1:${port}` : url, protocols);
     };
@@ -812,10 +1332,29 @@ test('real noVNC obeys clipboard policy and records, decodes, exports and persis
     Redirect.prototype = Native.prototype;
     window.WebSocket = Redirect as unknown as typeof WebSocket;
   }, address.port);
-  server.on('connection', (socket) => {
+  server.on('connection', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: socket。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: real noVNC obeys clipboard policy and records, decodes, exports and persists desktop video
+   * 协作入口 / Collaborators: `sockets.push`, `socket.on`, `socket.send`, `Buffer.from`.
+   */
+  (socket) => {
     sockets.push(socket);
     let stage = 0;
-    socket.on('message', (raw) => {
+    socket.on('message', /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: raw。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: real noVNC obeys clipboard policy and records, decodes, exports and persists desktop video
+     * 状态影响 / State effects: `offset`, `frame[offset]`, `frame[offset + 1]`, `frame[offset + 2]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `Buffer.isBuffer`, `Buffer.from`, `socket.send`, `Buffer.alloc`.
+     */
+    (raw) => {
       const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
       if (stage === 0) {
         stage++;
@@ -858,6 +1397,16 @@ test('real noVNC obeys clipboard policy and records, decodes, exports and persis
     await page.getByRole('button', { name: '剪贴板', exact: true }).click();
     await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
     const incoming = page.getByRole('textbox', { name: 'Linux 剪贴板文本' });
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: text: string。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: real noVNC obeys clipboard policy and records, decodes, exports and persists desktop video
+     * 状态影响 / State effects: `header[0]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `Buffer.from`, `Buffer.alloc`, `header.writeUInt32BE`, `sockets.at(-1)!.send`.
+     */
     const serverClipboard = (text: string) => {
       const data = Buffer.from(text),
         header = Buffer.alloc(8);
@@ -927,7 +1476,18 @@ test('real noVNC obeys clipboard policy and records, decodes, exports and persis
     // A storage failure must leave the completed, downloadable capture intact.
     await page.evaluate(() => {
       const original = IDBObjectStore.prototype.add;
-      IDBObjectStore.prototype.add = function (value, key) {
+      IDBObjectStore.prototype.add = /**
+       * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+       * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+       * 输入 / Inputs: value; key。
+       * 结果：返回分支计算值（`original.call(this, value, key)`）。
+       * Result: Return the branch-computed value (`original.call(this, value, key)`).
+       * 验证场景 / Scenario: real noVNC obeys clipboard policy and records, decodes, exports and persists desktop video
+       * 状态影响 / State effects: `IDBObjectStore.prototype.add`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 失败 / Failure: `new DOMException('quota', 'QuotaExceededError')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+       * 协作入口 / Collaborators: `original.call`.
+       */
+      function (value, key) {
         if (this.name === 'content') {
           IDBObjectStore.prototype.add = original;
           throw new DOMException('quota', 'QuotaExceededError');
@@ -977,6 +1537,17 @@ test('real noVNC obeys clipboard policy and records, decodes, exports and persis
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: desktop layout saves two logical monitors and a native Wayland preference across reload
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '桌面', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('desktop layout saves two logical monitors and a native Wayland preference across reload', async ({ page }) => {
   await app(page, ['desktop'], true);
   let preferences: Record<string, unknown> = {
@@ -1017,6 +1588,16 @@ test('desktop layout saves two logical monitors and a native Wayland preference 
 });
 
 for (const transport of ['x11', 'wayland'] as const) {
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `page.on`, `app`, `page.route`, `'a'.repeat`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test(`Linux ${transport} clipboard saves identities and rules, launches arguments, survives reload and cleans sessions on mobile`, async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -1029,7 +1610,16 @@ test(`Linux ${transport} clipboard saves identities and rules, launches argument
   const submitted: any[] = [];
   await page.route(`**/api/vms/*/${transport === 'wayland' ? 'x11' : 'wayland'}-clipboard*`, route =>
     route.fulfill({ json: { version: 1, applications: [], ready: true, sessions: [], installation: null } }));
-  await page.route(`**/api/vms/*/${transport}-clipboard*`, route => {
+  await page.route(`**/api/vms/*/${transport}-clipboard*`, /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { image, sha256 } }) / route.fulfill({ json: session })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { image, sha256 } }) / route.fulfill({ json: session })`).
+   * 状态影响 / State effects: `state.applications`, `state.sessions[0].state`, `state.sessions`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `submitted.push`.
+   */
+  route => {
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON(); submitted.push(input);
       if (input.action === 'identify') return route.fulfill({ json: { image, sha256 } });
@@ -1091,6 +1681,16 @@ test(`Linux ${transport} clipboard saves identities and rules, launches argument
 }
 
 for (const transport of ['x11', 'wayland'] as const) {
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '桌面', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test(`Linux ${transport} clipboard refuses unsaved changes and a mismatched KDE project`, async ({ page }) => {
   await app(page, ['desktop'], true);
   await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
@@ -1109,6 +1709,17 @@ test(`Linux ${transport} clipboard refuses unsaved changes and a mismatched KDE 
 });
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: KDE project mismatch blocks graphics until the owner stops and rebinds the desktop
+ * 协作入口 / Collaborators: `app`, `page.on`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('KDE project mismatch blocks graphics until the owner stops and rebinds the desktop', async ({ page }) => {
   await app(page, ['desktop'], true);
   let phase = 'ready', mismatch = true;
@@ -1137,6 +1748,17 @@ test('KDE project mismatch blocks graphics until the owner stops and rebinds the
   await expect(page.getByRole('button', { name: '启动桌面', exact: true })).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: KDE cleanup failure keeps explicit stop retry available and blocks replacement installation
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '桌面', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('KDE cleanup failure keeps explicit stop retry available and blocks replacement installation', async ({ page }) => {
   await app(page, ['desktop'], true);
   let pending = true;
@@ -1161,6 +1783,17 @@ test('KDE cleanup failure keeps explicit stop retry available and blocks replace
   expect(submitted).toEqual([{ action: 'stop' }]);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: single-app window preserves literal args, retries original cleanup and labels legacy ownership on mobile
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '桌面', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('single-app window preserves literal args, retries original cleanup and labels legacy ownership on mobile', async ({ page }) => {
   await app(page, ['desktop'], true);
   const sessions: Array<Record<string, unknown>> = [];
@@ -1170,7 +1803,17 @@ test('single-app window preserves literal args, retries original cleanup and lab
     route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
   await page.route('**/api/vms/*/desktop*', (route) =>
     route.fulfill({ json: { status: 'stopped', log: '', preferences: {} } }));
-  await page.route('**/api/vms/*/single-app*', (route) => {
+  await page.route('**/api/vms/*/single-app*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { sessions } }) / route.fulfill({ status: 201, json: session })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { sessions } }) / route.fulfill({ status: 201, json: session })`).
+   * 验证场景 / Scenario: single-app window preserves literal args, retries original cleanup and labels legacy ownership on mobile
+   * 状态影响 / State effects: `started`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `route.request().postDataJSON`.
+   */
+  (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ json: { sessions } });
     const input = route.request().postDataJSON() as Record<string, unknown>;
     if (input.action === 'start') {
@@ -1225,7 +1868,15 @@ test('single-app window preserves literal args, retries original cleanup and lab
   await page.evaluate(() => {
     const owned = window as Window & { _singleAppOriginalOpen?: typeof window.open };
     owned._singleAppOriginalOpen = window.open;
-    window.open = () => null;
+    window.open = /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`null`）。
+     * Result: Return the branch-computed value (`null`).
+     * 验证场景 / Scenario: single-app window preserves literal args, retries original cleanup and labels legacy ownership on mobile
+     */
+    () => null;
   });
   await panel.getByRole('button', { name: '打开', exact: true }).click();
   await expect(panel.getByText('浏览器阻止了应用窗口，请允许 Sakura 打开弹出窗口')).toBeVisible();
@@ -1254,16 +1905,43 @@ test('single-app window preserves literal args, retries original cleanup and lab
   await popup.close();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: closed popup retains failed stop and retries the same single-app session
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '桌面', exact: true }).click`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('closed popup retains failed stop and retries the same single-app session', async ({ page }) => {
   await app(page, ['desktop'], true);
   const sessions: Array<Record<string, unknown>> = [];
   const identifier = '145de481-0423-45eb-b17b-65d852a07459';
-  let releaseStart!: () => void;
+  let releaseStart!: /**
+   * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+   * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void;
   const responseAllowed = new Promise<void>(resolve => { releaseStart = resolve; });
   let starts = 0, stops = 0;
   await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
   await page.route('**/api/vms/*/desktop*', route => route.fulfill({ json: { status: 'stopped', log: '', preferences: {} } }));
-  await page.route('**/api/vms/*/single-app*', async route => {
+  await page.route('**/api/vms/*/single-app*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { sessions } }) / route.fulfill({ status: 201, json: session })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { sessions } }) / route.fulfill({ status: 201, json: session })`) through a Promise.
+   * 验证场景 / Scenario: closed popup retains failed stop and retries the same single-app session
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `route.request().postDataJSON`.
+   */
+  async route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: { sessions } });
     const input = route.request().postDataJSON() as Record<string, unknown>;
     if (input.action === 'start') {
@@ -1302,6 +1980,19 @@ test('closed popup retains failed stop and retries the same single-app session',
   } finally { releaseStart(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, context }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: single-app window applies desktop clipboard policy to its RFB bridge
+ * 状态影响 / State effects: `policy.defaults.desktop.copy`, `policy.defaults.desktop.paste`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 失败 / Failure: `new Error('Expected local port')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `server.address`, `context.addInitScript`, `server.on`, `app`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('single-app window applies desktop clipboard policy to its RFB bridge', async ({ page, context }) => {
   const sockets: NodeWebSocket[] = [], sent: string[] = [];
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
@@ -1310,6 +2001,15 @@ test('single-app window applies desktop clipboard policy to its RFB bridge', asy
   if (!address || typeof address === 'string') throw new Error('Expected local port');
   await context.addInitScript((port) => {
     const Native = window.WebSocket;
+    /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: url: string | URL; protocols: string | string[]。
+     * 结果：返回分支计算值（`new Native(String(url).includes('/desktop?') ? `ws://127.0.0.1:${port}` : url, p…`）。
+     * Result: Return the branch-computed value (`new Native(String(url).includes('/desktop?') ? `ws://127.0.0.1:${port}` : url, p…`).
+     * 验证场景 / Scenario: single-app window applies desktop clipboard policy to its RFB bridge
+     * 协作入口 / Collaborators: `String(url).includes`, `String`.
+     */
     const Redirect = function (url: string | URL, protocols?: string | string[]) {
       return new Native(String(url).includes('/desktop?') ? `ws://127.0.0.1:${port}` : url, protocols);
     };
@@ -1317,10 +2017,28 @@ test('single-app window applies desktop clipboard policy to its RFB bridge', asy
     Redirect.prototype = Native.prototype;
     window.WebSocket = Redirect as unknown as typeof WebSocket;
   }, address.port);
-  server.on('connection', (socket) => {
+  server.on('connection', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: socket。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: single-app window applies desktop clipboard policy to its RFB bridge
+   * 协作入口 / Collaborators: `sockets.push`, `socket.on`, `socket.send`, `Buffer.from`.
+   */
+  (socket) => {
     sockets.push(socket);
     let stage = 0;
-    socket.on('message', (raw) => {
+    socket.on('message', /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: raw。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: single-app window applies desktop clipboard policy to its RFB bridge
+     * 协作入口 / Collaborators: `Buffer.isBuffer`, `Buffer.from`, `socket.send`, `Buffer.alloc`.
+     */
+    (raw) => {
       const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
       if (stage === 0) { stage++; socket.send(Buffer.from([1, 1])); }
       else if (stage === 1) { stage++; socket.send(Buffer.alloc(4)); }
@@ -1361,6 +2079,16 @@ test('single-app window applies desktop clipboard policy to its RFB bridge', asy
     const incoming = panel.getByRole('textbox', { name: 'Linux 剪贴板文本' });
     const outgoing = panel.getByRole('textbox', { name: '发送到 Linux 的文本' });
     await expect(panel.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: value: string。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: single-app window applies desktop clipboard policy to its RFB bridge
+     * 状态影响 / State effects: `header[0]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `Buffer.from`, `Buffer.alloc`, `header.writeUInt32BE`, `sockets.at(-1)!.send`.
+     */
     const serverClipboard = (value: string) => {
       const data = Buffer.from(value), header = Buffer.alloc(8);
       header[0] = 3;
@@ -1390,6 +2118,17 @@ test('single-app window applies desktop clipboard policy to its RFB bridge', asy
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Windows integration settings save and remove real registration plans without replacing defaults, and fit mobile
+ * 协作入口 / Collaborators: `app`, `mkdtemp`, `join`, `tmpdir`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('Windows integration settings save and remove real registration plans without replacing defaults, and fit mobile', async ({
   page,
 }) => {
@@ -1448,6 +2187,17 @@ test('Windows integration settings save and remove real registration plans witho
 });
 
 for (const bits of [64, 32] as const) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: { page, }。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `launchFailure`, `fail`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `page.on`, `app`, `mkdtemp`, `join`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   test(`Windows native clipboard settings bind and launch ${bits}-bit executable rules, show failures, disable owned processes and fit mobile`, async ({
     page,
   }) => {
@@ -1493,8 +2243,35 @@ for (const bits of [64, 32] as const) {
       assets,
       interval: 0,
       supported: true,
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回分支计算值（`'a'.repeat(64)`），以 Promise 交付。
+       * Result: Return the branch-computed value (`'a'.repeat(64)`) through a Promise.
+       * 协作入口 / Collaborators: `'a'.repeat`.
+       */
       hashImage: async () => 'a'.repeat(64),
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回分支计算值（`bits`），以 Promise 交付。
+       * Result: Return the branch-computed value (`bits`) through a Promise.
+       */
       imageBits: async () => bits,
+      /**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: file; args; hooks; signal。
+       * 结果：返回分支计算值（`child`），以 Promise 交付。
+       * Result: Return the branch-computed value (`child`) through a Promise.
+       * 状态影响 / State effects: `policy`, `launched`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 失败 / Failure: `new Error('controlled startup refused before resume')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+       * 协作入口 / Collaborators: `launches.push`, `hooks.prepared`, `JSON.parse`, `readFile`.
+       * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+       * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+       */
       launch: async (file, args, hooks, signal) => {
         launches.push({ file, args });
         if (launchFailure) throw new Error('controlled startup refused before resume');
@@ -1516,6 +2293,18 @@ for (const bits of [64, 32] as const) {
         launched = true;
         return child;
       },
+      /**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: file; args。
+       * 结果：返回受控对象，公开字段包括 `processes`；各分支以实际返回对象为准。
+       * Result: Return a controlled object exposing fields such as `processes`; the actual branch determines its shape.
+       * 状态影响 / State effects: `policy`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 失败 / Failure: `new Error('process rejects native attachment')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+       * 协作入口 / Collaborators: `enabledHelpers.push`, `Number`.
+       * 设计思路：根据受控条件分别注入拒绝或结果，保持分支证据可观察，供调用者失败恢复用例复用。
+       * Design: Inject rejection or results under controlled conditions while keeping branch evidence observable for caller recovery tests.
+       */
       run: async (file, args) => {
         if (args[0] === 'list') return { processes: launched ? [identity, child] : [identity] };
         if (args[0] === 'status') return policy;
@@ -1653,6 +2442,17 @@ for (const bits of [64, 32] as const) {
   });
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Explorer handoffs preserve explicit project selection, open directories and files, and launch mapped host copies
+ * 协作入口 / Collaborators: `app`, `mkdtemp`, `join`, `tmpdir`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('Explorer handoffs preserve explicit project selection, open directories and files, and launch mapped host copies', async ({
   page,
 }) => {
@@ -1734,6 +2534,17 @@ test('Explorer handoffs preserve explicit project selection, open directories an
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: local assistant requires a reviewed redacted preview, renders model text safely and exports an unexecuted command plan
+ * 协作入口 / Collaborators: `app`, `mkdtemp`, `join`, `tmpdir`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('local assistant requires a reviewed redacted preview, renders model text safely and exports an unexecuted command plan', async ({
   page,
 }) => {
@@ -1741,7 +2552,16 @@ test('local assistant requires a reviewed redacted preview, renders model text s
   const directory = await mkdtemp(join(tmpdir(), 'sakura-assistant-browser-'));
   expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
   const chats: any[] = [];
-  const assistant = new LocalAssistant(join(directory, 'assistant.json'), async (url, init) => {
+  const assistant = new LocalAssistant(join(directory, 'assistant.json'), /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: url; init。
+   * 结果：返回分支计算值（`Response.json({ models: [{ name: 'fixture:local', size: 1048576, details: { form… / Response.json({ details: { format: 'gguf' }, model_info: { 'general.architecture…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`Response.json({ models: [{ name: 'fixture:local', size: 1048576, details: { form… / Response.json({ details: { format: 'gguf' }, model_info: { 'general.architecture…`) through a Promise.
+   * 验证场景 / Scenario: local assistant requires a reviewed redacted preview, renders model text safely and exports an unexecuted command plan
+   * 协作入口 / Collaborators: `String(url).endsWith`, `String`, `Response.json`, `JSON.parse`.
+   */
+  async (url, init) => {
     if (String(url).endsWith('/api/tags'))
       return Response.json({
         models: [{ name: 'fixture:local', size: 1048576, details: { format: 'gguf' } }],
@@ -1765,7 +2585,18 @@ test('local assistant requires a reviewed redacted preview, renders model text s
     return Response.json({ model: 'fixture:local', done: true, message: { role: 'assistant', content } });
   });
   await assistant.init();
-  await page.route('**/api/assistant', async (route) => {
+  await page.route('**/api/assistant', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: assistant.view() }) / route.fulfill({ json: value })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`route.fulfill({ json: assistant.view() }) / route.fulfill({ json: value })`) through a Promise.
+   * 验证场景 / Scenario: local assistant requires a reviewed redacted preview, renders model text safely and exports an unexecuted command plan
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `assistant.view`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
+  async (route) => {
     try {
       if (route.request().method() === 'GET') return route.fulfill({ json: assistant.view() });
       const input = assistantRequest.parse(route.request().postDataJSON());
@@ -1834,6 +2665,17 @@ test('local assistant requires a reviewed redacted preview, renders model text s
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: webhook settings save real routes, show one-time secrets, deliver tests, preserve edits and cancel on disable
+ * 协作入口 / Collaborators: `app`, `mkdtemp`, `join`, `tmpdir`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('webhook settings save real routes, show one-time secrets, deliver tests, preserve edits and cancel on disable', async ({
   page,
 }) => {
@@ -1909,6 +2751,18 @@ test('webhook settings save real routes, show one-time secrets, deliver tests, p
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: automation rules preview events before explicitly enabling a real VM action
+ * 状态影响 / State effects: `now`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `mkdtemp`, `join`, `tmpdir`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('automation rules preview events before explicitly enabling a real VM action', async ({ page }) => {
   await app(page);
   const directory = await mkdtemp(join(tmpdir(), 'sakura-automation-browser-'));
@@ -1918,9 +2772,58 @@ test('automation rules preview events before explicitly enabling a real VM actio
     status: 'error'; tags: string[] }> = [];
   const started: string[] = [];
   const machine = {
-    get: () => vm, requireUnlocked: () => {},
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`vm`）。
+     * Result: Return the branch-computed value (`vm`).
+     * 验证场景 / Scenario: automation rules preview events before explicitly enabling a real VM action
+     */
+    get: () => vm, /**
+     * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+     * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: automation rules preview events before explicitly enabling a real VM action
+     */
+    requireUnlocked: () => {},
+    /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: id: string。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: automation rules preview events before explicitly enabling a real VM action
+     * 协作入口 / Collaborators: `started.push`.
+     */
     start: async (id: string) => { started.push(id); },
-    stop: async () => {}, suspend: async () => {}, resume: async () => {},
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: automation rules preview events before explicitly enabling a real VM action
+     */
+    stop: async () => {}, /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: automation rules preview events before explicitly enabling a real VM action
+     */
+    suspend: async () => {}, /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: automation rules preview events before explicitly enabling a real VM action
+     */
+    resume: async () => {},
   } as unknown as Machines;
   const rules = new AutomationRules(async () => events, machine,
     join(directory, 'rules.json'), () => now);
@@ -1971,6 +2874,18 @@ test('automation rules preview events before explicitly enabling a real VM actio
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: reviewed Runbook rules expose exact steps before approval and run once for a matching alert
+ * 状态影响 / State effects: `now`, `events`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `mkdtemp`, `join`, `tmpdir`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('reviewed Runbook rules expose exact steps before approval and run once for a matching alert', async ({ page }) => {
   await app(page);
   const directory = await mkdtemp(join(tmpdir(), 'sakura-runbook-browser-'));
@@ -1979,8 +2894,56 @@ test('reviewed Runbook rules expose exact steps before approval and run once for
   let events: Array<{ id: string; type: 'alert.raised'; occurredAt: string; vmId: string;
     kind: 'service'; tags: string[] }> = [];
   const calls: string[][] = [];
-  const machine = { get: () => vm, requireUnlocked: () => {}, start: async () => {},
-    stop: async () => {}, suspend: async () => {}, resume: async () => {} } as unknown as Machines;
+  const machine = { /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`vm`）。
+   * Result: Return the branch-computed value (`vm`).
+   * 验证场景 / Scenario: reviewed Runbook rules expose exact steps before approval and run once for a matching alert
+   */
+  get: () => vm, /**
+   * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+   * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: reviewed Runbook rules expose exact steps before approval and run once for a matching alert
+   */
+  requireUnlocked: () => {}, /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: reviewed Runbook rules expose exact steps before approval and run once for a matching alert
+   */
+  start: async () => {},
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: reviewed Runbook rules expose exact steps before approval and run once for a matching alert
+     */
+    stop: async () => {}, /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: reviewed Runbook rules expose exact steps before approval and run once for a matching alert
+     */
+    suspend: async () => {}, /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: reviewed Runbook rules expose exact steps before approval and run once for a matching alert
+     */
+    resume: async () => {} } as unknown as Machines;
   const rules = new AutomationRules(async () => events, machine,
     join(directory, 'rules.json'), () => now, () => false, () => {}, async (_id, steps) => {
       calls.push(steps.map((step) => step.command));
@@ -2026,6 +2989,17 @@ test('reviewed Runbook rules expose exact steps before approval and run once for
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: plugin rollout previews a host cohort, persists a policy and explains next startup
+ * 协作入口 / Collaborators: `app`, `mkdtemp`, `join`, `tmpdir`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('plugin rollout previews a host cohort, persists a policy and explains next startup', async ({ page }) => {
   await app(page);
   const directory = await mkdtemp(join(tmpdir(), 'sakura-rollout-browser-'));
@@ -2064,6 +3038,18 @@ test('plugin rollout previews a host cohort, persists a policy and explains next
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: host pairing connects over pinned TLS and shows remote resources and revocation
+ * 失败 / Failure: `new Error('No test port')`; `new Error('Pairing code was not issued')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `app`, `mkdtemp`, `join`, `tmpdir`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('host pairing connects over pinned TLS and shows remote resources and revocation', async ({ page }) => {
   await app(page);
   const directory = await mkdtemp(join(tmpdir(), 'sakura-peers-browser-'));
@@ -2074,9 +3060,26 @@ test('host pairing connects over pinned TLS and shows remote resources and revoc
   if (!address || typeof address === 'string') throw new Error('No test port');
   const port = address.port;
   await new Promise<void>((done) => probe.close(() => done()));
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`({ platform: 'win32', arch: 'x64', cpus: 8, memoryTotal: 16 * 1024 ** 3, memoryF…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`({ platform: 'win32', arch: 'x64', cpus: 8, memoryTotal: 16 * 1024 ** 3, memoryF…`) through a Promise.
+   * 验证场景 / Scenario: host pairing connects over pinned TLS and shows remote resources and revocation
+   */
   const sample = async () => ({ platform: 'win32', arch: 'x64', cpus: 8,
     memoryTotal: 16 * 1024 ** 3, memoryFree: 8 * 1024 ** 3,
     load: [0.1, 0.2, 0.3], vmCount: 3, runningVms: 2 });
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`({ ...await sample(), cpus: 16, memoryFree: 32 * 1024 ** 3, load: [0, 0, 0] })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`({ ...await sample(), cpus: 16, memoryFree: 32 * 1024 ** 3, load: [0, 0, 0] })`) through a Promise.
+   * 验证场景 / Scenario: host pairing connects over pinned TLS and shows remote resources and revocation
+   * 协作入口 / Collaborators: `sample`.
+   */
   const remoteSample = async () => ({ ...await sample(), cpus: 16,
     memoryFree: 32 * 1024 ** 3, load: [0, 0, 0] });
   const targetFile = join(directory, 'target.json');
@@ -2151,6 +3154,18 @@ test('host pairing connects over pinned TLS and shows remote resources and revoc
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: session locking removes private UI, idle polling does not renew access, and passwords stay out of browser storage
+ * 状态影响 / State effects: `now`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `mkdtemp`, `join`, `tmpdir`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('session locking removes private UI, idle polling does not renew access, and passwords stay out of browser storage', async ({
   page,
 }) => {
@@ -2161,7 +3176,16 @@ test('session locking removes private UI, idle polling does not renew access, an
     activities = 0;
   const lock = new SessionLock(undefined, join(directory, 'session.json'), () => now);
   await lock.init(false);
-  await page.route('**/api/**', async (route) => {
+  await page.route('**/api/**', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { enabled: false, session: lock.view() } }) / route.fulfill({ json: lock.view() })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { enabled: false, session: lock.view() } }) / route.fulfill({ json: lock.view() })`) through a Promise.
+   * 验证场景 / Scenario: session locking removes private UI, idle polling does not renew access, and passwords stay out of browser storage
+   * 协作入口 / Collaborators: `route.request().url`, `route.request`, `route.fulfill`, `lock.view`.
+   */
+  async (route) => {
     const path = new URL(route.request().url()).pathname;
     try {
       if (path === '/api/access/status') return route.fulfill({ json: { enabled: false,
@@ -2235,13 +3259,32 @@ test('session locking removes private UI, idle polling does not renew access, an
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: GraphQL workbench executes real typed queries, reports validation errors and exports its schema
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '系统设置', exact: true }).click`, `page.getByRole`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('GraphQL workbench executes real typed queries, reports validation errors and exports its schema', async ({
   page,
 }) => {
   await app(page, ['metrics'], true);
   const graph = new GraphApi(async () =>
     querySnapshot(
-      { records: new Map([[vm.id, vm]]), state: () => 'running' } as unknown as Machines,
+      { records: new Map([[vm.id, vm]]), /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回分支计算值（`'running'`）。
+       * Result: Return the branch-computed value (`'running'`).
+       * 验证场景 / Scenario: GraphQL workbench executes real typed queries, reports validation errors and exports its schema
+       */
+      state: () => 'running' } as unknown as Machines,
       [],
       ['metrics'],
     ),
@@ -2293,6 +3336,17 @@ test('GraphQL workbench executes real typed queries, reports validation errors a
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: log retention requires a fresh preview, preserves drafts and displays durable cleanup feedback
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '系统设置', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('log retention requires a fresh preview, preserves drafts and displays durable cleanup feedback', async ({
   page,
 }) => {
@@ -2312,7 +3366,17 @@ test('log retention requires a fresh preview, preserves drafts and displays dura
   let saved: any = { policy: { enabled: false, days: 30, maxMiB: 64 }, summary };
   const requests: any[] = [];
   let stale = true;
-  await page.route('**/api/log-retention', (route) => {
+  await page.route('**/api/log-retention', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: saved }) / route.fulfill({ json: { ...summary, removeLogs: input.policy.enabled ? 2 : 0, re…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: saved }) / route.fulfill({ json: { ...summary, removeLogs: input.policy.enabled ? 2 : 0, re…`).
+   * 验证场景 / Scenario: log retention requires a fresh preview, preserves drafts and displays durable cleanup feedback
+   * 状态影响 / State effects: `stale`, `saved`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `route.request().postDataJSON`.
+   */
+  (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ json: saved });
     const input = route.request().postDataJSON();
     requests.push(input);
@@ -2376,6 +3440,17 @@ test('log retention requires a fresh preview, preserves drafts and displays dura
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: API explorer filters declared operations, sends safe reads and downloads a usable specification and SDK
+ * 协作入口 / Collaborators: `app`, `apiDocument`, `page.route`, `page.getByRole('button', { name: '系统设置', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('API explorer filters declared operations, sends safe reads and downloads a usable specification and SDK', async ({
   page,
 }) => {
@@ -2421,6 +3496,18 @@ test('API explorer filters declared operations, sends safe reads and downloads a
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, context, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: offline monitor reopens without a network, excludes credentials and clears only its own cache
+ * 状态影响 / State effects: `sample.vms[0].status`, `sample.capturedAt`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `new Date().toISOString`, `page.route`, `page.goto`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('offline monitor reopens without a network, excludes credentials and clears only its own cache', async ({
   page,
   context,
@@ -2512,6 +3599,17 @@ test('offline monitor reopens without a network, excludes credentials and clears
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: monitor cache failure rolls back consent and registration instead of claiming offline readiness
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.goto`, `expect(page.locator('#connection')).toContainText`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('monitor cache failure rolls back consent and registration instead of claiming offline readiness', async ({
   page,
 }) => {
@@ -2532,7 +3630,16 @@ test('monitor cache failure rolls back consent and registration instead of claim
   await page.goto('/monitor/index.html');
   await expect(page.locator('#connection')).toContainText('已连接');
   await page.evaluate(() => {
-    Cache.prototype.put = async () => {
+    Cache.prototype.put = /**
+     * 中文功能：提供可控的失败路径，使调用者的拒绝、保留或恢复行为能够被断言。
+     * English: Provide a controlled failure path so caller rejection, retention or recovery can be asserted.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: monitor cache failure rolls back consent and registration instead of claiming offline readiness
+     * 失败 / Failure: `new DOMException('storage denied', 'QuotaExceededError')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     */
+    async () => {
       throw new DOMException('storage denied', 'QuotaExceededError');
     };
   });
@@ -2543,6 +3650,17 @@ test('monitor cache failure rolls back consent and registration instead of claim
   expect(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length)).toBe(0);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: accessibility mode audits actual DOM, locates failures and exports no HTML or input values
+ * 协作入口 / Collaborators: `app`, `page.evaluate`, `page.getByRole('button', { name: '无障碍检查模式', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('accessibility mode audits actual DOM, locates failures and exports no HTML or input values', async ({
   page,
 }) => {
@@ -2598,6 +3716,17 @@ test('accessibility mode audits actual DOM, locates failures and exports no HTML
   await expect(page.getByRole('button', { name: '无障碍检查模式', exact: true })).toBeFocused();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: custom shortcuts reject conflicts, persist project overrides and leave text and terminal input alone
+ * 协作入口 / Collaborators: `app`, `page.getByRole('button', { name: '系统设置', exact: true }).click`, `page.getByRole`, `editor.getByLabel('切换主题快捷键', { exact: true }).fill`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('custom shortcuts reject conflicts, persist project overrides and leave text and terminal input alone', async ({
   page,
 }) => {
@@ -2647,13 +3776,34 @@ test('custom shortcuts reject conflicts, persist project overrides and leave tex
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: power policy saves while the guest is stopped and displays the actual scheduling decision
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '能力中心', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('power policy saves while the guest is stopped and displays the actual scheduling decision', async ({
   page,
 }) => {
   await app(page, ['projects', 'extensions'], true);
   let submitted: any,
     jobs: any[] = [];
-  await page.route('**/api/vms/*/extended-features*', (route) => {
+  await page.route('**/api/vms/*/extended-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: jobs[0] }) / route.fulfill({ json: { projectId: 'default', settings: {}, jobs, executions: []…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: jobs[0] }) / route.fulfill({ json: { projectId: 'default', settings: {}, jobs, executions: []…`).
+   * 验证场景 / Scenario: power policy saves while the guest is stopped and displays the actual scheduling decision
+   * 状态影响 / State effects: `submitted`, `jobs`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `new Date().toISOString`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       submitted = route.request().postDataJSON();
       jobs = [
@@ -2707,14 +3857,33 @@ test('power policy saves while the guest is stopped and displays the actual sche
 for (const feature of [
   { id: 'ssh-agent-forward', name: 'SSH Agent 转发', command: 'ssh-add -L', note: /命令使用当前项目账号、独立 home 和项目网络/ },
   { id: 'gpg-agent-forward', name: 'GPG Agent 转发', command: 'gpg --no-autostart --version', note: /命令以当前项目账号访问宿主受限制的 extra socket/ },
-]) test(feature.name + ' needs an explicit submission and preserves cleanup errors after reload', async ({ page }) => {
+]) /**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `page.on`, `app`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
+test(feature.name + ' needs an explicit submission and preserves cleanup errors after reload', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await app(page, ['projects', 'extensions'], true);
   await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
   const submitted: unknown[] = [];
   let jobs: any[] = [];
-  await page.route('**/api/vms/*/extended-features*', route => {
+  await page.route('**/api/vms/*/extended-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: jobs[0] }) / route.fulfill({ json: { projectId: 'default', settings: {}, jobs, executions: []…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: jobs[0] }) / route.fulfill({ json: { projectId: 'default', settings: {}, jobs, executions: []…`).
+   * 状态影响 / State effects: `jobs`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `expect(new URL(route.request().url()).searchParams.get('project')).toBe`, `expect`, `new URL(route.request().url()).searchParams.get`, `route.request().url`.
+   */
+  route => {
     expect(new URL(route.request().url()).searchParams.get('project')).toBe('default');
     if (route.request().method() === 'POST') {
       submitted.push(route.request().postDataJSON());
@@ -2747,13 +3916,34 @@ for (const feature of [
   expect(errors).toEqual([]);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: schema forms submit typed parameters and download a persisted report independently of logs
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '能力中心', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('schema forms submit typed parameters and download a persisted report independently of logs', async ({
   page,
 }) => {
   await app(page, ['projects', 'platform'], true);
   let submitted: any,
     jobs: any[] = [];
-  await page.route('**/api/vms/*/next-features*', (route) => {
+  await page.route('**/api/vms/*/next-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: jobs[0] }) / route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: jobs[0] }) / route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi…`).
+   * 验证场景 / Scenario: schema forms submit typed parameters and download a persisted report independently of logs
+   * 状态影响 / State effects: `submitted`, `jobs`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `new Date().toISOString`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       submitted = route.request().postDataJSON();
       jobs = [
@@ -2780,7 +3970,16 @@ test('schema forms submit typed parameters and download a persisted report indep
       },
     });
   });
-  await page.route('**/api/jobs/large-report/result*', (route) =>
+  await page.route('**/api/jobs/large-report/result*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { jobId: 'large-report', result: { basis: 'completed-tasks…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { jobId: 'large-report', result: { basis: 'completed-tasks…`).
+   * 验证场景 / Scenario: schema forms submit typed parameters and download a persisted report independently of logs
+   * 协作入口 / Collaborators: `route.fulfill`.
+   */
+  (route) =>
     route.fulfill({
       json: {
         jobId: 'large-report',
@@ -2810,12 +4009,33 @@ test('schema forms submit typed parameters and download a persisted report indep
   expect((await downloaded).suggestedFilename()).toBe('report.json');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: host disk health remains usable while the guest is stopped and keeps unknown counters distinct from zero
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '能力中心', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('host disk health remains usable while the guest is stopped and keeps unknown counters distinct from zero', async ({
   page,
 }) => {
   await app(page, ['projects', 'platform'], true);
   let jobs: any[] = [];
-  await page.route('**/api/vms/*/next-features*', (route) => {
+  await page.route('**/api/vms/*/next-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: jobs[0] }) / route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: jobs[0] }) / route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi…`).
+   * 验证场景 / Scenario: host disk health remains usable while the guest is stopped and keeps unknown counters distinct from zero
+   * 状态影响 / State effects: `jobs`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `expect(route.request().postDataJSON().featureId).toBe`, `expect`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       expect(route.request().postDataJSON().featureId).toBe('host-disk-health');
       jobs = [
@@ -2842,7 +4062,16 @@ test('host disk health remains usable while the guest is stopped and keeps unkno
       },
     });
   });
-  await page.route('**/api/jobs/disk-health/result*', (route) =>
+  await page.route('**/api/jobs/disk-health/result*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { jobId: 'disk-health', result: { provider: 'Windows Stora…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { jobId: 'disk-health', result: { provider: 'Windows Stora…`).
+   * 验证场景 / Scenario: host disk health remains usable while the guest is stopped and keeps unknown counters distinct from zero
+   * 协作入口 / Collaborators: `route.fulfill`.
+   */
+  (route) =>
     route.fulfill({
       json: {
         jobId: 'disk-health',
@@ -2897,6 +4126,17 @@ test('host disk health remains usable while the guest is stopped and keeps unkno
   expect((await download).suggestedFilename()).toBe('sakura-disk-health.json');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: file editor previews and applies LSP rename, then displays language diagnostics
+ * 协作入口 / Collaborators: `page.addInitScript`, `app`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('file editor previews and applies LSP rename, then displays language diagnostics', async ({ page }) => {
   const source = 'export const flower = 1;\n', renamed = 'export const petal = 1;\n';
   await page.addInitScript(({ id, source }) => localStorage.setItem(`sakura-drafts:${id}`, JSON.stringify([{
@@ -2908,7 +4148,16 @@ test('file editor previews and applies LSP rename, then displays language diagno
   await page.route('**/api/vms/*/history*', (route) => route.fulfill({ json: { items: [] } }));
   await page.route('**/api/vms/*/files?*', (route) => route.fulfill({ json: [] }));
   const actions: string[] = [];
-  await page.route('**/api/vms/*/language-service*', (route) => {
+  await page.route('**/api/vms/*/language-service*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { installed: true, language: 'typescript' } }) / route.fulfill({ json: input.action === 'rename' ? { token: 'bb74d525-2fea-4daa-9…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { installed: true, language: 'typescript' } }) / route.fulfill({ json: input.action === 'rename' ? { token: 'bb74d525-2fea-4daa-9…`).
+   * 验证场景 / Scenario: file editor previews and applies LSP rename, then displays language diagnostics
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `route.request().postDataJSON`.
+   */
+  (route) => {
     if (route.request().method() === 'GET')
       return route.fulfill({ json: { installed: true, language: 'typescript' } });
     const input = route.request().postDataJSON();
@@ -2943,6 +4192,17 @@ test('file editor previews and applies LSP rename, then displays language diagno
   expect(actions).toEqual(['rename', 'apply', 'diagnostics', 'definition', 'completion']);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Python debug panel starts with breakpoints and shows stepwise stack and variable changes
+ * 协作入口 / Collaborators: `page.addInitScript`, `app`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('Python debug panel starts with breakpoints and shows stepwise stack and variable changes', async ({ page }) => {
   const source = 'value = 1\nvalue += 1\nprint(value)\n';
   await page.addInitScript(({ id, source }) => localStorage.setItem(`sakura-drafts:${id}`, JSON.stringify([{
@@ -2956,7 +4216,17 @@ test('Python debug panel starts with breakpoints and shows stepwise stack and va
   const token = '72f4e34d-c936-4915-88fc-309e53bc40e4';
   let state: any = { installed: true, active: false };
   const submitted: any[] = [];
-  await page.route('**/api/vms/*/debugger*', (route) => {
+  await page.route('**/api/vms/*/debugger*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: state })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: state })`).
+   * 验证场景 / Scenario: Python debug panel starts with breakpoints and shows stepwise stack and variable changes
+   * 状态影响 / State effects: `state`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `route.request().postDataJSON`.
+   */
+  (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ json: state });
     const input = route.request().postDataJSON();
     submitted.push(input);
@@ -2990,6 +4260,17 @@ test('Python debug panel starts with breakpoints and shows stepwise stack and va
   expect(submitted[0].breakpoints).toEqual([2]);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: regional preferences translate UI labels and format values without changing a named VM
+ * 协作入口 / Collaborators: `page.clock.install`, `page.addInitScript`, `app`, `page.route`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('regional preferences translate UI labels and format values without changing a named VM', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-01-01T00:30:00.000Z') });
   await page.addInitScript(() => {
@@ -3015,6 +4296,17 @@ test('regional preferences translate UI labels and format values without changin
   await expect(page.getByRole('heading', { name: '文件', level: 2 })).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: fleet policy editor saves a reviewable batch and publishes to the selected host
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '系统设置' }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('fleet policy editor saves a reviewable batch and publishes to the selected host', async ({ page }) => {
   await app(page, [], true);
   const peerId = '32a41182-487f-41c7-9619-ab0e1637a8ba';
@@ -3057,6 +4349,17 @@ test('fleet policy editor saves a reviewable batch and publishes to the selected
   expect(requests[1].revision).toBe(1);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: GPU profiles save, preview host support and apply reviewed hardware to a stopped VM
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '系统设置' }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('GPU profiles save, preview host support and apply reviewed hardware to a stopped VM', async ({ page }) => {
   await app(page, [], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'stopped' }] }));
@@ -3064,7 +4367,17 @@ test('GPU profiles save, preview host support and apply reviewed hardware to a s
   const requests: any[] = [];
   let profile: any;
   let assignment: any;
-  await page.route('**/api/gpu-profiles', (route) => {
+  await page.route('**/api/gpu-profiles', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { profiles: profile ? [profile] : [], support: { 'virtio-g… / route.fulfill({ json: profile })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { profiles: profile ? [profile] : [], support: { 'virtio-g… / route.fulfill({ json: profile })`).
+   * 验证场景 / Scenario: GPU profiles save, preview host support and apply reviewed hardware to a stopped VM
+   * 状态影响 / State effects: `profile`, `assignment`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `route.request().postDataJSON`.
+   */
+  (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ json: {
       profiles: profile ? [profile] : [],
       support: { 'virtio-gpu': { available: true }, virgl: { available: false,
@@ -3105,13 +4418,34 @@ test('GPU profiles save, preview host support and apply reviewed hardware to a s
   expect(requests[2].previewToken).toBe('a'.repeat(64));
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: build farm registers a project node, queues a matching command and cancels it
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '系统设置' }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('build farm registers a project node, queues a matching command and cancels it', async ({ page }) => {
   await app(page, [], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'stopped' }] }));
   const requests: any[] = [];
   let node: any;
   let task: any;
-  await page.route('**/api/build-farm*', (route) => {
+  await page.route('**/api/build-farm*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { vmId: vm.id, active: 'default', projects: [{ id: 'defaul… / route.fulfill({ json: { nodes: node ? [{ ...node, vmName: vm.name, status: 'stop…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { vmId: vm.id, active: 'default', projects: [{ id: 'defaul… / route.fulfill({ json: { nodes: node ? [{ ...node, vmName: vm.name, status: 'stop…`).
+   * 验证场景 / Scenario: build farm registers a project node, queues a matching command and cancels it
+   * 状态影响 / State effects: `node`, `task`, `task.status`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `new URL(route.request().url()).searchParams.has`, `route.request().url`.
+   */
+  (route) => {
     if (route.request().method() === 'GET') {
       if (new URL(route.request().url()).searchParams.has('vmId')) return route.fulfill({ json: {
         vmId: vm.id, active: 'default', projects: [{ id: 'default', name: '默认项目' },
@@ -3158,13 +4492,35 @@ test('build farm registers a project node, queues a matching command and cancels
     labels: ['node'], timeoutSeconds: 300 });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: build farm accepts project subdirectories and retains cleanup failures after cancellation and reload
+ * 状态影响 / State effects: `panel`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `open`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('build farm accepts project subdirectories and retains cleanup failures after cancellation and reload', async ({ page }) => {
   await app(page, [], true);
   const requests: any[] = [];
   let task: any;
   const node = { vmId: vm.id, vmName: vm.name, projectId: 'default', status: 'running',
     slots: 2, busy: 0, labels: [], enabled: true };
-  await page.route('**/api/build-farm*', (route) => {
+  await page.route('**/api/build-farm*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { vmId: vm.id, active: 'default', projects: [{ id: 'defaul… / route.fulfill({ json: { nodes: [node], tasks: task ? [task] : [] } })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { vmId: vm.id, active: 'default', projects: [{ id: 'defaul… / route.fulfill({ json: { nodes: [node], tasks: task ? [task] : [] } })`).
+   * 验证场景 / Scenario: build farm accepts project subdirectories and retains cleanup failures after cancellation and reload
+   * 状态影响 / State effects: `task`, `task.status`, `task.error`, `task.errorCode`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `new URL(route.request().url()).searchParams.has`, `route.request().url`.
+   */
+  (route) => {
     if (route.request().method() === 'GET') {
       if (new URL(route.request().url()).searchParams.has('vmId')) return route.fulfill({ json: {
         vmId: vm.id, active: 'default', projects: [{ id: 'default', name: '默认项目' }],
@@ -3184,6 +4540,15 @@ test('build farm accepts project subdirectories and retains cleanup failures aft
     }
     return route.fulfill({ json: task });
   });
+  /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`page.getByRole('region', { name: '构建农场' })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`page.getByRole('region', { name: '构建农场' })`) through a Promise.
+   * 验证场景 / Scenario: build farm accepts project subdirectories and retains cleanup failures after cancellation and reload
+   * 协作入口 / Collaborators: `page.getByRole('button', { name: '系统设置' }).click`, `page.getByRole`, `page.getByRole('button', { name: '管理构建农场' }).click`.
+   */
   const open = async () => {
     await page.getByRole('button', { name: '系统设置' }).click();
     await page.getByRole('button', { name: '管理构建农场' }).click();
@@ -3219,6 +4584,17 @@ test('build farm accepts project subdirectories and retains cleanup failures aft
   expect(requests[0].build.cwd).toBe('/srv/projects/owned/subdir');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: media devices preview host audio and save a typed USB camera rule
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '系统设置' }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('media devices preview host audio and save a typed USB camera rule', async ({ page }) => {
   await app(page, [], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'stopped' }] }));
@@ -3226,11 +4602,29 @@ test('media devices preview host audio and save a typed USB camera rule', async 
   let audio = 'none';
   let audioBackend = 'none';
   let rules: any[] = [];
+  /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`({ vmId: vm.id, vmName: vm.name, status: 'stopped', audio, audioBackend, support…`）。
+   * Result: Return the branch-computed value (`({ vmId: vm.id, vmName: vm.name, status: 'stopped', audio, audioBackend, support…`).
+   * 验证场景 / Scenario: media devices preview host audio and save a typed USB camera rule
+   */
   const view = () => ({ vmId: vm.id, vmName: vm.name, status: 'stopped',
     audio, audioBackend, support: { none: { available: true }, dsound: { available: true } },
     guest: null, usb: { ready: false, hostDevices: '', hostError: '',
       rules, configured: [] } });
-  await page.route('**/api/vms/*/media-devices', (route) => {
+  await page.route('**/api/vms/*/media-devices', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: view() }) / route.fulfill({ json: { vmId: vm.id, mode: input.mode, ready: true, reasons: [],…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: view() }) / route.fulfill({ json: { vmId: vm.id, mode: input.mode, ready: true, reasons: [],…`).
+   * 验证场景 / Scenario: media devices preview host audio and save a typed USB camera rule
+   * 状态影响 / State effects: `audio`, `audioBackend`, `rules`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `view`.
+   */
+  (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ json: view() });
     const input = route.request().postDataJSON();
     requests.push(input);
@@ -3266,6 +4660,17 @@ test('media devices preview host audio and save a typed USB camera rule', async 
     productId: 0x5678 });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: file previews render CSV as text and terminal layouts restore after reloading
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '文件', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
   await app(page, ['files', 'transfers', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) =>
@@ -3312,10 +4717,30 @@ test('file previews render CSV as text and terminal layouts restore after reload
   await expect(page.locator('.terminal-panes')).toHaveClass(/split/);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: file conflict editor combines independent changes and saves against the latest version
+ * 协作入口 / Collaborators: `page.addInitScript`, `app`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('file conflict editor combines independent changes and saves against the latest version', async ({
   page,
 }) => {
-  await page.addInitScript(() =>
+  await page.addInitScript(/**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`localStorage.setItem( 'sakura-drafts:11111111-1111-4111-8111-111111111111', JSON…`）。
+   * Result: Return the branch-computed value (`localStorage.setItem( 'sakura-drafts:11111111-1111-4111-8111-111111111111', JSON…`).
+   * 验证场景 / Scenario: file conflict editor combines independent changes and saves against the latest version
+   * 协作入口 / Collaborators: `localStorage.setItem`, `JSON.stringify`.
+   */
+  () =>
     localStorage.setItem(
       'sakura-drafts:11111111-1111-4111-8111-111111111111',
       JSON.stringify([
@@ -3373,6 +4798,17 @@ test('file conflict editor combines independent changes and saves against the la
     });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: pasting clipboard images uploads uniquely named files without reading the clipboard in the background
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '文件', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('pasting clipboard images uploads uniquely named files without reading the clipboard in the background', async ({
   page,
 }) => {
@@ -3429,13 +4865,34 @@ test('pasting clipboard images uploads uniquely named files without reading the 
   expect(uploads[2].path).toBe('/workspace/manual.txt');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sync controls save timezone and bandwidth and support offline enqueue and cancellation
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '同步', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('sync controls save timezone and bandwidth and support offline enqueue and cancellation', async ({
   page,
 }) => {
   await app(page, ['projects', 'sync'], true);
   let saved: any = { host: 'D:\\sync', guest: '/workspace/shared', auto: false },
     queue: any = null;
-  await page.route('**/api/vms/*/sync*', (route) => {
+  await page.route('**/api/vms/*/sync*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { queue } }) / route.fulfill({ json: saved })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { queue } }) / route.fulfill({ json: saved })`).
+   * 验证场景 / Scenario: sync controls save timezone and bandwidth and support offline enqueue and cancellation
+   * 状态影响 / State effects: `queue`, `saved`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request`, `new URL(request.url()).pathname.endsWith`, `request.url`, `request.method`.
+   */
+  (route) => {
     const request = route.request();
     if (new URL(request.url()).pathname.endsWith('/sync-queue')) {
       queue =
@@ -3480,6 +4937,17 @@ test('sync controls save timezone and bandwidth and support offline enqueue and 
   await expect.poll(() => queue).toBeNull();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sync rollback requires explicit confirmation and only offers the newest outstanding checkpoint
+ * 协作入口 / Collaborators: `app`, `page.route`, `new Date().toISOString`, `new Date(Date.now() - 1000).toISOString`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('sync rollback requires explicit confirmation and only offers the newest outstanding checkpoint', async ({
   page,
 }) => {
@@ -3492,7 +4960,17 @@ test('sync rollback requires explicit confirmation and only offers the newest ou
     { id: 'old', createdAt: new Date(Date.now() - 1000).toISOString(), status: 'done', changes: 1, bytes: 5 },
   ];
   let requested: any;
-  await page.route('**/api/vms/*/sync*', (route) => {
+  await page.route('**/api/vms/*/sync*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { status: 'done' } }) / route.fulfill({ json: { projectId: 'default', config: { host: 'D:\\sync', guest:…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { status: 'done' } }) / route.fulfill({ json: { projectId: 'default', config: { host: 'D:\\sync', guest:…`).
+   * 验证场景 / Scenario: sync rollback requires explicit confirmation and only offers the newest outstanding checkpoint
+   * 状态影响 / State effects: `requested`, `checkpoints[0].status`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `new URL(route.request().url()).pathname.endsWith`, `route.request().url`, `route.request`, `route.request().postDataJSON`.
+   */
+  (route) => {
     if (new URL(route.request().url()).pathname.endsWith('/sync-rollback')) {
       requested = route.request().postDataJSON();
       checkpoints[0].status = 'rolled-back';
@@ -3521,6 +4999,17 @@ test('sync rollback requires explicit confirmation and only offers the newest ou
   await expect(page.getByText(/已回滚/)).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sync conflict editor reviews a shared base and submits manual text with its preview token
+ * 协作入口 / Collaborators: `app`, `page.route`, `'a'.repeat`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('sync conflict editor reviews a shared base and submits manual text with its preview token', async ({ page }) => {
   await app(page, ['projects', 'sync'], true);
   await page.route('**/api/vms', (route) =>
@@ -3528,7 +5017,17 @@ test('sync conflict editor reviews a shared base and submits manual text with it
   );
   const token = 'a'.repeat(64);
   let submitted: any;
-  await page.route('**/api/vms/*/sync*', (route) => {
+  await page.route('**/api/vms/*/sync*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { token, changes: [{ path: 'notes.txt', action: 'conflict'… / route.fulfill({ json: { path: 'notes.txt', token, base: 'one\n', ours: 'ONE\n', …`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { token, changes: [{ path: 'notes.txt', action: 'conflict'… / route.fulfill({ json: { path: 'notes.txt', token, base: 'one\n', ours: 'ONE\n', …`).
+   * 验证场景 / Scenario: sync conflict editor reviews a shared base and submits manual text with its preview token
+   * 状态影响 / State effects: `submitted`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().url`, `route.request`, `path.endsWith`, `route.fulfill`.
+   */
+  (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/sync-preview'))
       return route.fulfill({ json: {
@@ -3568,6 +5067,17 @@ test('sync conflict editor reviews a shared base and submits manual text with it
   });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sync merge drivers save path rules and expose automatic conflict decisions in preview
+ * 协作入口 / Collaborators: `app`, `page.route`, `'b'.repeat`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('sync merge drivers save path rules and expose automatic conflict decisions in preview', async ({ page }) => {
   await app(page, ['projects', 'sync'], true);
   await page.route('**/api/vms', (route) =>
@@ -3576,7 +5086,17 @@ test('sync merge drivers save path rules and expose automatic conflict decisions
   const token = 'b'.repeat(64);
   let config: any = { host: 'D:\\sync', guest: '/workspace/shared', auto: false, mergeText: true };
   let submitted: any;
-  await page.route('**/api/vms/*/sync*', (route) => {
+  await page.route('**/api/vms/*/sync*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { token, changes: [{ path: 'package.lock', action: 'confli… / route.fulfill({ json: config })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { token, changes: [{ path: 'package.lock', action: 'confli… / route.fulfill({ json: config })`).
+   * 验证场景 / Scenario: sync merge drivers save path rules and expose automatic conflict decisions in preview
+   * 状态影响 / State effects: `config`, `submitted`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().url`, `route.request`, `path.endsWith`, `route.fulfill`.
+   */
+  (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/sync-preview')) return route.fulfill({ json: {
       token, changes: [{ path: 'package.lock', action: 'conflict',
@@ -3627,6 +5147,17 @@ const vm = {
   poweredOn: false,
 };
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: saved private project offers an interactive shell in its network context
+ * 协作入口 / Collaborators: `app`, `page.routeWebSocket`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('saved private project offers an interactive shell in its network context', async ({ page }) => {
   await app(page, ['projects'], true);
   await page.routeWebSocket(/\/ws\/[^/]+\/terminal\?/, (socket) => {
@@ -3648,11 +5179,30 @@ test('saved private project offers an interactive shell in its network context',
   await expect(page.getByText('root@example: 私有项目网络')).toHaveCount(1);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: ordinary terminal workspaces isolate project layouts and remain stopped across reload until reopened
+ * 状态影响 / State effects: `hold`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.routeWebSocket`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('ordinary terminal workspaces isolate project layouts and remain stopped across reload until reopened', async ({ page }) => {
   await app(page, ['projects', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
   const privateId = '0123456789abcdef';
-  let active = privateId, hold = false, release: (() => void) | undefined;
+  let active = privateId, hold = false, release: (/**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => void) | undefined;
   const connected: string[] = [], stopped: string[] = [];
   await page.route(/\/api\/vms\/[^/]+\/projects(?:\?.*)?$/, async (route) => {
     if (hold) await new Promise<void>((done) => { release = done; });
@@ -3706,6 +5256,17 @@ test('ordinary terminal workspaces isolate project layouts and remain stopped ac
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: clipboard protection blocks sensitive selections and editor payloads locally, preserves cuts and persists settings
+ * 协作入口 / Collaborators: `app`, `page.getByRole('button', { name: '系统设置', exact: true }).click`, `page.getByRole`, `page.getByLabel('阻止复制疑似密钥和令牌').check`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('clipboard protection blocks sensitive selections and editor payloads locally, preserves cuts and persists settings', async ({
   page,
 }) => {
@@ -3715,7 +5276,17 @@ test('clipboard protection blocks sensitive selections and editor payloads local
   await page.reload();
   await expect(page.getByLabel('阻止复制疑似密钥和令牌')).toBeChecked();
   const sensitive = 'ghp_' + 'x'.repeat(36);
-  const result = await page.evaluate((text) => {
+  const result = await page.evaluate(/**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: text。
+   * 结果：返回受控对象，公开字段包括 `cutBlocked, preserved, ordinaryAllowed, formats`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `cutBlocked, preserved, ordinaryAllowed, formats`; the actual branch determines its shape.
+   * 验证场景 / Scenario: clipboard protection blocks sensitive selections and editor payloads locally, preserves cuts and persists settings
+   * 状态影响 / State effects: `input.value`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `document.createElement`, `document.body.append`, `input.focus`, `input.select`.
+   */
+  (text) => {
     const input = document.createElement('textarea');
     document.body.append(input);
     input.value = text;
@@ -3772,6 +5343,17 @@ test('clipboard protection blocks sensitive selections and editor payloads local
   expect(allowed).toBe(true);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: secret rotation controls show age and save only policy metadata
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '开发', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('secret rotation controls show age and save only policy metadata', async ({ page }) => {
   await app(page, ['secrets'], true);
   const item: any = {
@@ -3809,6 +5391,17 @@ test('secret rotation controls show age and save only policy metadata', async ({
   await expect(page.getByLabel('轮换周期（天）')).toHaveValue('60');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: network profiles preserve DNS, NAT and Git authentication edits, then preview, apply and restore
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '开发', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('network profiles preserve DNS, NAT and Git authentication edits, then preview, apply and restore', async ({
   page,
 }) => {
@@ -3843,7 +5436,17 @@ test('network profiles preserve DNS, NAT and Git authentication edits, then prev
     if (method === 'DELETE') profiles = [];
     return route.fulfill({ json: profiles });
   });
-  await page.route('**/api/vms/*/network*', (route) => {
+  await page.route('**/api/vms/*/network*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { config: value.config, changes: [change], forwards: { bef… / route.fulfill({ json: state })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { config: value.config, changes: [change], forwards: { bef… / route.fulfill({ json: state })`).
+   * 验证场景 / Scenario: network profiles preserve DNS, NAT and Git authentication edits, then preview, apply and restore
+   * 状态影响 / State effects: `submitted`, `forwards`, `state`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       const value = route.request().postDataJSON();
       submitted = value;
@@ -3941,6 +5544,17 @@ test('network profiles preserve DNS, NAT and Git authentication edits, then prev
   await expect.poll(() => profiles.length).toBe(0);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: service tab saves, checks and removes a local HTTP ingress route
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '服务', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('service tab saves, checks and removes a local HTTP ingress route', async ({ page }) => {
   await app(page, ['network'], true);
   const forwards = [{ name: 'Web', host: 8090, guest: 3000 }];
@@ -3955,7 +5569,17 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
   await page.route('**/api/vms/*/services', (route) => route.fulfill({
     json: { forwards: forwards.map((forward) => ({ ...forward, listening: true })), listening: [3000] },
   }));
-  await page.route('**/api/ingress', (route) => {
+  await page.route('**/api/ingress', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { entries, listenerErrors: {} } })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { entries, listenerErrors: {} } })`).
+   * 验证场景 / Scenario: service tab saves, checks and removes a local HTTP ingress route
+   * 状态影响 / State effects: `submitted`, `entries`, `certificate`, `entries[0].health`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `new Date().toISOString`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       submitted = route.request().postDataJSON();
       if (submitted.action === 'save') {
@@ -4061,10 +5685,31 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
   await expect(page.getByText('mTLS 客户端证书已启用')).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: backup policies enable block deduplication and show how each backup is stored
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '快照', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('backup policies enable block deduplication and show how each backup is stored', async ({ page }) => {
   await app(page, ['snapshots', 'backups', 'transfers', 'secrets'], true);
   let policy: any = { enabled: false, intervalHours: 24, keep: 7, maxGiB: 32 };
-  await page.route('**/api/vms/*/backups*', (route) => {
+  await page.route('**/api/vms/*/backups*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { policy, bytes: 4096, items: [ { id: 'backup', storage: '…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { policy, bytes: 4096, items: [ { id: 'backup', storage: '…`).
+   * 验证场景 / Scenario: backup policies enable block deduplication and show how each backup is stored
+   * 状态影响 / State effects: `policy`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'PUT') policy = route.request().postDataJSON();
     return route.fulfill({
       json: {
@@ -4090,6 +5735,17 @@ test('backup policies enable block deduplication and show how each backup is sto
   await expect(page.getByText(/内容块去重 ·/)).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: disk maintenance saves a schedule and only offers TRIM while running
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '维护', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('disk maintenance saves a schedule and only offers TRIM while running', async ({ page }) => {
   await app(page, ['maintenance'], true);
   let policy: any = { enabled: false, mode: 'both', compress: true, intervalHours: 168 },
@@ -4134,17 +5790,55 @@ test('disk maintenance saves a schedule and only offers TRIM while running', asy
   await expect.poll(() => requested).toEqual({ mode: 'trim' });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: resource history exports samples and the notification center acknowledges persisted events
+ * 协作入口 / Collaborators: `page.addInitScript`, `app`, `new Date().toISOString`, `page.route`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('resource history exports samples and the notification center acknowledges persisted events', async ({
   page,
 }) => {
-  await page.addInitScript(() => {
+  await page.addInitScript(/**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: resource history exports samples and the notification center acknowledges persisted events
+   * 状态影响 / State effects: `(window as any).notifications`, `(window as any).Notification`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   */
+  () => {
     (window as any).notifications = [];
     (window as any).Notification = class {
       static permission = 'default';
+      /**
+       * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+       * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回分支计算值（`'granted'`），以 Promise 交付。
+       * Result: Return the branch-computed value (`'granted'`) through a Promise.
+       * 验证场景 / Scenario: resource history exports samples and the notification center acknowledges persisted events
+       * 状态影响 / State effects: `this.permission`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       */
       static async requestPermission() {
         this.permission = 'granted';
         return 'granted';
       }
+      /**
+       * 中文功能：初始化测试夹具实例并保存构造输入，后续方法复用该实例状态。
+       * English: Initialize a test-fixture instance and retain constructor inputs for subsequent stateful methods.
+       * 输入 / Inputs: title: string; options: unknown。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: resource history exports samples and the notification center acknowledges persisted events
+       * 协作入口 / Collaborators: `(window as any).notifications.push`.
+       */
       constructor(title: string, options: unknown) {
         (window as any).notifications.push({ title, options });
       }
@@ -4161,7 +5855,17 @@ test('resource history exports samples and the notification center acknowledges 
     },
   ];
   let acknowledged: string | undefined;
-  await page.route('**/api/vms/*/advanced*', (route) => {
+  await page.route('**/api/vms/*/advanced*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { settings: { schedule: { enabled: false, idleMinutes: 0, …`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { settings: { schedule: { enabled: false, idleMinutes: 0, …`).
+   * 验证场景 / Scenario: resource history exports samples and the notification center acknowledges persisted events
+   * 状态影响 / State effects: `acknowledged`, `events.find((event) => event.id === acknowledged)!.acknowledged`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `events.find`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       acknowledged = route.request().postDataJSON().id;
       events.find((event) => event.id === acknowledged)!.acknowledged = true;
@@ -4224,6 +5928,17 @@ test('resource history exports samples and the notification center acknowledges 
     .toBe(1);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: guest memory reclaim saves a minimum and shows the latest balloon decision
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '能力中心', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('guest memory reclaim saves a minimum and shows the latest balloon decision', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms/*/advanced*', (route) => route.fulfill({ json: {
@@ -4260,6 +5975,18 @@ test('guest memory reclaim saves a minimum and shows the latest balloon decision
   await expect(panel.getByText(/可用 350 \/ 512 MiB/)).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: host directory mount saves path and read-only policy, then mounts and unmounts
+ * 状态影响 / State effects: `running`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '能力中心', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('host directory mount saves path and read-only policy, then mounts and unmounts', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms/*/advanced*', (route) => route.fulfill({ json: {
@@ -4271,7 +5998,17 @@ test('host directory mount saves path and read-only policy, then mounts and unmo
   let policy = { enabled: false, hostPath: '', readOnly: true };
   let running = false;
   let mounted = false;
-  await page.route('**/api/vms/*/host-mount*', (route) => {
+  await page.route('**/api/vms/*/host-mount*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { policy, guestPath: '/mnt/sakura-host', running, mounted,…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { policy, guestPath: '/mnt/sakura-host', running, mounted,…`).
+   * 验证场景 / Scenario: host directory mount saves path and read-only policy, then mounts and unmounts
+   * 状态影响 / State effects: `policy`, `mounted`, `policy.enabled`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON();
       if (input.operation === 'configure') {
@@ -4307,6 +6044,18 @@ test('host directory mount saves path and read-only policy, then mounts and unmo
   await expect(panel.getByText(/未启用/)).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Virtio-FS card saves a stopped-instance policy and controls the mounted guest share
+ * 状态影响 / State effects: `running`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '能力中心', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('Virtio-FS card saves a stopped-instance policy and controls the mounted guest share', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms/*/advanced*', (route) => route.fulfill({ json: {
@@ -4317,7 +6066,17 @@ test('Virtio-FS card saves a stopped-instance policy and controls the mounted gu
   } }));
   let policy = { enabled: false, hostPath: '', readOnly: true };
   let running = false, mounted = false;
-  await page.route('**/api/vms/*/virtio-fs*', (route) => {
+  await page.route('**/api/vms/*/virtio-fs*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { policy, guestPath: '/mnt/sakura-virtiofs', stopped: !run…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { policy, guestPath: '/mnt/sakura-virtiofs', stopped: !run…`).
+   * 验证场景 / Scenario: Virtio-FS card saves a stopped-instance policy and controls the mounted guest share
+   * 状态影响 / State effects: `policy`, `mounted`, `policy.enabled`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON();
       if (input.operation === 'configure') policy = input.policy;
@@ -4349,6 +6108,18 @@ test('Virtio-FS card saves a stopped-instance policy and controls the mounted gu
   await expect.poll(() => policy.enabled).toBe(false);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: TPM and Secure Boot card saves policy and shows verified guest evidence
+ * 状态影响 / State effects: `running`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '能力中心', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('TPM and Secure Boot card saves policy and shows verified guest evidence', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms/*/advanced*', (route) => route.fulfill({ json: {
@@ -4358,7 +6129,17 @@ test('TPM and Secure Boot card saves policy and shows verified guest evidence', 
     features: [], presets: {}, events: [], history: [],
   } }));
   let enabled = false, running = false;
-  await page.route('**/api/vms/*/trusted-boot*', (route) => {
+  await page.route('**/api/vms/*/trusted-boot*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { ready: true, reason: null, guest: { efi: true, secureBoo… / route.fulfill({ json: { policy: { enabled }, stopped: !running, attached: runnin…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { ready: true, reason: null, guest: { efi: true, secureBoo… / route.fulfill({ json: { policy: { enabled }, stopped: !running, attached: runnin…`).
+   * 验证场景 / Scenario: TPM and Secure Boot card saves policy and shows verified guest evidence
+   * 状态影响 / State effects: `enabled`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON();
       if (input.operation === 'configure') enabled = input.policy.enabled;
@@ -4385,6 +6166,17 @@ test('TPM and Secure Boot card saves policy and shows verified guest evidence', 
   await expect(panel.getByText('客户机已启用安全启动并识别 TPM')).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: package workbench lists packages and requires a reviewed plan before applying
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '能力中心', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('package workbench lists packages and requires a reviewed plan before applying', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
@@ -4396,7 +6188,16 @@ test('package workbench lists packages and requires a reviewed plan before apply
     features: [], presets: {}, events: [], history: [],
   } }));
   const actions: unknown[] = [];
-  await page.route('**/api/vms/*/packages*', (route) => {
+  await page.route('**/api/vms/*/packages*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { token: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', expiresAt… / route.fulfill({ json: { job: { status: 'running', log: '' } } })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { token: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', expiresAt… / route.fulfill({ json: { job: { status: 'running', log: '' } } })`).
+   * 验证场景 / Scenario: package workbench lists packages and requires a reviewed plan before applying
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `actions.push`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON();
       actions.push(input);
@@ -4439,8 +6240,24 @@ test('package workbench lists packages and requires a reviewed plan before apply
   expect(actions).toContainEqual({ operation: 'preview', change: 'upgrade-all' });
 });
 
+/**
+ * 中文功能：装配本组用例的受控依赖和可观察状态，返回用例需要的操作入口。
+ * English: Assemble controlled dependencies and observable state for this suite, returning the operations used by its cases.
+ * 输入 / Inputs: page: Page; active: string[] = []; withVm = false。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 协作入口 / Collaborators: `page.route`, `page.goto`.
+ */
 async function app(page: Page, active: string[] = [], withVm = false) {
-  await page.route('**/api/**', (route) => {
+  await page.route('**/api/**', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { enabled: false, session: { configured: false, enabled: f… / route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringi…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { enabled: false, session: { configured: false, enabled: f… / route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringi…`).
+   * 协作入口 / Collaborators: `route.request().url`, `route.request`, `route.fulfill`, `emptySelection`.
+   */
+  (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/access/status') return route.fulfill({ json: { enabled: false,
       session: { configured: false, enabled: false, locked: false, idleMinutes: 15,
@@ -4504,6 +6321,17 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   await page.goto('/');
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: runtime versions remain read-only until an explicit probe and mark saved selections stale on mobile
+ * 协作入口 / Collaborators: `page.on`, `app`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('runtime versions remain read-only until an explicit probe and mark saved selections stale on mobile', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -4517,7 +6345,17 @@ test('runtime versions remain read-only until an explicit probe and mark saved s
     probe: { state: 'unprobed', checkedAt: null as string | null,
       configVersion: null as string | null, bootId: null as string | null },
   };
-  await page.route('**/api/vms/*/runtimes**', route => {
+  await page.route('**/api/vms/*/runtimes**', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: view })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: view })`).
+   * 验证场景 / Scenario: runtime versions remain read-only until an explicit probe and mark saved selections stale on mobile
+   * 状态影响 / State effects: `view`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `expect(new URL(route.request().url()).searchParams.get('project')).toBe`, `expect`, `new URL(route.request().url()).searchParams.get`, `route.request().url`.
+   */
+  route => {
     expect(new URL(route.request().url()).searchParams.get('project')).toBe('default');
     if (route.request().method() === 'GET') { reads++; return route.fulfill({ json: view }); }
     const input = route.request().postDataJSON(); submitted.push(input);
@@ -4562,6 +6400,17 @@ test('runtime versions remain read-only until an explicit probe and mark saved s
   expect(submitted).toHaveLength(3); expect(submitted[2]).toEqual({ action: 'select' });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: runtime probe cleanup failures preserve the chosen version and allow an explicit retry
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '开发', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('runtime probe cleanup failures preserve the chosen version and allow an explicit retry', async ({ page }) => {
   await app(page, ['projects', 'runtimes'], true);
   await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
@@ -4571,7 +6420,17 @@ test('runtime probe cleanup failures preserve the chosen version and allow an ex
     probe: { state: 'unprobed', checkedAt: null as string | null,
       configVersion: null as string | null, bootId: null as string | null },
   };
-  await page.route('**/api/vms/*/runtimes**', route => {
+  await page.route('**/api/vms/*/runtimes**', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: view }) / route.fulfill({ status: 503, json: { error: '项目运行清理未确认，原票据继续保留', code: 'PROJECT_…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: view }) / route.fulfill({ status: 503, json: { error: '项目运行清理未确认，原票据继续保留', code: 'PROJECT_…`).
+   * 验证场景 / Scenario: runtime probe cleanup failures preserve the chosen version and allow an explicit retry
+   * 状态影响 / State effects: `view.probe.state`, `view.probe`, `view.actual`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `expect(route.request().postDataJSON()).toEqual`.
+   */
+  route => {
     if (route.request().method() === 'GET') return route.fulfill({ json: view });
     expect(route.request().postDataJSON()).toEqual({ action: 'probe' });
     if (++attempts === 1) {
@@ -4598,6 +6457,16 @@ test('runtime probe cleanup failures preserve the chosen version and allow an ex
 });
 
 for (const initialState of ['preview', 'applied-with-unconfirmed-latch'] as const) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: { page }。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `page.on`, `app`, `page.route`, `'long-project-'.repeat`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   test(`project directory permissions ${initialState} require a reviewed current plan and preserve retries on mobile`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -4612,6 +6481,14 @@ for (const initialState of ['preview', 'applied-with-unconfirmed-latch'] as cons
     } }));
     let revision = 0, applied = false, attempts = 0, reads = 0;
     const submitted: unknown[] = [];
+    /**
+     * 中文功能：构造测试所需的数据、身份、协议帧或适配器，保持生成结果可被本组断言观察。
+     * English: Construct test data, identity, protocol frames or adapters with results observable by this suite.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ sha256: (revision ? 'b' : 'a').repeat(64), state: applied ? 'applied' : initi…`）。
+     * Result: Return the branch-computed value (`({ sha256: (revision ? 'b' : 'a').repeat(64), state: applied ? 'applied' : initi…`).
+     * 协作入口 / Collaborators: `(revision ? 'b' : 'a').repeat`.
+     */
     const makePlan = () => ({
       sha256: (revision ? 'b' : 'a').repeat(64), state: applied ? 'applied' : initialState === 'preview' ? 'preview' : 'applied',
       completed: applied ? ['.', 'long-name.txt'] : [], attempt: null, lastError: null, activatedIdentity: null,
@@ -4622,7 +6499,16 @@ for (const initialState of ['preview', 'applied-with-unconfirmed-latch'] as cons
           { path: 'long-name.txt', uid: 0, gid: 0, mode: 420, targetMode: 384 },
         ] },
     });
-    await page.route('**/api/vms/*/project-directory-migration**', async route => {
+    await page.route('**/api/vms/*/project-directory-migration**', /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: route。
+     * 结果：返回分支计算值（`route.fulfill({ json: { version: 1, projectId: 'default', plan: makePlan(), last… / route.fulfill({ status: 503, json: { error: '目录确认未完成，保留原计划', code: 'PROJECT_DIRE…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`route.fulfill({ json: { version: 1, projectId: 'default', plan: makePlan(), last… / route.fulfill({ status: 503, json: { error: '目录确认未完成，保留原计划', code: 'PROJECT_DIRE…`) through a Promise.
+     * 状态影响 / State effects: `applied`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `expect(new URL(route.request().url()).searchParams.get('project')).toBe`, `expect`, `new URL(route.request().url()).searchParams.get`, `route.request().url`.
+     */
+    async route => {
       expect(new URL(route.request().url()).searchParams.get('project')).toBe('default');
       if (route.request().method() === 'GET') {
         ++reads;
@@ -4668,6 +6554,16 @@ for (const initialState of ['preview', 'applied-with-unconfirmed-latch'] as cons
 }
 
 for (const initialStatus of ['exited', 'unconfirmed'] as const) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: { page }。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `page.on`, `app`, `page.route`, `page.reload`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   test(`project main ${initialStatus} cleanup preserves drafts and supports retry after a failed job on mobile`, async ({ page }) => {
     const pageErrors: string[] = [];
     page.on('pageerror', error => pageErrors.push(error.message));
@@ -4677,7 +6573,16 @@ for (const initialStatus of ['exited', 'unconfirmed'] as const) {
     await page.route(/\/api\/vms\/[^/]+(?:\?.*)?$/, route => route.fulfill({ json: runningVm }));
     let attempts = 0, stopped = false, saved = 0;
     let job: { status: string; log: string; error?: string; errorCode?: string } | null = null;
-    await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, route => {
+    await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: route。
+     * 结果：返回分支计算值（`route.fulfill({ status: 409, json: { error: '旧运行尚未停止，不能覆盖配置' } }) / route.fulfill({ json: job })`）。
+     * Result: Return the branch-computed value (`route.fulfill({ status: 409, json: { error: '旧运行尚未停止，不能覆盖配置' } }) / route.fulfill({ json: job })`).
+     * 状态影响 / State effects: `job`, `stopped`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `expect(route.request().postDataJSON()).toEqual`.
+     */
+    route => {
       if (route.request().method() === 'PUT') {
         ++saved;
         return route.fulfill({ status: 409, json: { error: '旧运行尚未停止，不能覆盖配置' } });
@@ -4718,6 +6623,17 @@ for (const initialStatus of ['exited', 'unconfirmed'] as const) {
   });
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: legacy project main sessions explain migration without enabling an unsafe automatic stop
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '项目', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('legacy project main sessions explain migration without enabling an unsafe automatic stop', async ({ page }) => {
   await app(page, ['projects'], true);
   await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
@@ -4737,6 +6653,17 @@ test('legacy project main sessions explain migration without enabling an unsafe 
   await expect(page.getByRole('button', { name: '启动开发', exact: true })).toBeDisabled();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: project service cleanup failures retain the exited state and support a visible retry on mobile
+ * 协作入口 / Collaborators: `page.on`, `app`, `page.route`, `['api', 'pending', 'legacy', 'uncertain'].map`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('project service cleanup failures retain the exited state and support a visible retry on mobile', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', error => pageErrors.push(error.message));
@@ -4780,6 +6707,16 @@ test('project service cleanup failures retain the exited state and support a vis
 });
 
 for (const distro of ['debian', 'alpine'] as const) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: { page, }。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `page.on`, `app`, `page.route`, `page.reload`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   test(`project SSH ${distro} setup shows supported client settings and confirms stopping its processes`, async ({
     page,
   }) => {
@@ -4789,7 +6726,15 @@ for (const distro of ['debian', 'alpine'] as const) {
     await page.route('**/api/vms', (route) =>
       route.fulfill({ json: [{ ...vm, distro, status: 'running', poweredOn: true }] }),
     );
-    await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, (route) =>
+    await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: route。
+     * 结果：返回分支计算值（`route.fulfill({ json: { projectId: 'default', job: null, project: { directory: '…`）。
+     * Result: Return the branch-computed value (`route.fulfill({ json: { projectId: 'default', job: null, project: { directory: '…`).
+     * 协作入口 / Collaborators: `route.fulfill`.
+     */
+    (route) =>
       route.fulfill({
         json: {
           projectId: 'default',
@@ -4809,7 +6754,16 @@ for (const distro of ['debian', 'alpine'] as const) {
     const actions: unknown[] = [];
     const alias = `sakura-${vm.id}-default`;
     const vscodeSupported = distro !== 'alpine';
-    await page.route('**/api/vms/*/ide**', (route) => {
+    await page.route('**/api/vms/*/ide**', /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: route。
+     * 结果：返回分支计算值（`route.fulfill({ json: { supported: true, vscodeSupported, running: true, project…`）。
+     * Result: Return the branch-computed value (`route.fulfill({ json: { supported: true, vscodeSupported, running: true, project…`).
+     * 状态影响 / State effects: `configured`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postData`, `route.request().postDataJSON`.
+     */
+    (route) => {
       if (route.request().method() === 'POST') {
         const input = route.request().postData() ? route.request().postDataJSON() : {};
         actions.push(input);
@@ -4870,13 +6824,34 @@ for (const distro of ['debian', 'alpine'] as const) {
   });
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: Dev Container workbench submits Dockerfile and configuration actions and protects configured projects
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '容器', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('Dev Container workbench submits Dockerfile and configuration actions and protects configured projects', async ({ page }) => {
   await app(page, ['projects', 'containers'], true);
   await page.route('**/api/vms', (route) =>
     route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
   let cliInstalled = false;
   const submitted: unknown[] = [];
-  await page.route('**/api/vms/*/containers**', (route) => {
+  await page.route('**/api/vms/*/containers**', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { id: 'job', status: 'queued' } }) / route.fulfill({ json: { id: 'javascript-node', name: 'Node.js', version: '6.0.2'…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { id: 'job', status: 'queued' } }) / route.fulfill({ json: { id: 'javascript-node', name: 'Node.js', version: '6.0.2'…`).
+   * 验证场景 / Scenario: Dev Container workbench submits Dockerfile and configuration actions and protects configured projects
+   * 状态影响 / State effects: `cliInstalled`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `submitted.push`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON();
       submitted.push(input);
@@ -4917,12 +6892,34 @@ test('Dev Container workbench submits Dockerfile and configuration actions and p
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: {page}。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: private Docker workbench starts and stops the selected project runtime and reports invalid bindings
+ * 状态影响 / State effects: `valid`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab',{name:'容器',exact:true}).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('private Docker workbench starts and stops the selected project runtime and reports invalid bindings', async ({page}) => {
   await app(page,['projects','containers'],true);
   await page.route('**/api/vms',route=>route.fulfill({json:[{...vm,distro:'debian',status:'running',poweredOn:true}]}));
   let running=false,valid=true;
   const submitted:Array<{action:string}>=[];
-  await page.route('**/api/vms/*/containers**',route=>{
+  await page.route('**/api/vms/*/containers**',/**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({json:{id:'job',status:'done'}}) / route.fulfill({json:{supported:true,installed:true,available:running&&valid,priv…`）。
+   * Result: Return the branch-computed value (`route.fulfill({json:{id:'job',status:'done'}}) / route.fulfill({json:{supported:true,installed:true,available:running&&valid,priv…`).
+   * 验证场景 / Scenario: private Docker workbench starts and stops the selected project runtime and reports invalid bindings
+   * 状态影响 / State effects: `running`, `valid`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `submitted.push`.
+   */
+  route=>{
     if (route.request().method()==='POST') {
       const input=route.request().postDataJSON();submitted.push(input);
       if (input.action==='start-project-runtime') running=true;
@@ -4952,12 +6949,33 @@ test('private Docker workbench starts and stops the selected project runtime and
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: official Dev Container template applies the reviewed version and optional files to an empty project
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('tab', { name: '容器', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('official Dev Container template applies the reviewed version and optional files to an empty project', async ({ page }) => {
   await app(page, ['projects', 'containers'], true);
   await page.route('**/api/vms', (route) =>
     route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
   let submitted: unknown;
-  await page.route('**/api/vms/*/containers**', (route) => {
+  await page.route('**/api/vms/*/containers**', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { id: 'job', status: 'queued' } }) / route.fulfill({ json: { id: 'debian', name: 'Debian', version: '4.0.2', descript…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { id: 'job', status: 'queued' } }) / route.fulfill({ json: { id: 'debian', name: 'Debian', version: '4.0.2', descript…`).
+   * 验证场景 / Scenario: official Dev Container template applies the reviewed version and optional files to an empty project
+   * 状态影响 / State effects: `submitted`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       submitted = route.request().postDataJSON();
       return route.fulfill({ json: { id: 'job', status: 'queued' } });
@@ -4987,13 +7005,34 @@ test('official Dev Container template applies the reviewed version and optional 
     templateId: 'debian', version: '4.0.2', imageVariant: 'bookworm', omitPaths: [] });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: security scan shows OSV package matches and never reports an incomplete lookup as clean
+ * 状态影响 / State effects: `complete`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '能力中心', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('security scan shows OSV package matches and never reports an incomplete lookup as clean', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms', (route) =>
     route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
   let complete = true;
   let submitted = 0;
-  await page.route('**/api/vms/*/advanced*', (route) => {
+  await page.route('**/api/vms/*/advanced*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: complete ? { findings: ['OSV 发现 1 个受影响软件包（1 个漏洞编号）'], outp… / route.fulfill({ json: { settings: { schedule: { enabled: false, idleMinutes: 0, …`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: complete ? { findings: ['OSV 发现 1 个受影响软件包（1 个漏洞编号）'], outp… / route.fulfill({ json: { settings: { schedule: { enabled: false, idleMinutes: 0, …`).
+   * 验证场景 / Scenario: security scan shows OSV package matches and never reports an incomplete lookup as clean
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `expect(route.request().postDataJSON()).toEqual`, `expect`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       expect(route.request().postDataJSON()).toEqual({ action: 'security-scan' });
       submitted++;
@@ -5034,6 +7073,17 @@ test('security scan shows OSV package matches and never reports an incomplete lo
   await expect(page.getByText('未发现明显问题')).toHaveCount(0);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: development tasks submit a selected npm or pip dependency cache operation
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '能力中心', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('development tasks submit a selected npm or pip dependency cache operation', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms', (route) =>
@@ -5066,6 +7116,17 @@ test('development tasks submit a selected npm or pip dependency cache operation'
   expect(submissions[1]).toEqual({ action: 'dev', operation: 'install-cached-dependencies', manager: 'npm' });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: the empty install shows the core and the current plugin catalog
+ * 协作入口 / Collaborators: `app`, `expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button')).t…`, `expect`, `page.getByRole('navigation', { name: '主导航' }).getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('the empty install shows the core and the current plugin catalog', async ({ page }) => {
   await app(page);
   await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button')).toHaveCount(3);
@@ -5079,12 +7140,33 @@ test('the empty install shows the core and the current plugin catalog', async ({
   await expect(page.locator('.plugin-card')).toHaveCount(PLUGIN_PACKS.length);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: new instances can register and select an external storage pool
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '创建发行版' }).first().click`, `page.getByRole('button', { name: '创建发行版' }).first`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('new instances can register and select an external storage pool', async ({ page }) => {
   await app(page);
   const poolId = '0123456789abcdef';
   let createdPool = false;
   let createdVm: any;
-  await page.route('**/api/storage-pools', (route) => {
+  await page.route('**/api/storage-pools', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { created: { id: poolId } } }) / route.fulfill({ json: { pools: [ { id: 'default', name: '默认数据目录', available: tru…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { created: { id: poolId } } }) / route.fulfill({ json: { pools: [ { id: 'default', name: '默认数据目录', available: tru…`).
+   * 验证场景 / Scenario: new instances can register and select an external storage pool
+   * 状态影响 / State effects: `createdPool`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `expect(route.request().postDataJSON()).toMatchObject`, `expect`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       expect(route.request().postDataJSON()).toMatchObject({
         mode: 'create', name: 'fast-disk', path: 'C:\\SakuraPool',
@@ -5119,13 +7201,34 @@ test('new instances can register and select an external storage pool', async ({ 
   await expect.poll(() => createdVm?.storagePoolId).toBe(poolId);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: tiering shows the reviewed destination and submits an explicit stopped-instance move
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '能力中心', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('tiering shows the reviewed destination and submits an explicit stopped-instance move', async ({
   page,
 }) => {
   await app(page, ['projects', 'platform'], true);
   const poolId = '0123456789abcdef';
   let submitted: any;
-  await page.route('**/api/vms/*/next-features*', (route) => {
+  await page.route('**/api/vms/*/next-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { status: 'running' } }) / route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { status: 'running' } }) / route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi…`).
+   * 验证场景 / Scenario: tiering shows the reviewed destination and submits an explicit stopped-instance move
+   * 状态影响 / State effects: `submitted`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       submitted = route.request().postDataJSON();
       return route.fulfill({ json: { status: 'running' } });
@@ -5140,7 +7243,16 @@ test('tiering shows the reviewed destination and submits an explicit stopped-ins
         category: '存储与灾备', summary: '按最近使用时间迁移', state: 'available' }],
     } });
   });
-  await page.route('**/api/jobs/tiering-job/result*', (route) => route.fulfill({ json: {
+  await page.route('**/api/jobs/tiering-job/result*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { jobId: 'tiering-job', result: { policy: { enabled: false…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { jobId: 'tiering-job', result: { policy: { enabled: false…`).
+   * 验证场景 / Scenario: tiering shows the reviewed destination and submits an explicit stopped-instance move
+   * 协作入口 / Collaborators: `route.fulfill`, `new Date().toISOString`.
+   */
+  (route) => route.fulfill({ json: {
     jobId: 'tiering-job', result: {
       policy: { enabled: false, hotPoolId: poolId, coldPoolId: 'default',
         idleHours: 168, intervalHours: 24 },
@@ -5164,13 +7276,34 @@ test('tiering shows the reviewed destination and submits an explicit stopped-ins
     featureId: 'storage-tiering', options: { mode: 'apply' } });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: disaster drill selects a verified backup before requesting a temporary restore
+ * 协作入口 / Collaborators: `app`, `randomUUID`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('disaster drill selects a verified backup before requesting a temporary restore', async ({
   page,
 }) => {
   await app(page, ['projects', 'platform', 'snapshots', 'backups'], true);
   const backupId = randomUUID();
   let submitted: any;
-  await page.route('**/api/vms/*/next-features*', (route) => {
+  await page.route('**/api/vms/*/next-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { status: 'running' } }) / route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { status: 'running' } }) / route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi…`).
+   * 验证场景 / Scenario: disaster drill selects a verified backup before requesting a temporary restore
+   * 状态影响 / State effects: `submitted`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       submitted = route.request().postDataJSON();
       return route.fulfill({ json: { status: 'running' } });
@@ -5201,6 +7334,17 @@ test('disaster drill selects a verified backup before requesting a temporary res
     featureId: 'disaster-recovery-drill', options: { mode: 'run', backupId } });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: metrics and commands load their own client entries when selected
+ * 协作入口 / Collaborators: `app`, `expect(page.getByRole('tab', { name: '配置', exact: true })).toBeVisible`, `expect`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('metrics and commands load their own client entries when selected', async ({ page }) => {
   await app(page, ['projects', 'metrics', 'commands'], true);
   await expect(page.getByRole('tab', { name: '配置', exact: true })).toBeVisible();
@@ -5212,6 +7356,17 @@ test('metrics and commands load their own client entries when selected', async (
   await expect(page.getByRole('heading', { name: '收藏新命令' })).toBeVisible();
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: capability center edits operation parameters, disables planned runs and explicitly unlocks
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '能力中心', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('capability center edits operation parameters, disables planned runs and explicitly unlocks', async ({
   page,
 }) => {
@@ -5225,7 +7380,17 @@ test('capability center edits operation parameters, disables planned runs and ex
     if (route.request().method() === 'POST') locked = route.request().postDataJSON().locked;
     return route.fulfill({ json: { locked } });
   });
-  await page.route('**/api/vms/*/extended-features*', (route) => {
+  await page.route('**/api/vms/*/extended-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { status: 'running' } }) / route.fulfill({ json: { projectId: 'default', settings: {}, jobs: [], executions…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { status: 'running' } }) / route.fulfill({ json: { projectId: 'default', settings: {}, jobs: [], executions…`).
+   * 验证场景 / Scenario: capability center edits operation parameters, disables planned runs and explicitly unlocks
+   * 状态影响 / State effects: `submitted`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       submitted = route.request().postDataJSON();
       return route.fulfill({ json: { status: 'running' } });
@@ -5253,7 +7418,16 @@ test('capability center edits operation parameters, disables planned runs and ex
       },
     });
   });
-  await page.route('**/api/vms/*/next-features*', (route) =>
+  await page.route('**/api/vms/*/next-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { projectId: 'default', settings: {}, jobs: [], records: {…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { projectId: 'default', settings: {}, jobs: [], records: {…`).
+   * 验证场景 / Scenario: capability center edits operation parameters, disables planned runs and explicitly unlocks
+   * 协作入口 / Collaborators: `route.fulfill`.
+   */
+  (route) =>
     route.fulfill({
       json: {
         projectId: 'default',
@@ -5307,6 +7481,18 @@ test('capability center edits operation parameters, disables planned runs and ex
   expect(locked).toBe(false);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: failover policy saves a paired target and reports an unready health check
+ * 状态影响 / State effects: `promotion`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `app`, `randomUUID`, `page.route`, `page.reload`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('failover policy saves a paired target and reports an unready health check', async ({ page }) => {
   await app(page, ['platform'], true);
   const targetHostId = randomUUID();
@@ -5318,7 +7504,17 @@ test('failover policy saves a paired target and reports an unready health check'
   await page.route('**/api/host-peers*', (route) => route.fulfill({ json: {
     outbound: [{ id: randomUUID(), remoteId: targetHostId, name: '备用主机' }],
   } }));
-  await page.route('**/api/vms/*/next-features*', (route) => {
+  await page.route('**/api/vms/*/next-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { enabled: true, options: input.options, updatedAt: new Da… / route.fulfill({ json: { ready: true, executed: true } })`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { enabled: true, options: input.options, updatedAt: new Da… / route.fulfill({ json: { ready: true, executed: true } })`).
+   * 验证场景 / Scenario: failover policy saves a paired target and reports an unready health check
+   * 状态影响 / State effects: `saved`, `rejoined`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `route.fulfill`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON() as Record<string, unknown>;
       if (input.action === 'configure') {
@@ -5376,6 +7572,17 @@ test('failover policy saves a paired target and reports an unready health check'
 });
 
 for (const failedPhase of ['fencing', 'fenced'] as const) {
+  /**
+   * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+   * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+   * 输入 / Inputs: { page, }。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `targetStopped`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `app`, `randomUUID`, `page.route`, `page.reload`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   test(`host failover ${failedPhase} recovery requires data confirmation and a retired target`, async ({
     page,
   }) => {
@@ -5395,7 +7602,16 @@ for (const failedPhase of ['fencing', 'fenced'] as const) {
         },
       }),
     );
-    await page.route('**/api/vms/*/next-features*', (route) => {
+    await page.route('**/api/vms/*/next-features*', /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: route。
+     * 结果：返回分支计算值（`route.fulfill({ status: 409, json: { error: '目标副本仍在运行，不能退役' } }) / route.fulfill({ json: { ready: true, executed: true } })`）。
+     * Result: Return the branch-computed value (`route.fulfill({ status: 409, json: { error: '目标副本仍在运行，不能退役' } }) / route.fulfill({ json: { ready: true, executed: true } })`).
+     * 状态影响 / State effects: `phase`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `requests.push`.
+     */
+    (route) => {
       if (route.request().method() === 'POST') {
         const input = route.request().postDataJSON();
         requests.push(input);
@@ -5472,6 +7688,17 @@ for (const failedPhase of ['fencing', 'fenced'] as const) {
   });
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: USB hotplug panel saves a persistent rule and removes an active forwarding
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '能力中心', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('USB hotplug panel saves a persistent rule and removes an active forwarding', async ({ page }) => {
   await app(page, ['platform'], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'running' }] }));
@@ -5484,7 +7711,17 @@ test('USB hotplug panel saves a persistent rule and removes an active forwarding
   const deviceId = 'sakura-usb-99174a03-b3a2-4bc0-9758-0abb1a575b43';
   let rules: any[] = [], configured: any[] = [];
   const submitted: any[] = [];
-  await page.route('**/api/vms/*/usb-hotplug', (route) => {
+  await page.route('**/api/vms/*/usb-hotplug', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { ready: true, hostDevices: 'Device 1.2, USB device 1234:5…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { ready: true, hostDevices: 'Device 1.2, USB device 1234:5…`).
+   * 验证场景 / Scenario: USB hotplug panel saves a persistent rule and removes an active forwarding
+   * 状态影响 / State effects: `rules`, `configured`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `submitted.push`.
+   */
+  (route) => {
     if (route.request().method() === 'POST') {
       const value = route.request().postDataJSON();
       submitted.push(value);
@@ -5517,6 +7754,17 @@ test('USB hotplug panel saves a persistent rule and removes an active forwarding
   ]);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: notebook session opens its authenticated local link from the capability center
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.context().route`, `page.context`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('notebook session opens its authenticated local link from the capability center', async ({ page }) => {
   await app(page, ['projects', 'platform'], true);
   await page.route('**/api/vms', (route) =>
@@ -5555,6 +7803,17 @@ test('notebook session opens its authenticated local link from the capability ce
   expect(linkRequests).toBe(1);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: browser IDE reveals a bounded password only after opening its local session
+ * 协作入口 / Collaborators: `app`, `page.route`, `new Date(Date.now() + 3600000).toISOString`, `Date.now`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('browser IDE reveals a bounded password only after opening its local session', async ({ page }) => {
   await app(page, ['projects', 'platform'], true);
   await page.route('**/api/vms', (route) =>
@@ -5595,11 +7854,31 @@ test('browser IDE reveals a bounded password only after opening its local sessio
   expect(linkRequests).toBe(1);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: hardware compatibility check displays probed devices and current configuration on mobile
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.reload`, `page.getByRole('button', { name: '能力中心', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('hardware compatibility check displays probed devices and current configuration on mobile', async ({
   page,
 }) => {
   await app(page, ['projects', 'platform'], true);
-  await page.route('**/api/vms/*/next-features*', (route) => {
+  await page.route('**/api/vms/*/next-features*', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi… / route.fulfill({ json: { ready: true, executed: false, checkedAt: new Date().toIS…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { projectId: 'default', settings: {}, records: {}, executi… / route.fulfill({ json: { ready: true, executed: false, checkedAt: new Date().toIS…`).
+   * 验证场景 / Scenario: hardware compatibility check displays probed devices and current configuration on mobile
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.fulfill`, `expect(route.request().postDataJSON()).toEqual`.
+   */
+  (route) => {
     if (route.request().method() === 'GET')
       return route.fulfill({
         json: {
@@ -5669,13 +7948,33 @@ test('hardware compatibility check displays probed devices and current configura
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sandbox workbench creates isolated environments, executes, cancels and preserves logs after destruction
+ * 协作入口 / Collaborators: `app`, `page.route`, `page.getByRole('button', { name: '沙箱工作台', exact: true }).click`, `page.getByRole`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('sandbox workbench creates isolated environments, executes, cancels and preserves logs after destruction', async ({
   page,
 }) => {
   await app(page, ['sandbox']);
   let sandboxes: any[] = [],
     runs: any[] = [];
-  await page.route('**/api/sandboxes', async (route) => {
+  await page.route('**/api/sandboxes', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: sandbox workbench creates isolated environments, executes, cancels and preserves logs after destruction
+   * 协作入口 / Collaborators: `route.request().method`, `route.request`, `route.request().postDataJSON`, `expect(input.network).toBe`.
+   */
+  async (route) => {
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON();
       expect(input.network).toBe('isolated');
@@ -5698,7 +7997,17 @@ test('sandbox workbench creates isolated environments, executes, cancels and pre
       await route.fulfill({ status: 201, json: created });
     } else await route.fulfill({ json: { sandboxes, runs } });
   });
-  await page.route('**/api/vms/*/sandbox**', async (route) => {
+  await page.route('**/api/vms/*/sandbox**', /**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: route。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: sandbox workbench creates isolated environments, executes, cancels and preserves logs after destruction
+   * 状态影响 / State effects: `runs`, `sandboxes[0].status`, `sandboxes[0].poweredOn`, `sandboxes`, `runs[0].status`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `route.request`, `request.url().endsWith`, `request.url`, `expect(request.postDataJSON().command).toBe`.
+   */
+  async (route) => {
     const request = route.request();
     if (request.url().endsWith('/run')) {
       expect(request.postDataJSON().command).toBe('printf sandbox-output');
@@ -5748,6 +8057,17 @@ test('sandbox workbench creates isolated environments, executes, cancels and pre
   await expect(page.getByLabel('操作日志')).toContainText('sandbox-output');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: sandbox page fits a phone and reports creation errors
+ * 协作入口 / Collaborators: `page.setViewportSize`, `app`, `page.route`, `page.getByRole('button', { name: '沙箱工作台', exact: true }).click`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('sandbox page fits a phone and reports creation errors', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await app(page, ['sandbox']);
@@ -5769,6 +8089,17 @@ test('sandbox page fits a phone and reports creation errors', async ({ page }) =
   await page.screenshot({ path: 'artifacts/sandbox-mobile.png', fullPage: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: { page, }。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: retained execution details fit mobile screens with long commands and artifact names
+ * 协作入口 / Collaborators: `page.setViewportSize`, `app`, `'long-output-'.repeat`, `'execution-report-'.repeat`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('retained execution details fit mobile screens with long commands and artifact names', async ({
   page,
 }) => {
@@ -5776,7 +8107,16 @@ test('retained execution details fit mobile screens with long commands and artif
   await app(page, ['sandbox']);
   const command = `printf ${'long-output-'.repeat(24)} > result.txt`;
   const name = 'execution-report-'.repeat(6) + '.txt';
-  await page.route('**/api/sandboxes', (route) =>
+  await page.route('**/api/sandboxes', /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: route。
+   * 结果：返回分支计算值（`route.fulfill({ json: { sandboxes: [], runs: [ { id: 'retained-run', vmId: vm.id…`）。
+   * Result: Return the branch-computed value (`route.fulfill({ json: { sandboxes: [], runs: [ { id: 'retained-run', vmId: vm.id…`).
+   * 验证场景 / Scenario: retained execution details fit mobile screens with long commands and artifact names
+   * 协作入口 / Collaborators: `route.fulfill`, `new Date().toISOString`, `'long-path/'.repeat`, `'a'.repeat`.
+   */
+  (route) =>
     route.fulfill({
       json: {
         sandboxes: [],

@@ -1,10 +1,13 @@
-/** 通过真实 WebSocket/RFB 握手验证自有桌面的 VNC 密码接受和拒绝结果，限制协议阶段与超时。 */
+/** 通过真实 WebSocket/RFB 握手验证自有桌面的 VNC 密码接受和拒绝结果，限制协议阶段与超时。
+ * Verify VNC password acceptance/refusal through real WebSocket/RFB handshakes with bounded phases and deadlines. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
 
 /** A real RFB 3.8 client: password authentication and a raw framebuffer request. */
+/** 打开并登记自有 WebSocket，以真实 RFB 3.8/VNC 密码握手验证接受或拒绝；接受时检查帧格式与桌面尺寸。累计输入限制 8 MiB，最终等待实际关闭并返回协议证据。
+ * Open/register an owned WebSocket and perform real RFB 3.8/VNC-password authentication for expected acceptance/rejection; accepted sessions verify pixel format/dimensions. Bound input to eight MiB and await physical close before returning protocol evidence. */
 export async function probeOwnedDesktopRfb(url: string, password: string, accept: boolean,
   observe: (socket: WebSocket) => void) {
   const socket = new WebSocket(url); observe(socket);
@@ -18,6 +21,8 @@ export async function probeOwnedDesktopRfb(url: string, password: string, accept
     received = Buffer.concat([received, value]);
   });
   socket.on('error', (error) => { errors.push(error.message); });
+  /** 从累积 RFB 字节流取出指定长度，最多 4 MiB、等待十秒；流关闭、传输错误或超时立即失败，成功消费前缀避免重复读取。
+   * Consume the requested prefix from buffered RFB bytes, limited to four MiB/ten seconds; fail on closure/transport errors/timeout and remove consumed bytes. */
   async function read(length: number) {
     assert.ok(length >= 0 && length <= 4 * 1048576);
     const until = Date.now() + 10000;

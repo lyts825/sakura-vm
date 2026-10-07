@@ -1,5 +1,6 @@
 /**
  * 模块职责：管理虚拟机目录、运行生命周期与领域端口，协调启动、停止、快照、迁移和资源清理。
+ * Module purpose: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
  */
 import { VmDiskEncryption } from './domains/vm-disk-encryption.ts';
 import { VmSnapshots } from './domains/vm-snapshots.ts';
@@ -96,15 +97,65 @@ import { ManagedHooks } from './managed-hooks.ts';
 import { withResourceContext } from './host-runtime/index.ts';
 
 const { connectLocal: createConnection } = networkFor('core:machines');
-export type BootAttachment = { args: string[]; close: () => Promise<void>; machine?: string };
+export type BootAttachment = { args: string[];
+/**
+ * 签名 / Signature: BootAttachment.close.
+ * 功能：为管理虚拟机目录、运行生命周期与领域端口声明 close 的输入与结果契约，所属容器为 BootAttachment。
+ * Purpose: Declares the input/result contract for close in BootAttachment. Module responsibility: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: Promise<void>.
+ * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+ * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+ */
+close: () => Promise<void>; machine?: string };
 export class Machines extends EventEmitter {
   storagePools: StoragePools = new StoragePools(this);
+  /**
+   * 入口 / Entry: Machines.trustedBootStateFingerprint.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].stateFingerprint` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].stateFingerprint` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `vmBootProviders().find`, `vmBootProviders` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `vmBootProviders().find`, `vmBootProviders`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].stateFingerprint`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get trustedBootStateFingerprint() { return vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].stateFingerprint; }
+  /**
+   * 入口 / Entry: Machines.trustedBootSnapshot.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].snapshot` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].snapshot` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `vmBootProviders().find`, `vmBootProviders` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `vmBootProviders().find`, `vmBootProviders`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].snapshot`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private get trustedBootSnapshot() { return vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].snapshot; }
   private fileInterceptors = new ManagedHooks<[string, string, SFTPWrapper, AbortSignal | undefined]>();
+  /**
+   * 入口 / Entry: Machines.beforeFileReplace.
+   * 功能：把本层请求转交 `this.fileInterceptors.register`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.fileInterceptors.register` and propagates the provider result or rejection.
+   * 输入 / Inputs: callback: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>
+   * 输出 / Returns: `this.fileInterceptors.register(callback)`.
+   * 副作用 / Effects: `this.fileInterceptors.register`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   beforeFileReplace(callback: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>) {
     return this.fileInterceptors.register(callback);
   }
+  /**
+   * 入口 / Entry: Machines.fileReplacing.
+   * 功能：把本层请求转交 `this.fileInterceptors.dispatch`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.fileInterceptors.dispatch` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; path: string; ftp: SFTPWrapper; signal: AbortSignal optional
+   * 输出 / Returns: `this.fileInterceptors.dispatch(id, path, ftp, signal)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   fileReplacing(id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) {
     return this.fileInterceptors.dispatch(id, path, ftp, signal);
   }
@@ -123,7 +174,28 @@ export class Machines extends EventEmitter {
   private haStartGuards = new ManagedHooks<[string]>();
   private migrationRuns = new Map<string, { identity: string; processId: string; live?: Live; stoppedAt?: string }>();
   private migrationCompletions = new Map<string, string>();
+  /**
+   * 入口 / Entry: Machines.beforeHaStart.
+   * 功能：把本层请求转交 `this.haStartGuards.register`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.haStartGuards.register` and propagates the provider result or rejection.
+   * 输入 / Inputs: guard: (id: string) => Promise<void>
+   * 输出 / Returns: `this.haStartGuards.register(guard)`.
+   * 副作用 / Effects: `this.haStartGuards.register`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   beforeHaStart(guard: (id: string) => Promise<void>) { return this.haStartGuards.register(guard); }
+  /**
+   * 入口 / Entry: Machines.reserveHostPorts.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `inline.some`, `this.records.values`, `values.has`, `this.hostPortReservations.set` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `inline.some`, `this.records.values`, `values.has`, `this.hostPortReservations.set`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `next.size`.
+   * 输入 / Inputs: owner: string; ports: Iterable<number>
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.hostPortReservations.set`; `this.hostPortReservations.delete`.
+   * 拒绝 / Refusals: 条件 / conditions `!Number.isInteger(port) || port < 1024 || port > 65535`; `[...this.records.values()].some((vm) => vm.forwards.some((forward) => forward.host === port))`; `key !== owner && values.has(port)`; 异常 / errors `new AppError('保留的主机端口无效')`; `new AppError(`端口 ${port} 已被实例转发使用`, 409)`.
+   */
   reserveHostPorts(owner: string, ports: Iterable<number>) {
     const next = new Set(ports);
     for (const port of next) {
@@ -137,15 +209,46 @@ export class Machines extends EventEmitter {
     if (next.size) this.hostPortReservations.set(owner, next);
     else this.hostPortReservations.delete(owner);
   }
+  /**
+   * 入口 / Entry: Machines.requireUnreservedPorts.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Checks admission, input or resource ownership in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.hostPortReservations.values`, `values.has` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.hostPortReservations.values`, `values.has`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: forwards: VMConfig['forwards']
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `values.has(forward.host)`; 异常 / errors `new AppError(`端口 ${forward.host} 已被宿主服务保留`, 409)`.
+   */
   private requireUnreservedPorts(forwards: VMConfig['forwards']) {
     for (const forward of forwards)
       for (const values of this.hostPortReservations.values())
         if (values.has(forward.host))
           throw new AppError(`端口 ${forward.host} 已被宿主服务保留`, 409);
   }
+  /**
+   * 入口 / Entry: Machines.incidentLocked.
+   * 功能：从当前输入或状态计算 `this.incidentLocks.has(id)`，供调用方后续验证或使用。
+   * Purpose: Computes `this.incidentLocks.has(id)` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.incidentLocks.has(id)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   incidentLocked(id: string) {
     return this.incidentLocks.has(id);
   }
+  /**
+   * 入口 / Entry: Machines.requireUnlocked.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Checks admission, input or resource ownership in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.incidentLocked`, `this.records.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.incidentLocked`, `this.records.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `this.incidentLocked(id) || (this.records.get(id)?.rescueOf && this.incidentLocked(this.records.get(id)!.rescueOf!))`; 异常 / errors `new AppError('实例处于应急锁定；请先显式解除锁定', 423, 'INCIDENT_LOCKED')`.
+   */
   requireUnlocked(id: string) {
     if (
       this.incidentLocked(id) ||
@@ -153,8 +256,30 @@ export class Machines extends EventEmitter {
     )
       throw new AppError('实例处于应急锁定；请先显式解除锁定', 423, 'INCIDENT_LOCKED');
   }
+  /**
+   * 入口 / Entry: Machines.setIncidentLockdown.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ locked: this.incidentLocked(id), stopped: !this.live.has(id) }` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `{ locked: this.incidentLocked(id), stopped: !this.live.has(id) }` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.get`, `this.incidentWrites.catch().then`, `this.incidentWrites.catch`, `this.incidentLocked` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.get`, `this.incidentWrites.catch().then`, `this.incidentWrites.catch`, `this.incidentLocked`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; locked: boolean
+   * 输出 / Returns: `{ locked: this.incidentLocked(id), stopped: !this.live.has(id) }`.
+   * 副作用 / Effects: 更新 / updates `this.incidentWrites`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async setIncidentLockdown(id: string, locked: boolean) {
     this.get(id);
+    /**
+     * 入口 / Entry: Machines.setIncidentLockdown.callback@160.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.incidentWrites.catch().then）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.incidentWrites.catch().then).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.incidentLocks.add`; `this.incidentLocks.delete`; `writeStore`; `this.emit`; `client.destroy`.
+     * 拒绝 / Refusals: 异常 / errors `error`.
+     * 失败处理：catch 分支执行 `if (previous) this.incidentLocks.add(id); else this.incidentLocks.delete(id);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `if (previous) this.incidentLocks.add(id); else this.incidentLocks.delete(id);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     const write = this.incidentWrites
       .catch(() => {})
       .then(async () => {
@@ -179,6 +304,15 @@ export class Machines extends EventEmitter {
     await write;
     return { locked: this.incidentLocked(id), stopped: !this.live.has(id) };
   }
+  /**
+   * 入口 / Entry: Machines.enterMaintenance.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `() => { if (!released) { released = true; this.maintenance = false; } }` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `() => { if (!released) { released = true; this.maintenance = false; } }` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `() => { if (!released) { released = true; this.maintenance = false; } }`.
+   * 副作用 / Effects: 更新 / updates `this.maintenance`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closing || this.maintenance || this.operations.size || this.live.size`; 异常 / errors `new AppError('请停止全部实例并等待正在执行的操作完成', 409)`.
+   */
   enterMaintenance() {
     if (this.closing || this.maintenance || this.operations.size || this.live.size)
       throw new AppError('请停止全部实例并等待正在执行的操作完成', 409);
@@ -186,9 +320,32 @@ export class Machines extends EventEmitter {
     let released = false;
     return () => { if (!released) { released = true; this.maintenance = false; } };
   }
+  /**
+   * 入口 / Entry: Machines.constructor.
+   * 功能：建立 Machines 的管理虚拟机目录、运行生命周期与领域端口上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the Machines context for this module's responsibility: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: engine: Engine; network: Pick<NetworkRuntime, 'attachVm'> default=networkRuntime
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   constructor(public engine: Engine, readonly network: Pick<NetworkRuntime, 'attachVm'> = networkRuntime) {
     super();
   }
+  /**
+   * 入口 / Entry: Machines.init.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，初始化并核对当前领域状态；处理结果记录到 `this.incidentLocks`, `r.sandbox`, `r.diskEncryption`（`Machines`）。
+   * Purpose: Initializes and verifies current domain state in `Machines`; the outcome is recorded in `this.incidentLocks`, `r.sandbox`, `r.diskEncryption`. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `mkdir`, `this.storagePools.init`, `readStore`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `mkdir`, `this.storagePools.init`, `readStore`, `join`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `r.diskEncryption !== undefined`; `r.haPromotion !== undefined`; `r.haRetirement !== undefined`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `mkdir`; `createSchema.parse`; `this.records.set`; `this.migrationCompletions.set`; 更新 / updates `this.incidentLocks`, `r.sandbox`, `r.diskEncryption`, `r.haPromotion`.
+   * 拒绝 / Refusals: 条件 / conditions `!Array.isArray(locks) || locks.some((id) => typeof id !== 'string')`; `r.sandbox !== undefined`; `r.forwards.length`; 异常 / errors `new Error('应急锁定状态损坏')`; `new Error('沙箱不允许额外端口转发')`.
+   * 失败处理：catch 分支执行 `if (e.code !== 'ENOENT') throw e;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if (e.code !== 'ENOENT') throw e;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async init() {
     await mkdir(VM_ROOT, { recursive: true });
     await this.storagePools.init();
@@ -263,56 +420,465 @@ export class Machines extends EventEmitter {
     }
   }
   private readonly snapshots: VmSnapshots = new VmSnapshots({
+    /**
+     * 入口 / Entry: Machines.get.
+     * 功能：把本层请求转交 `this.get`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.get` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.get(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     get: (id) => this.get(id),
+    /**
+     * 入口 / Entry: Machines.locked.
+     * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; action
+     * 输出 / Returns: `this.locked(id, action)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     locked: (id, action) => this.locked(id, action),
+    /**
+     * 入口 / Entry: Machines.requireStopped.
+     * 功能：把本层请求转交 `this.requireStopped`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.requireStopped` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.requireStopped(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     requireStopped: (id) => this.requireStopped(id),
+    /**
+     * 入口 / Entry: Machines.withDiskSecret.
+     * 功能：把本层请求转交 `this.withDiskSecret`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.withDiskSecret` and propagates the provider result or rejection.
+     * 输入 / Inputs: vm; action
+     * 输出 / Returns: `this.withDiskSecret(vm, action)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     withDiskSecret: (vm, action) => this.withDiskSecret(vm, action),
+    /**
+     * 入口 / Entry: Machines.engine.
+     * 功能：从当前输入或状态计算 `this.engine`，供调用方后续验证或使用。
+     * Purpose: Computes `this.engine` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.engine`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     engine: () => this.engine,
+    /**
+     * 入口 / Entry: Machines.trustedBoot.
+     * 功能：从当前输入或状态计算 `this.trustedBootSnapshot`，供调用方后续验证或使用。
+     * Purpose: Computes `this.trustedBootSnapshot` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.trustedBootSnapshot`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     trustedBoot: () => this.trustedBootSnapshot,
+    /**
+     * 入口 / Entry: Machines.save.
+     * 功能：把本层请求转交 `this.save`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.save` and propagates the provider result or rejection.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.save()`.
+     * 副作用 / Effects: `this.save`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     save: () => this.save(),
+    /**
+     * 入口 / Entry: Machines.view.
+     * 功能：把本层请求转交 `this.view`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.view` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     view: (id) => this.view(id),
+    /**
+     * 入口 / Entry: Machines.changed.
+     * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+     * 处理：通过 `this.emit` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.emit`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.emit`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     changed: () => { this.emit('change'); },
   });
   private readonly storagePlacement: VmStoragePlacement = new VmStoragePlacement({
+    /**
+     * 入口 / Entry: Machines.get.
+     * 功能：把本层请求转交 `this.get`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.get` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.get(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     get: (id) => this.get(id),
+    /**
+     * 入口 / Entry: Machines.locked.
+     * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; action
+     * 输出 / Returns: `this.locked(id, action)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     locked: (id, action) => this.locked(id, action),
+    /**
+     * 入口 / Entry: Machines.requireStopped.
+     * 功能：把本层请求转交 `this.requireStopped`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.requireStopped` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.requireStopped(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     requireStopped: (id) => this.requireStopped(id),
+    /**
+     * 入口 / Entry: Machines.requireMutableConfig.
+     * 功能：把本层请求转交 `this.requireMutableConfig`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.requireMutableConfig` and propagates the provider result or rejection.
+     * 输入 / Inputs: vm
+     * 输出 / Returns: `this.requireMutableConfig(vm)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     requireMutableConfig: (vm) => this.requireMutableConfig(vm),
+    /**
+     * 入口 / Entry: Machines.pools.
+     * 功能：从当前输入或状态计算 `this.storagePools`，供调用方后续验证或使用。
+     * Purpose: Computes `this.storagePools` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.storagePools`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     pools: () => this.storagePools,
+    /**
+     * 入口 / Entry: Machines.save.
+     * 功能：把本层请求转交 `this.save`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.save` and propagates the provider result or rejection.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.save()`.
+     * 副作用 / Effects: `this.save`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     save: () => this.save(),
+    /**
+     * 入口 / Entry: Machines.view.
+     * 功能：把本层请求转交 `this.view`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.view` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     view: (id) => this.view(id),
+    /**
+     * 入口 / Entry: Machines.changed.
+     * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+     * 处理：通过 `this.emit` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.emit`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.emit`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     changed: () => { this.emit('change'); },
   });
   private readonly disks: VmDiskEncryption = new VmDiskEncryption({
+    /**
+     * 入口 / Entry: Machines.engine.
+     * 功能：从当前输入或状态计算 `this.engine`，供调用方后续验证或使用。
+     * Purpose: Computes `this.engine` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.engine`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     engine: () => this.engine,
-    get: id => this.get(id), running: id => this.live.has(id),
+    /**
+     * 入口 / Entry: Machines.get.
+     * 功能：把本层请求转交 `this.get`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.get` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.get(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    get: id => this.get(id),
+    /**
+     * 入口 / Entry: Machines.running.
+     * 功能：从当前输入或状态计算 `this.live.has(id)`，供调用方后续验证或使用。
+     * Purpose: Computes `this.live.has(id)` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.live.has(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    running: id => this.live.has(id),
+    /**
+     * 入口 / Entry: Machines.requireStopped.
+     * 功能：把本层请求转交 `this.requireStopped`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.requireStopped` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.requireStopped(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     requireStopped: id => this.requireStopped(id),
+    /**
+     * 入口 / Entry: Machines.locked.
+     * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; work
+     * 输出 / Returns: `this.locked(id, work)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     locked: (id, work) => this.locked(id, work),
-    save: () => this.save(), changed: () => { this.emit('change'); },
+    /**
+     * 入口 / Entry: Machines.save.
+     * 功能：把本层请求转交 `this.save`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.save` and propagates the provider result or rejection.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.save()`.
+     * 副作用 / Effects: `this.save`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    save: () => this.save(),
+    /**
+     * 入口 / Entry: Machines.changed.
+     * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+     * 处理：通过 `this.emit` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.emit`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.emit`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    changed: () => { this.emit('change'); },
+    /**
+     * 入口 / Entry: Machines.openSecret.
+     * 功能：把本层请求转交 `openDiskSecret`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `openDiskSecret` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; name
+     * 输出 / Returns: `openDiskSecret(this, id, name)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     openSecret: (id, name) => openDiskSecret(this, id, name),
+    /**
+     * 入口 / Entry: Machines.secretNames.
+     * 功能：把本层请求转交 `Secrets.list`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `Secrets.list` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `new Secrets(this).list(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     secretNames: id => new Secrets(this).list(id),
   });
+  /**
+   * 入口 / Entry: Machines.diskInfo.
+   * 功能：把本层请求转交 `this.disks.info`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.disks.info` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.disks.info(id)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private diskInfo(id: string) { return this.disks.info(id); }
+  /**
+   * 入口 / Entry: Machines.withDiskSecret.
+   * 功能：把本层请求转交 `withDiskSecret`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `withDiskSecret` and propagates the provider result or rejection.
+   * 输入 / Inputs: vm: VMRecord; action: (file: string) => Promise<T>
+   * 输出 / Returns: Promise<T>；结果来自 / values from `withDiskSecret(this, vm, action)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async withDiskSecret<T>(vm: VMRecord, action: (file: string) => Promise<T>): Promise<T> {
     return withDiskSecret(this, vm, action);
   }
+  /**
+   * 入口 / Entry: Machines.diskEncryptionStatus.
+   * 功能：把本层请求转交 `this.disks.status`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.disks.status` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.disks.status(id)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async diskEncryptionStatus(id: string) { return this.disks.status(id); }
+  /**
+   * 入口 / Entry: Machines.encryptDisk.
+   * 功能：把本层请求转交 `this.disks.encrypt`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.disks.encrypt` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; secretName: string; signal: AbortSignal optional
+   * 输出 / Returns: `this.disks.encrypt(id, secretName, signal)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async encryptDisk(id: string, secretName: string, signal?: AbortSignal) {
     return this.disks.encrypt(id, secretName, signal);
   }
   private readonly sandboxes = new SandboxLifetimes({
-    records: () => this.records.values(), get: id => this.get(id),
-    live: id => this.live.get(id), closing: () => this.closing,
-    maintenance: () => this.maintenance, busy: id => this.locks.has(id),
+    /**
+     * 入口 / Entry: Machines.records.
+     * 功能：把本层请求转交 `this.records.values`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.records.values` and propagates the provider result or rejection.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.records.values()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    records: () => this.records.values(),
+    /**
+     * 入口 / Entry: Machines.get.
+     * 功能：把本层请求转交 `this.get`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.get` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.get(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    get: id => this.get(id),
+    /**
+     * 入口 / Entry: Machines.live.
+     * 功能：把本层请求转交 `this.live.get`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.live.get` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.live.get(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    live: id => this.live.get(id),
+    /**
+     * 入口 / Entry: Machines.closing.
+     * 功能：从当前输入或状态计算 `this.closing`，供调用方后续验证或使用。
+     * Purpose: Computes `this.closing` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.closing`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
+    closing: () => this.closing,
+    /**
+     * 入口 / Entry: Machines.maintenance.
+     * 功能：从当前输入或状态计算 `this.maintenance`，供调用方后续验证或使用。
+     * Purpose: Computes `this.maintenance` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.maintenance`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
+    maintenance: () => this.maintenance,
+    /**
+     * 入口 / Entry: Machines.busy.
+     * 功能：从当前输入或状态计算 `this.locks.has(id)`，供调用方后续验证或使用。
+     * Purpose: Computes `this.locks.has(id)` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.locks.has(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    busy: id => this.locks.has(id),
+    /**
+     * 入口 / Entry: Machines.remove.
+     * 功能：把本层请求转交 `this.deleteInternal`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.deleteInternal` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; allowIncident
+     * 输出 / Returns: `this.deleteInternal(id, allowIncident)`.
+     * 副作用 / Effects: `this.deleteInternal`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     remove: (id, allowIncident) => this.deleteInternal(id, allowIncident),
+    /**
+     * 入口 / Entry: Machines.log.
+     * 功能：把本层请求转交 `this.log`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.log` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; data
+     * 输出 / Returns: `this.log(id, data)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     log: (id, data) => this.log(id, data),
   });
+  /**
+   * 入口 / Entry: Machines.watchSandboxes.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.sandboxes.watch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.sandboxes.watch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private watchSandboxes() { this.sandboxes.watch(); }
+  /**
+   * 入口 / Entry: Machines.expireSandboxes.
+   * 功能：把本层请求转交 `this.sandboxes.expire`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.sandboxes.expire` and propagates the provider result or rejection.
+   * 输入 / Inputs: now: default=Date.now()
+   * 输出 / Returns: Promise<void>；结果来自 / values from `this.sandboxes.expire(now)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   expireSandboxes(now = Date.now()): Promise<void> { return this.sandboxes.expire(now); }
+  /**
+   * 入口 / Entry: Machines.terminateSandbox.
+   * 功能：把本层请求转交 `this.sandboxes.terminate`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.sandboxes.terminate` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.sandboxes.terminate(id)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async terminateSandbox(id: string) { return this.sandboxes.terminate(id); }
+  /**
+   * 入口 / Entry: Machines.requireSandboxLifetime.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Checks admission, input or resource ownership in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.sandboxes.requireLifetime` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.sandboxes.requireLifetime`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vm: VMRecord
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private requireSandboxLifetime(vm: VMRecord) { this.sandboxes.requireLifetime(vm); }
+  /**
+   * 入口 / Entry: Machines.requireMutableConfig.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Checks admission, input or resource ownership in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.sandboxes.requireMutable` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.sandboxes.requireMutable`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vm: VMRecord
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private requireMutableConfig(vm: VMRecord) { this.sandboxes.requireMutable(vm); }
   private saveQueue = Promise.resolve();
+  /**
+   * 入口 / Entry: Machines.save.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，校验并提交领域状态变更；处理结果记录到 `this.saveQueue`（`Machines`）。
+   * Purpose: Validates and commits a domain state change in `Machines`; the outcome is recorded in `this.saveQueue`. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.records.values`, `this.saveQueue.catch().then`, `this.saveQueue.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.records.values`, `this.saveQueue.catch().then`, `this.saveQueue.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.saveQueue.catch().then`; `this.saveQueue.catch`; 更新 / updates `this.saveQueue`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async save() {
     // Capture nested record values when the save is admitted, before waiting
     // for an earlier publication. Later mutations belong to a later snapshot.
@@ -326,16 +892,47 @@ export class Machines extends EventEmitter {
     this.saveQueue = operation;
     await operation;
   }
+  /**
+   * 入口 / Entry: Machines.isBusy.
+   * 功能：从当前输入或状态计算 `this.locks.has(id)`，供调用方后续验证或使用。
+   * Purpose: Computes `this.locks.has(id)` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.locks.has(id)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   isBusy(id: string) {
     return this.locks.has(id);
   }
+  /**
+   * 入口 / Entry: Machines.locked.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `await (live ? vmLifetime(id, live).exclusive(action, allowFailedExecutions) : action())` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `await (live ? vmLifetime(id, live).exclusive(action, allowFailedExecutions) : action())` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `id.split`, `this.requireUnlocked`, `this.locks.has`, `this.locks.add` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `id.split`, `this.requireUnlocked`, `this.locks.has`, `this.locks.add`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!allowIncident`.
+   * 输入 / Inputs: id: string; action: () => Promise<T>; allowIncident: default=false; allowFailedExecutions: default=false
+   * 输出 / Returns: Promise<T>；结果来自 / values from `await (live ? vmLifetime(id, live).exclusive(action, allowFailedExecutions) : action())`.
+   * 副作用 / Effects: `this.locks.add`; `this.operations.add`; `this.locks.delete`; `this.operations.delete`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closing`; `this.maintenance`; `this.locks.has(id)`; 异常 / errors `new AppError('服务正在关闭', 503)`; `new AppError('数据目录迁移维护中，请等待完成并重启服务', 409)`.
+   * 收尾：退出 try 区域时始终执行 `this.locks.delete(id);`; `this.operations.delete(operation);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.locks.delete(id);`; `this.operations.delete(operation);`; these steps also apply to exceptional exits.
+   */
   async locked<T>(id: string, action: () => Promise<T>, allowIncident = false, allowFailedExecutions = false): Promise<T> {
     if (this.closing) throw new AppError('服务正在关闭', 503);
     if (!allowIncident) for (const part of id.split(':')) this.requireUnlocked(part);
     if (this.maintenance) throw new AppError('数据目录迁移维护中，请等待完成并重启服务', 409);
     if (this.locks.has(id)) throw new AppError('该实例的另一项操作正在进行', 409);
     this.locks.add(id);
-    let complete!: () => void;
+    let complete!:
+    /**
+     * 中文功能：完成 Machines.locked.complete 所属异步等待或资源阶段；结果按本声明参数交付。
+     * English: Completes the asynchronous wait/resource phase owned by Machines.locked.complete using the declared result parameters.
+     * 所属 / Owner: Machines.locked.complete.
+     * 输入 / Inputs: 无显式参数 / no explicit parameters.
+     * 结果 / Result: `void`.
+     */
+    () => void;
     const operation = new Promise<void>((resolve) => {
       complete = resolve;
     });
@@ -351,6 +948,18 @@ export class Machines extends EventEmitter {
   }
   /** Lock order: close VM execution admission -> await native cleanup -> VM lock -> domain/I/O locks.
    * Never hold the VM lock while waiting for an execution that needs control cleanup in this guest. */
+  /**
+   * 入口 / Entry: Machines.transition.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.locked(id, action, allowIncident, force)` / `vmLifetime(id, live).barrier(() => this.locked(id, action, allowIncident, force), true, force)` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `this.locked(id, action, allowIncident, force)` / `vmLifetime(id, live).barrier(() => this.locked(id, action, allowIncident, force), true, force)` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.live.get`, `this.locked`, `ExecutionScope.current`, `vmLifetime().barrier` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.live.get`, `this.locked`, `ExecutionScope.current`, `vmLifetime().barrier`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!live`.
+   * 输入 / Inputs: id: string; action: () => Promise<T>; allowIncident: default=false; force: default=false
+   * 输出 / Returns: `this.locked(id, action, allowIncident, force)`; `vmLifetime(id, live).barrier(() => this.locked(id, action, allowIncident, force), true, force)`.
+   * 副作用 / Effects: `ExecutionScope.current`.
+   * 拒绝 / Refusals: 条件 / conditions `ExecutionScope.current()?.identity.vmId === id`; 异常 / errors `new AppError('项目执行不能等待自身退出后切换实例状态', 409, 'VM_EXECUTION_REENTRANT')`.
+   */
   private transition<T>(id: string, action: () => Promise<T>, allowIncident = false, force = false) {
     const live = this.live.get(id);
     if (!live) return this.locked(id, action, allowIncident, force);
@@ -358,14 +967,47 @@ export class Machines extends EventEmitter {
       throw new AppError('项目执行不能等待自身退出后切换实例状态', 409, 'VM_EXECUTION_REENTRANT');
     return vmLifetime(id, live).barrier(() => this.locked(id, action, allowIncident, force), true, force);
   }
+  /**
+   * 入口 / Entry: Machines.get.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `vm` 供上层消费（`Machines`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `Machines`; this entry produces `vm` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.records.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.records.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `vm`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!vm`; 异常 / errors `new AppError('发行版不存在', 404)`.
+   */
   get(id: string) {
     const vm = this.records.get(id);
     if (!vm) throw new AppError('发行版不存在', 404);
     return vm;
   }
+  /**
+   * 入口 / Entry: Machines.state.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.live.get(id)?.status || (this.get(id).lastError ? 'error' : 'stopped')` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `this.live.get(id)?.status || (this.get(id).lastError ? 'error' : 'stopped')` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.live.get`, `this.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.live.get`, `this.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: VMStatus；结果来自 / values from `this.live.get(id)?.status || (this.get(id).lastError ? 'error' : 'stopped')`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   state(id: string): VMStatus {
     return this.live.get(id)?.status || (this.get(id).lastError ? 'error' : 'stopped');
   }
+  /**
+   * 入口 / Entry: Machines.view.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ ...vm, lastError: this.live.get(id)?.error || vm.lastError, status: this.state(id), poweredOn: this.live.has(id), startedAt…` 供上层消费（`Machines`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `Machines`; this entry produces `{ ...vm, lastError: this.live.get(id)?.error || vm.lastError, status: this.state(id), poweredOn: this.live.has(id), startedAt…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.get`, `stat().catch`, `stat`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.get`, `stat().catch`, `stat`, `join`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<VMView>；结果来自 / values from `{ ...vm, lastError: this.live.get(id)?.error || vm.lastError, status: this.state(id), poweredOn: this.live.has(id), startedAt…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async view(id: string): Promise<VMView> {
     const vm = this.get(id);
     const disk = await stat(join(vmDir(id), 'disk.qcow2')).catch(() => null);
@@ -380,6 +1022,17 @@ export class Machines extends EventEmitter {
       diskBytes: disk?.size || 0,
     };
   }
+  /**
+   * 入口 / Entry: Machines.commandline.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ name: `sakura-${vm.name}`, machine: vm.architecture === 'aarch64' ? 'virt' : 'q35', architecture: vm.architecture || 'x86_6…` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `{ name: `sakura-${vm.name}`, machine: vm.architecture === 'aarch64' ? 'virt' : 'q35', architecture: vm.architecture || 'x86_6…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.get`, `hardwareArguments`, `deviceArguments`, `audioArguments` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.get`, `hardwareArguments`, `deviceArguments`, `audioArguments`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ name: `sakura-${vm.name}`, machine: vm.architecture === 'aarch64' ? 'virt' : 'q35', architecture: vm.architecture || 'x86_6…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   commandline(id: string) {
     const vm = this.get(id);
     return {
@@ -401,9 +1054,32 @@ export class Machines extends EventEmitter {
       forwards: vm.forwards,
     };
   }
+  /**
+   * 入口 / Entry: Machines.list.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `Promise.all([...this.records.keys()].map((id) => this.view(id)))` 供上层消费（`Machines`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `Machines`; this entry produces `Promise.all([...this.records.keys()].map((id) => this.view(id)))` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `Promise.all`, `inline.map`, `this.records.keys` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `Promise.all`, `inline.map`, `this.records.keys`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `Promise.all([...this.records.keys()].map((id) => this.view(id)))`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async list() {
     return Promise.all([...this.records.keys()].map((id) => this.view(id)));
   }
+  /**
+   * 入口 / Entry: Machines.log.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `live.serialTail`, `live.serialReady`, `live.error`（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the outcome is recorded in `live.serialTail`, `live.serialReady`, `live.error`. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `data.toString`, `this.logs.get`, `this.logs.set`, `inline.slice` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `data.toString`, `this.logs.get`, `this.logs.set`, `inline.slice`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `live?.status === 'starting' && live.bootstrapKnown === false && !live.serialReady`; `live.serialTail.includes('SAKURA_READY')`; `live?.status === 'starting' && recent.includes('Kernel panic - not syncing:')`.
+   * 输入 / Inputs: id: string; data: Buffer | string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.logs.set`; `this.emit`; `live.bootAbort.abort`; 更新 / updates `live.serialTail`, `live.serialReady`, `live.error`, `live.status`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   log(id: string, data: Buffer | string) {
     const text = data.toString();
     const previous = this.logs.get(id) || '';
@@ -422,9 +1098,31 @@ export class Machines extends EventEmitter {
       this.emit('change');
     }
   }
+  /**
+   * 入口 / Entry: Machines.create.
+   * 功能：把本层请求转交 `this.createInternal`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.createInternal` and propagates the provider result or rejection.
+   * 输入 / Inputs: input: unknown; sandbox: SandboxPolicy optional
+   * 输出 / Returns: `this.createInternal(input, sandbox)`.
+   * 副作用 / Effects: `this.createInternal`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async create(input: unknown, sandbox?: SandboxPolicy) {
     return this.createInternal(input, sandbox);
   }
+  /**
+   * 入口 / Entry: Machines.createIncomingTarget.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `existing` / `this.createInternal(config, undefined, undefined, { ...identity, origin: { ...sourceIds, status: 'prepared', createdAt: now, …` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `existing` / `this.createInternal(config, undefined, undefined, { ...identity, origin: { ...sourceIds, status: 'prepared', createdAt: now, …` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `identity.seed.toString`, `createPrivateKey`, `z.object().strict().parse`, `z.object().strict` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `identity.seed.toString`, `createPrivateKey`, `z.object().strict().parse`, `z.object().strict`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: input: unknown; identity: { key: string; seed: Buffer }; source: { sourceHostId: string; sourceVmId: string; transferId: string; completionProtocol?: …; projects: LiveMigrationProjects optional; organization: VMRecord['organization'] optional
+   * 输出 / Returns: `existing`; `this.createInternal(config, undefined, undefined, { ...identity, origin: { ...sourceIds, status: 'prepared', createdAt: now, …`.
+   * 副作用 / Effects: `createPrivateKey`; `createSchema.parse`; `this.createInternal`.
+   * 拒绝 / Refusals: 条件 / conditions `typeof identity.key !== 'string' || identity.key.length < 100 || identity.key.length > 16_000 || !Buffer.isBuffer(identity.se…`; `config.firmware === 'uefi' || config.architecture === 'aarch64' || config.hardware?.devices?.graphics === 'virgl'`; `existing`; 异常 / errors `new AppError('在线迁移客户机身份数据无效')`; `new AppError('在线迁移控制密钥无效')`.
+   * 失败处理：catch 分支执行 `throw new AppError('在线迁移控制密钥无效');`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `throw new AppError('在线迁移控制密钥无效');`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async createIncomingTarget(input: unknown, identity: { key: string; seed: Buffer },
     source: { sourceHostId: string; sourceVmId: string; transferId: string; completionProtocol?: 1 },
     projects?: LiveMigrationProjects, organization?: VMRecord['organization']) {
@@ -460,6 +1158,19 @@ export class Machines extends EventEmitter {
       ...(organization ? { organization: organizationSchema.parse(organization) } : {}),
     });
   }
+  /**
+   * 入口 / Entry: Machines.prepareVmDirectory.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `dir` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `dir` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.storagePools.ensure`, `this.storagePools.bind`, `vmDir`, `within` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.storagePools.ensure`, `this.storagePools.bind`, `vmDir`, `within`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vm: VMRecord
+   * 输出 / Returns: `dir`.
+   * 副作用 / Effects: `mkdir`.
+   * 拒绝 / Refusals: 条件 / conditions `!within(root, dir)`; 异常 / errors `new AppError('实例目录超出存储池', 409)`; `error`.
+   * 失败处理：catch 分支执行 `this.storagePools.unbind(vm.id);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.storagePools.unbind(vm.id);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async prepareVmDirectory(vm: VMRecord) {
     const root = await this.storagePools.ensure(vm.storagePoolId);
     this.storagePools.bind(vm.id, vm.storagePoolId);
@@ -472,6 +1183,17 @@ export class Machines extends EventEmitter {
     }
     return dir;
   }
+  /**
+   * 入口 / Entry: Machines.removeVmDirectory.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.storagePools.ensure`, `this.storagePools.directory`, `within`, `regularDirectory` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.storagePools.ensure`, `this.storagePools.directory`, `within`, `regularDirectory`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vm: VMRecord
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `rm`.
+   * 拒绝 / Refusals: 条件 / conditions `!within(root, dir) || dir === root`; 异常 / errors `new AppError('实例目录超出存储池', 409)`.
+   */
   private async removeVmDirectory(vm: VMRecord) {
     const root = await this.storagePools.ensure(vm.storagePoolId);
     const dir = this.storagePools.directory(vm.id, vm.storagePoolId);
@@ -480,10 +1202,39 @@ export class Machines extends EventEmitter {
     await regularDirectory(dir);
     await rm(dir, { recursive: true, force: true });
   }
+  /**
+   * 入口 / Entry: Machines.createInternal.
+   * 功能：在受控存储池中创建实例目录、身份、种子与磁盘，并持久登记新实例。
+   * Purpose: Creates VM directories/identity/seed/disk within a controlled pool and durably registers the VM.
+   * 设计：端口、架构、固件和沙箱期限先验证；固定镜像偏移补丁先核验原字节，失败移除未完成目标但不动来源镜像。
+   * Design: Ports/architecture/firmware/expiry are checked first; fixed-offset patches verify bytes and rollback removes only incomplete targets.
+   * 输入 / Inputs: input: unknown; sandbox: SandboxPolicy optional; rescueOf: string optional; incoming: { key: string; seed: Buffer; origin: NonNullable<VMRecord['liveMigrationOrigin']>; pr… optional
+   * 输出 / Returns: `this.locked('storage-pools', () => this.locked('create', async () => { const config = createSchema.parse(input); this.require…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async createInternal(input: unknown, sandbox?: SandboxPolicy, rescueOf?: string,
     incoming?: { key: string; seed: Buffer; origin: NonNullable<VMRecord['liveMigrationOrigin']>;
       projects?: LiveMigrationProjects; organization?: VMRecord['organization'] }) {
-    return this.locked('storage-pools', () => this.locked('create', async () => {
+    /**
+     * 入口 / Entry: Machines.createInternal.callback@486.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked / create）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked / create).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(vm.id)`.
+     * 副作用 / Effects: `createSchema.parse`; `createSshKey`; `writeFile`; `qemuIoArgs.push`; `this.records.set`; 更新 / updates `sandbox`, `stockImage`.
+     * 拒绝 / Refusals: 条件 / conditions `config.architecture === 'aarch64' && !this.engine.aarch64Available`; `sandbox !== undefined`; `sandboxExpired(sandbox)`; 异常 / errors `new AppError('缺少 ARM64 QEMU，请运行 npm run setup', 503)`; `new AppError('沙箱期限必须晚于当前时间')`.
+     * 失败处理：catch 分支执行 `this.records.delete(vm.id);`; `await this.removeVmDirectory(vm);`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `this.records.delete(vm.id);`; `await this.removeVmDirectory(vm);`; these statements determine whether a failure is absorbed or rejected again.
+     */
+    return this.locked('storage-pools', () => this.locked('create',
+    /**
+     * 中文功能：在创建锁内校验配置与存储资源，准备实例目录、密钥、seed 和磁盘，持久登记新实例并回收失败产物。
+     * English: Validates configuration/storage under the creation lock, prepares VM directory/keys/seed/disk, persists the new VM and reclaims failed artifacts.
+     * 所属 / Owner: Machines.createInternal.
+     * 输入 / Inputs: 无显式参数 / no explicit parameters.
+     */
+    async () => {
       const config = createSchema.parse(input);
       this.requireUnreservedPorts(config.forwards);
       if (config.architecture === 'aarch64' && !this.engine.aarch64Available)
@@ -605,28 +1356,144 @@ export class Machines extends EventEmitter {
       }
     }));
   }
+  /**
+   * 入口 / Entry: Machines.start.
+   * 功能：把本层请求转交 `this.startInternal`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.startInternal` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.startInternal(id)`.
+   * 副作用 / Effects: `this.startInternal`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async start(id: string) {
     return this.startInternal(id);
   }
+  /**
+   * 入口 / Entry: Machines.startHaReplica.
+   * 功能：把本层请求转交 `this.startInternal`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.startInternal` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; identity: { sourceHostId: string; transferId: string; sourceVmId: string; snapshotId: string; s…
+   * 输出 / Returns: `this.startInternal(id, undefined, false, identity)`.
+   * 副作用 / Effects: `this.startInternal`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async startHaReplica(id: string, identity: { sourceHostId: string;
     transferId: string; sourceVmId: string; snapshotId: string; sha256: string }) {
     return this.startInternal(id, undefined, false, identity);
   }
   private readonly haAuthority = new VmHaAuthority({
-    get: id => this.get(id), requireStopped: id => this.requireStopped(id),
-    locked: (id, work) => this.locked(id, work), save: () => this.save(),
+    /**
+     * 入口 / Entry: Machines.get.
+     * 功能：把本层请求转交 `this.get`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.get` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.get(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    get: id => this.get(id),
+    /**
+     * 入口 / Entry: Machines.requireStopped.
+     * 功能：把本层请求转交 `this.requireStopped`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.requireStopped` and propagates the provider result or rejection.
+     * 输入 / Inputs: id
+     * 输出 / Returns: `this.requireStopped(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    requireStopped: id => this.requireStopped(id),
+    /**
+     * 入口 / Entry: Machines.locked.
+     * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; work
+     * 输出 / Returns: `this.locked(id, work)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    locked: (id, work) => this.locked(id, work),
+    /**
+     * 入口 / Entry: Machines.save.
+     * 功能：把本层请求转交 `this.save`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `this.save` and propagates the provider result or rejection.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.save()`.
+     * 副作用 / Effects: `this.save`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
+    save: () => this.save(),
+    /**
+     * 入口 / Entry: Machines.changed.
+     * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+     * 处理：通过 `this.emit` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `this.emit`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.emit`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     changed: () => { this.emit('change'); },
   });
+  /**
+   * 入口 / Entry: Machines.enrollHaWitness.
+   * 功能：把本层请求转交 `this.haAuthority.enrollHaWitness`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.haAuthority.enrollHaWitness` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; targetHostId: string; failureThreshold: number
+   * 输出 / Returns: `this.haAuthority.enrollHaWitness(id, targetHostId, failureThreshold)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async enrollHaWitness(id: string, targetHostId: string, failureThreshold: number) {
     return this.haAuthority.enrollHaWitness(id, targetHostId, failureThreshold);
   }
+  /**
+   * 入口 / Entry: Machines.releaseHaWitness.
+   * 功能：把本层请求转交 `this.haAuthority.releaseHaWitness`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.haAuthority.releaseHaWitness` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; targetHostId: string
+   * 输出 / Returns: `this.haAuthority.releaseHaWitness(id, targetHostId)`.
+   * 副作用 / Effects: `this.haAuthority.releaseHaWitness`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async releaseHaWitness(id: string, targetHostId: string) { return this.haAuthority.releaseHaWitness(id, targetHostId); }
+  /**
+   * 入口 / Entry: Machines.startIncoming.
+   * 功能：把本层请求转交 `this.startInternal`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.startInternal` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.startInternal(id, undefined, true)`.
+   * 副作用 / Effects: `this.startInternal`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async startIncoming(id: string) {
     return this.startInternal(id, undefined, true);
   }
+  /**
+   * 入口 / Entry: Machines.bindIncomingSession.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.locked(id, async () => { await check(); const vm = this.get(id), previous = vm.liveMigrationOrigin; if (!previous || pre…` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `this.locked(id, async () => { await check(); const vm = this.get(id), previous = vm.liveMigrationOrigin; if (!previous || pre…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `liveMigrationPrepareReceiptSchema.parse`, `captureOperationCheck`, `this.locked` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `liveMigrationPrepareReceiptSchema.parse`, `captureOperationCheck`, `this.locked`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; raw: unknown
+   * 输出 / Returns: `this.locked(id, async () => { await check(); const vm = this.get(id), previous = vm.liveMigrationOrigin; if (!previous || pre…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async bindIncomingSession(id: string, raw: unknown) {
     const receipt = liveMigrationPrepareReceiptSchema.parse(raw);
     const check = captureOperationCheck();
+    /**
+     * 入口 / Entry: Machines.bindIncomingSession.callback@630.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `receipt`.
+     * 副作用 / Effects: `this.save`; 更新 / updates `vm.liveMigrationOrigin`.
+     * 拒绝 / Refusals: 条件 / conditions `!previous || previous.status !== 'prepared' || receipt.targetVmId !== id`; 异常 / errors `new AppError('目标实例没有原迁移准备记录', 409)`; `error`.
+     * 失败处理：catch 分支执行 `vm.liveMigrationOrigin = previous;`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `vm.liveMigrationOrigin = previous;`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked(id, async () => {
       await check();
       const vm = this.get(id), previous = vm.liveMigrationOrigin;
@@ -640,6 +1507,18 @@ export class Machines extends EventEmitter {
     });
   }
   /** The authenticated original coordinator has durably stopped its source before requesting this recovery. */
+  /**
+   * 入口 / Entry: Machines.recoverIncoming.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.start(id)` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `this.start(id)` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `z.uuid().parse`, `z.uuid`, `captureOperationCheck`, `this.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `z.uuid().parse`, `z.uuid`, `captureOperationCheck`, `this.get`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.live.has(id)`.
+   * 输入 / Inputs: id: string; sessionId: string
+   * 输出 / Returns: `this.start(id)`.
+   * 副作用 / Effects: `this.stop`; `this.start`.
+   * 拒绝 / Refusals: 条件 / conditions `!original?.sessionId || original.sessionId !== sessionId || original.prepareReceipt?.sessionId !== sessionId`; 异常 / errors `new AppError('目标缺少原持久迁移会话', 409)`.
+   */
   async recoverIncoming(id: string, sessionId: string) {
     z.uuid().parse(sessionId);
     const check = captureOperationCheck();
@@ -648,6 +1527,17 @@ export class Machines extends EventEmitter {
         original.prepareReceipt?.sessionId !== sessionId)
       throw new AppError('目标缺少原持久迁移会话', 409);
     if (this.live.has(id)) await this.stop(id, true);
+    /**
+     * 入口 / Entry: Machines.recoverIncoming.callback@651.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.save`; 更新 / updates `vm.liveMigrationOrigin`.
+     * 拒绝 / Refusals: 条件 / conditions `!previous?.sessionId || previous.sessionId !== sessionId || previous.prepareReceipt?.sessionId !== sessionId`; `this.live.has(id)`; `previous.status === 'prepared'`; 异常 / errors `new AppError('目标缺少原持久迁移会话', 409)`; `new AppError('目标原迁移进程仍存在，不能冷启动恢复', 409)`.
+     * 失败处理：catch 分支执行 `vm.liveMigrationOrigin = previous;`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `vm.liveMigrationOrigin = previous;`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     await this.locked(id, async () => {
       await check();
       const vm = this.get(id), previous = vm.liveMigrationOrigin;
@@ -665,11 +1555,34 @@ export class Machines extends EventEmitter {
     await check();
     return this.start(id);
   }
+  /**
+   * 入口 / Entry: Machines.completeIncoming.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.locked(id, async () => { await check(); const live = this.live.get(id); if (!live?.incoming || live.status !== 'paused')…` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `this.locked(id, async () => { await check(); const live = this.live.get(id); if (!live?.incoming || live.status !== 'paused')…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `pluginAuthority`, `z.uuid().parse`, `z.uuid`, `captureOperationCheck` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `pluginAuthority`, `z.uuid().parse`, `z.uuid`, `captureOperationCheck`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `sessionId !== undefined`.
+   * 输入 / Inputs: id: string; query: typeof qmp default=qmp; sessionId: string optional
+   * 输出 / Returns: `this.locked(id, async () => { await check(); const live = this.live.get(id); if (!live?.incoming || live.status !== 'paused')…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `pluginAuthority() && query !== qmp`; 异常 / errors `new AppError('迁移目标核验查询仅允许系统装配', 403, 'LIVE_MIGRATION_SYSTEM_ONLY')`.
+   */
   async completeIncoming(id: string, query: typeof qmp = qmp, sessionId?: string) {
     if (pluginAuthority() && query !== qmp)
       throw new AppError('迁移目标核验查询仅允许系统装配', 403, 'LIVE_MIGRATION_SYSTEM_ONLY');
     if (sessionId !== undefined) z.uuid().parse(sessionId);
     const check = captureOperationCheck();
+    /**
+     * 入口 / Entry: Machines.completeIncoming.callback@673.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `this.save`; `this.emit`; 更新 / updates `vm.liveMigrationOrigin`, `live.incoming`, `live.status`, `live.bootDone`.
+     * 拒绝 / Refusals: 条件 / conditions `!live?.incoming || live.status !== 'paused'`; `!previous || previous.status !== 'prepared'`; `state.running !== true || state.status !== 'running'`; 异常 / errors `new AppError('目标实例不在迁移接收状态', 409)`; `new AppError('目标实例没有待完成的在线迁移记录', 409)`.
+     * 失败处理：catch 分支执行 `vm.liveMigrationOrigin = previous;`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `vm.liveMigrationOrigin = previous;`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked(id, async () => {
       await check();
       const live = this.live.get(id);
@@ -697,6 +1610,17 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
+  /**
+   * 入口 / Entry: Machines.fenceForLiveMigration.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.locked(id, async () => { await check(); const vm = this.get(id); if (vm.liveMigrationFence) { if (vm.liveMigrationFence.…` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `this.locked(id, async () => { await check(); const vm = this.get(id); if (vm.liveMigrationFence) { if (vm.liveMigrationFence.…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `pluginAuthority`, `liveMigrationFenceIdentitySchema.omit().parse`, `liveMigrationFenceIdentitySchema.omit`, `captureRecoveryOrigin` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `pluginAuthority`, `liveMigrationFenceIdentitySchema.omit().parse`, `liveMigrationFenceIdentitySchema.omit`, `captureRecoveryOrigin`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; raw: unknown; query: typeof qmp default=qmp
+   * 输出 / Returns: `this.locked(id, async () => { await check(); const vm = this.get(id); if (vm.liveMigrationFence) { if (vm.liveMigrationFence.…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `pluginAuthority() && query !== qmp`; 异常 / errors `new AppError('迁移栅栏核验查询仅允许系统装配', 403, 'LIVE_MIGRATION_SYSTEM_ONLY')`.
+   */
   async fenceForLiveMigration(id: string, raw: unknown,
     query: typeof qmp = qmp) {
     if (pluginAuthority() && query !== qmp)
@@ -704,6 +1628,17 @@ export class Machines extends EventEmitter {
     const identity = liveMigrationFenceIdentitySchema.omit({ fencedAt: true, sourceProcessId: true, origin: true }).parse(raw);
     const origin = captureRecoveryOrigin();
     const check = captureOperationCheck();
+    /**
+     * 入口 / Entry: Machines.fenceForLiveMigration.callback@707.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `vm.liveMigrationFence`; `fence`.
+     * 副作用 / Effects: `this.save`; `this.migrationRuns.set`; `this.emit`; 更新 / updates `vm.liveMigrationFence`.
+     * 拒绝 / Refusals: 条件 / conditions `vm.liveMigrationFence`; `vm.liveMigrationFence.transferId !== identity.transferId || vm.liveMigrationFence.targetHostId !== identity.targetHostId || v…`; `vm.haPromotion || vm.haRetirement`; 异常 / errors `new AppError('来源实例已有其他在线迁移栅栏', 409)`; `new AppError('故障接管实例不能同时进行在线迁移', 409)`.
+     * 失败处理：catch 分支执行 `delete vm.liveMigrationFence;`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `delete vm.liveMigrationFence;`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked(id, async () => {
       await check();
       const vm = this.get(id);
@@ -743,6 +1678,19 @@ export class Machines extends EventEmitter {
     });
   }
   /** Publish native exit evidence for this exact fenced process; a missing live entry is not evidence. */
+  /**
+   * 入口 / Entry: Machines.stopLiveMigrationSource.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，结束、撤销或清理本次拥有的领域资源；本入口产生 `original` / `this.locked(id, async () => { await check(); const current = this.get(id).liveMigrationFence; if (!current || migrationFenceI…` 供上层消费（`Machines`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `Machines`; this entry produces `original` / `this.locked(id, async () => { await check(); const current = this.get(id).liveMigrationFence; if (!current || migrationFenceI…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `liveMigrationFenceSchema.parse`, `migrationFenceIdentity`, `captureOperationCheck`, `check` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `liveMigrationFenceSchema.parse`, `migrationFenceIdentity`, `captureOperationCheck`, `check`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; expected: LiveMigrationFence
+   * 输出 / Returns: `original`; `this.locked(id, async () => { await check(); const current = this.get(id).liveMigrationFence; if (!current || migrationFenceI…`.
+   * 副作用 / Effects: `this.save`; `this.stop`; `this.migrationRuns.delete`; 更新 / updates `run.stoppedAt`.
+   * 拒绝 / Refusals: 条件 / conditions `!vm.liveMigrationFence || migrationDigest(vm.liveMigrationFence) !== migrationDigest(original)`; `original.sourceStopped`; `this.live.has(id)`; 异常 / errors `new AppError('原在线迁移栅栏已变化', 409, 'LIVE_MIGRATION_FENCE_CHANGED')`; `new AppError('来源原进程尚未确认停止', 409)`.
+   * 失败处理：catch 分支执行 `this.migrationRuns.delete(id);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.migrationRuns.delete(id);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async stopLiveMigrationSource(id: string, expected: LiveMigrationFence) {
     const original = liveMigrationFenceSchema.parse(expected), identity = migrationFenceIdentity(original);
     const check = captureOperationCheck();
@@ -769,6 +1717,17 @@ export class Machines extends EventEmitter {
       run.stoppedAt = new Date().toISOString();
       delete run.live;
     }
+    /**
+     * 入口 / Entry: Machines.stopLiveMigrationSource.callback@772.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `structuredClone(current)`; `structuredClone(next)`.
+     * 副作用 / Effects: `this.save`; `this.emit`; 更新 / updates `this.get(id).liveMigrationFence`.
+     * 拒绝 / Refusals: 条件 / conditions `!current || migrationFenceIdentity(current) !== identity || this.live.has(id)`; 异常 / errors `new AppError('原在线迁移栅栏或来源进程已变化', 409, 'LIVE_MIGRATION_FENCE_CHANGED')`; `error`.
+     * 失败处理：catch 分支执行 `this.get(id).liveMigrationFence = current;`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `this.get(id).liveMigrationFence = current;`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked(id, async () => {
       await check();
       const current = this.get(id).liveMigrationFence;
@@ -788,6 +1747,18 @@ export class Machines extends EventEmitter {
     });
   }
   /** The domain supplies an authenticated target query; this owner validates and atomically publishes its evidence. */
+  /**
+   * 入口 / Entry: Machines.canConfirmLiveMigrationCompletion.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `false` / `!!current.sourceStopped && !this.live.has(id) || !!run && run.identity === migrationFenceIdentity(expected) && run.processId …` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `false` / `!!current.sourceStopped && !this.live.has(id) || !!run && run.identity === migrationFenceIdentity(expected) && run.processId …` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.records.get`, `this.migrationRuns.get`, `migrationDigest`, `this.live.has` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.records.get`, `this.migrationRuns.get`, `migrationDigest`, `this.live.has`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!current || migrationDigest(current) !== migrationDigest(expected)`.
+   * 输入 / Inputs: id: string; expected: LiveMigrationFence
+   * 输出 / Returns: `false`; `!!current.sourceStopped && !this.live.has(id) || !!run && run.identity === migrationFenceIdentity(expected) && run.processId …`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   canConfirmLiveMigrationCompletion(id: string, expected: LiveMigrationFence) {
     const current = this.records.get(id)?.liveMigrationFence, run = this.migrationRuns.get(id);
     if (!current || migrationDigest(current) !== migrationDigest(expected)) return false;
@@ -795,16 +1766,49 @@ export class Machines extends EventEmitter {
       run.identity === migrationFenceIdentity(expected) && run.processId === expected.sourceProcessId &&
       (!!run.stoppedAt && !this.live.has(id) || !!run.live && this.live.get(id) === run.live);
   }
+  /**
+   * 入口 / Entry: Machines.isLiveMigrationCompletionDurable.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `!!current?.completion && !this.live.has(id) && migrationDigest(current) === migrationDigest(expected) && this.migrationComple…` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `!!current?.completion && !this.live.has(id) && migrationDigest(current) === migrationDigest(expected) && this.migrationComple…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.records.get`, `this.live.has`, `migrationDigest`, `this.migrationCompletions.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.records.get`, `this.live.has`, `migrationDigest`, `this.migrationCompletions.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; expected: LiveMigrationFence
+   * 输出 / Returns: `!!current?.completion && !this.live.has(id) && migrationDigest(current) === migrationDigest(expected) && this.migrationComple…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   isLiveMigrationCompletionDurable(id: string, expected: LiveMigrationFence) {
     const current = this.records.get(id)?.liveMigrationFence;
     return !!current?.completion && !this.live.has(id) &&
       migrationDigest(current) === migrationDigest(expected) &&
       this.migrationCompletions.get(id) === migrationDigest(expected);
   }
+  /**
+   * 入口 / Entry: Machines.confirmLiveMigrationCompletion.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.locked(id, async () => { await check(); const vm = this.get(id), current = vm.liveMigrationFence; if (!current || migrat…` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `this.locked(id, async () => { await check(); const vm = this.get(id), current = vm.liveMigrationFence; if (!current || migrat…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `liveMigrationFenceSchema.parse`, `migrationDigest`, `captureOperationCheck`, `this.locked` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `liveMigrationFenceSchema.parse`, `migrationDigest`, `captureOperationCheck`, `this.locked`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; expected: LiveMigrationFence; inspect: () => Promise<LiveMigrationTargetStatus>
+   * 输出 / Returns: `this.locked(id, async () => { await check(); const vm = this.get(id), current = vm.liveMigrationFence; if (!current || migrat…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async confirmLiveMigrationCompletion(id: string, expected: LiveMigrationFence,
     inspect: () => Promise<LiveMigrationTargetStatus>) {
     const original = liveMigrationFenceSchema.parse(expected), revision = migrationDigest(original);
     const check = captureOperationCheck();
+    /**
+     * 入口 / Entry: Machines.confirmLiveMigrationCompletion.callback@808.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `structuredClone(current)`; `structuredClone(next)`.
+     * 副作用 / Effects: `this.save`; `this.migrationCompletions.set`; `this.migrationRuns.delete`; `this.emit`; 更新 / updates `vm.liveMigrationFence`.
+     * 拒绝 / Refusals: 条件 / conditions `!current || migrationDigest(current) !== revision`; `!current.sourceStopped || !current.sourceHostId || !current.sessionId || !current.projectsDigest || !current.peerId`; `this.live.has(id)`; 异常 / errors `new AppError('原在线迁移栅栏已变化', 409, 'LIVE_MIGRATION_FENCE_CHANGED')`; `new AppError('原迁移缺少来源退出或会话证明，保持栅栏等待核验', 409, 'LIVE_MIGRATION_SOURCE_UNCONFIRMED')`.
+     * 失败处理：catch 分支执行 `vm.liveMigrationFence = current;`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `vm.liveMigrationFence = current;`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked(id, async () => {
       await check();
       const vm = this.get(id), current = vm.liveMigrationFence;
@@ -839,19 +1843,84 @@ export class Machines extends EventEmitter {
       return structuredClone(next);
     });
   }
+  /**
+   * 入口 / Entry: Machines.fenceForHa.
+   * 功能：把本层请求转交 `this.haAuthority.fenceForHa`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.haAuthority.fenceForHa` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; raw: HaPromotion; guard: () => Promise<void> | void optional
+   * 输出 / Returns: `this.haAuthority.fenceForHa(id, raw, guard)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async fenceForHa(id: string, raw: HaPromotion, guard?: () => Promise<void> | void) {
     return this.haAuthority.fenceForHa(id, raw, guard);
   }
+  /**
+   * 入口 / Entry: Machines.updateHaPromotion.
+   * 功能：把本层请求转交 `this.haAuthority.updateHaPromotion`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.haAuthority.updateHaPromotion` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; transferId: string; patch: Pick<HaPromotion, 'status'> & { error?: string }
+   * 输出 / Returns: `this.haAuthority.updateHaPromotion(id, transferId, patch)`.
+   * 副作用 / Effects: `this.haAuthority.updateHaPromotion`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async updateHaPromotion(id: string, transferId: string, patch: Pick<HaPromotion, 'status'> & { error?: string }) {
     return this.haAuthority.updateHaPromotion(id, transferId, patch);
   }
+  /**
+   * 入口 / Entry: Machines.releaseHaPromotion.
+   * 功能：把本层请求转交 `this.haAuthority.releaseHaPromotion`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.haAuthority.releaseHaPromotion` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; transferId: string
+   * 输出 / Returns: `this.haAuthority.releaseHaPromotion(id, transferId)`.
+   * 副作用 / Effects: `this.haAuthority.releaseHaPromotion`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async releaseHaPromotion(id: string, transferId: string) { return this.haAuthority.releaseHaPromotion(id, transferId); }
+  /**
+   * 入口 / Entry: Machines.retireHaReplica.
+   * 功能：把本层请求转交 `this.haAuthority.retireHaReplica`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.haAuthority.retireHaReplica` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; raw: unknown
+   * 输出 / Returns: `this.haAuthority.retireHaReplica(id, raw)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async retireHaReplica(id: string, raw: unknown) { return this.haAuthority.retireHaReplica(id, raw); }
+  /**
+   * 入口 / Entry: Machines.startInternal.
+   * 功能：持锁检查实例准入、可信启动与网络资源，创建受管 QEMU 并观察启动完成。
+   * Purpose: Checks VM admission/trusted boot/network under locks, starts managed QEMU and observes boot readiness.
+   * 设计：启动资源即时登记，原运行、HA 栅栏或未确认清理阻止重启；失败按原 Live 身份关闭所有附属资源。
+   * Design: Resources are immediately owned; live runs/fences/pending cleanup block restart and failure closes attachments against the original Live identity.
+   * 输入 / Inputs: id: string; rescueOf: string optional; incoming: default=false; haActivation: { sourceHostId: string; transferId: string; sourceVmId: string; snapshotId: string; s… optional
+   * 输出 / Returns: `this.locked('launch', () => this.locked(id, async () => { const vm = this.get(id); if (vm.haPromotion) throw new AppError('来源…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async startInternal(id: string, rescueOf?: string, incoming = false,
     haActivation?: { sourceHostId: string; transferId: string;
       sourceVmId: string; snapshotId: string; sha256: string }) {
+    /**
+     * 入口 / Entry: Machines.startInternal.callback@854.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `this.live.set`; `this.logs.set`; `this.save`; `this.live.delete`; `lifetime.close`; 更新 / updates `firmware`, `live.lifetime`, `vm.lastUsedAt`, `vm.lastError`.
+     * 拒绝 / Refusals: 条件 / conditions `vm.haPromotion`; `vm.haRetirement`; `vm.migrationOrigin?.snapshotId`; 异常 / errors `new AppError('来源实例已为故障接管设置栅栏；请先确认目标已停止并解除栅栏', 409, 'HA_SOURCE_FENCED')`; `new AppError('故障副本已退出接管并被持久封锁，不能重新启动', 409, 'HA_REPLICA_RETIRED')`.
+     * 失败处理：catch 分支执行 `this.live.delete(id);`; `await lifetime.close();`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `this.live.delete(id);`; `await lifetime.close();`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked('launch', () =>
-      this.locked(id, async () => {
+      this.locked(id,
+      /**
+       * 中文功能：在原实例锁内校验启动准入、可信启动、磁盘和网络，建立 QEMU 及运行资源并等待启动观察结果。
+       * English: Checks start admission, trusted boot, disk and networking under the original VM lock, establishes QEMU/run resources and awaits startup observations.
+       * 所属 / Owner: Machines.startInternal.
+       * 输入 / Inputs: 无显式参数 / no explicit parameters.
+       */
+      async () => {
         const vm = this.get(id);
         if (vm.haPromotion)
           throw new AppError('来源实例已为故障接管设置栅栏；请先确认目标已停止并解除栅栏',
@@ -970,6 +2039,18 @@ export class Machines extends EventEmitter {
             vmId: id, generation: randomUUID(), isolated: vm.sandbox?.network === 'isolated',
             ipv6: vm.hardware?.ipv6, sshPort, forwards: vm.forwards,
             managementPorts: { qmp: qmpPort, serial: serialPort, agent: agentPort },
+            /**
+             * 入口 / Entry: Machines.startInternal.onFailure.
+             * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`Machines`）。
+             * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `void` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+             * 处理：通过 `this.live.get`, `this.log`, `live.bootAbort.abort`, `live.abort.abort` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `this.live.get`, `this.log`, `live.bootAbort.abort`, `live.abort.abort`; the branches below determine continuation, return or refusal.
+             * 分支 / Branches: `this.live.get(id)?.abort !== live.abort || live.abort.signal.aborted`.
+             * 输入 / Inputs: error
+             * 输出 / Returns: `void`.
+             * 副作用 / Effects: `live.bootAbort.abort`; `live.abort.abort`; `this.emit`; 更新 / updates `live.error`, `this.live.get(id)!.error`, `vm.lastError`.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             onFailure: (error) => {
               if (this.live.get(id)?.abort !== live.abort || live.abort.signal.aborted) return;
               live.error = `统一网络工作进程退出：${error.message}`;
@@ -983,6 +2064,15 @@ export class Machines extends EventEmitter {
           if (vm.diskEncryption)
             diskSecret = await lifetime.own('disk-secret', await openDiskSecret(this, id, vm.diskEncryption.secretName), 10);
           for (const [name, provider] of providers) {
+            /**
+             * 入口 / Entry: Machines.startInternal.callback@986.
+             * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（provider.prepare）。
+             * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (provider.prepare).
+             * 输入 / Inputs: error
+             * 输出 / Returns: `void`.
+             * 副作用 / Effects: `this.emit`; `live.abort.abort`; 更新 / updates `live.error`, `this.live.get(id)!.error`, `vm.lastError`.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             const attachment = await provider.prepare(vm, (error) => {
               if (this.live.get(id)?.abort !== live.abort || live.abort.signal.aborted ||
                   this.live.get(id)?.status === 'stopping') return;
@@ -1008,6 +2098,15 @@ export class Machines extends EventEmitter {
           catch (cleanup) { throw new AppError(`实例启动资源清理尚未确认：${String(cleanup)}`, 503, 'VM_CLEANUP_PENDING'); }
           throw error;
         }
+        /**
+         * 入口 / Entry: Machines.startInternal.escape.
+         * 功能：把本层请求转交 `s.replaceAll`，沿用该实现的结果与失败路径。
+         * Purpose: Delegates this request to `s.replaceAll` and propagates the provider result or rejection.
+         * 输入 / Inputs: s: string
+         * 输出 / Returns: `s.replaceAll(',', ',,')`.
+         * 副作用 / Effects: `s.replaceAll`.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         const escape = (s: string) => s.replaceAll(',', ',,');
         const args = [
           '-name',
@@ -1078,12 +2177,39 @@ export class Machines extends EventEmitter {
           ...(incoming ? ['-incoming', 'defer'] : []),
         ];
         let nativeExited = false;
+        /**
+         * 入口 / Entry: Machines.startInternal.callback@1100.
+         * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（withResourceContext().then().finally）。
+         * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (withResourceContext().then().finally).
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: `live.abort.abort`; `live.bootAbort.abort`; `lifetime.close().catch`; `lifetime.close`; `live.serial.destroy`; 更新 / updates `run.stoppedAt`, `vm.liveMigrationFence`, `vm.lastUsedAt`.
+         * 拒绝 / Refusals: 条件 / conditions `cleanupFailure`; 异常 / errors `new AppError('实例资源清理尚未确认', 503, 'VM_CLEANUP_PENDING')`.
+         */
+        /**
+         * 入口 / Entry: Machines.startInternal.callback@1091.
+         * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（withResourceContext().then）。
+         * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (withResourceContext().then).
+         * 输入 / Inputs: error
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: 更新 / updates `live.error`, `this.live.get(id)!.error`, `vm.lastError`, `nativeExited`.
+         * 拒绝 / Refusals: 条件 / conditions `error instanceof AppError && error.status === 503`; 异常 / errors `error`.
+         */
         live.done = withResourceContext({ ...lifetime.capture(), owner: `vm:${id}` }, () => this.engine
           .run(vm.architecture === 'aarch64' ? 'sakura-qemu-aarch64' : 'sakura-qemu', args, {
             owner: `vm:${id}`,
             processKind: 'vm',
             signal: live.abort.signal,
             timeoutMs: 2147483647,
+            /**
+             * 入口 / Entry: Machines.startInternal.output.
+             * 功能：把本层请求转交 `this.log`，沿用该实现的结果与失败路径。
+             * Purpose: Delegates this request to `this.log` and propagates the provider result or rejection.
+             * 输入 / Inputs: b
+             * 输出 / Returns: `this.log(id, b)`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             output: (b) => this.log(id, b),
           }))
           .then(
@@ -1150,6 +2276,17 @@ export class Machines extends EventEmitter {
       }),
     );
   }
+  /**
+   * 入口 / Entry: Machines.connectSerial.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `live.serial`（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the outcome is recorded in `live.serial`. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `createConnection`, `socket.on` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `createConnection`, `socket.on`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; live: Live
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `createConnection`; 更新 / updates `live.serial`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private connectSerial(id: string, live: Live) {
     const socket = createConnection({ host: '127.0.0.1', port: live.serialPort });
     socket.on('error', () => {});
@@ -1158,6 +2295,19 @@ export class Machines extends EventEmitter {
     socket.on('data', (data) => this.log(id, data));
     live.serial = socket;
   }
+  /**
+   * 入口 / Entry: Machines.watchBoot.
+   * 功能：观察串口与客户机连通性，运行固定初始化并确认当前 VM 已启动。
+   * Purpose: Observes serial/guest connectivity, performs fixed initialization and confirms VM boot readiness.
+   * 设计：有期限重试保留原 Live 引用；状态或取消改变时退出，实际 boot 读取推进执行身份而不凭 SSH 名称推断。
+   * Design: Deadline retries retain the original Live reference; transitions/cancellation stop observation and actual boot reads establish execution identity.
+   * 输入 / Inputs: id: string; live: Live
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.connectSerial`; `this.exec`; `writeIdentityFile`; `rm`; `this.save`; 更新 / updates `vm.liveMigrationOrigin`, `live.error`, `live.status`, `this.get(id).bootstrapped`.
+   * 拒绝 / Refusals: 条件 / conditions `result.code !== 0`; `existsSync(identityFile)`; `prepared.code !== 0`; 异常 / errors `new Error('Linux initialization is not finished')`; `new Error(prepared.stderr)`.
+   * 失败处理：catch 分支执行 `if (signal.aborted) return;`; `await delay(Math.min(250, Math.max(0, deadline - performance.now())), undefined, { signal });`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if (signal.aborted) return;`; `await delay(Math.min(250, Math.max(0, deadline - performance.now())), undefined, { signal });`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async watchBoot(id: string, live: Live) {
     const deadline = performance.now() + BOOT_TIMEOUT_MS;
     const { signal } = live.bootAbort;
@@ -1251,25 +2401,96 @@ export class Machines extends EventEmitter {
       this.emit('change');
     }
   }
+  /**
+   * 入口 / Entry: Machines.transport.
+   * 功能：向调用者提供 `new MachineTransport(this)` 的当前视图，不复制独立的业务状态。
+   * Purpose: Exposes the current `new MachineTransport(this)` view rather than creating separate domain state.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `new MachineTransport(this)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   private get transport() { return new MachineTransport(this); }
+  /**
+   * 入口 / Entry: Machines.connect.
+   * 功能：把本层请求转交 `this.transport.connect`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transport.connect` and propagates the provider result or rejection.
+   * 输入 / Inputs: args: Parameters<MachineTransport['connect']>
+   * 输出 / Returns: `this.transport.connect(...args)`.
+   * 副作用 / Effects: `this.transport.connect`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   connect(...args: Parameters<MachineTransport['connect']>) {
     return this.transport.connect(...args);
   }
+  /**
+   * 入口 / Entry: Machines.exec.
+   * 功能：从当前输入或状态计算 `this.transport.exec(...args)`，供调用方后续验证或使用。
+   * Purpose: Computes `this.transport.exec(...args)` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: args: Parameters<MachineTransport['exec']>
+   * 输出 / Returns: `this.transport.exec(...args)`.
+   * 副作用 / Effects: `this.transport.exec`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   exec(...args: Parameters<MachineTransport['exec']>) {
     return this.transport.exec(...args);
   }
+  /**
+   * 入口 / Entry: Machines.execInput.
+   * 功能：把本层请求转交 `this.transport.execInput`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transport.execInput` and propagates the provider result or rejection.
+   * 输入 / Inputs: args: Parameters<MachineTransport['execInput']>
+   * 输出 / Returns: `this.transport.execInput(...args)`.
+   * 副作用 / Effects: `this.transport.execInput`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   execInput(...args: Parameters<MachineTransport['execInput']>) {
     return this.transport.execInput(...args);
   }
+  /**
+   * 入口 / Entry: Machines.openGuestTcpStream.
+   * 功能：把本层请求转交 `this.transport.openGuestTcpStream`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transport.openGuestTcpStream` and propagates the provider result or rejection.
+   * 输入 / Inputs: args: Parameters<MachineTransport['openGuestTcpStream']>
+   * 输出 / Returns: `this.transport.openGuestTcpStream(...args)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   openGuestTcpStream(...args: Parameters<MachineTransport['openGuestTcpStream']>) {
     return this.transport.openGuestTcpStream(...args);
   }
+  /**
+   * 入口 / Entry: Machines.connectOnce.
+   * 功能：把本层请求转交 `this.transport.connectOnce`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transport.connectOnce` and propagates the provider result or rejection.
+   * 输入 / Inputs: args: Parameters<MachineTransport['connectOnce']>
+   * 输出 / Returns: `this.transport.connectOnce(...args)`.
+   * 副作用 / Effects: `this.transport.connectOnce`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private connectOnce(...args: Parameters<MachineTransport['connectOnce']>) {
     return this.transport.connectOnce(...args);
   }
+  /**
+   * 入口 / Entry: Machines.sftp.
+   * 功能：把本层请求转交 `this.transport.sftp`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transport.sftp` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; work: (sftp: SFTPWrapper, transportSignal?: AbortSignal) => Promise<T>; signal: AbortSignal optional
+   * 输出 / Returns: `this.transport.sftp(id, work, signal)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   sftp<T>(id: string, work: (sftp: SFTPWrapper, transportSignal?: AbortSignal) => Promise<T>, signal?: AbortSignal) {
     return this.transport.sftp(id, work, signal);
   }
+  /**
+   * 入口 / Entry: Machines.files.
+   * 功能：把本层请求转交 `this.sftp`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.sftp` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; path: string
+   * 输出 / Returns: `this.sftp( id, (ftp) => new Promise((res, rej) => ftp.readdir(guestPath(path), (err, entries) => err ? rej(err) : res( entrie…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async files(id: string, path: string) {
     return this.sftp(
       id,
@@ -1295,8 +2516,35 @@ export class Machines extends EventEmitter {
         ),
     );
   }
+  /**
+   * 入口 / Entry: Machines.readGuestFile.
+   * 功能：把本层请求转交 `this.sftp`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.sftp` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; path: string
+   * 输出 / Returns: `this.sftp(id, async (ftp) => { const bytes = await new Promise<Buffer>((resolve, reject) => { const chunks: Buffer[] = []; le…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async readGuestFile(id: string, path: string) {
+    /**
+     * 入口 / Entry: Machines.readGuestFile.callback@1299.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.sftp）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.sftp).
+     * 输入 / Inputs: ftp
+     * 输出 / Returns: `bytes.toString('utf8')`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `!isUtf8(bytes)`; 异常 / errors `new AppError('文件不是有效的 UTF-8 文本，请下载原文件处理')`.
+     */
     return this.sftp(id, async (ftp) => {
+      /**
+       * 入口 / Entry: Machines.readGuestFile.callback@1300.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.sftp）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.sftp).
+       * 输入 / Inputs: resolve; reject
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: `ftp.createReadStream`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       const bytes = await new Promise<Buffer>((resolve, reject) => {
         const chunks: Buffer[] = [];
         let size = 0;
@@ -1321,6 +2569,17 @@ export class Machines extends EventEmitter {
       return bytes.toString('utf8');
     });
   }
+  /**
+   * 入口 / Entry: Machines.writeGuestFile.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，校验并提交领域状态变更；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Validates and commits a domain state change in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.locked` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.locked`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; path: string; content: string; overwrite: default=true; expectedVersion: string optional
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `bytes.length > MAX_TEXT_BYTES`; 异常 / errors `new AppError('仅支持保存 1 MiB 以内的文本文件', 413)`.
+   */
   async writeGuestFile(
     id: string,
     path: string,
@@ -1335,9 +2594,30 @@ export class Machines extends EventEmitter {
       return files.upload(id, path, Readable.from(bytes), overwrite, undefined, expectedVersion);
     });
   }
+  /**
+   * 入口 / Entry: Machines.stop.
+   * 功能：把本层请求转交 `this.transition`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transition` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; force: default=false
+   * 输出 / Returns: `this.transition(id, async () => this.stopInternal(id, force), true, force)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async stop(id: string, force = false) {
     return this.transition(id, async () => this.stopInternal(id, force), true, force);
   }
+  /**
+   * 入口 / Entry: Machines.bootGuard.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `bootGuardStatus(id)` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `bootGuardStatus(id)` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.get`, `this.locked`, `bootGuardStatus` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.get`, `this.locked`, `bootGuardStatus`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `reset`.
+   * 输入 / Inputs: id: string; reset: default=false
+   * 输出 / Returns: `bootGuardStatus(id)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async bootGuard(id: string, reset = false) {
     this.get(id);
     if (reset)
@@ -1347,7 +2627,25 @@ export class Machines extends EventEmitter {
       });
     return bootGuardStatus(id);
   }
+  /**
+   * 入口 / Entry: Machines.suspend.
+   * 功能：把本层请求转交 `this.transition`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transition` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.transition(id, async () => { this.requireMigrationRunAllowed(id); const live = this.live.get(id); if (!live || live.stat…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async suspend(id: string) {
+    /**
+     * 入口 / Entry: Machines.suspend.callback@1351.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.transition）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.transition).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `this.emit`; 更新 / updates `live.status`.
+     * 拒绝 / Refusals: 条件 / conditions `!live || live.status !== 'running'`; 异常 / errors `new AppError('只有运行中的发行版可以暂停', 409)`.
+     */
     return this.transition(id, async () => {
       this.requireMigrationRunAllowed(id);
       const live = this.live.get(id);
@@ -1358,7 +2656,25 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
+  /**
+   * 入口 / Entry: Machines.resume.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.locked(id, async () => { this.requireMigrationRunAllowed(id); this.requireSandboxLifetime(this.get(id)); const live = th…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async resume(id: string) {
+    /**
+     * 入口 / Entry: Machines.resume.callback@1362.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `this.emit`; 更新 / updates `live.status`.
+     * 拒绝 / Refusals: 条件 / conditions `!live || live.status !== 'paused'`; `live.incoming`; 异常 / errors `new AppError('只有已暂停的发行版可以恢复', 409)`; `new AppError('迁移接收中的目标实例不能手动恢复', 409)`.
+     */
     return this.locked(id, async () => {
       this.requireMigrationRunAllowed(id);
       this.requireSandboxLifetime(this.get(id));
@@ -1371,6 +2687,18 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
+  /**
+   * 入口 / Entry: Machines.stopInternal.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，结束、撤销或清理本次拥有的领域资源；本入口产生 `this.view(id)` 供上层消费（`Machines`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `Machines`; this entry produces `this.view(id)` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.get`, `this.live.get`, `this.view`, `this.emit` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.get`, `this.live.get`, `this.view`, `this.emit`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!live`; `live.incoming || vm.liveMigrationFence`; `!force && live.status === 'paused'`.
+   * 输入 / Inputs: id: string; force: boolean
+   * 输出 / Returns: `this.view(id)`.
+   * 副作用 / Effects: `this.emit`; `live.bootAbort.abort`; `this.exec().catch`; `this.exec`; `live.abort.abort`; 更新 / updates `force`, `live.status`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async stopInternal(id: string, force: boolean) {
     const vm = this.get(id);
     const live = this.live.get(id);
@@ -1396,6 +2724,17 @@ export class Machines extends EventEmitter {
     await live.done;
     return this.view(id);
   }
+  /**
+   * 入口 / Entry: Machines.requireMigrationRunAllowed.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Checks admission, input or resource ownership in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `vm.liveMigrationFence`; `vm.liveMigrationOrigin?.status === 'prepared'`; 异常 / errors `new AppError('来源实例已为在线迁移设置栅栏，不能改变客户机运行状态', 409, 'LIVE_MIGRATION_SOURCE_FENCED')`; `new AppError('迁移接收中的目标实例仍在等待客户机状态，不能改变客户机运行状态', 409)`.
+   */
   private requireMigrationRunAllowed(id: string) {
     const vm = this.get(id);
     if (vm.liveMigrationFence)
@@ -1404,8 +2743,28 @@ export class Machines extends EventEmitter {
     if (vm.liveMigrationOrigin?.status === 'prepared')
       throw new AppError('迁移接收中的目标实例仍在等待客户机状态，不能改变客户机运行状态', 409);
   }
+  /**
+   * 入口 / Entry: Machines.update.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; input: unknown | ((current: VMRecord) => unknown); guard: (current: VMRecord) => void optional
+   * 输出 / Returns: `this.locked(id, async () => { const vm = this.get(id); this.requireMutableConfig(vm); this.requireStopped(id); guard?.(vm); c…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async update(id: string, input: unknown | ((current: VMRecord) => unknown),
     guard?: (current: VMRecord) => void) {
+    /**
+     * 入口 / Entry: Machines.update.callback@1409.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `createSchema.parse`; `this.save`; `this.emit`; 更新 / updates `config.architecture`, `config.firmware`.
+     * 拒绝 / Refusals: 条件 / conditions `config.name !== vm.name`; `config.diskGiB !== vm.diskGiB`; `config.storagePoolId !== undefined && config.storagePoolId !== (vm.storagePoolId || 'default')`; 异常 / errors `new AppError('实例名称创建后不可修改')`; `new AppError('磁盘大小创建后不可修改')`.
+     * 失败处理：catch 分支执行 `for (const key of Object.keys(config) as Array<keyof typeof config>) if (!Object.hasOwn(before, key)) delete (vm as any)[key]…`; `Object.assign(vm, before);`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `for (const key of Object.keys(config) as Array<keyof typeof config>) if (!Object.hasOwn(before, key)) delete (vm as any)[key]…`; `Object.assign(vm, before);`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked(id, async () => {
       const vm = this.get(id);
       this.requireMutableConfig(vm);
@@ -1446,6 +2805,17 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
+  /**
+   * 入口 / Entry: Machines.configureHardware.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，校验并提交领域状态变更；本入口产生 `this.update(id, (vm: VMRecord) => ({ name: vm.name, memoryMiB: vm.memoryMiB, cpus: vm.cpus, diskGiB: vm.diskGiB, accelerator:…` 供上层消费（`Machines`）。
+   * Purpose: Validates and commits a domain state change in `Machines`; this entry produces `this.update(id, (vm: VMRecord) => ({ name: vm.name, memoryMiB: vm.memoryMiB, cpus: vm.cpus, diskGiB: vm.diskGiB, accelerator:…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `hardwareSchema.parse`, `this.update` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `hardwareSchema.parse`, `this.update`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; input: unknown; expected: { hardware: unknown; memoryMiB: number; architecture?: string } optional
+   * 输出 / Returns: `this.update(id, (vm: VMRecord) => ({ name: vm.name, memoryMiB: vm.memoryMiB, cpus: vm.cpus, diskGiB: vm.diskGiB, accelerator:…`.
+   * 副作用 / Effects: `this.update`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async configureHardware(id: string, input: unknown,
     expected?: { hardware: unknown; memoryMiB: number; architecture?: string }) {
     const hardware = hardwareSchema.parse(input);
@@ -1459,9 +2829,38 @@ export class Machines extends EventEmitter {
         throw new AppError('实例配置已变化，请重新预览 GPU 档案', 409);
     });
   }
+  /**
+   * 入口 / Entry: Machines.hotplug.
+   * 功能：读取可用 CPU/内存插槽并按目标在线添加资源，核对 QEMU 和客户机上线结果。
+   * Purpose: Reads CPU/RAM slots and adds requested resources online, checking both QEMU state and guest activation.
+   * 设计：目标必须符合预留、发行版和宿主资源限制；每次实际添加后保存状态，部分成功不伪装成完整客户机上线。
+   * Design: Targets obey reservations/distribution/host limits; successful additions persist state and partial success does not imply full guest activation.
+   * 输入 / Inputs: id: string; kind: 'cpu' | 'memory'; target: number optional; signal: AbortSignal optional
+   * 输出 / Returns: `this.locked('launch', () => this.locked(id, async () => { const vm = this.get(id), live = this.live.get(id); this.requireMuta…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async hotplug(id: string, kind: 'cpu' | 'memory', target?: number, signal?: AbortSignal) {
+    /**
+     * 入口 / Entry: Machines.hotplug.callback@1464.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `{ kind, current, maximum, slots, canAdd: live.accelerator !== 'whpx' && guestPossible > current, accelerator: live.accelerato…`; `{ kind, code: guest.code, ready: guest.code === 0, current: vm.cpus, maximum, guestOnline: Number(guest.stdout.trim()) || nul…`; `{ kind, current, maximum, devices, canAdd: live.accelerator !== 'whpx', accelerator: live.accelerator, }`；另有分支返回 / additional branch-specific returns.
+     * 副作用 / Effects: `this.exec`; `additions.push`; `this.save`; `this.emit`; 更新 / updates `current`, `vm.cpus`, `vm.memoryMiB`.
+     * 拒绝 / Refusals: 条件 / conditions `!live || live.status !== 'running'`; `target !== undefined && live.accelerator === 'whpx'`; `kind === 'cpu'`; 异常 / errors `new AppError('请先启动发行版', 409)`; `new AppError( '当前 Windows QEMU 的 WHPX 热插拔不可靠，请停止后切换到 TCG 兼容模式或离线调整资源', 409, 'HOTPLUG_ACCELERATOR_UNSUPPORTED', )`.
+     * 失败处理：catch 分支执行 `await qmp(live.qmpPort, 'object-del', { id: objectId }).catch(() => {});`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `await qmp(live.qmpPort, 'object-del', { id: objectId }).catch(() => {});`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked('launch', () =>
-      this.locked(id, async () => {
+      this.locked(id,
+      /**
+       * 中文功能：核对在线实例和热插拔目标，在可用 CPU/内存插槽中提交 QEMU 更新并观察客户机上线结果。
+       * English: Checks the live VM/hotplug target, applies QEMU updates through available CPU/memory slots and observes guest online results.
+       * 所属 / Owner: Machines.hotplug.
+       * 输入 / Inputs: 无显式参数 / no explicit parameters.
+       */
+      async () => {
         const vm = this.get(id),
           live = this.live.get(id);
         this.requireMutableConfig(vm);
@@ -1643,9 +3042,31 @@ export class Machines extends EventEmitter {
       }),
     );
   }
+  /**
+   * 入口 / Entry: Machines.organize.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.locked(id, async () => { const vm = this.get(id), before = vm.organization; vm.organization = organization; try { await …` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `this.locked(id, async () => { const vm = this.get(id), before = vm.organization; vm.organization = organization; try { await …` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `organizationSchema.parse`, `this.locked` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `organizationSchema.parse`, `this.locked`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; input: unknown
+   * 输出 / Returns: `this.locked(id, async () => { const vm = this.get(id), before = vm.organization; vm.organization = organization; try { await …`.
+   * 副作用 / Effects: 更新 / updates `organization.tags`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async organize(id: string, input: unknown) {
     const organization = organizationSchema.parse(input);
     organization.tags = [...new Set(organization.tags)];
+    /**
+     * 入口 / Entry: Machines.organize.callback@1649.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `this.save`; `this.emit`; 更新 / updates `vm.organization`.
+     * 拒绝 / Refusals: 异常 / errors `error`.
+     * 失败处理：catch 分支执行 `vm.organization = before;`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `vm.organization = before;`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked(id, async () => {
       const vm = this.get(id),
         before = vm.organization;
@@ -1660,8 +3081,28 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
+  /**
+   * 入口 / Entry: Machines.resize.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `this.locked(id, async () => { const vm = this.get(id); this.requireMutableConfig(vm); this.requireStopped(id); if (diskGiB <=…` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `this.locked(id, async () => { const vm = this.get(id); this.requireMutableConfig(vm); this.requireStopped(id); if (diskGiB <=…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.locked` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.locked`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; diskGiB: number; signal: AbortSignal optional
+   * 输出 / Returns: `this.locked(id, async () => { const vm = this.get(id); this.requireMutableConfig(vm); this.requireStopped(id); if (diskGiB <=…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!Number.isInteger(diskGiB) || diskGiB > 128`; 异常 / errors `new AppError('磁盘容量必须是 2–128 GiB 的整数')`.
+   */
   async resize(id: string, diskGiB: number, signal?: AbortSignal) {
     if (!Number.isInteger(diskGiB) || diskGiB > 128) throw new AppError('磁盘容量必须是 2–128 GiB 的整数');
+    /**
+     * 入口 / Entry: Machines.resize.callback@1665.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `this.createSnapshot`; `this.save`; `this.emit`; 更新 / updates `shot.diskGiB`, `vm.diskGiB`, `vm.pendingResize`.
+     * 拒绝 / Refusals: 条件 / conditions `diskGiB <= vm.diskGiB`; `vm.snapshots.length >= 20`; 异常 / errors `new AppError('仅支持扩容，目标容量必须大于当前容量')`; `new AppError('请先删除一个快照，为扩容前备份留出位置')`.
+     */
     return this.locked(id, async () => {
       const vm = this.get(id);
       this.requireMutableConfig(vm);
@@ -1689,7 +3130,25 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
+  /**
+   * 入口 / Entry: Machines.completeResize.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.locked(id, async () => { const vm = this.get(id); vm.pendingResize = false; await this.save(); this.emit('change'); })`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async completeResize(id: string) {
+    /**
+     * 入口 / Entry: Machines.completeResize.callback@1693.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.save`; `this.emit`; 更新 / updates `vm.pendingResize`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     return this.locked(id, async () => {
       const vm = this.get(id);
       vm.pendingResize = false;
@@ -1697,6 +3156,17 @@ export class Machines extends EventEmitter {
       this.emit('change');
     });
   }
+  /**
+   * 入口 / Entry: Machines.requireStopped.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`Machines`）。
+   * Purpose: Checks admission, input or resource ownership in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `this.live.has`, `this.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.live.has`, `this.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `this.live.has(id)`; `this.get(id).liveMigrationFence`; 异常 / errors `new AppError('请先停止发行版，再进行此操作', 409)`; `new AppError('在线迁移来源已设置栅栏，请先完成目标验证与安全回退', 409, 'LIVE_MIGRATION_SOURCE_FENCED')`.
+   */
   requireStopped(id: string) {
     if (this.live.has(id)) throw new AppError('请先停止发行版，再进行此操作', 409);
     if (this.get(id).liveMigrationFence)
@@ -1704,6 +3174,19 @@ export class Machines extends EventEmitter {
         409, 'LIVE_MIGRATION_SOURCE_FENCED');
   }
   /** Holds the source lock until the read-only attachment's QEMU process has exited. */
+  /**
+   * 入口 / Entry: Machines.withRescue.
+   * 功能：在原停止实例锁内创建有界救援附件，把原磁盘以指定模式交付给救援工作。
+   * Purpose: Creates bounded rescue attachments under the stopped source VM lock and exposes its disk in the requested mode.
+   * 设计：原磁盘锁一直保持到救援 QEMU 物理退出；截止、锁定和取消共同触发收尾，不能早于退出交还磁盘。
+   * Design: The source disk lock remains until rescue QEMU physically exits; deadline/lockdown/cancellation cannot release it prematurely.
+   * 输入 / Inputs: sourceId: string; signal: AbortSignal; phase: (text: string) => void; work: (rescueId: string, signal: AbortSignal) => Promise<T>; diagnostic: (text: string) => void default=() => {}; readOnlyDisk: default=join(vmDir(sourceId), 'disk.qcow2'); comparisonDisk: string optional; targetDisk: { file: string; writable: boolean } optional
+   * 输出 / Returns: `await this.locked(sourceId, async () => { const source = this.get(sourceId); this.requireStopped(sourceId); if (source.sandbo…`.
+   * 副作用 / Effects: `AbortSignal.any`; `AbortSignal.timeout`; `this.rescueControllers.add`; `this.rescueControllers.delete`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `this.off('incident-lockdown', lockdown);`; `this.rescueControllers.delete(controller);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.off('incident-lockdown', lockdown);`; `this.rescueControllers.delete(controller);`; these steps also apply to exceptional exits.
+   */
   async withRescue<T>(
     sourceId: string,
     signal: AbortSignal,
@@ -1718,11 +3201,34 @@ export class Machines extends EventEmitter {
     const combined = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(35 * 60_000)]);
     this.rescueControllers.add(controller);
     let rescueId: string | undefined;
+    /**
+     * 入口 / Entry: Machines.withRescue.lockdown.
+     * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+     * 处理：通过 `controller.abort` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `controller.abort`; the branches below determine continuation, return or refusal.
+     * 分支 / Branches: `id === sourceId || id === rescueId`.
+     * 输入 / Inputs: id: string
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `controller.abort`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     const lockdown = (id: string) => {
       if (id === sourceId || id === rescueId) controller.abort();
     };
     this.on('incident-lockdown', lockdown);
     try {
+      /**
+       * 入口 / Entry: Machines.withRescue.callback@1726.
+       * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+       * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `await work(rescueId, combined)`.
+       * 副作用 / Effects: `this.createInternal`; `this.startInternal`; `this.deleteInternal`; 更新 / updates `rescueId`.
+       * 拒绝 / Refusals: 条件 / conditions `source.sandbox`; `source.diskEncryption`; `this.state(rescueId) !== 'starting' || Date.now() >= deadline`; 异常 / errors `new AppError('救援目标必须是普通实例', 409)`; `new AppError('加密实例的只读救援尚不支持密钥挂载', 409)`.
+       * 收尾：退出 try 区域时始终执行 `if (rescueId && this.records.has(rescueId)) { phase('停止并清理临时救援系统'); await this.terminateSandbox(rescueId); // During host clo…`；这些步骤也适用于异常退出。
+       * Finalization: Leaving the try region always executes `if (rescueId && this.records.has(rescueId)) { phase('停止并清理临时救援系统'); await this.terminateSandbox(rescueId); // During host clo…`; these steps also apply to exceptional exits.
+       */
       return await this.locked(sourceId, async () => {
         const source = this.get(sourceId);
         this.requireStopped(sourceId);
@@ -1770,6 +3276,17 @@ export class Machines extends EventEmitter {
           phase('只读连接源磁盘');
           const port = this.live.get(rescueId)!.qmpPort;
           // Attach only after boot: the source may share the rescue image's filesystem UUID.
+          /**
+           * 入口 / Entry: Machines.withRescue.attach.
+           * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+           * 处理：通过 `qmp`, `combined.throwIfAborted`, `nodes.some` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `qmp`, `combined.throwIfAborted`, `nodes.some`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: file: string; role: 'source' | 'compare' | 'target'; writable: default=false
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+           * 拒绝 / Refusals: 条件 / conditions `!Array.isArray(nodes) || !nodes.some((entry) => entry['node-name'] === node && entry.ro === !writable)`; 异常 / errors `new AppError(writable ? '救援磁盘未确认读写，已终止任务' : '救援磁盘未确认只读，已终止任务', 409)`.
+           */
           const attach = async (file: string, role: 'source' | 'compare' | 'target', writable = false) => {
             const node = `sakura-rescue-${role}`;
             await qmp(port, 'blockdev-add', {
@@ -1817,8 +3334,37 @@ export class Machines extends EventEmitter {
       this.rescueControllers.delete(controller);
     }
   }
+  /**
+   * 入口 / Entry: Machines.diskIdentity.
+   * 功能：把本层请求转交 `this.snapshots.identity`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.snapshots.identity` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; snapshotId: string optional
+   * 输出 / Returns: `this.snapshots.identity(id, snapshotId)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async diskIdentity(id: string, snapshotId?: string) { return this.snapshots.identity(id, snapshotId); }
+  /**
+   * 入口 / Entry: Machines.snapshotIdentity.
+   * 功能：把本层请求转交 `this.snapshots.snapshotIdentity`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.snapshots.snapshotIdentity` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; snapshotId: string optional
+   * 输出 / Returns: `this.snapshots.snapshotIdentity(id, snapshotId)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async snapshotIdentity(id: string, snapshotId?: string) { return this.snapshots.snapshotIdentity(id, snapshotId); }
+  /**
+   * 入口 / Entry: Machines.vmStateFingerprint.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(JSON.stringify({ version, accelerator, architecture: vm.architecture || 'x86_64', networkBackend:…` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `createHash('sha256').update(JSON.stringify({ version, accelerator, architecture: vm.architecture || 'x86_64', networkBackend:…` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `qmp`, `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `qmp`, `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: vm: VMRecord; qmpPort: number; accelerator: string
+   * 输出 / Returns: `createHash('sha256').update(JSON.stringify({ version, accelerator, architecture: vm.architecture || 'x86_64', networkBackend:…`.
+   * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async vmStateFingerprint(vm: VMRecord, qmpPort: number, accelerator: string) {
     // The command-line QMP listener serves one client at a time.
     const version = await qmp(qmpPort, 'query-version');
@@ -1834,11 +3380,51 @@ export class Machines extends EventEmitter {
       hardware: vm.hardware || null, cpuSlots, memorySize, memoryDevices,
     })).digest('hex');
   }
+  /**
+   * 入口 / Entry: Machines.createSnapshot.
+   * 功能：把本层请求转交 `this.snapshots.capture`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.snapshots.capture` and propagates the provider result or rejection.
+   * 输入 / Inputs: vm: VMRecord; name: string; onlinePort: number optional; stateFingerprint: string optional
+   * 输出 / Returns: `this.snapshots.capture(vm, name, onlinePort, stateFingerprint)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async createSnapshot(vm: VMRecord, name: string, onlinePort?: number, stateFingerprint?: string) {
     return this.snapshots.capture(vm, name, onlinePort, stateFingerprint);
   }
+  /**
+   * 入口 / Entry: Machines.snapshot.
+   * 功能：把本层请求转交 `this.snapshots.snapshot`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.snapshots.snapshot` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; name: string
+   * 输出 / Returns: `this.snapshots.snapshot(id, name)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async snapshot(id: string, name: string) { return this.snapshots.snapshot(id, name); }
+  /**
+   * 入口 / Entry: Machines.onlineSnapshot.
+   * 功能：把本层请求转交 `this.transition`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transition` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; name: string
+   * 输出 / Returns: `this.transition(id, async () => { const vm = this.get(id); const live = this.live.get(id); if (!live || live.status !== 'runn…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async onlineSnapshot(id: string, name: string) {
+    /**
+     * 入口 / Entry: Machines.onlineSnapshot.callback@1842.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.transition）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.transition).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `result!`.
+     * 副作用 / Effects: `GuestAgent.connect`; `agent.execute`; `agent.close`; `this.createSnapshot`; `this.stopInternal().catch`; 更新 / updates `agent`, `freezeAttempted`, `freezeCount`, `result`.
+     * 拒绝 / Refusals: 条件 / conditions `!live || live.status !== 'running'`; `vm.sandbox?.storage === 'discard-on-stop'`; `vm.snapshots.length >= 20`; 异常 / errors `new AppError('在线快照要求实例正在运行', 409)`; `new AppError('临时写时复制实例不能保存在线快照', 409)`.
+     * 收尾：退出 try 区域时始终执行 `if (freezeAttempted) { try { const thawed = await agent.execute('guest-fsfreeze-thaw', undefined, 30000); if (freezeCount > 0…`; `agent.close();`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `if (freezeAttempted) { try { const thawed = await agent.execute('guest-fsfreeze-thaw', undefined, 30000); if (freezeCount > 0…`; `agent.close();`; these steps also apply to exceptional exits.
+     * 失败处理：catch 分支执行 `agent?.close();`; `throw new AppError(`客户机代理不可用；请在 Linux 内安装并启动 qemu-guest-agent：${String((error as Error).message || error)}`, 409);`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `agent?.close();`; `throw new AppError(`客户机代理不可用；请在 Linux 内安装并启动 qemu-guest-agent：${String((error as Error).message || error)}`, 409);`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.transition(id, async () => {
       const vm = this.get(id);
       const live = this.live.get(id);
@@ -1885,7 +3471,25 @@ export class Machines extends EventEmitter {
       return result!;
     });
   }
+  /**
+   * 入口 / Entry: Machines.memorySnapshot.
+   * 功能：把本层请求转交 `this.transition`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transition` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; name: string
+   * 输出 / Returns: `this.transition(id, async () => { this.requireMigrationRunAllowed(id); const vm = this.get(id); const live = this.live.get(id…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async memorySnapshot(id: string, name: string) {
+    /**
+     * 入口 / Entry: Machines.memorySnapshot.callback@1889.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.transition）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.transition).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.createSnapshot(vm, name, live.qmpPort, fingerprint)`.
+     * 副作用 / Effects: `this.createSnapshot`.
+     * 拒绝 / Refusals: 条件 / conditions `!live || live.status !== 'running'`; `vm.rescueOf`; `live.accelerator !== 'tcg'`; 异常 / errors `new AppError('整机状态快照要求实例正在运行', 409)`; `new AppError('临时救援实例不能保存整机状态', 409)`.
+     */
     return this.transition(id, async () => {
       this.requireMigrationRunAllowed(id);
       const vm = this.get(id);
@@ -1903,7 +3507,29 @@ export class Machines extends EventEmitter {
       return this.createSnapshot(vm, name, live.qmpPort, fingerprint);
     });
   }
+  /**
+   * 入口 / Entry: Machines.restoreMemory.
+   * 功能：把本层请求转交 `this.transition`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.transition` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; snapshotId: string; backup: default=false
+   * 输出 / Returns: `this.transition(id, async () => { this.requireMigrationRunAllowed(id); const vm = this.get(id); const shot = vm.snapshots.fin…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async restoreMemory(id: string, snapshotId: string, backup = false) {
+    /**
+     * 入口 / Entry: Machines.restoreMemory.callback@1907.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.transition）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.transition).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `this.createSnapshot`; `this.emit`; `live.network.setConnected`; `live.network.close`; `lifetime.setNetwork`; 更新 / updates `live.status`, `live.network`, `this.live.get(id)!.status`.
+     * 拒绝 / Refusals: 条件 / conditions `!shot || shot.consistency !== 'vmstate' || !shot.stateFingerprint`; `!live || live.status !== 'running'`; `live.accelerator !== 'tcg'`; 异常 / errors `new AppError('整机状态快照不存在', 404)`; `new AppError('请先启动实例，再恢复整机状态', 409)`.
+     * 收尾：退出 try 区域时始终执行 `this.emit('change');`；这些步骤也适用于异常退出。
+     * Finalization: Leaving the try region always executes `this.emit('change');`; these steps also apply to exceptional exits.
+     * 失败处理：catch 分支执行 `if (this.live.get(id)?.abort === live.abort) await this.stopInternal(id, true).catch(() => {});`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `if (this.live.get(id)?.abort === live.abort) await this.stopInternal(id, true).catch(() => {});`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.transition(id, async () => {
       this.requireMigrationRunAllowed(id);
       const vm = this.get(id);
@@ -1976,7 +3602,28 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
+  /**
+   * 入口 / Entry: Machines.restore.
+   * 功能：把本层请求转交 `this.snapshots.restore`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.snapshots.restore` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; snapshotId: string; backup: default=false
+   * 输出 / Returns: `this.snapshots.restore(id, snapshotId, backup)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async restore(id: string, snapshotId: string, backup = false) { return this.snapshots.restore(id, snapshotId, backup); }
+  /**
+   * 入口 / Entry: Machines.fingerprint.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ recordHash: metadata.digest('hex'), diskSize: disk.size, diskMtimeMs: disk.mtimeMs }` 供上层消费（`Machines`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; this entry produces `{ recordHash: metadata.digest('hex'), diskSize: disk.size, diskMtimeMs: disk.mtimeMs }` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `vmDir`, `stat`, `join`, `disk.isFile` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `vmDir`, `stat`, `join`, `disk.isFile`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.trustedBootStateFingerprint`.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: Promise<MigrationFingerprint>；结果来自 / values from `{ recordHash: metadata.digest('hex'), diskSize: disk.size, diskMtimeMs: disk.mtimeMs }`.
+   * 副作用 / Effects: `createHash().update`; `createHash`; `metadata.update().update().update`; `metadata.update().update`; `metadata.update`.
+   * 拒绝 / Refusals: 条件 / conditions `!disk.isFile()`; 异常 / errors `new AppError('实例磁盘文件无效', 409)`.
+   */
   private async fingerprint(id: string): Promise<MigrationFingerprint> {
     const dir = vmDir(id);
     const disk = await stat(join(dir, 'disk.qcow2'));
@@ -1994,22 +3641,73 @@ export class Machines extends EventEmitter {
     return { recordHash: metadata.digest('hex'),
       diskSize: disk.size, diskMtimeMs: disk.mtimeMs };
   }
+  /**
+   * 入口 / Entry: Machines.migrationFingerprint.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `this.locked(id, async () => { this.requireStopped(id); return this.fingerprint(id); })`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async migrationFingerprint(id: string) {
     return this.locked(id, async () => {
       this.requireStopped(id);
       return this.fingerprint(id);
     });
   }
+  /**
+   * 入口 / Entry: Machines.moveStoragePool.
+   * 功能：把本层请求转交 `this.storagePlacement.moveStoragePool`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.storagePlacement.moveStoragePool` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; targetPoolId: string; signal: AbortSignal optional; log: (text: string) => void default=() => {}
+   * 输出 / Returns: `this.storagePlacement.moveStoragePool(id, targetPoolId, signal, log)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async moveStoragePool(id: string, targetPoolId: string, signal?: AbortSignal, log: (text: string) => void = () => {}) {
     return this.storagePlacement.moveStoragePool(id, targetPoolId, signal, log);
   }
+  /**
+   * 入口 / Entry: Machines.delete.
+   * 功能：把本层请求转交 `this.deleteInternal`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.deleteInternal` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; expected: MigrationFingerprint optional
+   * 输出 / Returns: `this.deleteInternal(id, false, expected)`.
+   * 副作用 / Effects: `this.deleteInternal`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async delete(id: string, expected?: MigrationFingerprint) {
     return this.deleteInternal(id, false, expected);
   }
+  /**
+   * 入口 / Entry: Machines.deleteInternal.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; allowIncident: default=false; expected: MigrationFingerprint optional
+   * 输出 / Returns: `this.locked('storage-pools', () => this.locked( id, async () => { this.get(id); this.requireStopped(id); if (this.storagePool…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async deleteInternal(id: string, allowIncident = false,
     expected?: MigrationFingerprint) {
+    /**
+     * 入口 / Entry: Machines.deleteInternal.callback@2013.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.records.delete`; `this.logs.delete`; `this.save`; `this.migrationRuns.delete`; `this.migrationCompletions.delete`.
+     * 拒绝 / Refusals: 条件 / conditions `this.storagePools.hasPendingCleanup(id)`; `expected`; `current.recordHash !== expected.recordHash || current.diskSize !== expected.diskSize || current.diskMtimeMs !== expected.disk…`; 异常 / errors `new AppError('请先清理存储池迁移的旧副本，再删除实例', 409)`; `new AppError('源实例在迁移后已变化，保留源实例，请重新预览', 409)`.
+     */
     return this.locked('storage-pools', () => this.locked(
       id,
+      /**
+       * 中文功能：要求停止、无旧池清理且迁移指纹未变；见证仍登记时拒绝，删除目录并保存移除后清理运行映射。
+       * English: Requires stopped state, no old-pool cleanup and unchanged migration fingerprint; refuses enrolled witnesses, deletes storage/persists removal and clears run mappings.
+       * 所属 / Owner: Machines.deleteInternal.
+       * 输入 / Inputs: 无显式参数 / no explicit parameters.
+       */
       async () => {
         this.get(id);
         this.requireStopped(id);
@@ -2037,17 +3735,61 @@ export class Machines extends EventEmitter {
       allowIncident,
     ));
   }
+  /**
+   * 入口 / Entry: Machines.editSnapshot.
+   * 功能：把本层请求转交 `this.snapshots.editSnapshot`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.snapshots.editSnapshot` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; snapshotId: string; patch: { name: string; note: string } | null
+   * 输出 / Returns: `this.snapshots.editSnapshot(id, snapshotId, patch)`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async editSnapshot(id: string, snapshotId: string, patch: { name: string; note: string } | null) {
     return this.snapshots.editSnapshot(id, snapshotId, patch);
   }
+  /**
+   * 入口 / Entry: Machines.setForwards.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; input: unknown; expected: VMConfig['forwards'] optional
+   * 输出 / Returns: `this.locked('launch', () => this.locked(id, async () => { const vm = this.get(id); this.requireMutableConfig(vm); if (expecte…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async setForwards(id: string, input: unknown, expected?: VMConfig['forwards']) {
+    /**
+     * 入口 / Entry: Machines.setForwards.callback@2045.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `createSchema.parse`; `taken.push`; `applied.push`; `this.save`; `this.emit`; 更新 / updates `rollback`, `vm.forwards`.
+     * 拒绝 / Refusals: 条件 / conditions `expected && JSON.stringify(vm.forwards) !== JSON.stringify(expected)`; `otherId !== id && this.live.has(otherId) && other.forwards.some((p) => parsed.some((n) => n.host === p.host))`; `live && live.status !== 'running'`; 异常 / errors `new AppError('端口映射已变化，请重新预览', 409)`; `new AppError('主机端口已被其他运行中的实例使用', 409)`.
+     * 失败处理：catch 分支执行 `await rollback();`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `await rollback();`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+     */
     return this.locked('launch', () =>
-      this.locked(id, async () => {
+      this.locked(id,
+      /**
+       * 中文功能：校验预期端口与全局冲突，在线逐项增删统一网络映射，保存新配置；请求或保存失败回滚已应用变更。
+       * English: Checks expected forwards/global conflicts, changes live unified-network forwards incrementally and saves configuration, rolling back applied changes on request/save failure.
+       * 所属 / Owner: Machines.setForwards.
+       * 输入 / Inputs: 无显式参数 / no explicit parameters.
+       */
+      async () => {
         const vm = this.get(id);
         this.requireMutableConfig(vm);
         if (expected && JSON.stringify(vm.forwards) !== JSON.stringify(expected))
           throw new AppError('端口映射已变化，请重新预览', 409);
         const previous = vm.forwards;
+        /**
+         * 入口 / Entry: Machines.setForwards.rollback.
+         * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         */
         let rollback = async () => {};
         const parsed = createSchema.parse({ name: vm.name, forwards: input }).forwards;
         this.requireUnreservedPorts(parsed);
@@ -2070,10 +3812,32 @@ export class Machines extends EventEmitter {
           );
           const applied: typeof parsed = [],
             taken: typeof parsed = [];
+          /**
+           * 入口 / Entry: Machines.setForwards.command.
+           * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+           * 处理：通过 `live.network.forward` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `live.network.forward`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: verb: 'add' | 'remove'; p: (typeof parsed)[number]
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+           * 拒绝 / Refusals: 条件 / conditions `!live.network`; 异常 / errors `new AppError('实例缺少统一网络租约', 503)`.
+           */
           const command = async (verb: 'add' | 'remove', p: (typeof parsed)[number]) => {
             if (!live.network) throw new AppError('实例缺少统一网络租约', 503);
             await live.network.forward(verb, p);
           };
+          /**
+           * 入口 / Entry: Machines.setForwards.rollback.
+           * 功能：在管理虚拟机目录、运行生命周期与领域端口中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Machines`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `Machines`; the calls and state transitions below complete the operation. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+           * 处理：通过 `inline.reverse`, `command().catch`, `command`, `failures.join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `inline.reverse`, `command().catch`, `command`, `failures.join`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+           * 拒绝 / Refusals: 条件 / conditions `failures.length`; 异常 / errors `new AppError('端口修改失败，回滚未完成：' + failures.join('；'), 409)`.
+           */
           rollback = async () => {
             const failures: string[] = [];
             for (const p of [...applied].reverse())
@@ -2108,7 +3872,25 @@ export class Machines extends EventEmitter {
       }),
     );
   }
+  /**
+   * 入口 / Entry: Machines.setMemoryTarget.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; memoryMiB: number
+   * 输出 / Returns: `this.locked(id, async () => { const vm = this.get(id), live = this.live.get(id); if (!live || live.status !== 'running') thro…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async setMemoryTarget(id: string, memoryMiB: number) {
+    /**
+     * 入口 / Entry: Machines.setMemoryTarget.callback@2112.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `this.emit`; 更新 / updates `live.memoryTargetMiB`.
+     * 拒绝 / Refusals: 条件 / conditions `!live || live.status !== 'running'`; `!Number.isInteger(memoryMiB) || memoryMiB < 256 || memoryMiB > vm.memoryMiB`; 异常 / errors `new AppError('请先启动发行版', 409)`; `new AppError(`动态内存目标必须在 256 MiB 到 ${vm.memoryMiB} MiB 之间`)`.
+     */
     return this.locked(id, async () => {
       const vm = this.get(id),
         live = this.live.get(id);
@@ -2122,12 +3904,37 @@ export class Machines extends EventEmitter {
     });
   }
   // Provision a converted cloud image with a new controller identity on its first boot.
+  /**
+   * 入口 / Entry: Machines.importDisk.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: input: unknown; disk: string; options: { signal?: AbortSignal; pendingResize?: boolean; storage?: StorageLease } default={}
+   * 输出 / Returns: `this.locked('storage-pools', () => this.locked('create', async () => { const { signal, pendingResize } = options; const confi…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async importDisk(
     input: unknown,
     disk: string,
     options: { signal?: AbortSignal; pendingResize?: boolean; storage?: StorageLease } = {},
   ) {
-    return this.locked('storage-pools', () => this.locked('create', async () => {
+    /**
+     * 入口 / Entry: Machines.importDisk.callback@2130.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked / create）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked / create).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `withStorageLease({ owner: 'core:disk-adoption', taskId: 'disk-adoption:' + vm.id, label: 'Publish imported disk', mode: 'writ…`.
+     * 副作用 / Effects: `createSchema.parse`.
+     * 拒绝 / Refusals: 条件 / conditions `!config.distro || (config.template && config.template !== 'none')`; `config.memoryMiB < image.minimumMemory || config.diskGiB < image.minimumDisk`; `this.records.size >= 32 || [...this.records.values()].some((vm) => vm.name === config.name)`; 异常 / errors `new AppError('导入镜像需要选择 Linux 发行版，且不能自动安装模板')`; `new AppError( `${image.name} 至少需要 ${image.minimumMemory} MiB 内存、${image.minimumDisk} GiB 磁盘`, )`.
+     */
+    return this.locked('storage-pools', () => this.locked('create',
+    /**
+     * 中文功能：校验导入实例配置和容量，创建新的密钥/seed 并复制磁盘，保存后释放临时预算，失败移除记录与目录。
+     * English: Validates imported VM configuration/capacity, creates new keys/seed and copies the disk, releasing temporary budget after save and removing records/storage on failure.
+     * 所属 / Owner: Machines.importDisk.
+     * 输入 / Inputs: 无显式参数 / no explicit parameters.
+     */
+    async () => {
       const { signal, pendingResize } = options;
       const config = createSchema.parse(input);
       if (config.firmware === 'uefi') await requireUefiSupport(config.architecture);
@@ -2149,6 +3956,17 @@ export class Machines extends EventEmitter {
         pendingResize: !!pendingResize,
       };
       const destination = this.storagePools.directory(vm.id, vm.storagePoolId || 'default');
+      /**
+       * 入口 / Entry: Machines.importDisk.callback@2154.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（withStorageLease）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (withStorageLease).
+       * 输入 / Inputs: lease
+       * 输出 / Returns: `this.view(vm.id)`.
+       * 副作用 / Effects: `createSshKey`; `createReadStream`; `createWriteStream`; `writeFile`; `this.records.set`; 更新 / updates `saved`.
+       * 拒绝 / Refusals: 异常 / errors `cleanup`; `error`.
+       * 失败处理：catch 分支执行 `this.records.delete(vm.id);`; `if (saved) await this.save();`，是否吞掉错误或重新拒绝由这些语句决定。
+       * Failure handling: Catch paths execute `this.records.delete(vm.id);`; `if (saved) await this.save();`; these statements determine whether a failure is absorbed or rejected again.
+       */
       return withStorageLease({ owner: 'core:disk-adoption', taskId: 'disk-adoption:' + vm.id,
         label: 'Publish imported disk', mode: 'write', paths: [disk, destination],
         dynamicTemporary: [destination], buffers: 1024 ** 2, files: 6, signal }, options.storage, async (lease) => {
@@ -2196,6 +4014,15 @@ export class Machines extends EventEmitter {
     }));
   }
   // Publish a validated standalone disk and rotate its controller key at first boot.
+  /**
+   * 入口 / Entry: Machines.adopt.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: input: unknown; disk: string; key: string; seed: Buffer; project: unknown optional; pendingResize: default=false; projects: { active: string; projects: { id: string; name: string }[]; configs: Record<string, u… optional; migrationOrigin: VMRecord['migrationOrigin'] optional; diskEncryption: VMRecord['diskEncryption'] optional; branchOrigin: VMRecord['branchOrigin'] optional; storage: StorageLease optional; signal: AbortSignal optional
+   * 输出 / Returns: `this.locked('storage-pools', () => this.locked('create', async () => { const config = createSchema.parse(input); if (migratio…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async adopt(
     input: unknown,
     disk: string,
@@ -2210,7 +4037,23 @@ export class Machines extends EventEmitter {
     storage?: StorageLease,
     signal?: AbortSignal,
   ) {
-    return this.locked('storage-pools', () => this.locked('create', async () => {
+    /**
+     * 入口 / Entry: Machines.adopt.callback@2213.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked / create）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked / create).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `withStorageLease({ owner: 'core:disk-adoption', taskId: 'disk-adoption:' + vm.id, label: 'Publish imported disk', mode: 'writ…`.
+     * 副作用 / Effects: `createSchema.parse`.
+     * 拒绝 / Refusals: 条件 / conditions `migrationOrigin && [...this.records.values()].some((vm) => vm.migrationOrigin?.sourceHostId === migrationOrigin.sourceHostId …`; `this.records.size >= 32 || [...this.records.values()].some((v) => v.name === config.name)`; 异常 / errors `new AppError('此迁移任务已经导入', 409)`; `new AppError('名称已存在或已达到 32 个实例上限', 409)`.
+     */
+    return this.locked('storage-pools', () => this.locked('create',
+    /**
+     * 中文功能：拒绝重复迁移来源，复制磁盘及可选分支基盘，保存导入的项目/密钥配置并登记已引导实例，失败清理目录。
+     * English: Refuses duplicate migration origins, copies disk/optional branch base, saves imported project/key settings and registers the bootstrapped VM, cleaning storage on failure.
+     * 所属 / Owner: Machines.adopt.
+     * 输入 / Inputs: 无显式参数 / no explicit parameters.
+     */
+    async () => {
       const config = createSchema.parse(input);
       if (migrationOrigin && [...this.records.values()].some((vm) =>
         vm.migrationOrigin?.sourceHostId === migrationOrigin.sourceHostId &&
@@ -2231,6 +4074,17 @@ export class Machines extends EventEmitter {
         ...(branchOrigin ? { branchOrigin } : {}),
       };
       const destination = this.storagePools.directory(vm.id, vm.storagePoolId || 'default');
+      /**
+       * 入口 / Entry: Machines.adopt.callback@2236.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（withStorageLease）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (withStorageLease).
+       * 输入 / Inputs: lease
+       * 输出 / Returns: `this.view(vm.id)`.
+       * 副作用 / Effects: `writeFile`; `createSshKey`; `this.records.set`; `this.save`; `lease.releaseTemporary`.
+       * 拒绝 / Refusals: 异常 / errors `cleanup`; `error`.
+       * 失败处理：catch 分支执行 `this.records.delete(vm.id);`; `try { await this.removeVmDirectory(vm); } catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }`，是否吞掉错误或重新拒绝由这些语句决定。
+       * Failure handling: Catch paths execute `this.records.delete(vm.id);`; `try { await this.removeVmDirectory(vm); } catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }`; these statements determine whether a failure is absorbed or rejected again.
+       */
       return withStorageLease({ owner: 'core:disk-adoption', taskId: 'disk-adoption:' + vm.id,
         label: 'Publish imported disk', mode: 'write', paths: [disk, destination],
         dynamicTemporary: [destination], buffers: 1024 ** 2, files: 6, signal }, storage, async (lease) => {
@@ -2275,7 +4129,25 @@ export class Machines extends EventEmitter {
       });
     }));
   }
+  /**
+   * 入口 / Entry: Machines.recordMerge.
+   * 功能：把本层请求转交 `this.locked`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.locked` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string; origin: NonNullable<VMRecord['mergeOrigin']>
+   * 输出 / Returns: `this.locked(id, async () => { const vm = this.get(id); this.requireStopped(id); vm.mergeOrigin = origin; await this.save(); t…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async recordMerge(id: string, origin: NonNullable<VMRecord['mergeOrigin']>) {
+    /**
+     * 入口 / Entry: Machines.recordMerge.callback@2279.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.locked）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.locked).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `this.view(id)`.
+     * 副作用 / Effects: `this.save`; `this.emit`; 更新 / updates `vm.mergeOrigin`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     return this.locked(id, async () => {
       const vm = this.get(id);
       this.requireStopped(id);
@@ -2285,10 +4157,31 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
+  /**
+   * 入口 / Entry: Machines.close.
+   * 功能：在管理虚拟机目录、运行生命周期与领域端口中，结束、撤销或清理本次拥有的领域资源；本入口产生 `this.closeTask` 供上层消费（`Machines`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `Machines`; this entry produces `this.closeTask` for its caller. Module context: Owns VM catalogues, lifecycles and domain ports, coordinating startup, shutdown, snapshots, migration and cleanup.
+   * 处理：通过 `controller.abort`, `inline` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `controller.abort`, `inline`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closeTask`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `this.closeTask`.
+   * 副作用 / Effects: `controller.abort`; 更新 / updates `this.closing`, `this.closeTask`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     if (this.closeTask) return this.closeTask;
     this.closing = true;
     for (const controller of this.rescueControllers) controller.abort();
+    /**
+     * 入口 / Entry: Machines.close.callback@2292.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: `this.sandboxes.close`; `this.saveQueue.catch`; `this.engine.runtime.close`; `this.migrationRuns.clear`; `this.migrationCompletions.clear`.
+     * 拒绝 / Refusals: 条件 / conditions `failures.length`; 异常 / errors `new AppError('实例关闭清理尚未确认', 503, 'VM_CLEANUP_PENDING')`.
+     */
     this.closeTask = (async () => {
       await this.sandboxes.close();
       await this.incidentWrites.catch(() => {});

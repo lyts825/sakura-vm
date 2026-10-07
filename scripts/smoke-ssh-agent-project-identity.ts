@@ -1,4 +1,5 @@
-/** 烟雾验收：验证固定夹具中的 SSH agent 源身份、项目作用域和 nonce/通信边界。 */
+/** 烟雾验收：验证固定夹具中的 SSH agent 源身份、项目作用域和 nonce/通信边界。
+ * Smoke acceptance for pinned agent source identity, project scope and nonce/transport boundaries. */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, generateKeyPairSync, randomUUID, sign, verify, type KeyObject } from 'node:crypto';
@@ -66,12 +67,22 @@ const caseNames = [
   'reload-reads-closed-resources-without-replay-or-install',
 ];
 const uuidPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
+/** 将输入编码成单个 POSIX shell 字面参数，嵌入单引号用结束/转义/重开方式保留原值；调用方仍负责命令和路径授权。
+ * Encode input as one literal POSIX shell argument, preserving embedded quotes by closing/escaping/reopening; callers still authorize the command/path. */
 const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
 const fixed = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C ';
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const py = (source: string) => '/usr/bin/python3 -I -S -c ' + quote(source);
+/** 为原始字节增加四字节大端长度，构造 SSH agent 协议字符串。
+ * Prefix raw bytes with a four-byte big-endian length for SSH-agent protocol strings. */
 const sshString = (bytes: Buffer) => { const length = Buffer.alloc(4); length.writeUInt32BE(bytes.length); return Buffer.concat([length, bytes]); };
 
+/** 严格比较原注册表和封存 alpha/beta 身份；区分既有复用与先前 Farm 新增，旧映射必须不变，未曾记录的 Home links/size 只能标作本次首次观测。
+ * Strictly compare original registry/sealed alpha-beta identities, distinguish reused versus prior-Farm-added pairs, preserve old maps and label previously unrecorded home links-size as first observations. */
 function assertFarmGuestBaseline(current: any, farm: any, inspected: Record<string, ProjectIdentity>) {
   const original = farm.originalGuestBaseline, pair = farm.projectPair;
   assert.deepEqual(Object.keys(current).sort(), Object.keys(original).sort());
@@ -140,6 +151,8 @@ class FixtureAgent {
   private server = createServer(socket => this.accept(socket));
   readonly audit: { sequence: number; kind: string; challenge?: string; socket: number; at: string }[] = [];
   private accepted = 0;
+  /** 为本夹具生成临时 Ed25519 私钥并编码合法 SSH 公钥 blob/解析对象，不读取用户 agent 或密钥。
+   * Generate an ephemeral Ed25519 fixture key/encode-valid-parse its SSH public blob without reading user agents/keys. */
   constructor() {
     const key = generateKeyPairSync('ed25519'); this.privateKey = key.privateKey; this.publicKey = key.publicKey;
     const raw = key.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32);
@@ -147,10 +160,14 @@ class FixtureAgent {
     const parsed = utils.parseKey('ssh-ed25519 ' + this.blob.toString('base64') + ' Sakura-owned-test');
     assert.ok(!(parsed instanceof Error)); this.parsed = parsed;
   }
+  /** 每连接建立独立 AgentProtocol，限制三十二连接和审计预算；只对本公钥和本轮 challenge 签名，连接 close 撤销协议与标签，确保签名证据来自自有模型。
+   * Create per-connection AgentProtocol under thirty-two-connection/audit budgets, sign only this key/run challenges and revoke protocol-labels on close so signatures come from the owned model. */
   private accept(socket: Socket) {
     assert.ok(this.sockets.size < 32, 'Owned fixture agent connection budget exhausted');
     const number = ++this.accepted, value = { labels: new Set<string>() };
     this.sockets.set(socket, value); const protocol = new AgentProtocol(false); this.protocols.add(protocol);
+    /** 按递增序号记录连接与签名事件、挑战和时间，8192 条预算防止失控夹具无限增长。
+     * Record connection/sign events/challenges/time with increasing sequence under an 8192-event budget. */
     const audit = (kind: string, challenge?: string) => {
       assert.ok(this.audit.length < 8192); this.audit.push({ sequence: this.audit.length + 1, kind, socket: number,
         ...(challenge ? { challenge } : {}), at: new Date().toISOString() });
@@ -167,10 +184,20 @@ class FixtureAgent {
       protocol.signReply(request, sign(null, data, this.privateKey));
     });
   }
+  /** 监听本夹具专用 pipe 并等待成功，server 错误拒绝，不访问主机默认 agent。
+   * Listen on the fixture-specific pipe/await success, rejecting server errors without accessing the default host agent. */
   async start() { await new Promise<void>((resolve, reject) => { this.server.once('error', reject); this.server.listen(this.pipe, resolve); }); }
+  /** 按精确 challenge 查询审计是否存在真实 sign 事件，供结果签名来源核验。
+   * Check audit for an actual sign event with the exact challenge to verify signature provenance. */
   hasSigned(challenge: string) { return this.audit.some(value => value.kind === 'sign' && value.challenge === challenge); }
+  /** 按任务 label 统计仍连接的自有 agent socket，供取消/停域后零流证据。
+   * Count connected owned-agent sockets by task label for zero-stream evidence after cancellation/domain stop. */
   liveFor(label: string) { return [...this.sockets.values()].filter(value => value.labels.has(label)).length; }
+  /** 组合随机前缀、任务标签、后代和阶段形成唯一签名挑战，阻断其他运行的签名复用。
+   * Combine random prefix/task label/descendant/phase into a unique signing challenge to prevent cross-run signature reuse. */
   challenge(label: string, suffix = 'leader', phase = 'initial') { return [this.challengePrefix, label, suffix, phase].join('|'); }
+  /** 通过正式 createAgent 查询唯一公钥并签名挑战，用公开密钥验签且更改挑战必须拒绝，返回模型来源证据。
+   * Use production createAgent to query the sole key/sign a challenge, verify with its public key/reject changed challenges and return model-provenance evidence. */
   async baseline() {
     const agent = createAgent(this.pipe);
     const keys = await new Promise<ParsedKey[]>((resolve, reject) => agent.getIdentities((error, keys) => {
@@ -187,6 +214,8 @@ class FixtureAgent {
       changedChallengeRejected: true, identities: keys.length, signRequests: this.audit.filter(value => value.kind === 'sign').length,
       defaultEsmImport: true };
   }
+  /** 逐个 destroy 自有 socket 并五秒内观察实际 close，再销毁协议和监听器；要求表为空并清空私钥，失败拒绝。
+   * Destroy each owned socket/observe close within five seconds, then destroy protocols/listener, require empty tables and clear the private key, rejecting failures. */
   async close() {
     await Promise.all([...this.sockets.keys()].map(socket => new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Own fixture Agent socket close not observed')), 5000);
@@ -499,6 +528,8 @@ assert not os.path.lexists(path);os.mkdir(path,0o700)
 info=os.lstat(path);assert info.st_uid==0 and info.st_gid==0 and stat.S_IMODE(info.st_mode)==0o700
 print(json.dumps({'path':path,'device':str(info.st_dev),'inode':str(info.st_ino)}))
 `;
+/** 生成 UID 夹具暂存源码，排他/无链接创建脚本并完整写入 fsync，返回实际 UID/程序摘要。
+ * Generate UID fixture staging with exclusive-nofollow script creation/full write/fsync and report actual UID/program hash. */
 const stagePython = (child: string) => `import base64,hashlib,json,os,stat\np=${JSON.stringify(child)}\n` +
   `assert not os.path.lexists(p)\nos.mkdir(p,0o700)\nfd=os.open(p+'/fixture.py',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)\n` +
   `try:\n data=base64.b64decode(${JSON.stringify(Buffer.from(applicationPython).toString('base64'))},validate=True)\n` +
@@ -564,8 +595,11 @@ type Setup = { workspace: string; parent: string; root: string; machineDirectory
   distro: keyof typeof fixtures; record: any; freezeFile: string; freezeBytes: Buffer; freeze: any;
   farm: any; historicalFiles: { file: string; sha256: string }[]; secretDirectory: string;
   hostFiles: { file: string; sha256: string }[]; oldJournals: Map<string, any>; oldArchiveFiles: { file: string; sha256: string }[];
-  exactQemu: () => number; brokerManifest: any; originalSelection: any };
+  exactQemu: /** 返回命令行精确引用本夹具磁盘的 QEMU 数量，用于证明自有实例启动/关闭，不以工具名称匹配替代资源归属。
+ * Return the number of QEMU processes whose argv exactly references this fixture disk, proving owned-VM start/closure without replacing resource ownership with executable-name matching. */ () => number; brokerManifest: any; originalSelection: any };
 
+/** 核验固定 HEAD、Windows 启动环境、精确 Farm 根与新冻结戳、资源摘要及停机证据；只在显式复用模式运行。
+ * Validate pinned HEAD/Windows environment/exact Farm root/new freeze stamp/resource hashes/stopped evidence and run only in explicit reuse mode. */
 async function validate(args: string[]): Promise<Setup> {
   assert.equal(args.length, 4);
   const [distroInput, fixtureInput, stampInput, mode] = args;
@@ -625,6 +659,8 @@ async function validate(args: string[]): Promise<Setup> {
     assert.equal(await realpath(path), path); assert.equal((await lstat(path)).isSymbolicLink(), false);
   }
   assert.ok((await lstat(join(machineDirectory, 'disk.qcow2'))).isFile());
+  /** 按 QEMU 可执行文件名和本夹具根目录/实例参数精确筛选主机进程，返回观测数量；该数量是残留证据，不赋予终止其他进程的权限。
+   * Count host processes matching QEMU executable names and this fixture’s root/VM arguments; the count is residue evidence and grants no authority to terminate other processes. */
   const exactQemu = () => Number(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
     "$ownedRoot='" + root.replaceAll("'", "''") + "';$ownedVm='" + vmId + "';@(" +
     "Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'sakura-qemu.exe' -or $_.Name -like 'qemu-system-*.exe') -and " +
@@ -632,6 +668,8 @@ async function validate(args: string[]): Promise<Setup> {
   { encoding: 'utf8', windowsHide: true }).trim());
   assert.equal(exactQemu(), 0, 'This exact owned fixture is already running.');
   const historicalFiles: Setup['historicalFiles'] = [], hostFiles: Setup['hostFiles'] = [];
+  /** 核验物理普通文件和大小预算，比较可选摘要并去重记录历史哈希，返回解析 JSON。
+   * Validate physical regular files/budget, compare optional pins/deduplicate historical hashes and return parsed JSON. */
   const remember = async (file: string, expected?: string, target = historicalFiles) => {
     assert.equal(await realpath(file), file); const info = await lstat(file);
     assert.ok(info.isFile() && !info.isSymbolicLink() && info.size <= 16 * 1024 * 1024);
@@ -705,6 +743,8 @@ async function validate(args: string[]): Promise<Setup> {
   }
   const journalDirectory = join(machineDirectory, 'project-identities'), oldJournals = new Map<string, any>();
   const oldArchiveFiles: Setup['oldArchiveFiles'] = [];
+  /** 递归保存既有归档文件摘要且拒绝链接/特殊文件，供结束历史不变性检查。
+   * Recursively pin prior archive files/reject links-special files for final history-preservation checks. */
   const archives = async (directory: string) => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       assert.equal(entry.isSymbolicLink(), false); const file = join(directory, entry.name);
@@ -731,6 +771,8 @@ async function validate(args: string[]): Promise<Setup> {
     farm, historicalFiles, secretDirectory, hostFiles, oldJournals, oldArchiveFiles, exactQemu, brokerManifest, originalSelection };
 }
 
+/** 只启动自有主机 agent 验签模型，并静态解析嵌入 Python，验证常量/来源约束；不启动 VM，finally 清理模型。
+ * Start only the owned host-agent signing model/statically parse embedded Python and verify constants/provenance, without booting a VM; close the model in finally. */
 async function checkFixture() {
   assert.deepEqual(process.execArgv, ['--import', 'tsx']); assert.equal(process.env.NODE_OPTIONS || '', '');
   const model = new FixtureAgent();
@@ -748,6 +790,8 @@ async function checkFixture() {
     requiredSources, boundary: 'Host ESM Agent protocol and embedded Python syntax only; no Linux broker or UID claim.' }, null, 2));
 }
 
+/** 复用封存 Farm 账号，通过生产 SSH agent 转发及 UID 任务验证真实签名、保护正文、资源替换和取消整域回收；禁止用户 agent，保存原生/主机实际关闭证据。
+ * Reuse sealed Farm accounts through production agent forwarding/UID jobs to verify signatures/protected bodies/resource replacement/cancellation-domain cleanup, excluding user agents and retaining native-host physical-close evidence. */
 async function runSmoke(setup: Setup) {
   const { workspace, parent, root, machineDirectory, vmId, distro, farm, freeze, freezeFile, freezeBytes, exactQemu } = setup;
   const invocation = randomUUID(), bodyCanary = 'agent-protected-body-' + invocation;
@@ -756,6 +800,8 @@ async function runSmoke(setup: Setup) {
   const logFile = join(parent, 'ssh-agent-project-identity-' + distro + '-' + invocation + '.log');
   const exitFile = join(parent, 'ssh-agent-project-identity-' + distro + '-' + invocation + '-exit.json');
   const scriptFile = join(workspace, 'scripts', 'smoke-ssh-agent-project-identity.ts');
+  /** 将保护正文或秘密标记替换为固定占位后返回文本，供本夹具日志和错误证据使用；原任务输入不被修改。
+   * Replace protected body/secret markers with fixed placeholders for fixture logs/error evidence without mutating actual task input. */
   const mask = (value: unknown) => String(value).replaceAll(bodyCanary, '[owned body]');
   const proof: any = { version: 1, invocation, fixture: root, vmId, distro, passed: false, phase: 'initializing',
     startedAt: new Date().toISOString(), client: { node: process.version, pid: process.pid, execArgv: process.execArgv,
@@ -773,9 +819,16 @@ async function runSmoke(setup: Setup) {
   const log = await open(logFile, 'wx'); await writeFile(proofFile, JSON.stringify(proof, null, 2) + '\n', { flag: 'wx' });
   process.once('exit', code => writeFileSync(exitFile, JSON.stringify({ version: 1, invocation, actualExitCode: code,
     client: proof.client, proofFile, logFile, at: new Date().toISOString() }) + '\n', { flag: 'wx' }));
+  /** 将当前完整验收证据写入专用 proofFile，返回写入 Promise；失败传播，避免只在内存中标记通过。
+   * Write the complete current verification evidence to its dedicated proofFile and return the write promise; failures propagate rather than mark an in-memory-only pass. */
   const persist = () => writeFile(proofFile, JSON.stringify(proof, null, 2) + '\n');
+  /** 先脱敏再将同一条结论写入本轮日志与控制台，等待日志写入完成，保留真实写入错误。
+   * Redact and write the same result to the run log/console, awaiting log completion and retaining actual write failures. */
   const line = async (message: string) => { await log.write(mask(message) + '\n'); console.log(mask(message)); };
-  const check = async (name: string, action: () => Promise<unknown>) => {
+  /** 先保存当前场景阶段，再执行异步断言，成功后记录返回证据并落盘；失败保存脱敏错误与场景信息后重抛。
+   * Persist the active case/phase, then run asynchronous assertions and retain returned evidence on success with persistence; retain redacted failure/case information before rethrowing. */
+  const check = async (name: string, action: /** 执行一个证据用例的异步动作并返回观测，异常由用例包装器记录后传播；动作不自行宣称整轮通过。
+ * Execute one evidence case asynchronously and return observations; the case wrapper records/propagates failures and the action does not claim the whole run passed. */ () => Promise<unknown>) => {
     assert.ok(caseNames.includes(name)); proof.activeCase = { name, startedAt: new Date().toISOString() }; await persist();
     try { const evidence = await action(); proof.cases.push({ ...proof.activeCase, finishedAt: new Date().toISOString(), evidence });
       delete proof.activeCase; await persist(); await line('PASS ' + distro + ' ' + name);
@@ -798,7 +851,8 @@ async function runSmoke(setup: Setup) {
   const packaged = await projectIdentitySources(); proof.packagedIdentityManifest = packaged.manifest;
   await mkdir(hostScope); await persist();
   const runtime = await createRuntime(), nativeRun = runtime.run.bind(runtime);
-  runtime.run = (async (...call: Parameters<typeof nativeRun>) => {
+  runtime.run = (/** 只跟踪本根且明确包含自有 vmId 的 QEMU 执行，记录 argv 摘要及真实结算，其他 runtime 操作原样转发。
+ * Track QEMU only when argv references this root and exact owned vmId, recording argv digest/real settlement while forwarding other runtime operations unchanged. */ async (...call: Parameters<typeof nativeRun>) => {
     if (call[0] !== 'sakura-qemu' || !call[1].some(value => value.includes(root))) return nativeRun(...call);
     assert.ok(call[1].some(value => value.includes(vmId)));
     const receipt: any = { startedAt: new Date().toISOString(), settled: false, argvSha256: hash(JSON.stringify(call[1])) };
@@ -827,10 +881,21 @@ async function runSmoke(setup: Setup) {
   let bootId = '', baseline: any, alpha: Awaited<ReturnType<InstanceType<typeof Workspaces>['config']>>, beta: typeof alpha;
   const alphaId = fixtures[distro].alpha, betaId = fixtures[distro].beta;
   const alphaIdentity: ProjectIdentity = farm.projectPair.alpha.identity, betaIdentity: ProjectIdentity = farm.projectPair.beta.identity;
+  /** 按 alpha/beta 的封存目录派生本轮独占脚本目录，保持账号和正文路径关联。
+   * Derive this run’s exclusive script directory from sealed alpha/beta directories, binding account and body path. */
   const childFor = (id: string) => (id === alphaId ? alphaIdentity : betaIdentity).directory + '/ssh-agent-' + invocation;
+  /** 选择 alpha/beta 的精确封存身份，其他 ID 不创建新账号。
+   * Select the exact sealed alpha/beta identity without creating accounts for other IDs. */
   const identityFor = (id: string) => id === alphaId ? alphaIdentity : betaIdentity;
-  const inScope = <T>(id: string, action: () => Promise<T>) => spaces.projects.inScope(vmId, id, action);
+  /** 在指定项目的正式上下文执行回调并返回结果，使身份、配置与任务归属不依赖全局当前项目。
+   * Execute/return the callback in the specified production project context so identity/configuration/job ownership does not depend on the global active project. */
+  const inScope = <T>(id: string, action: /** 在明确选定的项目上下文内执行异步 action，返回原 T 结果并传播失败，避免活动 UI 选择改变任务身份。
+ * Run asynchronous action in the explicitly selected project context, returning T/propagating failures so active UI selection cannot change task identity. */ () => Promise<T>) => spaces.projects.inScope(vmId, id, action);
+  /** 读取本夹具指定项目的落盘身份日志并解析 JSON，供精确运行票据和关闭阶段核对；缺失或损坏直接失败。
+   * Read/parse the fixture project’s persisted identity journal for exact-run receipts/closure-phase comparison; missing/corrupt records fail directly. */
   const journal = async (id: string) => JSON.parse(await readFile(join(machineDirectory, 'project-identities', id + '.json'), 'utf8'));
+  /** 只在固定 SSH_AGENT 标记命令中尝试有界 base64 JSON，schema 校验 context 和允许 action 后返回，无效候选跳过。
+   * Decode bounded base64 JSON only in fixed SSH_AGENT-marked commands, return only schema-valid context/allowed action and skip malformed candidates. */
   const decode = (command: string) => {
     if (!command.includes('# SAKURA_SSH_AGENT_')) return null;
     for (const token of command.match(/[A-Za-z0-9+/]{60,}={0,2}/g) || []) {
@@ -843,17 +908,23 @@ async function runSmoke(setup: Setup) {
     }
     return null;
   };
+  /** 检查 root 命令不包含保护正文/秘密及其编码形式，只保存命令摘要和正文缺席证据，避免验收记录泄漏正文。
+   * Check root commands exclude protected bodies/secrets and encoded forms, retaining only command hash/body-absence evidence to avoid leaking bodies in verification records. */
   const recordCommand = (command: string, forwarded = false) => {
     const absent = ![bodyCanary, Buffer.from(bodyCanary).toString('base64')].some(value => command.includes(value));
     assert.equal(absent, true, 'A root argv contains the new project body.');
     commandReceipts.push({ sha256: hash(command), bodyAbsent: absent, forwarded });
   };
+  /** 分离最多 128 KiB JSON 输入到原来宾隔离观测器，要求零退出、空 stderr 和两 MiB 以内结果。
+   * Separate at most 128-KiB JSON input to the original isolated guest observer and require zero exit/empty stderr/at-most-two-MiB results. */
   const observe = async (request: object) => {
     const input = Buffer.from(JSON.stringify(request)); assert.ok(input.length <= 131072);
     const result = await nativeInput(vmId, fixed + py(observerPython), input, 60000);
     assert.equal(result.code, 0, mask(result.stdout + result.stderr)); assert.equal(result.stderr, '');
     assert.ok(Buffer.byteLength(result.stdout) <= 2 * 1024 * 1024); return JSON.parse(result.stdout);
   };
+  /** 用明确自有变更源码和单独 JSON 输入置换夹具端点，十秒内要求成功且空 stderr，再解析证据。
+   * Replace fixture endpoints with explicit owned-mutation source/separate JSON input, requiring success/empty stderr within ten seconds before parsing evidence. */
   const mutate = async (request: object, source = replaceEndpointPython) => {
     const result = await nativeInput(vmId, fixed + py(source), Buffer.from(JSON.stringify(request)), 10000);
     assert.equal(result.code, 0, mask(result.stdout + result.stderr)); assert.equal(result.stderr, ''); return JSON.parse(result.stdout);
@@ -861,7 +932,8 @@ async function runSmoke(setup: Setup) {
   const fault = { enabled: false, run: undefined as Running | undefined, attempts: 0, firstConfirmedAt: '' };
   const readyFault = { label: '', used: false };
   let launchingLabel = '';
-  machines.execInput = (async (...call: Parameters<typeof nativeInput>) => {
+  machines.execInput = (/** SSH Agent RUN 验证原 boot/身份/broker 哈希、完整 stdin 摘要和实际 OwnedForwardAgent，按 runId 登记所有权；仅指定来源捕获行可清空造 READY 故障，受保护帧仍原样。
+ * For SSH Agent RUN verify original boot/identity/broker hash, full stdin digest and actual OwnedForwardAgent, registering runId ownership; clear only the selected source-capture line for READY failure while preserving the protected frame. */ async (...call: Parameters<typeof nativeInput>) => {
     const request = decode(call[1]); recordCommand(call[1], Boolean(request?.action === 'run'));
     if (request?.action === 'run') {
       const context = request.context; assert.equal(call[0], vmId); assert.equal(context.owner.bootId, bootId);
@@ -886,7 +958,8 @@ async function runSmoke(setup: Setup) {
     }
     return nativeInput(...call);
   }) as typeof machines.execInput;
-  machines.exec = (async (...call: Parameters<typeof nativeExec>) => {
+  machines.exec = (/** cleanup 禁止携带 host Agent，仅对精确 leaseId/context 注入确认连接失败；注入前独立证明原域与进程已空但原控制票据仍在，保留清理未确认状态。
+ * Cleanup forbids host-Agent attachment and faults only exact leaseId/context confirmations; independently prove original domain/processes empty but original control receipt present before injection, retaining unconfirmed cleanup. */ async (...call: Parameters<typeof nativeExec>) => {
     recordCommand(call[1]); const request = decode(call[1]);
     if (request?.action === 'cleanup') {
       assert.equal(call[5], undefined, 'Cleanup must not carry a host agent.');
@@ -903,6 +976,8 @@ async function runSmoke(setup: Setup) {
   }) as typeof machines.exec;
   let capturedLive: ReturnType<typeof machines.live.get>, heldLease: Awaited<ReturnType<typeof neighborTerminals.prepare>> | undefined;
   const readyPaths = Object.keys(farm.originalGuestBaseline.readyTrees);
+  /** 验证实际账号/Home/目录/boot、NNP/零能力、正文到达、root 写拒绝及控制 FD 不泄漏，确认完整 UID 边界。
+   * Verify actual account/home-cwd-boot/NNP-zero capabilities/body delivery/root-write denial/no control-FD leakage for full UID boundaries. */
   const validateReport = (report: any, identity: ProjectIdentity) => {
     assert.equal(report.uid, identity.uid); assert.equal(report.euid, identity.uid); assert.equal(report.gid, identity.gid);
     assert.deepEqual(report.groups, []); assert.equal(report.home, identity.home); assert.equal(report.cwd, identity.directory);
@@ -910,14 +985,20 @@ async function runSmoke(setup: Setup) {
     assert.equal(report.rootWriteDenied, true); for (const value of Object.values(report.caps)) assert.match(String(value), /^0+$/);
     assert.equal(report.descriptors.some((value: any) => /\/sys\/fs\/cgroup(?:\/|$)|\/(?:run|var\/lib)\/(?:sakura-project-identities|sakura-guest-tasks)(?:\/|$)/.test(value.target)), false);
   };
+  /** 用本夹具公钥验实际 challenge/signature，并要求 host 模型审计有同一 challenge 的 sign，防止伪造结果。
+   * Verify actual challenge/signature with the fixture key and require a matching host-model sign audit to prevent forged results. */
   const validateSignature = (report: any) => {
     assert.equal(report.keySha256 ?? hash(ownAgent.blob), hash(ownAgent.blob));
     assert.equal(verify(null, Buffer.from(report.challenge), ownAgent.publicKey, Buffer.from(report.signature, 'base64')), true);
     assert.equal(ownAgent.hasSigned(report.challenge), true);
   };
+  /** 构造保护正文的 UID Python 命令，传入本轮公钥/挑战前缀与字面参数，秘密不进入 root argv。
+   * Build protected-body UID Python commands with run key/challenge prefix/literal arguments, keeping secrets out of root argv. */
   const command = (id: string, mode: string, label: string, extra: string[] = []) =>
     'AGENT_BODY=' + quote(bodyCanary) + ' /usr/bin/python3 -I -S ' + quote(childFor(id) + '/fixture.py') + ' ' +
     [mode, label, hash(bodyCanary), rootOnly, ownAgent.blob.toString('base64'), ownAgent.challengePrefix, ...extra].map(quote).join(' ');
+  /** 相对旧身份日志识别本轮新增 task/boot 运行并登记 runId，保留既有记录供不变性核查。
+   * Identify/register newly added task/current-boot runIds relative to old journals, preserving prior records for immutability checks. */
   const collectRuns = async (id: string) => {
     const current = await journal(id), old = setup.oldJournals.get(id); assert.ok(old);
     const set = ownedRunIds.get(id) || new Set<string>();
@@ -926,6 +1007,8 @@ async function runSmoke(setup: Setup) {
     }
     ownedRunIds.set(id, set); return current;
   };
+  /** 由生产 terminals.prepare 捕获精确 live/项目后执行身份任务，核验无 agent 的新增运行均关闭；finally 释放入场租约。
+   * Capture exact live/project via production terminals.prepare, run the identity task and require new nonagent runs closed, releasing admission leases in finally. */
   const uidTask = async (id: string, command: string) => {
     const prepared = await terminals.prepare(vmId, id, null, false, undefined, undefined, { mode: 'task' });
     try {
@@ -941,6 +1024,8 @@ async function runSmoke(setup: Setup) {
       return result;
     } finally { prepared.release(); }
   };
+  /** 禁止重复 label 或重叠入场元数据捕获，启动真实 forwarder 并登记取消/结果/settled，原操作失败保留为结构化结果供场景验证。
+   * Reject duplicate labels/overlapping admission capture, start the real forwarder and register cancellation-result-settlement, retaining failures as structured outcomes for assertions. */
   const begin = (id: string, label: string, mode = 'hang', owner = terminals): Running => {
     assert.ok(!running.has(label)); assert.equal(launchingLabel, '', 'Await each RUN metadata capture before starting the next.');
     const controller = new AbortController(), value: Running = { label, projectId: id, controller, settled: false, completion: Promise.resolve({}) };
@@ -950,6 +1035,8 @@ async function runSmoke(setup: Setup) {
       .then(result => ({ result }), error => ({ error })).finally(() => { value.settled = true; if (launchingLabel === label) launchingLabel = ''; });
     return value;
   };
+  /** 等待四类后代报告，将原始身份日志、agent resource、正文哈希和原生运行关联，再核验账号/网络/真实签名与连接标签。
+   * Await all four descendant reports, correlate identity journal/agent resource/body hash/native run and verify account/network/real signatures/connection labels. */
   const active = async (value: Running) => {
     const identity = identityFor(value.projectId), deadline = Date.now() + 60000;
     const suffixes = ['leader', 'newgroup', 'setsid', 'doublefork'];
@@ -983,6 +1070,8 @@ async function runSmoke(setup: Setup) {
     }
     throw new Error('Owned Agent markers deadline exceeded: ' + value.label);
   };
+  /** 验证原域/后代、broker、端点/socket 全消失，原生与主机身份/resource 票据关闭且不变，要求对应 host agent 连接回收。
+   * Verify original domain-descendants/broker/endpoint-sockets gone, native-host identity/resource receipts closed and immutable, and corresponding host-agent connections retired. */
   const stopped = async (value: Running, controlRetained = false) => {
     assert.ok(value.context && value.run && value.reports && value.agent);
     const result = await observe({ operation: 'scope', bootId, run: value.run, reports: value.reports });
@@ -1000,8 +1089,12 @@ async function runSmoke(setup: Setup) {
     return { ...result, run, resource, originalRecordUnchangedExceptPhase: closed.record ?
       JSON.stringify({ ...closed.record, phase: value.record.phase }) === JSON.stringify(value.record) : false };
   };
+  /** 发出取消并等待原完成 Promise，挂起命令不能成功零退出，返回脱敏错误/退出码。
+   * Cancel/await the original completion promise, require the hanging command not succeed with zero exit and return redacted errors/exit code. */
   const cancel = async (value: Running) => { value.controller.abort(); const result = await value.completion;
     assert.ok(result.error || result.result?.code !== 0, 'A hanging command unexpectedly completed successfully'); return { resultCode: result.result?.code, error: result.error ? mask(result.error) : undefined }; };
+  /** 要求捕获 context/run/报告与活跃/关闭记录完整，返回同一精确所有者元组供拒绝/恢复场景。
+   * Require complete context/run/reports/active-and-closed records and return the exact ownership tuple for denial/recovery cases. */
   const exactRecord = (value: Running) => {
     assert.ok(value.context && value.run && value.reports && value.record && value.stoppedRecord);
     return { context: value.context, run: value.run, reports: value.reports,
@@ -1010,7 +1103,8 @@ async function runSmoke(setup: Setup) {
   let first: Running | undefined, second: Running | undefined, broken: Running | undefined, terminalTask: Running | undefined;
   let replacement: any;
   try {
-    await check(caseNames[0], async () => {
+    await check(caseNames[0], /** 启动只属于本轮的 host Agent 和受保护 VM，读取新 boot、安装冻结 identity build 并核对原 Farm 账户/资源基线；不新建磁盘或改已有资产。
+ * Start this run’s owned host Agent/guarded VM, read new boot, install frozen identity build and verify original Farm account/resource baselines without creating disks or changing existing assets. */ async () => {
       await ownAgent.start(); proof.ownedHostAgent = { pipe: ownAgent.pipe, privateKeyPersisted: false, publicKeySha256: hash(ownAgent.blob) };
       const host = await ownAgent.baseline(); await machines.start(vmId);
       const deadline = Date.now() + 180000;
@@ -1109,7 +1203,8 @@ async function runSmoke(setup: Setup) {
       assert.equal(report.observed.alive, true); return { report, firstStreams: first!.agent!.streamCount, secondStreams: second.agent!.streamCount };
     });
     await check(caseNames[9], async () => { assert.ok(second); await cancel(second); return stopped(second); });
-    await check(caseNames[10], async () => {
+    await check(caseNames[10], /** 来源 READY 失败必须在项目首条正文和签名标记之前拒绝，资源记录 closed/SOURCE_INVALID、无 endpoint/native RUN，host journal 也不能伪造 active 票据。
+ * Require source-READY failure before first project body/signature marker, with closed/SOURCE_INVALID resource, no endpoint/native RUN and no fabricated active host receipt. */ async () => {
       readyFault.label = 'ready-denied'; const value = begin(alphaId, readyFault.label); const result = await value.completion;
       assert.equal(readyFault.used, true); assert.ok(result.error instanceof AppError);
       assert.equal(result.error.code, 'PROJECT_IDENTITY_SSH_AGENT_SOURCE_INVALID'); assert.ok(value.context);
@@ -1125,7 +1220,8 @@ async function runSmoke(setup: Setup) {
       return { context: value.context, observed, nativeTicketAbsent: true, bodyMarkerPaths: markerPaths,
         firstBodyWriteAndSignedMarkerAbsent: true, errorCode: result.error.code, unchangedFrame: true };
     });
-    await check(caseNames[11], async () => {
+    await check(caseNames[11], /** 取消后对精确 Agent cleanup 丢确认，独立证明 broker/source/流与原域已关闭，但 native/host 保留未确认票据并拒绝新入场；资源身份元组不得被失败状态改写。
+ * Lose exact Agent-cleanup confirmation after cancellation; independently prove broker/source/streams/original domain closed while native/host retain unconfirmed receipts and block admission, preserving the immutable resource tuple across failure state. */ async () => {
       broken = begin(alphaId, 'cleanup-unconfirmed'); await active(broken); fault.run = broken; fault.enabled = true;
       broken.controller.abort(); const result = await broken.completion;
       assert.ok(result.error instanceof AppError); assert.equal(result.error.status, 503); assert.equal(result.error.code, 'PROJECT_IDENTITY_CLEANUP_FAILED');
@@ -1138,6 +1234,8 @@ async function runSmoke(setup: Setup) {
       const originalReadyRecord = sshAgentRecordSchema.parse(broken.record);
       const afterStopReceipt = sshAgentRecordSchema.parse(resource.record);
       assert.equal(originalReadyRecord.phase, 'ready'); assert.equal(originalReadyRecord.failure, null);
+      /** 仅除去允许变化的 phase/failure 字段，保留其他精确资源元组用于不变性比较。
+       * Remove only mutable phase/failure fields and retain the exact remaining resource tuple for immutability checks. */
       const immutable = (value: typeof originalReadyRecord) => {
         const { phase: _phase, failure: _failure, ...tuple } = value; return tuple;
       };
@@ -1155,7 +1253,8 @@ async function runSmoke(setup: Setup) {
       return { errorCode: result.error.code, status: result.error.status, attempts: fault.attempts, firstOuterConfirmedAt: fault.firstConfirmedAt,
         scope, resource, originalReadyRecord, afterStopReceipt, immutableTupleUnchanged: true, nativeStillOpen: run, immutableEntry: entry };
     });
-    await check(caseNames[12], async () => {
+    await check(caseNames[12], /** 将已停的原 Agent endpoint 换成自有替代对象，正式 recover 必须503并保留替代 inode及原资源票据；确认原运行仍 active，不能按路径名猜测清理。
+ * Replace the stopped original Agent endpoint with an owned replacement; formal recover must return 503 while preserving replacement inode/original resource receipt and active run, never guessing cleanup by pathname. */ async () => {
       assert.ok(broken); fault.enabled = false;
       const original = await observe({ operation: 'resource', bootId, context: broken.context, rootOnly });
       assert.deepEqual(original.record, broken.stoppedRecord);
@@ -1200,6 +1299,8 @@ async function runSmoke(setup: Setup) {
   } catch (error) { proof.error = mask(error); await persist(); await line('FAIL ' + mask(error)); }
   finally {
     fault.enabled = false;
+    /** 将清理步骤与脱敏错误保存在报告中，供最终失败判断；记录本身不吞掉其他步骤的清理机会。
+     * Retain cleanup step/redacted failure in the report for final acceptance while allowing other teardown steps to run. */
     const cleanupError = (step: string, error: unknown) => proof.cleanupErrors.push({ step, error: mask(error) });
     for (const value of running.values()) if (!value.settled) value.controller.abort();
     await Promise.allSettled([...running.values()].map(value => value.completion));
@@ -1250,6 +1351,8 @@ async function runSmoke(setup: Setup) {
     proof.independentCimObservedAt = new Date().toISOString(); proof.stoppedAt = new Date().toISOString();
     try {
       const records = JSON.parse(await readFile(join(root, 'machines.json'), 'utf8')); assert.equal(records.length, 1);
+      /** 仅剔除允许随观测变化的 lastUsedAt，保留其他字段进行前后不变性比较。
+       * Remove only observational lastUsedAt and retain every other field for before/after immutability comparison. */
       const stable = (value: any) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'lastUsedAt'));
       assert.deepEqual(stable(records[0]), stable(setup.record)); proof.originalMachineRecordUnchangedExceptLastUsedAt = true;
       for (const file of [...setup.historicalFiles, ...setup.hostFiles, ...setup.oldArchiveFiles]) assert.equal(hash(await readFile(file.file)), file.sha256, file.file);

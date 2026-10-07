@@ -1,3 +1,5 @@
+; 中文：固定策略 DLL 的早期导入序号与具名配置导出，使 Detours 第一导入解析到空序号符号，同时保持普通配置入口和导出 ABI。
+; English: Fix early-import ordinal/named configuration exports so Detours' first import resolves to the empty ordinal symbol while preserving ordinary configuration entry/export ABI.
 ; 固定早期策略 DLL 的 ordinal 1 和公开配置导出，供受控启动的导入表与注入调用共同使用。
 EXPORTS
   SakuraClipboardEarlyOrdinal @1

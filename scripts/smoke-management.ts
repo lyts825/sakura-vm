@@ -1,4 +1,5 @@
-/** 烟雾验收：验证实例管理操作及真实来宾任务的集成结果。 */
+/** 烟雾验收：验证实例管理操作及真实来宾任务的集成结果。
+ * Smoke acceptance for VM management and real guest-task integration results. */
 import { PLUGINS } from '../shared/plugins.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
@@ -25,6 +26,8 @@ const features = await Features.create(
   PLUGINS.map((item) => item.id),
 );
 const ids: string[] = [];
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const until = Date.now() + 300000;
@@ -34,7 +37,10 @@ async function boot(id: string) {
     await delay(300);
   }
 }
-async function done(jobs: { view(key: string): JobView | null }, id: string) {
+/** 在二十分钟内等待任务退出 running，要求 done 后返回；失败包含任务错误与日志。
+ * Wait at most twenty minutes for a job to leave running, requiring done before returning with errors/logs on failure. */
+async function done(jobs: { /** 按任务键返回当前 JobView 或 null，供 done 的有限轮询，不执行任务修改。
+ * Return current JobView or null by key for done polling without mutating jobs. */ view(key: string): JobView | null }, id: string) {
   const until = Date.now() + 1200000;
   while (jobs.view(id)?.status === 'running') {
     if (Date.now() > until) throw new Error('Task timed out');
@@ -44,6 +50,8 @@ async function done(jobs: { view(key: string): JobView | null }, id: string) {
   assert.equal(job.status, 'done', job.error + '\n' + job.log);
   return job;
 }
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function command(id: string, text: string) {
   const result = await machines.exec(id, text, 30000);
   assert.equal(result.code, 0, result.stderr);

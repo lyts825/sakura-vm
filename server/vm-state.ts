@@ -1,5 +1,6 @@
 /**
  * 模块职责：描述单次虚拟机运行的内部状态，集中保存启动、连接、取消及退出等待资源。
+ * Module purpose: Defines internal single-run state, retaining startup, connection, cancellation and exit-wait resources together.
  */
 import type { Socket } from 'node:net';
 import type { Client } from 'ssh2';

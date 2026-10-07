@@ -1,4 +1,5 @@
-/** 烟雾验收：验证来宾包的已安装/搜索/更新列表解析以及审阅后的安装和移除。 */
+/** 烟雾验收：验证来宾包的已安装/搜索/更新列表解析以及审阅后的安装和移除。
+ * Smoke acceptance for installed/search/update parsing and reviewed guest package install/removal. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,6 +19,8 @@ const machines = new Machines(await createRuntime());
 await machines.init();
 const workspaces = new Workspaces(machines);
 const suite = new FeatureSuite(machines, workspaces);
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout fails with boot logs. */
 const boot = async (id: string) => {
   await machines.start(id);
   const deadline = Date.now() + 270_000;
@@ -27,6 +30,8 @@ const boot = async (id: string) => {
     await delay(100);
   }
 };
+/** 经包工作台公开 action 提交输入，要求任务键并等待 done；任务错误作为验收失败传播。
+ * Submit input through public package-workbench action, require a job key and await done, propagating job errors as verification failure. */
 const run = async (id: string, input: unknown) => {
   const response = await suite.packageWorkbench.action(id, input) as { job: JobView };
   assert.ok(response.job.key);

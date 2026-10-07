@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实拒绝端口、非法 TLS、超时终止和本机网络路由。 */
+/** 烟雾验收：验证真实拒绝端口、非法 TLS、超时终止和本机网络路由。
+ * Smoke acceptance for real refused ports, invalid TLS, timeout termination and managed local network routes. */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,8 @@ const machines = new Machines(await createRuntime());
 await machines.init();
 let features: FeaturesType | undefined;
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 300000;
@@ -37,6 +40,8 @@ async function boot(id: string) {
     await delay(250);
   }
 }
+/** 连接本机指定端口读取首个 SSH banner 后销毁连接，五秒无数据超时拒绝。
+ * Connect to the local port, read the first SSH banner and destroy the connection; reject if no data arrives within five seconds. */
 async function banner(port: number) {
   return new Promise<string>((resolve, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port });

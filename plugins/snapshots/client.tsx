@@ -1,5 +1,8 @@
 /**
- * 模块职责：“磁盘快照”插件的快照创建/恢复、克隆及差异/合并/救援/备份入口，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“磁盘快照”插件的快照创建/恢复、克隆及差异/合并/救援/备份入口，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles.
+ * 详细范围（中文）：公开入口包括 SnapshotsPanel, tabs；职责覆盖快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include SnapshotsPanel, tabs. The scope covers UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { embeddedPluginComponent } from '../../src/plugin-client';
 import { formatDateTime } from '../../src/localization';
@@ -15,9 +18,19 @@ import { RescuePanel } from './RescuePanel';
 import { SnapshotDiffPanel } from './SnapshotDiffPanel';
 import { SnapshotMergePanel } from './SnapshotMergePanel';
 import { SignedBundlesPanel } from './SignedBundles';
+/**
+ * 中文：懒加载 ../backups/client 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码
+ * English: Lazily load ../backups/client and adapt its selected export as the default React component, deferring this feature's UI code download
+ */
 const loadBackupPanel = () =>
   import('../backups/client').then((module) => ({ default: module.BackupPanel }));
 
+/**
+ * 中文：呈现快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现中的 SnapshotsPanel 界面，组合 Plus、SnapshotDiffPanel、SnapshotMergePanel、Copy、Download、SignedBundlesPanel、RescuePanel、GoldenImageLibrary，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the SnapshotsPanel surface for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles and composing Plus, SnapshotDiffPanel, SnapshotMergePanel, Copy, Download, SignedBundlesPanel, RescuePanel, GoldenImageLibrary. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：props：签名所示 FeatureProps 业务值
+ * English: Inputs: props: the FeatureProps domain value in the signature
+ */
 export function SnapshotsPanel(props: FeatureProps) {
   const { vm, request, refresh } = props;
   const [name, setName] = useState(''),
@@ -31,8 +44,14 @@ export function SnapshotsPanel(props: FeatureProps) {
   const memorySupported = running && vm.activeAccelerator === 'tcg' &&
     vm.sandbox?.storage !== 'discard-on-stop' && !vm.diskEncryption &&
     vm.firmware !== 'uefi';
+  /**
+   * 中文：提交 method /vms/{vm.id}{path}，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform method /vms/{vm.id}{path} for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：path：目标文件或请求路径；method：请求 HTTP 方法；body：待按操作契约编码的请求正文
+   * English: Inputs: path: target file/request path; method: request HTTP method; body: request body to encode under the operation contract
+   */
   const mutate = (path: string, method: string, body?: unknown) =>
-    action.run(async () => {
+    action.run(/** 中文：提交 method /vms/{vm.id}{path}，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform method /vms/{vm.id}{path} for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${vm.id}${path}`, method, body);
       await refresh();
     }, '操作完成');
@@ -159,7 +178,7 @@ export function SnapshotsPanel(props: FeatureProps) {
               className="primary compact"
               disabled={action.busy}
               onClick={() =>
-                void action.run(async () => {
+                void action.run(/** 中文：提交 PATCH /vms/{vm.id}/snapshots/{editing.id}，完成快照、克隆、救援、黄金镜像和签名包的界面交互与状态呈现的数据交互并更新editing 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform PATCH /vms/{vm.id}/snapshots/{editing.id} for UI interaction and state presentation for snapshots, clones, rescue, golden images and signed bundles and update editing state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：设计：等待期间身份或版本可能改变，完成后按捕获代次比较再采用结果，避免旧上下文覆盖新状态 | English: Design: identity/version may change while awaiting; compare captured generations before adopting completion to avoid old context replacing new state */ async () => {
                   await request(`/vms/${vm.id}/snapshots/${editing.id}`, 'PATCH', {
                     name: editing.name,
                     note: editing.note || '',

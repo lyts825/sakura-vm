@@ -1,5 +1,8 @@
 /**
- * 模块职责：“备份策略”插件的备份保留策略、加密设置、执行记录与文件恢复入口，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“备份策略”插件的备份保留策略、加密设置、执行记录与文件恢复入口，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for backup policy, retention and file recovery.
+ * 详细范围（中文）：公开入口包括 BackupPanel；职责覆盖备份策略、保留与文件恢复的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include BackupPanel. The scope covers UI interaction and state presentation for backup policy, retention and file recovery. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from '../../src/localization';
 import { useEffect, useState } from 'react';
@@ -9,16 +12,28 @@ import { Feedback, formatBytes, JobLog, useAction, useRemote } from '../../src/f
 import '../../src/features.css';
 import { FileRecovery } from './FileRecovery';
 
+/**
+ * 中文：呈现备份策略、保留与文件恢复的界面交互与状态呈现中的 BackupPanel 界面，订阅 /vms/{vm.id}/backups，组合 FileRecovery，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the BackupPanel surface for UI interaction and state presentation for backup policy, retention and file recovery, subscribing to /vms/{vm.id}/backups and composing FileRecovery. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request, refresh } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力）、refresh（refresh 状态） 上下文字段
+ * English: Inputs: { vm, request, refresh } provides context fields vm (vm state), request (transport capability bound to identity/authority scope), refresh (refresh state)
+ */
 export function BackupPanel({ vm, request, refresh }: FeatureProps) {
   const remote = useRemote<BackupView>(request, `/vms/${vm.id}/backups`, true, 2500);
   const [policy, setPolicy] = useState<BackupPolicy | null>(null),
     action = useAction();
   const [password, setPassword] = useState('');
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [policy, remote.data] 变化时策略草稿；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [policy, remote.data] change, policy draft. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (!policy && remote.data) setPolicy(remote.data.policy);
   }, [policy, remote.data]);
+  /**
+   * 中文：提交 POST /vms/{vm.id}/backups，完成备份策略、保留与文件恢复的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/backups for UI interaction and state presentation for backup policy, retention and file recovery. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：kind：签名所示 string 业务值；backupId：签名所示 string 业务值；name：目标名称或文件名
+   * English: Inputs: kind: the string domain value in the signature; backupId: the string domain value in the signature; name: target name/filename
+   */
   const run = (kind: string, backupId?: string, name?: string) =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{vm.id}/backups，完成备份策略、保留与文件恢复的界面交互与状态呈现的数据交互并更新password 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/backups for UI interaction and state presentation for backup policy, retention and file recovery and update password state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${vm.id}/backups`, 'POST', {
         action: kind,
         backupId,
@@ -144,7 +159,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
               className="secondary compact"
               disabled={busy}
               onClick={() =>
-                void action.run(async () => {
+                void action.run(/** 中文：提交 PUT /vms/{vm.id}/backups，完成备份策略、保留与文件恢复的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform PUT /vms/{vm.id}/backups for UI interaction and state presentation for backup policy, retention and file recovery. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                   await request(`/vms/${vm.id}/backups`, 'PUT', policy);
                   remote.reload();
                 }, '备份策略已保存')
@@ -184,7 +199,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
               className="text-button"
               disabled={busy}
               onClick={() =>
-                void action.run(async (signal) => {
+                void action.run(/** 中文：提交 POST /vms/{vm.id}/backup-download，完成备份策略、保留与文件恢复的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/backup-download for UI interaction and state presentation for backup policy, retention and file recovery. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：拒绝原因：无效的下载地址。这些错误交给直接调用者或本函数 catch 处理 | English: Refusal reasons: 无效的下载地址. These errors reach the direct caller or this function's catch handler */ async (signal) => {
                   const { url } = await request<{ url: string }>(
                     `/vms/${vm.id}/backup-download`,
                     'POST',

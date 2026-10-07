@@ -1,5 +1,8 @@
 /**
- * 模块职责：操作声明、准入策略与运行时诊断契约，集中约束身份、锁定、维护、审批和传输模式。
+ * 模块职责（中文）：操作声明、准入策略与运行时诊断契约，集中约束身份、锁定、维护、审批和传输模式。
+ * Module responsibility (English): explicit operation admission policies and runtime diagnostics.
+ * 详细范围（中文）：公开入口包括 operationPolicySchema, OperationPolicy, operationDeclarationSchema, OperationDeclaration, OperationRole, scheduleDiagnosticSchema, hostRuntimeDiagnosticSchema, networkLimitsSchema, networkRuntimeDiagnosticSchema；职责覆盖显式操作准入策略和运行时诊断，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include operationPolicySchema, OperationPolicy, operationDeclarationSchema, OperationDeclaration, OperationRole, scheduleDiagnosticSchema, hostRuntimeDiagnosticSchema, networkLimitsSchema, networkRuntimeDiagnosticSchema. The scope covers explicit operation admission policies and runtime diagnostics. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 import { socketContractSchema } from './websocket.ts';

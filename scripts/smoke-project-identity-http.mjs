@@ -1,4 +1,5 @@
-/** 烟雾验收：验证编译 HTTP 项目身份接口、严格输入和真实执行/关闭结果。 */
+/** 烟雾验收：验证编译 HTTP 项目身份接口、严格输入和真实执行/关闭结果。
+ * Smoke acceptance for compiled HTTP identity contracts, strict inputs and real execution/close results. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -20,6 +21,8 @@ const vmId = '24230cbf-609b-4823-a6b4-9f599a122dc8';
 const records = JSON.parse(await readFile(join(data, 'machines.json'), 'utf8'));
 assert.equal(records.length, 1); assert.equal(records[0].id, vmId);
 assert.equal(records[0].distro, 'debian'); assert.equal(prior.vmId, vmId);
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 for (const [file, digest] of Object.entries(prior.sourceSha256))
   assert.equal(sha(await readFile(resolve(file))), digest, file);
@@ -67,15 +70,25 @@ const sockets = new Set();
 server.stdout.on('data', bytes => output = (output + bytes).slice(-65536));
 server.stderr.on('data', bytes => output = (output + bytes).slice(-65536));
 const exited = new Promise((done, fail) => { server.once('exit', done); server.once('error', fail); });
+/** 将输入编码成单个 POSIX shell 字面参数，嵌入单引号用结束/转义/重开方式保留原值；调用方仍负责命令和路径授权。
+ * Encode input as one literal POSIX shell argument, preserving embedded quotes by closing/escaping/reopening; callers still authorize the command/path. */
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const py = source => '/usr/bin/python3 -I -S -c ' + quote(source);
 const path = { vmId };
+/** 把接口名、项目查询与可选正文交给 SDK 请求，固定实例 ID 并允许不同认证 client 验收拒绝。
+ * Pass endpoint/project query/optional body to SDK requests with fixed VM ID and optional alternate authenticated clients for denial checks. */
 const route = (name, project, method = 'GET', body, client = sdk) => client.request('/api/vms/' + vmId + '/' + name,
   { method, query: { project }, ...(body === undefined ? {} : { body }) });
+/** 经 SDK 实例域执行命令，要求零退出并返回标准输出，保留失败诊断。
+ * Execute through SDK instance scope, require zero exit and return stdout with failure diagnostics preserved. */
 async function guest(command) {
   const result = await sdk.call('core.vms.exec', { path, body: { scope: 'instance', command } });
   assert.equal(result.code, 0, result.stderr + result.stdout); return result.stdout.trim();
 }
+/** 提交项目/服务操作后只跟踪相同任务 ID，四分钟内等终态并要求服务进程仍存活，返回记录供成功/失败断言。
+ * Submit project/service work and track only its job ID, await terminal state within four minutes/require service survival and return the record for outcome assertions. */
 async function action(project, action, service) {
   const initial = await route('project', project, 'POST', { action, ...(service ? { service } : {}) });
   const deadline = Date.now() + 240000;
@@ -87,10 +100,14 @@ async function action(project, action, service) {
     assert.equal(server.exitCode, null, output); await delay(100);
   }
 }
+/** 执行并等待项目操作，要求 done 再返回；任务失败附 error/log。
+ * Execute/await project work and require done before returning, reporting error/log on failure. */
 async function done(project, operation, service) {
   const job = await action(project, operation, service);
   assert.equal(job.status, 'done', job.error || job.log); return job;
 }
+/** 有限轮询指定自有 JSON 标记，出现后解析；未写出失败，避免错误场景产生假阳性。
+ * Poll the owned JSON marker for bounded attempts and parse on publication; absence fails to prevent false positives. */
 async function marker(file) {
   for (let n = 0; n < 150; n++) {
     const result = await sdk.call('core.vms.exec', { path, body: { scope: 'instance',
@@ -100,6 +117,8 @@ async function marker(file) {
   }
   throw Error('Owned project marker did not arrive.');
 }
+/** 生成记录实际 UID/GID、组、Home、目录、网络域和环境标记的来宾脚本，fsync 发布结果，可选择持续运行。
+ * Generate guest code reporting actual UID/GID/groups/home/cwd/network/environment, fsync its marker and optionally keep running. */
 const report = (file, stay = false) => py([
   'import json,os,time',
   "value={'uid':os.getuid(),'gid':os.getgid(),'groups':os.getgroups(),'home':os.environ['HOME'],",
@@ -108,12 +127,16 @@ const report = (file, stay = false) => py([
   'with open(' + JSON.stringify(file) + ",'w') as stream:json.dump(value,stream);stream.flush();os.fsync(stream.fileno())",
   ...(stay ? ['while True:time.sleep(1)'] : []),
 ].join('\n'));
+/** 比较报告与项目身份/环境并要求受管 cgroup，验证执行确实使用该项目非 root 账号。
+ * Compare reports with project identity/environment and require managed cgroup to verify execution uses that nonroot project account. */
 const validateAccount = (value, project) => {
   assert.equal(value.uid, project.identity.uid); assert.equal(value.gid, project.identity.gid);
   assert.deepEqual(value.groups, []); assert.equal(value.home, project.identity.home);
   assert.equal(value.cwd, project.directory); assert.equal(value.environment, project.config.environment.OWNED_HTTP_CANARY);
   assert.match(value.cgroup, /^0::\/sakura-(?:main|service|task)-[a-f0-9-]{36}$/);
 };
+/** 以 bootstrap 令牌打开指定项目原始 WebSocket，登记连接并检查 ready 的项目 ID；错误或三分钟未就绪失败。
+ * Open/register a raw WebSocket for the project with bootstrap token and verify ready.projectId; errors/no readiness within three minutes fail. */
 async function directTerminal(projectId) {
   const query = new URLSearchParams({ project: projectId, token: bootstrapToken });
   const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/' + vmId + '/terminal?' + query,
@@ -139,6 +162,8 @@ async function directTerminal(projectId) {
   }
   return socket;
 }
+/** 先正常关闭自有 socket，五秒未 close 则 terminate，仍等待实际 close 后完成。
+ * Gracefully close the owned socket, terminate after five seconds if needed and still await actual close. */
 async function closeTerminal(socket) {
   if (socket.readyState === WebSocket.CLOSED) return;
   const closed = new Promise(done => socket.once('close', done)); socket.close();

@@ -1,5 +1,8 @@
 /**
- * 模块职责：配置原生剪贴板桥接和应用策略，查看桥接进程状态及安装任务结果。
+ * 模块职责（中文）：配置原生剪贴板桥接和应用策略，查看桥接进程状态及安装任务结果。
+ * Module responsibility (English): Configuring native clipboard policies and presenting proxy processes and launch results.
+ * 详细范围（中文）：公开入口包括 NativeClipboardSettings；职责覆盖配置原生剪贴板策略并查看代理进程和启动结果，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include NativeClipboardSettings. The scope covers Configuring native clipboard policies and presenting proxy processes and launch results. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useEffect, useState } from 'react';
 import { defaultClipboardRule, type ClipboardRule } from '../shared/clipboard-policy';
@@ -10,6 +13,12 @@ import type {
 } from '../shared/native-clipboard';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 
+/**
+ * 中文：呈现配置原生剪贴板策略并查看代理进程和启动结果中的 NativeClipboardSettings 界面，订阅 /native-clipboard，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the NativeClipboardSettings surface for Configuring native clipboard policies and presenting proxy processes and launch results, subscribing to /native-clipboard. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ */
 export function NativeClipboardSettings({ request }: { request: Request }) {
   const remote = useRemote<NativeClipboardView>(request, '/native-clipboard', true, 4000);
   const action = useAction();
@@ -21,14 +30,20 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
     !!remote.data &&
     version === remote.data.version &&
     JSON.stringify(draft) === JSON.stringify(remote.data.settings);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [remote.data, version] 变化时编辑草稿，version 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data, version] change, editing draft, version state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (remote.data && remote.data.version > version) {
       setDraft(remote.data.settings);
       setVersion(remote.data.version);
     }
   }, [remote.data, version]);
+  /**
+   * 中文：提交 POST /native-clipboard，完成配置原生剪贴板策略并查看代理进程和启动结果的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /native-clipboard for Configuring native clipboard policies and presenting proxy processes and launch results. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：settings：签名所示 Settings 业务值
+   * English: Inputs: settings: the Settings domain value in the signature
+   */
   const save = (settings: Settings) =>
-    void action.run(async (signal) => {
+    void action.run(/** 中文：提交 POST /native-clipboard，完成配置原生剪贴板策略并查看代理进程和启动结果的数据交互并更新编辑草稿、version 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /native-clipboard for Configuring native clipboard policies and presenting proxy processes and launch results and update editing draft, version state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断 | English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately */ async (signal) => {
       try {
         const value = await request<NativeClipboardView>(
           '/native-clipboard',
@@ -42,13 +57,25 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
         remote.reload();
       }
     }, 'Windows 剪贴板配置已保存；请查看各进程的应用状态');
+  /**
+   * 中文：在配置原生剪贴板策略并查看代理进程和启动结果流程中编辑草稿；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Configuring native clipboard policies and presenting proxy processes and launch results, editing draft. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：image：签名所示 string 业务值；rule：签名所示 ClipboardRule 业务值
+   * English: Inputs: image: the string domain value in the signature; rule: the ClipboardRule domain value in the signature
+   */
   const update = (image: string, rule: ClipboardRule) =>
     setDraft({
       ...draft,
       applications: draft.applications.map((item) => (item.image === image ? { ...item, rule } : item)),
     });
+  /**
+   * 中文：提交 POST /native-clipboard，完成配置原生剪贴板策略并查看代理进程和启动结果的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /native-clipboard for Configuring native clipboard policies and presenting proxy processes and launch results. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：image：签名所示 string 业务值；sha256：签名所示 string 业务值
+   * English: Inputs: image: the string domain value in the signature; sha256: the string domain value in the signature
+   */
   const launch = (image: string, sha256: string) =>
-    void action.run(async (signal) => {
+    void action.run(/** 中文：提交 POST /native-clipboard，完成配置原生剪贴板策略并查看代理进程和启动结果的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /native-clipboard for Configuring native clipboard policies and presenting proxy processes and launch results. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：拒绝原因：启动参数需填写 JSON 字符串数组，例如 ["文件路径", "--选项"]；启动参数需为最多 64 项的字符串数组；每项最多 2048、合计最多 8192 个字符。这些错误交给直接调用者或本函数 catch 处理 | English: Refusal reasons: 启动参数需填写 JSON 字符串数组，例如 ["文件路径", "--选项"]; 启动参数需为最多 64 项的字符串数组；每项最多 2048、合计最多 8192 个字符. These errors reach the direct caller or this function's catch handler | 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断 | English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately */ async (signal) => {
       let args: unknown;
       try {
         args = JSON.parse(argumentsByImage[image] || '[]');
@@ -116,7 +143,7 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
             className="secondary compact"
             disabled={!process || !remote.data?.ready || draft.applications.length >= 32}
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：提交 POST /native-clipboard，完成配置原生剪贴板策略并查看代理进程和启动结果的数据交互并更新编辑草稿；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /native-clipboard for Configuring native clipboard policies and presenting proxy processes and launch results and update editing draft. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 const [pid, created] = process.split(':');
                 const selected = await request<{ image: string; sha256: string }>(
                   '/native-clipboard',
@@ -147,7 +174,7 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
           <button
             className="secondary compact"
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：提交 POST /native-clipboard，完成配置原生剪贴板策略并查看代理进程和启动结果的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /native-clipboard for Configuring native clipboard policies and presenting proxy processes and launch results. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断 | English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately */ async (signal) => {
                 try {
                   await request('/native-clipboard', 'POST', { action: 'refresh' }, signal);
                 } finally {

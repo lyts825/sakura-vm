@@ -1,5 +1,6 @@
 /**
  * 模块职责：汇集系统与官方插件服务的版本契约，连接服务引用、实现类型和公共成员定义。
+ * Module purpose: Collects versioned system/official-plugin contracts, connecting references, implementation types and public member declarations.
  */
 import type * as V1 from './service-contracts/v1.ts';
 import { PUBLIC_SERVICE_CONTRACTS } from './public-service-members.ts';

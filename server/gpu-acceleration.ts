@@ -1,5 +1,6 @@
 /**
  * 模块职责：检查客户机 GPU 驱动可见性并执行验证，设备配置仍依赖停机后的硬件档案。
+ * Module purpose: Checks guest GPU visibility and driver support; device selection still requires stopped-VM hardware configuration.
  */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
@@ -9,6 +10,18 @@ export const gpuAccelerationInput = z.object({
   mode: z.enum(['status', 'install-mesa']).default('status'),
 }).strict();
 
+/**
+ * 入口 / Entry: checkGpuAcceleration.
+ * 功能：在检查客户机 GPU 驱动可见性并执行验证中，核对调用资格、输入或资源归属；本入口产生 `{ ready: false, executed: false, graphics, reason: '请在停止实例后通过虚拟设备档案选择 Virtio GPU 或 VirGL，并重新启动。' }` / `{ ready: false, executed: false, graphics, reason: '请启动实例以验证客户机显卡驱动。' }` 供上层消费（`gpu-acceleration.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `gpu-acceleration.ts`; this entry produces `{ ready: false, executed: false, graphics, reason: '请在停止实例后通过虚拟设备档案选择 Virtio GPU 或 VirGL，并重新启动。' }` / `{ ready: false, executed: false, graphics, reason: '请启动实例以验证客户机显卡驱动。' }` for its caller. Module context: Checks guest GPU visibility and driver support; device selection still requires stopped-VM hardware configuration.
+ * 处理：通过 `machines.get`, `machines.state`, `machines.exec`, `kernel.stdout.trim` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `machines.get`, `machines.state`, `machines.exec`, `kernel.stdout.trim`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `graphics === 'none'`; `machines.state(id) !== 'running'`; `graphics === 'virtio-gpu'`.
+ * 输入 / Inputs: machines: Machines; id: string; signal: AbortSignal optional
+ * 输出 / Returns: `{ ready: false, executed: false, graphics, reason: '请在停止实例后通过虚拟设备档案选择 Virtio GPU 或 VirGL，并重新启动。' }`; `{ ready: false, executed: false, graphics, reason: '请启动实例以验证客户机显卡驱动。' }`; `{ ready: result.code === 0, executed: false, graphics, reason: result.code === 0 ? 'Virtio GPU 的 DRM 设备已就绪；此模式不提供 VirGL 3D。' …`；另有分支返回 / additional branch-specific returns.
+ * 副作用 / Effects: `machines.exec`; `inline.exec()[...].trim`; `inline.exec`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export async function checkGpuAcceleration(machines: Machines, id: string,
   signal?: AbortSignal) {
   const vm = machines.get(id);
@@ -52,6 +65,18 @@ export async function checkGpuAcceleration(machines: Machines, id: string,
         '检测到的渲染器不是 VirGL；不会把软件渲染报告为 GPU 加速。' };
 }
 
+/**
+ * 入口 / Entry: runGpuAcceleration.
+ * 功能：在检查客户机 GPU 驱动可见性并执行验证中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ code: result.ready ? 0 : 1, ...result }` / `{ code: 0, ready: true, executed: true, verified: false, pendingReboot: true, graphics: 'virgl' as const, reason: 'Mesa 和通用内核…` 供上层消费（`gpu-acceleration.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `gpu-acceleration.ts`; this entry produces `{ code: result.ready ? 0 : 1, ...result }` / `{ code: 0, ready: true, executed: true, verified: false, pendingReboot: true, graphics: 'virgl' as const, reason: 'Mesa 和通用内核…` for its caller. Module context: Checks guest GPU visibility and driver support; device selection still requires stopped-VM hardware configuration.
+ * 处理：通过 `gpuAccelerationInput.parse`, `checkGpuAcceleration`, `machines.requireUnlocked`, `machines.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `gpuAccelerationInput.parse`, `checkGpuAcceleration`, `machines.requireUnlocked`, `machines.get`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `options.mode === 'status'`; `!checked.ready && 'kernel' in checked && checked.kernel?.includes('cloud')`.
+ * 输入 / Inputs: machines: Machines; id: string; input: unknown; signal: AbortSignal optional
+ * 输出 / Returns: `{ code: result.ready ? 0 : 1, ...result }`; `{ code: 0, ready: true, executed: true, verified: false, pendingReboot: true, graphics: 'virgl' as const, reason: 'Mesa 和通用内核…`; `{ code: checked.ready ? 0 : 1, ...checked, executed: true }`.
+ * 副作用 / Effects: `machines.exec`; `installed.stderr.slice`.
+ * 拒绝 / Refusals: 条件 / conditions `machines.get(id).hardware?.devices?.graphics !== 'virgl'`; `machines.state(id) !== 'running'`; `installed.code !== 0`; 异常 / errors `new AppError('请先在停止实例后选择 VirGL 虚拟显卡', 409)`; `new AppError('请先启动实例', 409)`.
+ */
 export async function runGpuAcceleration(machines: Machines, id: string, input: unknown,
   signal?: AbortSignal) {
   const options = gpuAccelerationInput.parse(input);

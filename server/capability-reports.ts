@@ -1,5 +1,6 @@
 /**
  * 模块职责：读取有界任务历史和指标，生成任务 SLO、异常基线与能力报告。
+ * Module purpose: Reads bounded task history and metrics to generate task SLO, baseline anomaly and capability reports.
  */
 import type { IdeV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { readdir, readFile, stat } from 'node:fs/promises';
@@ -41,12 +42,34 @@ type Point = {
   diskTotal: number;
 };
 type Event = { id: string; vmId: string; createdAt: string; kind: string; message: string };
+/**
+ * 入口 / Entry: suiteState.
+ * 功能：在读取有界任务历史和指标中，执行此领域的具体处理步骤并返回其结果；本入口产生 `readStore<{ history: Record<string, Point[]>; events: Event[] }>(join(DATA, 'feature-suite.json'), () => ({ history: {}, even…` 供上层消费（`capability-reports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `capability-reports.ts`; this entry produces `readStore<{ history: Record<string, Point[]>; events: Event[] }>(join(DATA, 'feature-suite.json'), () => ({ history: {}, even…` for its caller. Module context: Reads bounded task history and metrics to generate task SLO, baseline anomaly and capability reports.
+ * 处理：通过 `readStore`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `readStore`, `join`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `readStore<{ history: Record<string, Point[]>; events: Event[] }>(join(DATA, 'feature-suite.json'), () => ({ history: {}, even…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const suiteState = () =>
   readStore<{ history: Record<string, Point[]>; events: Event[] }>(join(DATA, 'feature-suite.json'), () => ({
     history: {},
     events: [],
   }));
 
+/**
+ * 入口 / Entry: taskHistory.
+ * 功能：在读取有界任务历史和指标中，执行此领域的具体处理步骤并返回其结果；本入口产生 `result.filter((job) => Number.isFinite(Date.parse(job.startedAt)))` 供上层消费（`capability-reports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `capability-reports.ts`; this entry produces `result.filter((job) => Number.isFinite(Date.parse(job.startedAt)))` for its caller. Module context: Reads bounded task history and metrics to generate task SLO, baseline anomaly and capability reports.
+ * 处理：通过 `join`, `readdir().catch`, `readdir`, `names.filter().sort` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `join`, `readdir().catch`, `readdir`, `names.filter().sort`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: id: string; projectId: string
+ * 输出 / Returns: Promise<JobView[]>；结果来自 / values from `result.filter((job) => Number.isFinite(Date.parse(job.startedAt)))`.
+ * 副作用 / Effects: `result.push`.
+ * 拒绝 / Refusals: 条件 / conditions `(await stat(file)).size > 16 * 1024 * 1024`; `!Array.isArray(rows)`; `result.length > 20000`; 异常 / errors `new AppError('任务历史超出读取上限：' + name)`; `new AppError('任务历史格式无效：' + name)`.
+ */
 export async function taskHistory(id: string, projectId: string): Promise<JobView[]> {
   const folder = join(DATA, 'jobs');
   const names = await readdir(folder).catch((error) => {
@@ -67,6 +90,17 @@ export async function taskHistory(id: string, projectId: string): Promise<JobVie
   return result.filter((job) => Number.isFinite(Date.parse(job.startedAt)));
 }
 
+/**
+ * 入口 / Entry: taskSlo.
+ * 功能：在读取有界任务历史和指标中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ basis: 'completed-tasks', samples: finished.length, success, failed, targetPercent, actualPercent, achieved: actualPercent …` 供上层消费（`capability-reports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `capability-reports.ts`; this entry produces `{ basis: 'completed-tasks', samples: finished.length, success, failed, targetPercent, actualPercent, achieved: actualPercent …` for its caller. Module context: Reads bounded task history and metrics to generate task SLO, baseline anomaly and capability reports.
+ * 处理：通过 `jobs.filter`, `finished.filter` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `jobs.filter`, `finished.filter`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: jobs: JobView[]; targetPercent: number
+ * 输出 / Returns: `{ basis: 'completed-tasks', samples: finished.length, success, failed, targetPercent, actualPercent, achieved: actualPercent …`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function taskSlo(jobs: JobView[], targetPercent: number) {
   const finished = jobs.filter((job) => job.status !== 'running');
   const success = finished.filter((job) => job.status === 'done').length;
@@ -87,6 +121,17 @@ export function taskSlo(jobs: JobView[], targetPercent: number) {
   };
 }
 
+/**
+ * 入口 / Entry: metricExport.
+ * 功能：在读取有界任务历史和指标中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ filename: 'sakura-metrics.json', mime: 'application/json', content: JSON.stringify(value) + '\n', }` / `{ filename: 'sakura-metrics.prom', mime: 'text/plain', content: metrics .map( ([metric, , value]) => `# TYPE ${metric} gauge\…` 供上层消费（`capability-reports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `capability-reports.ts`; this entry produces `{ filename: 'sakura-metrics.json', mime: 'application/json', content: JSON.stringify(value) + '\n', }` / `{ filename: 'sakura-metrics.prom', mime: 'text/plain', content: metrics .map( ([metric, , value]) => `# TYPE ${metric} gauge\…` for its caller. Module context: Reads bounded task history and metrics to generate task SLO, baseline anomaly and capability reports.
+ * 处理：通过 `metrics.some`, `metrics.map`, `metrics.map().join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `metrics.some`, `metrics.map`, `metrics.map().join`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: id: string; name: string; point: Point; format: string
+ * 输出 / Returns: `{ filename: 'sakura-metrics.json', mime: 'application/json', content: JSON.stringify(value) + '\n', }`; `{ filename: 'sakura-metrics.prom', mime: 'text/plain', content: metrics .map( ([metric, , value]) => `# TYPE ${metric} gauge\…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `metrics.some(([, , value]) => !Number.isFinite(value))`; `format === 'otlp-json'`; `!Number.isFinite(time)`; 异常 / errors `new AppError('采样含无效数值')`; `new AppError('采样时间无效')`.
+ */
 export function metricExport(id: string, name: string, point: Point, format: string) {
   const metrics = [
     ['sakura_cpu_percent', '%', point.cpuPercent],
@@ -130,6 +175,17 @@ export function metricExport(id: string, name: string, point: Point, format: str
       content: JSON.stringify(value) + '\n',
     };
   }
+  /**
+   * 入口 / Entry: metricExport.escape.
+   * 功能：在读取有界任务历史和指标中，执行此领域的具体处理步骤并返回其结果；本入口产生 `value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('"', '\\"')` 供上层消费（`capability-reports.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `capability-reports.ts`; this entry produces `value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('"', '\\"')` for its caller. Module context: Reads bounded task history and metrics to generate task SLO, baseline anomaly and capability reports.
+   * 处理：通过 `value.replaceAll().replaceAll().replaceAll`, `value.replaceAll().replaceAll`, `value.replaceAll` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `value.replaceAll().replaceAll().replaceAll`, `value.replaceAll().replaceAll`, `value.replaceAll`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: value: string
+   * 输出 / Returns: `value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('"', '\\"')`.
+   * 副作用 / Effects: `value.replaceAll().replaceAll().replaceAll`; `value.replaceAll().replaceAll`; `value.replaceAll`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const escape = (value: string) =>
     value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('"', '\\"');
   return {
@@ -144,11 +200,31 @@ export function metricExport(id: string, name: string, point: Point, format: str
   };
 }
 
+/**
+ * 入口 / Entry: baselineAnomalies.
+ * 功能：在读取有界任务历史和指标中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ sampledAt: latest.sampledAt, baselineSamples: rows.length - 1, metrics, anomalies: metrics.filter((item) => item.anomalous)…` 供上层消费（`capability-reports.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `capability-reports.ts`; this entry produces `{ sampledAt: latest.sampledAt, baselineSamples: rows.length - 1, metrics, anomalies: metrics.filter((item) => item.anomalous)…` for its caller. Module context: Reads bounded task history and metrics to generate task SLO, baseline anomaly and capability reports.
+ * 处理：通过 `history.filter().slice`, `history.filter`, `rows.at`, `fields.map` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `history.filter().slice`, `history.filter`, `rows.at`, `fields.map`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: history: Point[]; window: number; sigma: number
+ * 输出 / Returns: `{ sampledAt: latest.sampledAt, baselineSamples: rows.length - 1, metrics, anomalies: metrics.filter((item) => item.anomalous)…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `rows.length < 6`; 异常 / errors `new AppError('需要至少 6 个历史采样点，请启用监控采样后重试', 409)`.
+ */
 export function baselineAnomalies(history: Point[], window: number, sigma: number) {
   const rows = history.filter((point) => Number.isFinite(Date.parse(point.sampledAt))).slice(-window - 1);
   if (rows.length < 6) throw new AppError('需要至少 6 个历史采样点，请启用监控采样后重试', 409);
   const latest = rows.at(-1)!;
   const fields = ['cpuPercent', 'memoryUsed', 'diskUsed'] as const;
+  /**
+   * 入口 / Entry: baselineAnomalies.callback@152.
+   * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（fields.map）。
+   * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (fields.map).
+   * 输入 / Inputs: field
+   * 输出 / Returns: `{ field, current: latest[field], baseline: mean, standardDeviation, delta, threshold, anomalous: Math.abs(delta) > threshold,…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `values.length < 5 || !Number.isFinite(latest[field])`; 异常 / errors `new AppError('资源采样不完整', 409)`.
+   */
   const metrics = fields.map((field) => {
     const values = rows
       .slice(0, -1)
@@ -182,6 +258,17 @@ export function baselineAnomalies(history: Point[], window: number, sigma: numbe
   };
 }
 
+/**
+ * 入口 / Entry: runReport.
+ * 功能：按报告能力读取任务、指标和客户机采样，计算并输出对应报告文件或视图。
+ * Purpose: Reads task/metric/guest samples for the requested reporting capability and emits the resulting report/artifact.
+ * 设计：报告读取受节点、字节和历史数量限制；缺少实际样本时不生成虚构指标。
+ * Design: Reads obey node/byte/history bounds; unavailable samples are not replaced by invented metrics.
+ * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; id: string; featureId: CapabilityId; p: Record<string, unknown>; signal: AbortSignal; editor: Pick<IdeV1, 'profile'> optional
+ * 输出 / Returns: Promise<Record<string, unknown>>；结果来自 / values from `{ actions: actions.length, download: { filename: 'sakura-action-schemas.json', mime: 'application/json', content: JSON.string…`; `{ rules: rules.length, download: { filename: 'sakura-proxy.pac', mime: 'application/x-ns-proxy-autoconfig', content }, }`; `{ editor: p.editor, ...profile, instructions: p.editor === 'jetbrains' ? profile.projectScoped ? '将完整下载档案导入 Gateway 实际读取的 Ope…`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`; `writeStore`.
+ * 拒绝 / Refusals: 条件 / conditions `featureId === 'proxy-pac'`; `rule.proxy !== 'DIRECT' && (Number(rule.proxy.split(':').at(-1)) < 1 || Number(rule.proxy.split(':').at(-1)) > 65535)`; `featureId === 'editor-profiles'`; 异常 / errors `new AppError('代理端口需要在 1–65535 之间')`; `new AppError( 'Alpine 项目 SSH 支持普通 SSH、SFTP 与 Neovim；VS Code Remote-SSH 和 JetBrains Gateway 请使用 Debian 或 Ubuntu', 409, )`.
+ */
 export async function runReport(
   machines: Machines,
   workspaces: WorkspacesV1,
@@ -366,6 +453,15 @@ export async function runReport(
     const matches: Array<Record<string, unknown>> = [];
     let totalMatches = 0;
     for (const entry of index.entries)
+      /**
+       * 入口 / Entry: runReport.callback@369.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（entry.log.split().forEach）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (entry.log.split().forEach).
+       * 输入 / Inputs: line; index
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: `matches.push`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       entry.log.split('\n').forEach((line, index) => {
         if (line.toLocaleLowerCase().includes(String(p.query).toLocaleLowerCase())) {
           totalMatches++;

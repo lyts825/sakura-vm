@@ -1,5 +1,8 @@
 /**
- * 模块职责：“自动化与运维”插件的资源预设、功能就绪状态与能力中心页面，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“自动化与运维”插件的资源预设、功能就绪状态与能力中心页面，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for resource policy, packages and engineering tasks.
+ * 详细范围（中文）：公开入口包括 FeatureSuitePanel, pages；职责覆盖资源策略、软件包与工程任务的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include FeatureSuitePanel, pages. The scope covers UI interaction and state presentation for resource policy, packages and engineering tasks. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
@@ -32,6 +35,12 @@ import { TrustedBootSettings } from './TrustedBootSettings';
 import { PackageWorkbenchPanel } from './PackageWorkbenchPanel';
 import { HaFailoverPanel } from './HaFailoverPanel';
 
+/**
+ * 中文：呈现资源策略、软件包与工程任务的界面交互与状态呈现中的 ReadinessBadge 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ReadinessBadge surface for UI interaction and state presentation for resource policy, packages and engineering tasks. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ records, id } 提供 records（records 状态）、id（目标资源标识） 上下文字段
+ * English: Inputs: { records, id } provides context fields records (records state), id (target resource identifier)
+ */
 function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
   const status = featureReadiness(records, id);
   return (
@@ -41,6 +50,12 @@ function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id
   );
 }
 
+/**
+ * 中文：呈现资源策略、软件包与工程任务的界面交互与状态呈现中的 HardwareMatrix 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the HardwareMatrix surface for UI interaction and state presentation for resource policy, packages and engineering tasks. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ report } 提供 report（向调用者交付状态或进度的回调） 上下文字段
+ * English: Inputs: { report } provides context fields report (callback delivering status/progress to the caller)
+ */
 function HardwareMatrix({ report }: { report: HostHardwareReport }) {
   const rows = [...report.matrix.machines, ...report.matrix.accelerators, ...report.matrix.devices];
   return (
@@ -79,7 +94,7 @@ type Props = {
   request: Request;
   vms: VMView[];
   selected: string;
-  onSelected: (id: string) => void;
+  onSelected: /** 中文：通知当前实例选择变化，由外层同步项目与导航；这是 Props 的调用契约 | English: Notify VM selection changes so the owner synchronizes project/navigation state; this is the callable contract of Props | 中文：输入：id：目标资源标识 | English: Inputs: id: target resource identifier | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (id: string) => void;
   projectId?: string;
 };
 const fallbackPresets: Record<ResourcePresetId, ResourcePreset> = {
@@ -89,9 +104,23 @@ const fallbackPresets: Record<ResourcePresetId, ResourcePreset> = {
   desktop: { name: '图形桌面', memoryMiB: 2048, cpus: 2 },
 };
 
+/**
+ * 中文：按 1 GiB 阈值选择 GiB/MiB 显示资源大小，分别保留一位小数或整数，并遵从区域数字格式。
+ * English: Choose GiB/MiB at the one-GiB threshold with one fractional digit/integer respectively and locale number formatting.
+ * 中文：输入：value：待校验、转换或保存的输入值
+ * English: Inputs: value: input value to validate/transform/save
+ */
 const bytes = (value: number) =>
   value >= 1024 ** 3 ? `${formatDecimal((value / 1024 ** 3), 1)} GiB` : `${formatDecimal((value / 1024 ** 2), 0)} MiB`;
 
+/**
+ * 中文：呈现资源策略、软件包与工程任务的界面交互与状态呈现中的 FeatureSuitePanel 界面，组合 ActiveFeatureSuitePanel，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the FeatureSuitePanel surface for UI interaction and state presentation for resource policy, packages and engineering tasks and composing ActiveFeatureSuitePanel. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：props：签名所示 Props 业务值
+ * English: Inputs: props: the Props domain value in the signature
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function FeatureSuitePanel(props: Props) {
   if (!props.vms.length)
     return (
@@ -102,6 +131,12 @@ export function FeatureSuitePanel(props: Props) {
     );
   return <ActiveFeatureSuitePanel {...props} />;
 }
+/**
+ * 中文：呈现资源策略、软件包与工程任务的界面交互与状态呈现中的 ActiveFeatureSuitePanel 界面，订阅 active ? `/vms/${active.id}/advanced?limit=720` : '/feature-suite'、active ? `/vms/${active.id}/extended-features` : '/extended-features'、active ? `/vms/${active.id}/next-features` : '/next-features'、'/vms/' + active.id + '/lockdown'，组合 Activity、Play、MetricHistory、MemoryReclaimSettings、HostMountSettings、VirtioFsSettings、TrustedBootSettings、Bell，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the ActiveFeatureSuitePanel surface for UI interaction and state presentation for resource policy, packages and engineering tasks, subscribing to active ? `/vms/${active.id}/advanced?limit=720` : '/feature-suite', active ? `/vms/${active.id}/extended-features` : '/extended-features', active ? `/vms/${active.id}/next-features` : '/next-features', '/vms/' + active.id + '/lockdown' and composing Activity, Play, MetricHistory, MemoryReclaimSettings, HostMountSettings, VirtioFsSettings, TrustedBootSettings, Bell. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request: baseRequest, vms, selected, onSelected, projectId } 提供 request（带身份和权限作用域的传输能力）、vms（vms 状态）、selected（当前选择）、onSelected（onSelected 状态）、projectId（当前项目标识） 上下文字段
+ * English: Inputs: { request: baseRequest, vms, selected, onSelected, projectId } provides context fields request (transport capability bound to identity/authority scope), vms (vms state), selected (current selection), onSelected (onSelected state), projectId (current project identifier)
+ */
 function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelected, projectId }: Props) {
   const hasAutomation = usePlugin('automation'),
     hasScheduler = usePlugin('automation-scheduler'),
@@ -199,17 +234,17 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const [nextCapability, setNextCapability] = useState('');
   const [showUsbHotplug, setShowUsbHotplug] = useState(false);
   const lockdown = useRemote<{ locked: boolean }>(request, '/vms/' + active.id + '/lockdown');
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [extendedOperation] 变化时operationParameters 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [extendedOperation] change, operationParameters state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     const selected = extended.data?.operations.find((item) => item.id === extendedOperation);
     setOperationParameters(JSON.stringify(selected?.example || {}, null, 2));
   }, [extendedOperation]);
 
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [active.id, !!remote.data, remote.data?.settings.updatedAt] 变化时schedule 状态，alerts 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [active.id, !!remote.data, remote.data?.settings.updatedAt] change, schedule state, alerts state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (!remote.data) return;
     setSchedule(remote.data.settings.schedule);
     setAlerts(remote.data.settings.alerts);
   }, [active.id, !!remote.data, remote.data?.settings.updatedAt]);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [active.id, active.memoryMiB, active.memoryTargetMiB] 变化时memoryTarget 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [active.id, active.memoryMiB, active.memoryTargetMiB] change, memoryTarget state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setMemoryTarget(active.memoryTargetMiB || active.memoryMiB);
   }, [active.id, active.memoryMiB, active.memoryTargetMiB]);
 
@@ -231,31 +266,51 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     );
   }
 
+  /**
+   * 中文：提交 PUT /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform PUT /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const saveSettings = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 PUT /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform PUT /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${active.id}/advanced`, 'PUT', { schedule, alerts });
       remote.reload();
     }, '能力中心设置已保存');
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const sample = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${active.id}/advanced`, 'POST', { action: 'sample' });
       remote.reload();
     });
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const applyMemoryTarget = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${active.id}/advanced`, 'POST', {
         action: 'memory-target',
         memoryMiB: memoryTarget,
       });
       await remote.reload();
     }, '动态内存目标已更新');
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const applyPreset = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${active.id}/advanced`, 'POST', { action: 'apply-preset', preset });
       await remote.reload();
     }, '资源预设已应用，请重新启动发行版');
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const runSearch = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新searchResult 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks and update searchResult state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       const result = await request<{ matches: string[] }>(`/vms/${active.id}/advanced`, 'POST', {
         action: 'search',
         query: searchQuery,
@@ -264,16 +319,24 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       });
       setSearchResult(result.matches);
     });
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const runDiskAnalysis = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新diskEntries 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks and update diskEntries state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       const result = await request<{ entries: DiskEntry[] }>(`/vms/${active.id}/advanced`, 'POST', {
         action: 'disk-analysis',
         path: diskPath,
       });
       setDiskEntries(result.entries);
     });
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const runPackage = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${active.id}/advanced`, 'POST', {
         action: 'package',
         operation: packageOperation,
@@ -281,8 +344,12 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
           ? { name: packageName.trim() } : {}),
       });
     }, '软件包任务已提交，请在任务中心查看日志');
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const runDev = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${active.id}/advanced`, 'POST', {
         action: 'dev',
         operation: devOperation,
@@ -297,16 +364,24 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       });
       remote.reload();
     }, '开发任务已提交，请查看日志');
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const runNetwork = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新networkResult 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks and update networkResult state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       const result = await request<{ output: string }>(`/vms/${active.id}/advanced`, 'POST', {
         action: 'network-test',
         target: networkTarget,
       });
       setNetworkResult(result.output);
     });
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const runSecurity = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新securityResult 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks and update securityResult state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       const result = await request<NonNullable<typeof securityResult>>(
         `/vms/${active.id}/advanced`,
         'POST',
@@ -316,23 +391,39 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       );
       setSecurityResult(result);
     });
+  /**
+   * 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const discoverPorts = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新ports 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks and update ports state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       const result = await request<{ ports: number[] }>(`/vms/${active.id}/advanced`, 'POST', {
         action: 'discover-ports',
       });
       setPorts(result.ports);
     });
+  /**
+   * 中文：提交 POST /vms/{active.id}/extended-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/extended-features for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：featureId：签名所示 string 业务值
+   * English: Inputs: featureId: the string domain value in the signature
+   */
   const checkExtended = (featureId: string) =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/extended-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新extendedResult 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/extended-features for UI interaction and state presentation for resource policy, packages and engineering tasks and update extendedResult state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       const result = await request(`/vms/${active.id}/extended-features`, 'POST', {
         action: 'check',
         featureId,
       });
       setExtendedResult(JSON.stringify(result, null, 2));
     });
+  /**
+   * 中文：提交 POST /vms/{active.id}/extended-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/extended-features for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：featureId：签名所示 string 业务值
+   * English: Inputs: featureId: the string domain value in the signature
+   */
   const runExtended = (featureId: string) =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/extended-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新extendedResult 状态、extendedCapability 状态、extendedOperation 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/extended-features for UI interaction and state presentation for resource policy, packages and engineering tasks and update extendedResult state, extendedCapability state, extendedOperation state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       const instructions: Record<string, string> = {
         'network-isolation':
           '打开工作空间 → 项目，选择当前工作项目，在“项目网络”中选择“独立命名空间（仅回环，无外网）”并保存。按页面提示完成目录权限迁移后点击“启动开发”；修改已有项目网络前先停止其运行。返回能力中心点击“检查”，只读核对账号、网络及出站限制。',
@@ -405,8 +496,12 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       setExtendedResult(JSON.stringify(result, null, 2));
       extended.reload();
     }, featureId === 'network-isolation' ? '' : '扩展能力任务已提交');
+  /**
+   * 中文：提交 POST /vms/{active.id}/extended-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/extended-features for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
   const runExtendedOperation = () =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/extended-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/extended-features for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       const item = extended.data?.operations.find((value) => value.id === extendedOperation);
       if (!item) return;
       await request(`/vms/${active.id}/extended-features`, 'POST', {
@@ -426,8 +521,14 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
           .includes(query),
     );
   }, [next.data?.features, nextSearch]);
+  /**
+   * 中文：提交 POST /vms/{active.id}/next-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/next-features for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：featureId：签名所示 string 业务值
+   * English: Inputs: featureId: the string domain value in the signature
+   */
   const checkNext = (featureId: string) =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/next-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新hardwareReport 状态、nextResult 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/next-features for UI interaction and state presentation for resource policy, packages and engineering tasks and update hardwareReport state, nextResult state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       if (featureId === 'hardware-compatibility') {
         const result = await request<HostHardwareReport>(`/vms/${active.id}/next-features`, 'POST', { action: 'check', featureId });
         setHardwareReport(result);
@@ -439,8 +540,14 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       }
       next.reload();
     });
+  /**
+   * 中文：提交 POST /vms/{active.id}/next-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{active.id}/next-features for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：featureId：签名所示 string 业务值
+   * English: Inputs: featureId: the string domain value in the signature
+   */
   const runNext = (featureId: string) =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{active.id}/next-features，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互并更新nextResult 状态、showUsbHotplug 状态、nextCapability 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/next-features for UI interaction and state presentation for resource policy, packages and engineering tasks and update nextResult state, showUsbHotplug state, nextCapability state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       if (featureId === 'ha-failover') {
         const panel = document.getElementById(`ha-failover-${active.id}`);
         panel?.scrollIntoView({ block: 'start' });
@@ -546,7 +653,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
           className="secondary compact"
           disabled={action.busy || !lockdown.data}
           onClick={() =>
-            action.run(async () => {
+            action.run(/** 中文：提交 POST '/vms/' + active.id + '/lockdown'，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST '/vms/' + active.id + '/lockdown' for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
               await request('/vms/' + active.id + '/lockdown', 'POST', { locked: !lockdown.data?.locked });
               lockdown.reload();
             })
@@ -783,7 +890,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
               events={remote.data.events}
               busy={action.busy}
               onAcknowledge={(id) =>
-                void action.run(async () => {
+                void action.run(/** 中文：提交 POST /vms/{active.id}/advanced，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{active.id}/advanced for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                   await request(`/vms/${active.id}/advanced`, 'POST', { action: 'acknowledge', id });
                   remote.reload();
                 })

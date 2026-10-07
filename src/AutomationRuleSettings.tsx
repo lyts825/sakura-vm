@@ -1,5 +1,8 @@
 /**
- * 模块职责：编辑事件自动化规则、筛选条件与动作，并提供执行预览和最近执行记录。
+ * 模块职责（中文）：编辑事件自动化规则、筛选条件与动作，并提供执行预览和最近执行记录。
+ * Module responsibility (English): Editing event rules, filtered actions, approvals and execution previews.
+ * 详细范围（中文）：公开入口包括 AutomationRuleSettings；职责覆盖事件规则、筛选动作、审批与执行预览的编辑界面，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include AutomationRuleSettings. The scope covers Editing event rules, filtered actions, approvals and execution previews. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from './localization';
 import { useState } from 'react';
@@ -15,6 +18,12 @@ type Draft = Pick<AutomationRule, 'name' | 'enabled' | 'previewOnly' | 'filter' 
 type Preview = { rule: AutomationRule; matches: Array<{
   event: WebhookEvent; targetVmId: string | null; action: Draft['action']; wouldExecute: boolean;
 }>; approval?: string };
+/**
+ * 中文：构造新的禁用自动化规则草稿，附带默认事件、动作和筛选集合，不立即提交或启用。
+ * English: Create a disabled automation-rule draft with default event/action/filter collections without submitting or activating it.
+ * 中文：结果：Draft，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: Draft carrying the described computation/transport result; throwing branches do not provide success
+ */
 const fresh = (): Draft => ({
   name: '', enabled: false, previewOnly: true, action: 'start', steps: [], cooldownSeconds: 300,
   filter: { types: ['alert.raised'], vmIds: [], projectIds: [], tags: [], statuses: [], kinds: [] },
@@ -28,8 +37,22 @@ const labels: Record<string, string> = {
   runbook: '自动修复 Runbook',
   preview: '仅预览', pending: '执行中', failed: '失败', skipped: '已跳过',
 };
+/**
+ * 中文：把逗号分隔标签去除空白并丢弃空项，供规则筛选输入使用。
+ * English: Trim comma-separated labels and discard empty entries for rule-filter inputs.
+ * 中文：输入：value：待校验、转换或保存的输入值
+ * English: Inputs: value: input value to validate/transform/save
+ */
 const split = (value: string) => [...new Set(value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean))];
 
+/**
+ * 中文：呈现事件规则、筛选动作、审批与执行预览的编辑界面中的 AutomationRuleSettings 界面，订阅 /automation-rules，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the AutomationRuleSettings surface for Editing event rules, filtered actions, approvals and execution previews, subscribing to /automation-rules. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function AutomationRuleSettings({ request }: { request: Request }) {
   const remote = useRemote<AutomationView>(request, '/automation-rules', true, 5000);
   const action = useAction();
@@ -38,9 +61,23 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
   const [vmIds, setVmIds] = useState(''), [projects, setProjects] = useState(''),
     [tags, setTags] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
+  /**
+   * 中文：在事件规则、筛选动作、审批与执行预览的编辑界面流程中编辑草稿，editing 状态，vmIds 状态，projects 状态，tags 状态，preview 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Editing event rules, filtered actions, approvals and execution previews, editing draft, editing state, vmIds state, projects state, tags state, preview state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const clear = () => {
     setDraft(fresh()); setEditing(undefined); setVmIds(''); setProjects(''); setTags(''); setPreview(null);
   };
+  /**
+   * 中文：在事件规则、筛选动作、审批与执行预览的编辑界面流程中editing 状态，编辑草稿，vmIds 状态，projects 状态，tags 状态，preview 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Editing event rules, filtered actions, approvals and execution previews, editing state, editing draft, vmIds state, projects state, tags state, preview state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：rule：签名所示 AutomationRule 业务值
+   * English: Inputs: rule: the AutomationRule domain value in the signature
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const edit = (rule: AutomationRule) => {
     setEditing({ id: rule.id, version: rule.version });
     setDraft({ name: rule.name, enabled: rule.enabled,
@@ -52,13 +89,25 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
     setPreview(null);
     action.clear();
   };
+  /**
+   * 中文：在事件规则、筛选动作、审批与执行预览的编辑界面流程中编辑草稿；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Editing event rules, filtered actions, approvals and execution previews, editing draft. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：field：签名所示 'types' | 'statuses' | 'kinds' 业务值；value：待校验、转换或保存的输入值
+   * English: Inputs: field: the 'types' | 'statuses' | 'kinds' domain value in the signature; value: input value to validate/transform/save
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const toggle = (field: 'types' | 'statuses' | 'kinds', value: string) => {
     const current = draft.filter[field] as string[];
     setDraft({ ...draft, filter: { ...draft.filter,
       [field]: current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
     } });
   };
-  const save = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /automation-rules，完成事件规则、筛选动作、审批与执行预览的编辑界面的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /automation-rules for Editing event rules, filtered actions, approvals and execution previews. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const save = () => void action.run(/** 中文：提交 POST /automation-rules，完成事件规则、筛选动作、审批与执行预览的编辑界面的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /automation-rules for Editing event rules, filtered actions, approvals and execution previews. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     await request('/automation-rules', 'POST', {
       operation: 'save', ...editing,
       rule: { ...draft, previewOnly: draft.action === 'runbook' ? true : draft.previewOnly,
@@ -69,17 +118,33 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
     clear();
     remote.reload();
   }, '自动化规则已保存');
-  const remove = (rule: AutomationRule) => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /automation-rules，完成事件规则、筛选动作、审批与执行预览的编辑界面的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /automation-rules for Editing event rules, filtered actions, approvals and execution previews. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：rule：签名所示 AutomationRule 业务值
+   * English: Inputs: rule: the AutomationRule domain value in the signature
+   */
+  const remove = (rule: AutomationRule) => void action.run(/** 中文：提交 POST /automation-rules，完成事件规则、筛选动作、审批与执行预览的编辑界面的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /automation-rules for Editing event rules, filtered actions, approvals and execution previews. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     await request('/automation-rules', 'POST',
       { operation: 'remove', id: rule.id, version: rule.version }, signal);
     if (editing?.id === rule.id) clear();
     remote.reload();
   }, '自动化规则已删除');
-  const inspect = (rule: AutomationRule) => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /automation-rules，完成事件规则、筛选动作、审批与执行预览的编辑界面的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /automation-rules for Editing event rules, filtered actions, approvals and execution previews. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：rule：签名所示 AutomationRule 业务值
+   * English: Inputs: rule: the AutomationRule domain value in the signature
+   */
+  const inspect = (rule: AutomationRule) => void action.run(/** 中文：提交 POST /automation-rules，完成事件规则、筛选动作、审批与执行预览的编辑界面的数据交互并更新preview 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /automation-rules for Editing event rules, filtered actions, approvals and execution previews and update preview state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     setPreview(await request<Preview>('/automation-rules', 'POST',
       { operation: 'preview', id: rule.id }, signal));
   });
-  const approve = () => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /automation-rules，完成事件规则、筛选动作、审批与执行预览的编辑界面的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /automation-rules for Editing event rules, filtered actions, approvals and execution previews. Propagate asynchronous failure to this catch path or the outer action feedback
+   */
+  const approve = () => void action.run(/** 中文：提交 POST /automation-rules，完成事件规则、筛选动作、审批与执行预览的编辑界面的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /automation-rules for Editing event rules, filtered actions, approvals and execution previews. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     if (!preview?.approval || preview.rule.action !== 'runbook') return;
     const rule = preview.rule;
     await request('/automation-rules', 'POST', { operation: 'save', id: rule.id,

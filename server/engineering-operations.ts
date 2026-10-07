@@ -1,5 +1,6 @@
 /**
  * 模块职责：声明工程操作目录与参数约束，将归档、项目路径等安全边界交给运行器执行。
+ * Module purpose: Declares engineering actions and parameter boundaries, leaving archive and project-path enforcement to the guest runner.
  */
 import { z } from 'zod';
 import { isIP } from 'node:net';
@@ -23,6 +24,17 @@ const ref = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_./~^{}@-]{0,127}$/);
 const label = z.string().trim().min(1).max(120);
 const argv = z.array(z.string().max(4096)).min(1).max(80);
 const empty = z.object({}).strict();
+/**
+ * 入口 / Entry: op.
+ * 功能：在声明工程操作目录与参数约束中，执行此领域的具体处理步骤并返回其结果；本入口产生 `({ name, feature, schema: z.object(shape).strict(), example, note, writes })` 供上层消费（`engineering-operations.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `engineering-operations.ts`; this entry produces `({ name, feature, schema: z.object(shape).strict(), example, note, writes })` for its caller. Module context: Declares engineering actions and parameter boundaries, leaving archive and project-path enforcement to the guest runner.
+ * 处理：通过 `z.object().strict`, `z.object` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.object().strict`, `z.object`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: name: string; feature: string; shape: T; example: Record<string, unknown>; note: default=''; writes: default=false
+ * 输出 / Returns: `({ name, feature, schema: z.object(shape).strict(), example, note, writes })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const op = <T extends z.ZodRawShape>(
   name: string,
   feature: string,
@@ -441,6 +453,18 @@ export const engineeringOperations = {
 } as const;
 
 export type EngineeringOperation = keyof typeof engineeringOperations;
+/**
+ * 入口 / Entry: validateOperation.
+ * 功能：在声明工程操作目录与参数约束中，核对调用资格、输入或资源归属；本入口产生 `{ operation, parameters }` 供上层消费（`engineering-operations.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `engineering-operations.ts`; this entry produces `{ operation, parameters }` for its caller. Module context: Declares engineering actions and parameter boundaries, leaving archive and project-path enforcement to the guest runner.
+ * 处理：通过 `z.object().strict().parse`, `z.object().strict`, `z.object`, `z.string` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.object().strict().parse`, `z.object().strict`, `z.object`, `z.string`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `operation === 'archive' && mode !== 'list'`; `operation === 'shell-profiles' && mode === 'run'`; `operation === 'git-reflog' && mode === 'recover'`.
+ * 输入 / Inputs: input: unknown
+ * 输出 / Returns: `{ operation, parameters }`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `!Object.hasOwn(engineeringOperations, body.operation)`; `operation === 'git-rebase' && (mode === 'plan' || mode === 'apply')`; `mode === 'apply'`; 异常 / errors `new AppError('操作不存在', 400)`; `new AppError('计划不能为空；reword 需要提供 message')`.
+ */
 export function validateOperation(input: unknown) {
   const body = z
     .object({ operation: z.string(), parameters: z.record(z.string(), z.unknown()).default({}) })
@@ -452,6 +476,15 @@ export function validateOperation(input: unknown) {
     string,
     unknown
   >;
+  /**
+   * 入口 / Entry: validateOperation.need.
+   * 功能：在声明工程操作目录与参数约束中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`engineering-operations.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `engineering-operations.ts`; the calls and state transitions below complete the operation. Module context: Declares engineering actions and parameter boundaries, leaving archive and project-path enforcement to the guest runner.
+   * 输入 / Inputs: keys: string[]
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `parameters[key] === undefined`; 异常 / errors `new AppError('此操作需要参数：' + key, 400)`.
+   */
   const need = (...keys: string[]) => {
     for (const key of keys)
       if (parameters[key] === undefined) throw new AppError('此操作需要参数：' + key, 400);
@@ -488,6 +521,14 @@ export function validateOperation(input: unknown) {
   }
   return { operation, parameters };
 }
+/**
+ * 入口 / Entry: operationViews.
+ * 功能：从当前输入或状态计算 `Object.entries(engineeringOperations).map(([id, v]) => ({ id, name: v.name, feature: v.feature, example: v.example, note: v.n…`，供调用方后续验证或使用。
+ * Purpose: Computes `Object.entries(engineeringOperations).map(([id, v]) => ({ id, name: v.name, feature: v.feature, example: v.example, note: v.n…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `Object.entries(engineeringOperations).map(([id, v]) => ({ id, name: v.name, feature: v.feature, example: v.example, note: v.n…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export const operationViews = () =>
   Object.entries(engineeringOperations).map(([id, v]) => ({
     id,

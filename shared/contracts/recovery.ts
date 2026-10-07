@@ -1,5 +1,8 @@
 /**
- * 模块职责：恢复记录、绑定、诊断和重建请求的公开 Schema，约束恢复目录中的目标与状态。
+ * 模块职责（中文）：恢复记录、绑定、诊断和重建请求的公开 Schema，约束恢复目录中的目标与状态。
+ * Module responsibility (English): recovery bindings, records, diagnostics and rebuild requests.
+ * 详细范围（中文）：公开入口包括 recoveryBinding, RecoveryBinding, recoveryRecord, RecoveryRecord, recoveryViewSchema, RecoveryView, recoveryDiagnosticsSchema, RecoveryDiagnostics, recoveryListSchema, RecoveryCatalogView, recoveryRebuildRequest, recoveryRequest；职责覆盖恢复绑定、记录、诊断和重建请求，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include recoveryBinding, RecoveryBinding, recoveryRecord, RecoveryRecord, recoveryViewSchema, RecoveryView, recoveryDiagnosticsSchema, RecoveryDiagnostics, recoveryListSchema, RecoveryCatalogView, recoveryRebuildRequest, recoveryRequest. The scope covers recovery bindings, records, diagnostics and rebuild requests. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
 

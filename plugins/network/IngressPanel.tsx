@@ -1,5 +1,8 @@
 /**
- * 模块职责：编辑 HTTP 入口规则和证书策略，展示入口健康检查与证书轮换状态。
+ * 模块职责（中文）：编辑 HTTP 入口规则和证书策略，展示入口健康检查与证书轮换状态。
+ * Module responsibility (English): UI interaction and state presentation for ports, network profiles, ingress and certificates.
+ * 详细范围（中文）：公开入口包括 IngressPanel；职责覆盖端口、网络档案、入口与证书的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include IngressPanel. The scope covers UI interaction and state presentation for ports, network profiles, ingress and certificates. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from '../../src/localization';
 import { ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
@@ -9,12 +12,26 @@ import type { CertificatePolicy, CertificateView } from '../../shared/ingress-ce
 import type { LocalAliasView } from '../../shared/local-aliases.ts';
 import { Feedback, useAction, useRemote, type FeatureProps } from '../../src/feature-shared.tsx';
 
+/**
+ * 中文：把 ISO 时间按浏览器时区换算为 datetime-local 输入格式，缺省返回空串。
+ * English: Convert ISO time into datetime-local input format using the browser zone, returning an empty string when absent.
+ * 中文：输入：iso：签名所示 string 业务值
+ * English: Inputs: iso: the string domain value in the signature
+ */
 function localDateTime(iso?: string) {
   if (!iso) return '';
   const date = new Date(iso);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
+/**
+ * 中文：为端口、网络档案、入口与证书的界面交互与状态呈现构造包含 name、protocol、domainAlias、listenPort、pathPrefix、vmId、upstreamPort、healthPath、stripPrefix、clientAuth 的局部数据对象，字段取自本次输入和明确默认值，供后续表单或状态流程使用
+ * English: Build a local data object containing name, protocol, domainAlias, listenPort, pathPrefix, vmId, upstreamPort, healthPath, stripPrefix, clientAuth for UI interaction and state presentation for ports, network profiles, ingress and certificates, using current inputs/explicit defaults for subsequent form/state processing
+ * 中文：输入：vmId：当前实例标识；upstreamPort：签名所示 number 业务值
+ * English: Inputs: vmId: current VM identifier; upstreamPort: the number domain value in the signature
+ * 中文：结果：包含 name、protocol、domainAlias、listenPort、pathPrefix、vmId、upstreamPort、healthPath、stripPrefix、clientAuth 的对象，字段供调用者读取状态或调用操作
+ * English: Result: an object containing name, protocol, domainAlias, listenPort, pathPrefix, vmId, upstreamPort, healthPath, stripPrefix, clientAuth for caller state reads/operations
+ */
 function blank(vmId: string, upstreamPort: number): IngressInput {
   return {
     name: '',
@@ -30,6 +47,12 @@ function blank(vmId: string, upstreamPort: number): IngressInput {
   };
 }
 
+/**
+ * 中文：呈现端口、网络档案、入口与证书的界面交互与状态呈现中的 IngressPanel 界面，订阅 /ingress、/ingress-certificate、/local-aliases，组合 Plus、Save，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the IngressPanel surface for UI interaction and state presentation for ports, network profiles, ingress and certificates, subscribing to /ingress, /ingress-certificate, /local-aliases and composing Plus, Save. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { vm, request } provides context fields vm (vm state), request (transport capability bound to identity/authority scope)
+ */
 export function IngressPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<IngressView>(request, '/ingress');
   const certificates = useRemote<CertificateView>(request, '/ingress-certificate');
@@ -37,11 +60,21 @@ export function IngressPanel({ vm, request }: FeatureProps) {
   const action = useAction();
   const [form, setForm] = useState<IngressInput>(() => blank(vm.id, vm.forwards[0]?.host || 8080));
   const [policy, setPolicy] = useState<CertificatePolicy | null>(null);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [policy, certificates.data] 变化时策略草稿；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [policy, certificates.data] change, policy draft. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (!policy && certificates.data?.policy) setPolicy(certificates.data.policy);
   }, [policy, certificates.data]);
   const entries = remote.data?.entries.filter((entry) => entry.vmId === vm.id) || [];
+  /**
+   * 中文：在端口、网络档案、入口与证书的界面交互与状态呈现流程中表单草稿；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In UI interaction and state presentation for ports, network profiles, ingress and certificates, form draft. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：value：待校验、转换或保存的输入值
+   * English: Inputs: value: input value to validate/transform/save
+   */
   const change = (value: Partial<IngressInput>) => setForm((current) => ({ ...current, ...value }));
+  /**
+   * 中文：在端口、网络档案、入口与证书的界面交互与状态呈现流程中触发所属资源重新读取；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In UI interaction and state presentation for ports, network profiles, ingress and certificates, trigger rereading of the owned resource. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   */
   const refresh = () => remote.reload();
   return (
     <div className="content-panel feature-panel">
@@ -113,7 +146,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
                 className="secondary compact"
                 disabled={action.busy}
                 onClick={() =>
-                  void action.run(async (signal) => {
+                  void action.run(/** 中文：提交 POST /ingress，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /ingress for UI interaction and state presentation for ports, network profiles, ingress and certificates. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                     await request('/ingress', 'POST', { action: 'check', id: entry.id }, signal);
                     refresh();
                   }, '健康检查已完成')
@@ -126,7 +159,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
                 aria-label={`删除入口 ${entry.name}`}
                 disabled={action.busy}
                 onClick={() =>
-                  void action.run(async (signal) => {
+                  void action.run(/** 中文：提交 POST /ingress，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互并更新表单草稿；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /ingress for UI interaction and state presentation for ports, network profiles, ingress and certificates and update form draft. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                     await request('/ingress', 'POST', { action: 'delete', id: entry.id }, signal);
                     if (form.id === entry.id) setForm(blank(vm.id, vm.forwards[0]?.host || 8080));
                     refresh();
@@ -280,7 +313,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
             className="primary compact"
             disabled={action.busy || !vm.forwards.length || !form.name.trim()}
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：提交 POST /ingress，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互并更新表单草稿；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /ingress for UI interaction and state presentation for ports, network profiles, ingress and certificates and update form draft. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 await request('/ingress', 'POST', { action: 'save', entry: form }, signal);
                 setForm(blank(vm.id, vm.forwards[0]?.host || 8080));
                 refresh();
@@ -304,7 +337,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
         {!aliases.data?.supported && <p className="subtle-note">仅 Windows 支持系统 hosts 别名。</p>}
         <div className="feature-actions">
           <button className="secondary compact" disabled={action.busy || !aliases.data?.supported}
-            onClick={() => void action.run(async (signal) => {
+            onClick={() => void action.run(/** 中文：提交 POST /local-aliases，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /local-aliases for UI interaction and state presentation for ports, network profiles, ingress and certificates. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断 | English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately */ async (signal) => {
               try { await request('/local-aliases', 'POST',
                 { action: 'set-enabled', enabled: !aliases.data?.enabled }, signal); }
               finally { aliases.reload(); }
@@ -312,7 +345,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
             {aliases.data?.enabled ? '关闭系统解析' : '启用系统解析'}
           </button>
           <button className="secondary compact" disabled={action.busy || !aliases.data?.supported}
-            onClick={() => void action.run(async (signal) => {
+            onClick={() => void action.run(/** 中文：提交 POST /local-aliases，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /local-aliases for UI interaction and state presentation for ports, network profiles, ingress and certificates. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断 | English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately */ async (signal) => {
               try { await request('/local-aliases', 'POST', { action: 'sync' }, signal); }
               finally { aliases.reload(); }
             }, '系统别名已同步')}>重新同步</button>
@@ -368,7 +401,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
             className="secondary compact"
             disabled={action.busy || !policy}
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：提交 POST /ingress-certificate，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /ingress-certificate for UI interaction and state presentation for ports, network profiles, ingress and certificates. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 await request('/ingress-certificate', 'POST', { action: 'configure', policy }, signal);
                 certificates.reload();
               }, '轮换策略已保存')
@@ -380,7 +413,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
             className="secondary compact"
             disabled={action.busy}
             onClick={() =>
-              void action.run(async (signal) => {
+              void action.run(/** 中文：提交 POST /ingress-certificate，完成端口、网络档案、入口与证书的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /ingress-certificate for UI interaction and state presentation for ports, network profiles, ingress and certificates. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 await request('/ingress-certificate', 'POST', { action: 'rotate' }, signal);
                 certificates.reload();
               }, '证书已轮换，新的 TLS 连接开始使用新证书')
@@ -391,7 +424,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
           {certificates.data?.certificate && (
             <button
               className="secondary compact"
-              onClick={() => {
+              onClick={/** 中文：在端口、网络档案、入口与证书的界面交互与状态呈现流程中timeout 状态，创建二进制内容临时 URL；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In UI interaction and state presentation for ports, network profiles, ingress and certificates, timeout state, create temporary binary-content URLs. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
                 const blob = new Blob([certificates.data!.certificate!.pem], {
                   type: 'application/x-pem-file',
                 });

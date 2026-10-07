@@ -1,5 +1,8 @@
 /**
- * 模块职责：原生剪贴板应用、进程及桥接状态的公共类型，描述策略与安装/连接状态。
+ * 模块职责（中文）：原生剪贴板应用、进程及桥接状态的公共类型，描述策略与安装/连接状态。
+ * Module responsibility (English): Describing native clipboard applications, proxy processes and policy state.
+ * 详细范围（中文）：公开入口包括 NativeClipboardApplication, NativeClipboardSettings, NativeClipboardProcess, NativeClipboardProcessState, NativeClipboardView；职责覆盖描述原生剪贴板应用、代理进程与策略状态，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include NativeClipboardApplication, NativeClipboardSettings, NativeClipboardProcess, NativeClipboardProcessState, NativeClipboardView. The scope covers Describing native clipboard applications, proxy processes and policy state. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import type { ClipboardRule } from './clipboard-policy.ts';
 

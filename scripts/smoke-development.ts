@@ -1,4 +1,5 @@
-/** 烟雾验收：验证来宾开发工作区、命令执行和相关开发服务集成。 */
+/** 烟雾验收：验证来宾开发工作区、命令执行和相关开发服务集成。
+ * Smoke acceptance for real guest development workspaces, execution and service integration. */
 import type { JobsV1 } from '../server/service-contracts/v1.ts';
 import { PLUGINS } from '../shared/plugins.ts';
 import assert from 'node:assert/strict';
@@ -27,6 +28,8 @@ const features = await Features.create(
   machines,
   PLUGINS.map((item) => item.id),
 );
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const until = Date.now() + 300000;
@@ -36,12 +39,16 @@ async function boot(id: string) {
     await delay(250);
   }
 }
+/** 等待指定任务收敛并读取最终记录，必须为 done 才返回；失败状态附任务错误和日志，避免把排队成功误作执行成功。
+ * Await the requested job and read its final record, returning only for done; failures include job errors/logs so acceptance into the queue is not mistaken for execution success. */
 async function done(jobs: JobsV1, id: string) {
   await jobs.wait(id);
   const job = jobs.view(id)!;
   assert.equal(job.status, 'done', job.error + '\n' + job.log);
   return job;
 }
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function command(id: string, script: string) {
   const result = await machines.exec(id, script, 30000);
   assert.equal(result.code, 0, result.stderr);

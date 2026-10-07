@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # 烟雾验收：验证Linux 原生项目负载的描述符封闭、降权与 stdin/session 通道。
+# Smoke acceptance for native Linux payload FD closure, privilege drop and stdin/session channel separation.
 """Production descriptor/drop/payload checks on a caller-owned Linux fixture.
 
 The caller owns the guest or PID/mount/network namespace. This script compiles
@@ -52,6 +53,8 @@ exec(compile(definitions, 'production-controller-descriptors', 'exec'), producti
 sample = b'\x00\xff\nSakura stdin\x80\r\n'
 
 
+# 临时发布真实会话通道到 fd3，并用 CLOEXEC 副本保存/恢复夹具原 fd3，避免 preexec 顺序误判。
+# Temporarily publish the real session channel as fd3, saving/restoring original fd3 via CLOEXEC copies to avoid preexec-order ambiguity.
 @contextlib.contextmanager
 def session_fd(channel):
     # Match the actual controller's fd3 publication; preserve this harness's
@@ -75,6 +78,8 @@ def session_fd(channel):
             os.close(previous)
 
 
+# 严格核对目标 fd0..3、通道和负载类型，启动固定原生探针并只传指定描述符。
+# Validate target fd0..3/channel/payload types and invoke the fixed native probe with only designated descriptors.
 def invoke(binary, arguments, target=None, channel=None, frame=None):
     if target is not None and (type(target) is not int or target not in range(4)):
         raise ValueError('descriptor target must be fd0, fd1, fd2 or fd3')
@@ -103,11 +108,15 @@ def invoke(binary, arguments, target=None, channel=None, frame=None):
     return result
 
 
+# 编码固定 magic/版本、脚本长度与交互标志的原生命令帧，供拒绝边界验收。
+# Encode the native frame’s fixed magic/version/script length/interactive flag for refusal-boundary checks.
 def frame(script, flags=0):
     body = script.encode()
     return struct.pack('<8sIIIIII', b'SKIDP001', 1, flags, len(body), 0, len(body), 0) + body
 
 
+# 交叉核实生产控制器与原生探针对本地 FD 的接受，并在会话模式验证 fd3 实际可用。
+# Cross-check production/native acceptance of local FDs and verify actual fd3 usability in session mode.
 def assert_local(binary, descriptor, session=False):
     before = os.fstat(descriptor)
     after = production['local_transport'](descriptor, 'FIXTURE_NETWORK_CHANNEL')
@@ -120,6 +129,8 @@ def assert_local(binary, descriptor, session=False):
         assert result.returncode == 0 and result.stdout == b'valid\n', result.stderr
 
 
+# 要求生产与原生启动器拒绝所有四个位置的网络 socket，失败退出码必须为 126。
+# Require production/native rejection of network sockets in all four FD positions with exit code 126.
 def assert_network(binary, descriptor, family):
     try:
         production['local_transport'](descriptor, 'FIXTURE_NETWORK_CHANNEL')

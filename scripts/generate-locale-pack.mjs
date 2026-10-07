@@ -1,4 +1,5 @@
-/** 从简体中文资源及静态词条生成繁体整包和片段包，使用 OpenCC 转换并支持只读同步检查。 */
+/** 从简体中文资源及静态词条生成繁体整包和片段包，使用 OpenCC 转换并支持只读同步检查。
+ * Generate Traditional Chinese full/fragment locale packs from Simplified Chinese resources and static entries through OpenCC, with read-only synchronization checking. */
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import ts from 'typescript';
@@ -10,6 +11,8 @@ const convert = OpenCC.Converter({ from: 'cn', to: 'twp' });
 const phrases = new Set();
 const prefix = new Set(), suffix = new Set();
 
+/** 递归解析指定目录的 TS/TSX 源码并收集界面中文；使用 AST 避免把注释误收为文案，短单行文本和模板边界分别归档。
+ * Recursively parse TS/TSX below the directory and collect Chinese UI text; AST traversal excludes comments and records short single-line phrases separately from template edges. */
 async function collect(directory) {
   for (const entry of await readdir(resolve(root, directory), { withFileTypes: true })) {
     const path = `${directory}/${entry.name}`;
@@ -17,6 +20,8 @@ async function collect(directory) {
     else if (/\.tsx?$/.test(entry.name)) {
       const source = ts.createSourceFile(path, await readFile(resolve(root, path), 'utf8'),
         ts.ScriptTarget.Latest, true, entry.name.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+      /** 检查 JSX 文本、字面量及模板首尾，按长度和单行条件加入去重集合，再递归子节点；模板中间表达式不被伪装成固定文案。
+       * Inspect JSX text/literals/template edges, adding length-bounded single-line Chinese to deduplicated sets before visiting children; interpolated expressions are not treated as fixed copy. */
       const visit = (node) => {
         if (ts.isJsxText(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
           const phrase = node.text.trim();

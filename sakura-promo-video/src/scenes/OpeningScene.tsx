@@ -1,9 +1,12 @@
-/** 片头品牌定位画面，按帧插值呈现樱花资源、产品名称与终端/代码/文件能力。 */
+/** 片头品牌定位画面，按帧插值呈现樱花资源、产品名称与终端/代码/文件能力。
+ * Introduce the brand by interpolating painted assets/product name and terminal/code/file capabilities from frame time. */
 import {CanvasImage, Interactive, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {clamp, ease, Icon, Reveal} from '../components';
 import {ScenePaper, useScene} from '../stage';
 import {colors, font} from '../theme';
 
+/** 按全局场景内帧渐入樱枝与品牌定位，再用首章 cue 显示本地 Linux 工作空间的功能标签。
+ * Fade in the painted bough and brand positioning from scene-local frames, then show local Linux workspace capability tags at opening cues. */
 const OpeningInner: React.FC<{style?: React.CSSProperties}> = ({style}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();

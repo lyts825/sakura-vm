@@ -1,4 +1,5 @@
 # 烟雾验收：验证单窗口原生 Linux 控制器的真实运行、源摘要和父夹具不变性。
+# Smoke acceptance for real native single-app Linux execution/source hashes and parent-fixture invariance.
 """Exercise fixed SingleApp launch primitives in new owned Linux namespaces.
 
 No VM, account, service, shared mount, project or original image is modified.
@@ -24,6 +25,8 @@ from types import SimpleNamespace
 import uuid
 
 
+# 从明确源路径加载夹具指定模块，返回模块对象用于原实现验证。
+# Load the named fixture module from its explicit source path for production-code checks.
 def load(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -31,12 +34,16 @@ def load(path, name):
     return module
 
 
+# 采集父夹具 namespace/cgroup/直接子进程/FD 数量，供前后不变性比较。
+# Capture parent namespace/cgroup/direct children/FD count for before-after invariance checks.
 def footprint():
     return {'mount': os.readlink('/proc/self/ns/mnt'), 'network': os.readlink('/proc/self/ns/net'),
             'cgroup': Path('/proc/self/cgroup').read_text(), 'children': Path('/proc/self/task/' + str(os.getpid()) + '/children').read_text(),
             'fds': len(os.listdir('/proc/self/fd'))}
 
 
+# 返回文件设备/inode、UID/GID、模式与 ACL，缺少 ACL 属性按空值记录。
+# Return device/inode, UID/GID, mode and ACL, representing absent ACL as empty.
 def metadata(path):
     value = path.stat()
     try: acl = os.getxattr(path, 'system.posix_acl_access').hex()
@@ -46,6 +53,8 @@ def metadata(path):
     return [value.st_dev, value.st_ino, value.st_uid, value.st_gid, stat.S_IMODE(value.st_mode), acl]
 
 
+# 在自有 fork 子进程执行隔离操作，通过有界管道读 JSON 结果；超时杀并回收精确子进程。
+# Run isolated operations in an owned fork child and read bounded JSON over a pipe, killing/reaping only that child on timeout.
 def run_child(view, operation):
     reader, writer = os.pipe2(os.O_CLOEXEC)
     child = os.fork()
@@ -87,6 +96,8 @@ def run_child(view, operation):
             except view.DirectoryViewError: pass
 
 
+# 创建自有不同权限祖先和项目目录，验证 IDMAP 后读写/执行、陈旧摘要拒绝及源所有权/ACL 不变。
+# Create owned ancestor/project permission cases and verify mapped I/O/exec, stale-hash refusal and unchanged source ownership/ACL.
 def mapped_case(core, view, stem, project_uid, sandbox_uid, private, stale=False):
     parent = stem / ('private' if private else 'public')
     parent.mkdir(mode=0o700 if private else 0o711)
@@ -110,6 +121,8 @@ def mapped_case(core, view, stem, project_uid, sandbox_uid, private, stale=False
     expected = {**core.image(executable), 'command': str(executable)}
     original_fd = os.open(executable, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
+        # 降权后尝试旧挂载树映像 FD，要求 EACCES，证明旧 FD 不能替代映射视图权限。
+        # Attempt old-tree image FD execution after drop and require EACCES, proving it cannot replace mapped-view permission.
         def old_mount():
             core.drop_account(user)
             try: os.execve(original_fd, [str(executable), '-V'], {})
@@ -124,6 +137,8 @@ def mapped_case(core, view, stem, project_uid, sandbox_uid, private, stale=False
         namespace, proof = view.directory_view_create({'identity': identity, 'run': run, 'directoryFd': source}, user)
         assert (proof['route'] is not None) == private
         if stale: expected['sha256'] = '0' * 64
+        # 进入固定映射视图并降权，核对目录可访问和固定映像执行/摘要变化拒绝。
+        # Enter the pinned mapped view/drop privileges and check access plus pinned-image execution/hash-change refusal.
         def execute():
             mapped = view.directory_view_enter(namespace, proof, directory)
             os.close(source)
@@ -190,6 +205,8 @@ print(json.dumps({'uid':os.getuid(),'gid':os.getgid(),'groups':os.getgroups(),'n
         os.close(source)
 
 
+# 覆盖真实 EOF、超量和超时管道输入，要求固定失败码并关闭本轮 FD。
+# Cover real EOF/excess/timeout pipe input, checking stable failure codes and closing owned FDs.
 def pipe_case(core, kind):
     reader, writer = os.pipe2(os.O_CLOEXEC)
     try:
@@ -208,6 +225,8 @@ def pipe_case(core, kind):
         if writer >= 0: os.close(writer)
 
 
+# 对比监督器重新封闭 FD 前后的真实子进程继承，证明 reseal 阻止管理 FD 泄露。
+# Compare real child inheritance before/after supervisor FD resealing to prove management-descriptor isolation.
 def passed_fd_case(core, source, sandbox_uid):
     outcomes = []
     for reseal in (False, True):
@@ -311,6 +330,8 @@ finally:
             'scope': 'three production Popen/preexec paths with controlled ELF substitutes', 'outcomes': outcomes}
 
 
+# 仅在 root 自有 Linux 夹具中固定源摘要，执行映射/负载/FD 场景并保存报告、核对父状态恢复。
+# Pin sources in the root-owned Linux fixture, run mapping/input/FD cases and save reports with parent-state restoration checks.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', required=True)

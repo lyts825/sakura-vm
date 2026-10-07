@@ -1,4 +1,5 @@
-/** 烟雾验收：验证平台 passkey 注册、锁屏解锁、重放拒绝和密码回退。 */
+/** 烟雾验收：验证平台 passkey 注册、锁屏解锁、重放拒绝和密码回退。
+ * Smoke acceptance for platform passkey registration, unlock, replay refusal and password fallback. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -21,6 +22,8 @@ const password = 'a long administrator password';
 const unlockPassword = 'a separate control lock password';
 let server: ReturnType<typeof spawn> | undefined;
 let output = '';
+/** 在二十秒期限内发送指定本机 HTTP 请求，可带令牌和 JSON；返回状态与正文供访问成功/拒绝核验。
+ * Send a local HTTP request within twenty seconds with optional token/JSON, returning status/body for acceptance/denial checks. */
 const request = async (path: string, method = 'GET', token?: string, input?: unknown,
   base = origin) => {
   const response = await fetch(base + path, { method,

@@ -1,9 +1,12 @@
-/** 片尾品牌收束画面，按当前帧展示产品口号、能力提示和品牌资源。 */
+/** 片尾品牌收束画面，按当前帧展示产品口号、能力提示和品牌资源。
+ * Use current frames to compose the closing brand/tagline/capability reminders and hold the final image. */
 import {CanvasImage, Interactive, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {clamp, ease, Reveal} from '../components';
 import {ScenePaper} from '../stage';
 import {colors, font} from '../theme';
 
+/** 按帧缓慢显现樱枝和品牌收尾内容，保留最终纸面构图供影片结束停留。
+ * Gradually reveal the painted bough and closing brand from frame time, retaining the final paper composition at the film’s end. */
 const ClosingInner: React.FC<{style?: React.CSSProperties}> = ({style}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();

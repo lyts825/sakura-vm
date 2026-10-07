@@ -1,5 +1,8 @@
 /**
- * 模块职责：基础功能与资源预设目录，区分可用、部分实现和规划功能并提供界面投影视图。
+ * 模块职责（中文）：基础功能与资源预设目录，区分可用、部分实现和规划功能并提供界面投影视图。
+ * Module responsibility (English): maintaining automation capability identifiers, descriptions, implementation state and catalog projections.
+ * 详细范围（中文）：公开入口包括 featureCatalog, resourcePresets, ResourcePresetId, ResourcePreset, FeatureId, FeatureCatalogItem, featureCatalogView, implementedFeatureCatalogView；职责覆盖维护automation能力的标识、描述、实现状态及目录投影，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include featureCatalog, resourcePresets, ResourcePresetId, ResourcePreset, FeatureId, FeatureCatalogItem, featureCatalogView, implementedFeatureCatalogView. The scope covers maintaining automation capability identifiers, descriptions, implementation state and catalog projections. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -151,6 +154,12 @@ const availableFeatureIds = new Set<FeatureId>([
 ]);
 const partialFeatureIds = new Set<FeatureId>();
 
+/**
+ * 中文：把内部能力目录投影成公开视图，附带可执行动作和实现状态，隐藏内部实现细节。
+ * English: Project the internal capability catalog into public views with executable actions/implementation state while hiding implementation details.
+ * 中文：结果：FeatureCatalogItem[]，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: FeatureCatalogItem[] carrying the described computation/transport result; throwing branches do not provide success
+ */
 export const featureCatalogView = (): FeatureCatalogItem[] =>
   featureCatalog.map(([id, name, category, priority, summary]) => ({
     id,
@@ -163,4 +172,10 @@ export const featureCatalogView = (): FeatureCatalogItem[] =>
   }));
 
 /** The public catalog describes implemented entry points and planned work. */
+/**
+ * 中文：只返回声明为已实现的能力视图，供当前可用入口列举。
+ * English: Return only capabilities declared implemented for listing presently available entry points.
+ * 中文：结果：FeatureCatalogItem[]，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: FeatureCatalogItem[] carrying the described computation/transport result; throwing branches do not provide success
+ */
 export const implementedFeatureCatalogView = (): FeatureCatalogItem[] => featureCatalogView();

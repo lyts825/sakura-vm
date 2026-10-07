@@ -1,4 +1,5 @@
-/** AST 资源访问检查，要求服务源码通过已声明的资源入口操作受约束文件和运行时对象。 */
+/** AST 资源访问检查，要求服务源码通过已声明的资源入口操作受约束文件和运行时对象。
+ * Inspect imports and resource operations against ownership/type rules and report unmediated or embedded-resource access. */
 import ts from 'typescript';
 import { staticString } from './network-boundaries.ts';
 
@@ -15,22 +16,32 @@ const receipts = new Set(['server/ha-witness-drill.ts', 'server/ha-witness-core.
   'server/domains/vm-snapshots.ts',
   'server/project-service-scope.ts', 'server/storage-pools.ts', 'server/trusted-boot-service.ts',
   'server/local-store.ts', 'server/metadata-store.ts']);
+/** 规范 node: 模块前缀，统一资源 API 禁用判断。
+ * Normalize node: prefixes for consistent forbidden resource-API detection. */
 const moduleName = (name: string) => name.replace(/^node:/, '');
 
 /** Source enforcement for reviewed runtime adapters, not a sandbox for arbitrary code. */
+/** 按源码身份检查文件/进程/服务资源访问，防止公开边界直接获取实现所有权，返回源诊断。
+ * Check file/process/service resource access by source identity, preventing public boundaries from directly obtaining implementation ownership. */
 export function resourceBoundaryErrors(file: string, source: ts.SourceFile): string[] {
   file = file.replaceAll('\\', '/');
   if (!file.startsWith('server/') && !file.startsWith('plugins/')) return [];
   if (/^plugins\/[^/]+\/client\./.test(file)) return [];
   const errors: string[] = [], fileWriters = new Set(['writeFile', 'writeFileSync']);
   const requireFactories = new Set(['createRequire']), loaders = new Set(['require']);
+  /** 附带源文件与一基行号累计边界诊断，不中断遍历，以便一次报告全部违规。
+   * Accumulate boundary diagnostics with source path/one-based line without stopping traversal, reporting all violations together. */
   const report = (node: ts.Node, message: string) => errors.push(
     `${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}: ${message}`);
+  /** 沿 AST 父链区分纯类型位置，避免把声明引用误判为资源取得。
+   * Distinguish type-only positions through AST ancestry to avoid treating declarations as resource acquisition. */
   const isType = (node: ts.Node) => {
     for (let parent: ts.Node | undefined = node; parent; parent = parent.parent)
       if (ts.isTypeNode(parent)) return true;
     return false;
   };
+  /** 按模块与访问成员判断是否为当前边界禁止的资源操作。
+   * Determine whether a module/member access is a forbidden resource operation for the current boundary. */
   const forbidden = (specifier: string, names?: string[]) => {
     const module = moduleName(specifier);
     if (module === 'child_process' && !processes.has(file)) return 'Host processes must use the managed process adapters';
@@ -43,12 +54,16 @@ export function resourceBoundaryErrors(file: string, source: ts.SourceFile): str
         /(?:^|\/)server\/(?:host-runtime(?:\/|$)|network(?:\/|$)|host-process\.|compute-runtime\.|storage-runtime\.)/.test(specifier)))
       return 'Plugins must obtain resource capabilities from their plugin scope';
   };
+  /** 递归识别导入表达式的 JSON 资源声明，防止隐式静态资源绕过 owner。
+   * Recursively identify JSON resource imports so implicit static resources cannot bypass ownership. */
   const containsJson = (node: ts.Node): boolean => {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'JSON' &&
         node.expression.name.text === 'stringify') return true;
     return ts.forEachChild(node, containsJson) || false;
   };
+  /** 扫描 import/require、成员访问与资源构造，跳过纯类型并累计所有违规。
+   * Scan imports/require/member access/resource construction, skipping type-only uses and accumulating violations. */
   function visit(node: ts.Node) {
     if (isType(node)) return;
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {

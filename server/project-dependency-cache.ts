@@ -1,5 +1,6 @@
 /**
  * 模块职责：规划 npm/pip 依赖预取与缓存发布，校验下载环境并生成受限客户机脚本。
+ * Module purpose: Plans npm/pip prefetch and cache publication, validating download environments and generating bounded guest scripts.
  */
 import { z } from 'zod';
 import { randomBytes } from 'node:crypto';
@@ -12,6 +13,20 @@ export type ProjectCacheOperation = 'prefetch-dependencies' | 'install-cached-de
 const projectIdSchema = z.string().regex(/^(default|[a-f0-9]{16})$/);
 
 /** Shared downloaders accept only the separately saved instance mirror/proxy profile. */
+/**
+ * 入口 / Entry: dependencyDownloadEnvironment.
+ * 功能：在规划 npm/pip 依赖预取与缓存发布中，执行此领域的具体处理步骤并返回其结果；本入口产生 `output` 供上层消费（`project-dependency-cache.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-dependency-cache.ts`; this entry produces `output` for its caller. Module context: Plans npm/pip prefetch and cache publication, validating download environments and generating bounded guest scripts.
+ * 处理：通过 `inline.includes`, `inline.test` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `inline.includes`, `inline.test`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `!value`; `value`.
+ * 输入 / Inputs: input: Record<string, string> default={}
+ * 输出 / Returns: `output`.
+ * 副作用 / Effects: 更新 / updates `url`, `output[key]`.
+ * 拒绝 / Refusals: 条件 / conditions `!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || /[\s\x00-\x1f]/.test…`; `value && !/^[A-Za-z0-9_.,:*\-\[\]/]*$/.test(value)`; 异常 / errors `new Error('依赖预取的镜像与代理地址无效')`; `new Error('依赖预取的镜像与代理地址不能包含凭证、查询参数或非 HTTP(S) 协议')`.
+ * 失败处理：catch 分支执行 `throw new Error('依赖预取的镜像与代理地址无效');`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `throw new Error('依赖预取的镜像与代理地址无效');`; these statements determine whether a failure is absorbed or rejected again.
+ */
 export function dependencyDownloadEnvironment(input: Record<string, string> = {}) {
   const output: Record<string, string> = {};
   for (const key of [
@@ -132,6 +147,17 @@ const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 fs.writeFileSync(path.join(stage, 'LOCKSUMS'), hash(bytes) + '  package.json\n' + hash(lockBytes) + '  ' + filename + '\n');
 `;
 
+/**
+ * 入口 / Entry: cleanDownloadScript.
+ * 功能：在规划 npm/pip 依赖预取与缓存发布中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( `cd /\nexec env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ` + Object.entries(environment) .map((…` 供上层消费（`project-dependency-cache.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-dependency-cache.ts`; this entry produces `( `cd /\nexec env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ` + Object.entries(environment) .map((…` for its caller. Module context: Plans npm/pip prefetch and cache publication, validating download environments and generating bounded guest scripts.
+ * 处理：通过 `dependencyDownloadEnvironment`, `quote` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `dependencyDownloadEnvironment`, `quote`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: script: string; input: Record<string, string>
+ * 输出 / Returns: `( `cd /\nexec env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ` + Object.entries(environment) .map((…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 function cleanDownloadScript(script: string, input: Record<string, string>) {
   const environment = dependencyDownloadEnvironment(input);
   return (
@@ -202,6 +228,17 @@ if __name__ == '__main__':
 export type ProjectDependencyCachePlan = { command: string; cleanup?: string; temporaryDirectory?: string };
 
 /** Host-selected paths let the caller clean only this task after even SIGKILL. */
+/**
+ * 入口 / Entry: projectDependencyCachePlan.
+ * 功能：在规划 npm/pip 依赖预取与缓存发布中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ command: dependencyCacheCommand(directory, projectId, manager, operation, downloadEnvironment, authentication, stage, marke…` 供上层消费（`project-dependency-cache.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `project-dependency-cache.ts`; this entry produces `{ command: dependencyCacheCommand(directory, projectId, manager, operation, downloadEnvironment, authentication, stage, marke…` for its caller. Module context: Plans npm/pip prefetch and cache publication, validating download environments and generating bounded guest scripts.
+ * 处理：通过 `projectIdSchema.parse`, `dependencyManagerSchema.parse`, `randomBytes().toString`, `randomBytes` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectIdSchema.parse`, `dependencyManagerSchema.parse`, `randomBytes().toString`, `randomBytes`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: directory: string; projectId: string; manager: DependencyManager; operation: ProjectCacheOperation; downloadEnvironment: Record<string, string> default={}; authentication: { credentialFile: string; brokerFile: string } optional
+ * 输出 / Returns: ProjectDependencyCachePlan；结果来自 / values from `{ command: dependencyCacheCommand(directory, projectId, manager, operation, downloadEnvironment, authentication, stage, marke…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function projectDependencyCachePlan(
   directory: string,
   projectId: string,
@@ -239,6 +276,15 @@ fi`;
 }
 
 /** Compatibility for direct guest scripts; managed callers also run plan.cleanup. */
+/**
+ * 入口 / Entry: projectDependencyCacheScript.
+ * 功能：从当前输入或状态计算 `projectDependencyCachePlan(directory, projectId, manager, operation, downloadEnvironment, authentication).command`，供调用方后续验证或使用。
+ * Purpose: Computes `projectDependencyCachePlan(directory, projectId, manager, operation, downloadEnvironment, authentication).command` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: directory: string; projectId: string; manager: DependencyManager; operation: ProjectCacheOperation; downloadEnvironment: Record<string, string> default={}; authentication: { credentialFile: string; brokerFile: string } optional
+ * 输出 / Returns: `projectDependencyCachePlan(directory, projectId, manager, operation, downloadEnvironment, authentication).command`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function projectDependencyCacheScript(
   directory: string,
   projectId: string,
@@ -251,6 +297,17 @@ export function projectDependencyCacheScript(
 }
 
 /** The guest manages its own project cache; only fixed, validated paths enter this script. */
+/**
+ * 入口 / Entry: dependencyCacheCommand.
+ * 功能：按项目、包管理器和动作生成有界缓存预取或检查脚本。
+ * Purpose: Builds bounded cache prefetch/check scripts for the project, manager and requested action.
+ * 设计：认证文件只在核定预取动作与受控路径使用，镜像代理环境单独验证；项目输入不进入 root 管理解释器。
+ * Design: Credentials are limited to approved prefetch paths/actions and separately validated proxies; project input does not enter root control interpreters.
+ * 输入 / Inputs: directory: string; projectId: string; manager: DependencyManager; operation: ProjectCacheOperation; downloadEnvironment: Record<string, string> default={}; authentication: { credentialFile: string; brokerFile: string } optional; stagingDirectory: default=''; marker: default=''; cleanup: default=''; lockTemporary: default=''
+ * 输出 / Returns: `cleanDownloadScript( `set -eu cd / umask 077 cache=${quote(root)} source=${quote(directory)} command -v node >/dev/null && co…`; ``${header} ${prerequisites} test -f "$cache/LOCKSUMS" || { echo '项目依赖缓存不存在' >&2; exit 2; } sha256sum -c "$cache/LOCKSUMS" >/d…`; `cleanDownloadScript( `set -eu cd / umask 077 cache=${quote(root)} source=${quote(directory)} command -v python3 >/dev/null ||…`；另有分支返回 / additional branch-specific returns.
+ * 副作用 / Effects: `authentication.credentialFile.replace`.
+ * 拒绝 / Refusals: 条件 / conditions `authentication && (operation !== 'prefetch-dependencies' || !/^\/run\/sakura-dependency-auth\.(?:[A-Za-z0-9]{12}|[A-Za-z0-9]{…`; 异常 / errors `new Error('认证下载临时路径无效')`.
+ */
 function dependencyCacheCommand(
   directory: string,
   projectId: string,

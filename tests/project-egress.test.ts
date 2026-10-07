@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - production project UID egress transactions preserve exact owners, boot restoration and retry after lost acknowledgements
- * - private UID admission verifies protected OpenRC and systemd PAM SSH ancestry, including live authority changes
- * - systemd admission verifies effective NNP, authoritative exec flags, SSH templates and future service drop-ins
+ * 模块职责：回归验证模块，围绕 `project-egress` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `project-egress`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: production project UID egress transactions preserve exact owners, boot restoration and retry after lost acknowledgements; private UID admission verifies protected OpenRC and systemd PAM SSH ancestry, including live authority changes.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,6 +12,16 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: production project UID egress transactions preserve exact owners, boot restoration and retry after lost acknowledgements
+ * 协作入口 / Collaborators: `fileURLToPath`, `spawnSync`, `assert.equal`, `JSON.parse`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.error, undefined)`; `assert.equal(result.signal, null)`.
+ */
 test('production project UID egress transactions preserve exact owners, boot restoration and retry after lost acknowledgements', async () => {
   const controller = fileURLToPath(new URL('../native/project-identity/controller.py', import.meta.url));
   const model = fileURLToPath(new URL('./project-egress-model.py', import.meta.url));
@@ -27,6 +38,16 @@ test('production project UID egress transactions preserve exact owners, boot res
     'boot_symlink_sync_and_pending_recovery', 'bounded_kernel_json']);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: private UID admission verifies protected OpenRC and systemd PAM SSH ancestry, including live authority changes
+ * 协作入口 / Collaborators: `fileURLToPath`, `spawnSync`, `assert.equal`, `JSON.parse`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.error, undefined)`; `assert.equal(result.signal, null)`.
+ */
 test('private UID admission verifies protected OpenRC and systemd PAM SSH ancestry, including live authority changes', async () => {
   const controller = fileURLToPath(new URL('../native/project-identity/controller.py', import.meta.url));
   const model = fileURLToPath(new URL('./project-egress-nnp-model.py', import.meta.url));
@@ -48,6 +69,16 @@ test('private UID admission verifies protected OpenRC and systemd PAM SSH ancest
     'pinned_process_birth_and_fd_cleanup']);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: systemd admission verifies effective NNP, authoritative exec flags, SSH templates and future service drop-ins
+ * 协作入口 / Collaborators: `fileURLToPath`, `spawnSync`, `assert.equal`, `JSON.parse`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.error, undefined)`; `assert.equal(result.signal, null)`.
+ */
 test('systemd admission verifies effective NNP, authoritative exec flags, SSH templates and future service drop-ins', async () => {
   const controller = fileURLToPath(new URL('../native/project-identity/controller.py', import.meta.url));
   const model = fileURLToPath(new URL('./project-egress-systemd-model.py', import.meta.url));
@@ -63,6 +94,16 @@ test('systemd admission verifies effective NNP, authoritative exec flags, SSH te
     'admission_and_restore_check_real_user_instances', 'ssh_listener_authority_strict_properties']);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: production nft compatibility preserves actual table ownership, exact snapshots and three explicit commands in one fixed transaction
+ * 协作入口 / Collaborators: `fileURLToPath`, `spawnSync`, `assert.equal`, `JSON.parse`.
+ * 检查边界 / Checked boundaries: `assert.equal(result.error, undefined)`; `assert.equal(result.signal, null)`.
+ */
 test('production nft compatibility preserves actual table ownership, exact snapshots and three explicit commands in one fixed transaction', async () => {
   const controller = fileURLToPath(new URL('../native/project-identity/controller.py', import.meta.url));
   const model = fileURLToPath(new URL('./project-egress-compat-model.py', import.meta.url));

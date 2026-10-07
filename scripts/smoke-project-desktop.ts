@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实项目桌面的双显示器、服务/VM 重启及停机配置重绑定。 */
+/** 烟雾验收：验证真实项目桌面的双显示器、服务/VM 重启及停机配置重绑定。
+ * Smoke acceptance for real project desktops with two displays, service/VM restart and stopped-config rebinding. */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -37,6 +38,8 @@ let active = 'default';
 let completed = false;
 console.log('KDE smoke fixture:', directory);
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 300000;
@@ -45,6 +48,8 @@ async function boot(id: string) {
     await delay(300);
   }
 }
+/** 在指定项目等待桌面 ready，同时输出新增日志；绑定不一致、错误、长期 stopped 或总期限届满均拒绝。
+ * Await desktop ready in its project while printing added logs; reject binding mismatch/error/prolonged stopped/overall expiry. */
 async function ready(id: string, project: string, timeout = 190000) {
   const deadline = Date.now() + timeout;
   let lastLog = '';
@@ -89,6 +94,8 @@ try {
   await workspaces.projects.with(vm.id, alpha, async () => { desktops.start(vm.id, 'install'); });
   await ready(vm.id, alpha, 940000);
   const project = await workspaces.projects.with(vm.id, alpha, () => workspaces.config(vm.id));
+  /** 用生产 projectNetworkCommand 包装桌面命令，使来宾流量遵循项目网络域。
+   * Wrap desktop commands with production projectNetworkCommand so guest traffic follows its project network domain. */
   const network = (command: string) => projectNetworkCommand(project, command);
   const boundary = await machines.exec(vm.id, `set -eu
 expected=$(ip netns exec sk-${alpha} readlink /proc/self/ns/net)
@@ -121,7 +128,11 @@ printf '%s\n' "$expected"`, 10000);
     optimizeDeps: { entries: ['src/DesktopPanel.tsx'], include: ['react', 'react-dom/client'] },
     server: { host: '127.0.0.1', port: 0 }, plugins: [{
       name: 'project-desktop-smoke',
+      /** 只解析专用桌面验收虚拟入口，其余模块交给 Vite 原解析链。
+       * Resolve only the dedicated desktop-check virtual entry and leave other modules to Vite resolution. */
       resolveId(id) { if (id === '/desktop-project-smoke.tsx') return id; },
+      /** 为专用虚拟入口返回真实 DesktopPanel 挂载源码和本夹具请求函数，其他 ID 返回 undefined。
+       * Return real DesktopPanel mounting/request source for the dedicated virtual entry, returning undefined for other IDs. */
       load(id) {
         if (id !== '/desktop-project-smoke.tsx') return;
         return `import React from 'react';
@@ -136,8 +147,11 @@ createRoot(document.getElementById('root')).render(React.createElement(DesktopPa
   token:'desktop-smoke',request,start:()=>{},configure:()=>{},busy:false
 }));`;
       },
+      /** 安装专用页面/API/桌面传输中间件，将验收请求转到指定项目的真实服务；错误映射为拒绝响应，其他路径继续 Vite 链。
+       * Install dedicated page/API/desktop-transport middleware forwarding checks to real project services, mapping failures to denial responses and passing other paths down Vite. */
       configureServer(server) {
-        server.middlewares.use((request, response, next) => {
+        server.middlewares.use(/** Vite 中间件提供本次桌面页面并把精确 VM 桌面请求放入当前项目作用域；转换页面失败返回 500，桌面服务失败返回 409，其他路径交给后续中间件。
+ * Serve the owned desktop page in Vite and scope exact-VM desktop requests to the current project; return 500 for page-transform failures, 409 for desktop-service failures and pass other routes to subsequent middleware. */ (request, response, next) => {
           const url = new URL(request.url!, 'http://localhost');
           if (url.pathname === '/desktop-smoke') {
             response.setHeader('Content-Type', 'text/html');

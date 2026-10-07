@@ -1,5 +1,8 @@
 /**
- * 模块职责：远程桌面工具栏、画布、连接状态和录制面板布局，适配不同窗口尺寸。
+ * 模块职责（中文）：远程桌面工具栏、画布、连接状态和录制面板布局，适配不同窗口尺寸。
+ * Module responsibility (English): layout, theme and motion rules for the desktop surface, reused through component class selectors.
+ * 详细范围（中文）：布局与视觉规则由对应组件 class 使用，包含响应式尺寸、状态样式和已声明动效；更新选择器时需同步组件引用
+ * Detailed scope (English): Components consume these layout/visual rules through class selectors, including responsive sizes, state styles and declared motion; selector changes must stay aligned with component references
  */
 .desktop-panel {
   min-width: 0;

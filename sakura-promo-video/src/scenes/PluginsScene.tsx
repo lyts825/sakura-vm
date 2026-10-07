@@ -1,14 +1,19 @@
-/** 插件中心章节示意，按旁白 cue 展示选择、保存及重启后生效的顺序。 */
+/** 插件中心章节示意，按旁白 cue 展示选择、保存及重启后生效的顺序。
+ * Illustrate disabled-by-default plugin selection/save/restart activation in narration order. */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Button, Chapter, ScenePaper, type SceneProps, StepStrip, Tag, useScene, Window} from '../stage';
 import {colors, font} from '../theme';
 
+/** 在插件章节 at 秒后以 0.55 秒淡入位移显示能力包，selected 控制选中样式，传入图标和文字描述该包。
+ * Reveal a capability bundle with a 0.55-second fade/slide after at in the plugin chapter; selected controls styling and supplied icon/text describe the bundle. */
 const Bundle = ({title, detail, icon, at, selected}: {title: string; detail: string; icon: 'folder' | 'code' | 'snapshot' | 'grid'; at: number; selected?: boolean}) => {
   const {seconds} = useScene('plugins');
   return <div style={{display: 'flex', alignItems: 'center', gap: 23, border: `1px solid ${selected ? '#dab2c6' : colors.line}`, borderRadius: 12, padding: '15px 22px', height: 79, background: selected ? colors.blush : '#fff',
     opacity: interpolate(seconds, [at, at + 0.55], [0, 1], clamp), translate: `${interpolate(seconds, [at, at + 0.55], [28, 0], clamp)}px 0px`}}><Icon type={icon} size={35} color={colors.accent}/><div style={{fontSize: 28, fontWeight: 600, width: 190}}>{title}</div><span style={{fontSize: 23, color: colors.muted, flex: 1}}>{detail}</span><div style={{borderRadius: 7, border: `1px solid ${selected ? colors.accent : '#d6c7d3'}`, background: selected ? colors.accent : '#fff', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'}}>{selected && <Icon type="check" size={21}/>}</div></div>;
 };
+/** 按 cue 推进选择、保存和重启后的启用状态，表达默认关闭的能力包需保存并重启服务。
+ * Advance selection, save and post-restart activation at cues, illustrating that disabled-by-default bundles require saving and restarting the service. */
 const PluginsInner: React.FC<SceneProps> = ({style}) => {
   const {seconds, cue} = useScene('plugins');
   const choose = seconds > cue(1) + 2;

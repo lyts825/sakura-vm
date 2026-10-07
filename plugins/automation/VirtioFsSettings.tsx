@@ -1,5 +1,8 @@
 /**
- * 模块职责：配置 virtio-fs 共享目录，展示可用性、挂载状态和操作反馈。
+ * 模块职责（中文）：配置 virtio-fs 共享目录，展示可用性、挂载状态和操作反馈。
+ * Module responsibility (English): UI interaction and state presentation for resource policy, packages and engineering tasks.
+ * 详细范围（中文）：公开入口包括 VirtioFsSettings；职责覆盖资源策略、软件包与工程任务的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include VirtioFsSettings. The scope covers UI interaction and state presentation for resource policy, packages and engineering tasks. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useEffect, useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
@@ -14,6 +17,14 @@ type View = {
   observation: { at: string; mounted: boolean; error?: string } | null;
 };
 
+/**
+ * 中文：呈现资源策略、软件包与工程任务的界面交互与状态呈现中的 VirtioFsSettings 界面，订阅 path，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the VirtioFsSettings surface for UI interaction and state presentation for resource policy, packages and engineering tasks, subscribing to path. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vmId, request } 提供 vmId（当前实例标识）、request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { vmId, request } provides context fields vmId (current VM identifier), request (transport capability bound to identity/authority scope)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function VirtioFsSettings({ vmId, request }: { vmId: string; request: Request }) {
   const path = `/vms/${vmId}/virtio-fs`;
   const remote = useRemote<View>(request, path, true, 5000);
@@ -21,14 +32,20 @@ export function VirtioFsSettings({ vmId, request }: { vmId: string; request: Req
   const [enabled, setEnabled] = useState(false);
   const [hostPath, setHostPath] = useState('');
   const [readOnly, setReadOnly] = useState(true);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [vmId, remote.data?.policy?.enabled, remote.data?.policy?.hostPath, remote.data?.policy?.readOnly] 变化时启用标记，hostPath 状态，readOnly 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [vmId, remote.data?.policy?.enabled, remote.data?.policy?.hostPath, remote.data?.policy?.readOnly] change, enabled marker, hostPath state, readOnly state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (!remote.data) return;
     setEnabled(remote.data.policy.enabled);
     setHostPath(remote.data.policy.hostPath);
     setReadOnly(remote.data.policy.readOnly);
   }, [vmId, remote.data?.policy?.enabled, remote.data?.policy?.hostPath,
     remote.data?.policy?.readOnly]);
-  const run = (payload: unknown, message: string) => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST path，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST path for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：payload：签名所示 unknown 业务值；message：签名所示 string 业务值
+   * English: Inputs: payload: the unknown domain value in the signature; message: the string domain value in the signature
+   */
+  const run = (payload: unknown, message: string) => void action.run(/** 中文：提交 POST path，完成资源策略、软件包与工程任务的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST path for UI interaction and state presentation for resource policy, packages and engineering tasks. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     await request(path, 'POST', payload, signal);
     remote.reload();
   }, message);

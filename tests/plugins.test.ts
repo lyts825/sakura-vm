@@ -1,8 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - a fresh install has no optional plugins, listeners, job stores or optional UI surfaces
- * - every pack resolves version pins and dependencies before consumers without duplicates
- * - invalid dependencies, cycles, incompatible APIs and pack pins fail before activation
+ * 模块职责：回归验证模块，围绕 `plugins` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `plugins`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: a fresh install has no optional plugins, listeners, job stores or optional UI surfaces; every pack resolves version pins and dependencies before consumers without duplicates.
  */
 type GatewayFixtureHost = import('../server/features.ts').Features;
 type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
@@ -11,6 +12,15 @@ const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {
   bodies: WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>;
 }>();
 /** Preserve the fixture's data-directory setup before loading the real operation admission modules. */
+/**
+ * 中文功能：控制异步完成或观察时序，使用例能够安排并发、取消或清理阶段。
+ * English: Control asynchronous completion or observation timing so the test can arrange concurrency, cancellation or cleanup phases.
+ * 输入 / Inputs: host: GatewayFixtureHost; req: import('node:http').IncomingMessage; res: import('node:http').ServerResponse; url: URL; body: GatewayFixtureBody。
+ * 结果：返回分支计算值（`await fixture.gateway.dispatch(req, res, url) as boolean`），以 Promise 交付。
+ * Result: Return the branch-computed value (`await fixture.gateway.dispatch(req, res, url) as boolean`) through a Promise.
+ * 状态影响 / State effects: `fixture`, `req.headers['content-type']`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `admittedRouteFixtures.get`, `Promise.all`, `import`, `gateway.register`.
+ */
 async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:http').IncomingMessage,
   res: import('node:http').ServerResponse, url: URL, body: GatewayFixtureBody) {
   let fixture = admittedRouteFixtures.get(host);
@@ -20,11 +30,41 @@ async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:h
     ]);
     const bodies = new WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>();
     const gateway = new OperationGateway({
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回分支计算值（`host.enabled`）。
+       * Result: Return the branch-computed value (`host.enabled`).
+       */
       enabled: () => host.enabled,
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: owner。
+       * 结果：返回分支计算值（`owner === 'core' ? undefined : host.directory.get('official', owner)`）。
+       * Result: Return the branch-computed value (`owner === 'core' ? undefined : host.directory.get('official', owner)`).
+       * 协作入口 / Collaborators: `host.directory.get`.
+       */
       instance: owner => owner === 'core' ? undefined : host.directory.get('official', owner),
+      /**
+       * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+       * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+       * 输入 / Inputs: _request; _url; _entry; _parameters; requireEnabled。
+       * 结果：返回受控对象，公开字段包括 `check`；各分支以实际返回对象为准。
+       * Result: Return a controlled object exposing fields such as `check`; the actual branch determines its shape.
+       * 协作入口 / Collaborators: `requireEnabled`.
+       */
       bind: async (_request, _url, _entry, _parameters, requireEnabled) => {
         requireEnabled();
-        return { check: async () => 'owner' };
+        return { /**
+         * 中文功能：核对测试输入、权威证据或输出条件；具体判定、断言或拒绝方式由函数体规定。
+         * English: Check test inputs, authority evidence or output conditions; the body defines its decision, assertion or rejection behavior.
+         * 输入 / Inputs: 无 / none。
+         * 结果：返回分支计算值（`'owner'`），以 Promise 交付。
+         * Result: Return the branch-computed value (`'owner'`) through a Promise.
+         */
+        check: async () => 'owner' };
       },
     });
     for (const entry of operationEntries)
@@ -71,22 +111,69 @@ after(async () => {
   assert.ok(basename(directory).startsWith('sakura-plugins-'));
   await rm(directory, { recursive: true, force: true });
 });
+/**
+ * 中文功能：生成或核对本组验证所需的摘要与身份材料。
+ * English: Generate or verify digest and identity material required by this suite.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`Object.assign(new EventEmitter(), { records: new Map(), live: new Map(), get: ()…`）。
+ * Result: Return the branch-computed value (`Object.assign(new EventEmitter(), { records: new Map(), live: new Map(), get: ()…`).
+ * 协作入口 / Collaborators: `Object.assign`.
+ */
 const machines = () =>
   Object.assign(new EventEmitter(), {
     records: new Map(),
     live: new Map(),
+    /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ name: 'example' })`）。
+     * Result: Return the branch-computed value (`({ name: 'example' })`).
+     */
     get: () => ({ name: 'example' }),
+    /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`'stopped'`）。
+     * Result: Return the branch-computed value (`'stopped'`).
+     */
     state: () => 'stopped',
   }) as unknown as Machines;
+/**
+ * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+ * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+ * 输入 / Inputs: method = 'GET'。
+ * 结果：返回受控对象，公开字段包括 `req, res`；各分支以实际返回对象为准。
+ * Result: Return a controlled object exposing fields such as `req, res`; the actual branch determines its shape.
+ * 协作入口 / Collaborators: `Object.assign`.
+ */
 function request(method = 'GET') {
   const req = Object.assign(new EventEmitter(), { method, headers: {} }) as IncomingMessage;
   const res = Object.assign(new EventEmitter(), {
     writableFinished: false,
     status: 0,
     payload: undefined as any,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: status: number。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `this.status`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     writeHead(status: number) {
       this.status = status;
     },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: data: string。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `this.payload`, `this.writableFinished`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `JSON.parse`.
+     */
     end(data: string) {
       this.payload = JSON.parse(data);
       this.writableFinished = true;
@@ -95,6 +182,18 @@ function request(method = 'GET') {
   return { req, res: res as typeof res & ServerResponse };
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: a fresh install has no optional plugins, listeners, job stores or optional UI surfaces
+ * 协作入口 / Collaborators: `join`, `assert.deepEqual`, `manager.init`, `machines`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(await manager.init(), [])`; `assert.equal(manager.view().restartRequired, false)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('a fresh install has no optional plugins, listeners, job stores or optional UI surfaces', async () => {
   const manager = new PluginManager(join(directory, 'fresh.json'));
   assert.deepEqual(await manager.init(), []);
@@ -121,6 +220,16 @@ test('a fresh install has no optional plugins, listeners, job stores or optional
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: every pack resolves version pins and dependencies before consumers without duplicates
+ * 协作入口 / Collaborators: `resolvePlugins`, `emptySelection`, `assert.equal`, `assert.ok`.
+ * 检查边界 / Checked boundaries: `assert.equal(new Set(order).size, order.length)`; `assert.ok(loaders[id], `Missing loader: ${id}`)`.
+ */
 test('every pack resolves version pins and dependencies before consumers without duplicates', () => {
   for (const pack of PLUGIN_PACKS) {
     const order = resolvePlugins({ ...emptySelection(), packs: [pack.id] });
@@ -134,6 +243,16 @@ test('every pack resolves version pins and dependencies before consumers without
   assert.equal(resolvePlugins({ ...emptySelection(), packs: ['complete'] }).length, PLUGINS.length);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: invalid dependencies, cycles, incompatible APIs and pack pins fail before activation
+ * 协作入口 / Collaborators: `assert.throws`, `PLUGINS.find`.
+ * 检查边界 / Checked boundaries: `assert.throws(() => resolvePlugins({ ...emptySelection(), plugins: ['unknown'] }), /不存在/)`; `assert.throws(() => resolvePlugins({ ...emptySelection(), packs: ['unknown'] }), /不存在/)`.
+ */
 test('invalid dependencies, cycles, incompatible APIs and pack pins fail before activation', () => {
   assert.throws(() => resolvePlugins({ ...emptySelection(), plugins: ['unknown'] }), /不存在/);
   assert.throws(() => resolvePlugins({ ...emptySelection(), packs: ['unknown'] }), /不存在/);
@@ -168,6 +287,18 @@ test('invalid dependencies, cycles, incompatible APIs and pack pins fail before 
   );
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: selection updates are serialized, dependency-safe and survive a restart
+ * 协作入口 / Collaborators: `join`, `manager.init`, `Promise.all`, `manager.change`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(manager.view().active, [])`; `assert.equal(manager.view().restartRequired, true)`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('selection updates are serialized, dependency-safe and survive a restart', async () => {
   const file = join(directory, 'selection.json'),
     manager = new PluginManager(file);
@@ -194,6 +325,18 @@ test('selection updates are serialized, dependency-safe and survive a restart', 
   assert.deepEqual(restored.view().planned, []);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: failed persistence and malformed input leave the saved selection intact
+ * 协作入口 / Collaborators: `join`, `manager.init`, `writeFile`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.rejects(manager.change({ kind: 'plugin', id: 'files', enabled: true }))`; `assert.deepEqual(manager.view().selection, emptySelection())`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('failed persistence and malformed input leave the saved selection intact', async () => {
   const parent = join(directory, 'blocked'),
     manager = new PluginManager(join(parent, 'plugins.json'));
@@ -209,9 +352,31 @@ test('failed persistence and malformed input leave the saved selection intact', 
   assert.equal(await readFile(broken, 'utf8'), '{');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: disabled plugins reject API calls and creation options before touching the VM
+ * 状态影响 / State effects: `vm.get`, `req.method`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `machines`, `Features.create`, `request`, `assert.rejects`.
+ * 检查边界 / Checked boundaries: `assert.rejects( routeThroughGateway(host, req, res, new URL('http://localhost' + path), async () => ({})), (error: any) => error.s…`; `assert.equal(await routeThroughGateway(host, req, res, new URL('http://localhost/api/vms'), async () => ({})), false)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('disabled plugins reject API calls and creation options before touching the VM', async () => {
   const vm = machines();
-  vm.get = () => {
+  vm.get = /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: disabled plugins reject API calls and creation options before touching the VM
+   * 失败 / Failure: `new Error('Must not access VM')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   */
+  () => {
     throw new Error('Must not access VM');
   };
   const host = await Features.create(vm);
@@ -252,12 +417,42 @@ test('disabled plugins reject API calls and creation options before touching the
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: batch instance failures keep safe public messages and correlation IDs without internal exception details
+ * 状态影响 / State effects: `vm.start`, `res.getHeader`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `machines`, `randomUUID`, `Features.create`, `request`.
+ * 检查边界 / Checked boundaries: `assert.equal(res.status, 200)`; `assert.equal(res.payload.results[0].id, id)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('batch instance failures keep safe public messages and correlation IDs without internal exception details', async () => {
   const vm = machines(), id = randomUUID(), correlationId = randomUUID();
-  vm.start = async () => { throw new AppError('PRIVATE_SECRET C:\\private\\sensitive.key', 409, 'BUSINESS_CONFLICT'); };
+  vm.start = /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: batch instance failures keep safe public messages and correlation IDs without internal exception details
+   * 失败 / Failure: `new AppError('PRIVATE_SECRET C:\\private\\sensitive.key', 409, 'BUSINESS_CONFLICT')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   */
+  async () => { throw new AppError('PRIVATE_SECRET C:\\private\\sensitive.key', 409, 'BUSINESS_CONFLICT'); };
   const host = await Features.create(vm, ['library']);
   const { req, res } = request('POST');
-  res.getHeader = () => correlationId;
+  res.getHeader = /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`correlationId`）。
+   * Result: Return the branch-computed value (`correlationId`).
+   * 验证场景 / Scenario: batch instance failures keep safe public messages and correlation IDs without internal exception details
+   */
+  () => correlationId;
   try {
     await routeThroughGateway(host, req, res, new URL('http://localhost/api/vms/batch'), async () => ({ ids: [id], action: 'start' }));
     assert.equal(res.status, 200); assert.equal(res.payload.results[0].id, id);
@@ -267,6 +462,18 @@ test('batch instance failures keep safe public messages and correlation IDs with
   } finally { await host.close(); }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: files activate only their declared services and cannot export through download tickets
+ * 协作入口 / Collaborators: `machines`, `Features.create`, `assert.deepEqual`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual([...host.enabled], ['transfers', 'files'])`; `assert.equal(host.workspaces, undefined)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('files activate only their declared services and cannot export through download tickets', async () => {
   const vm = machines(),
     host = await Features.create(vm, ['files']);
@@ -288,9 +495,30 @@ test('files activate only their declared services and cannot export through down
   assert.equal(Object.hasOwn(vm, 'fileBeforeReplace'), false);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: file-lock route grants one lease and guards file mutations until release
+ * 协作入口 / Collaborators: `machines`, `Features.create`, `call`, `assert.match`.
+ * 检查边界 / Checked boundaries: `assert.match(first.token, /^[0-9a-f-]{36}$/)`; `assert.deepEqual(await call('GET', endpoint), { path: '/workspace/notes.txt', locked: true, expiresAt: first.expiresAt, })`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('file-lock route grants one lease and guards file mutations until release', async () => {
   const vm = machines(), host = await Features.create(vm, ['files']);
   const endpoint = 'http://localhost/api/vms/vm/file-lock?path=%2Fworkspace%2Fnotes.txt';
+  /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: method: string; url: string; input: unknown。
+   * 结果：返回分支计算值（`res.payload`），以 Promise 交付。
+   * Result: Return the branch-computed value (`res.payload`) through a Promise.
+   * 验证场景 / Scenario: file-lock route grants one lease and guards file mutations until release
+   * 协作入口 / Collaborators: `request`, `routeThroughGateway`.
+   */
   const call = async (method: string, url: string, input?: unknown) => {
     const { req, res } = request(method);
     await routeThroughGateway(host, req, res, new URL(url), async () => input);
@@ -314,27 +542,93 @@ test('file-lock route grants one lease and guards file mutations until release',
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: snapshot and desktop routes use path segment lengths after extraction
+ * 状态影响 / State effects: `vm.snapshot`, `vm.onlineSnapshot`, `vm.memorySnapshot`, `vm.restoreMemory`, `(host.serviceValue('desktops') as import('../server/desktop.ts').Deskt…`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `machines`, `Features.create`, `new Date(0).toISOString`, `host.serviceValue`.
+ * 检查边界 / Checked boundaries: `assert.equal( await routeThroughGateway(host, first.req, first.res, new URL('http://localhost/api/vms/vm/snapshots'), async () => …`; `assert.equal(first.res.status, 201)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('snapshot and desktop routes use path segment lengths after extraction', async () => {
   const vm = machines(),
     host = await Features.create(vm, ['snapshots', 'desktop']);
+  /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: name: string; consistency: 'offline' | 'filesystem' | 'vmstate'。
+   * 结果：返回分支计算值（`({ id: '11111111-1111-4111-8111-111111111111' as const, name, createdAt: new Dat…`）。
+   * Result: Return the branch-computed value (`({ id: '11111111-1111-4111-8111-111111111111' as const, name, createdAt: new Dat…`).
+   * 验证场景 / Scenario: snapshot and desktop routes use path segment lengths after extraction
+   * 协作入口 / Collaborators: `new Date(0).toISOString`.
+   */
   const snapshot = (name: string, consistency: 'offline' | 'filesystem' | 'vmstate') => ({
     id: '11111111-1111-4111-8111-111111111111' as const, name, createdAt: new Date(0).toISOString(),
     diskGiB: 8, pendingResize: false, consistency,
   });
-  vm.snapshot = async (_id, name) => snapshot(name, 'offline');
-  vm.onlineSnapshot = async (_id, name) => snapshot(name, 'filesystem');
-  vm.memorySnapshot = async (_id, name) => snapshot(name, 'vmstate');
+  vm.snapshot = /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: _id; name。
+   * 结果：返回分支计算值（`snapshot(name, 'offline')`），以 Promise 交付。
+   * Result: Return the branch-computed value (`snapshot(name, 'offline')`) through a Promise.
+   * 验证场景 / Scenario: snapshot and desktop routes use path segment lengths after extraction
+   * 协作入口 / Collaborators: `snapshot`.
+   */
+  async (_id, name) => snapshot(name, 'offline');
+  vm.onlineSnapshot = /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: _id; name。
+   * 结果：返回分支计算值（`snapshot(name, 'filesystem')`），以 Promise 交付。
+   * Result: Return the branch-computed value (`snapshot(name, 'filesystem')`) through a Promise.
+   * 验证场景 / Scenario: snapshot and desktop routes use path segment lengths after extraction
+   * 协作入口 / Collaborators: `snapshot`.
+   */
+  async (_id, name) => snapshot(name, 'filesystem');
+  vm.memorySnapshot = /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: _id; name。
+   * 结果：返回分支计算值（`snapshot(name, 'vmstate')`），以 Promise 交付。
+   * Result: Return the branch-computed value (`snapshot(name, 'vmstate')`) through a Promise.
+   * 验证场景 / Scenario: snapshot and desktop routes use path segment lengths after extraction
+   * 协作入口 / Collaborators: `snapshot`.
+   */
+  async (_id, name) => snapshot(name, 'vmstate');
   const restoredVm: import('../shared/contracts/vm.ts').VMView = {
     id: 'vm', name: 'example', memoryMiB: 512, cpus: 1, diskGiB: 8,
     accelerator: 'tcg', forwards: [], createdAt: new Date(0).toISOString(), snapshots: [],
     status: 'stopped', poweredOn: false, diskBytes: 0,
   };
   let restoreArguments: { id: string; snapshotId: string; backup: boolean | undefined } | undefined;
-  vm.restoreMemory = async (id, snapshotId, backup) => {
+  vm.restoreMemory = /**
+   * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+   * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+   * 输入 / Inputs: id; snapshotId; backup。
+   * 结果：返回分支计算值（`restoredVm`），以 Promise 交付。
+   * Result: Return the branch-computed value (`restoredVm`) through a Promise.
+   * 验证场景 / Scenario: snapshot and desktop routes use path segment lengths after extraction
+   * 状态影响 / State effects: `restoreArguments`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   */
+  async (id, snapshotId, backup) => {
     restoreArguments = { id, snapshotId, backup };
     return restoredVm;
   };
-  (host.serviceValue('desktops') as import('../server/desktop.ts').Desktops).view = async () => ({ status: 'not-installed', log: '' });
+  (host.serviceValue('desktops') as import('../server/desktop.ts').Desktops).view = /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`({ status: 'not-installed', log: '' })`），以 Promise 交付。
+   * Result: Return the branch-computed value (`({ status: 'not-installed', log: '' })`) through a Promise.
+   * 验证场景 / Scenario: snapshot and desktop routes use path segment lengths after extraction
+   */
+  async () => ({ status: 'not-installed', log: '' });
   try {
     const first = request('POST');
     assert.equal(
@@ -390,9 +684,29 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
   assert.equal(vm.listenerCount('change'), 0);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: plugin activation failure is isolated and prevents dependent activation
+ * 状态影响 / State effects: `loaders.transfers`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `Features.create`, `machines`, `assert.deepEqual`, `assert.match`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual([...host.enabled], ['terminal-workspace'])`; `assert.match(host.errors.transfers, /adapter unavailable/)`.
+ */
 test('plugin activation failure is isolated and prevents dependent activation', async () => {
   const original = loaders.transfers;
-  loaders.transfers = async () => {
+  loaders.transfers = /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 验证场景 / Scenario: plugin activation failure is isolated and prevents dependent activation
+   * 失败 / Failure: `new Error('adapter unavailable')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   */
+  async () => {
     throw new Error('adapter unavailable');
   };
   try {
@@ -406,6 +720,18 @@ test('plugin activation failure is isolated and prevents dependent activation', 
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: the complete pack activates all adapters and releases every lifecycle listener
+ * 协作入口 / Collaborators: `machines`, `Features.create`, `resolvePlugins`, `emptySelection`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(host.errors, {})`; `assert.equal(host.enabled.size, PLUGINS.length)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('the complete pack activates all adapters and releases every lifecycle listener', async () => {
   const vm = machines();
   const host = await Features.create(vm, resolvePlugins({ ...emptySelection(), packs: ['complete'] }));
@@ -421,6 +747,18 @@ test('the complete pack activates all adapters and releases every lifecycle list
   assert.equal(Object.hasOwn(vm, 'fileBeforeReplace'), false);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: disabling a plugin preserves instance and plugin data on disk
+ * 协作入口 / Collaborators: `join`, `mkdir`, `writeFile`, `manager.init`.
+ * 检查边界 / Checked boundaries: `assert.equal(await readFile(sentinel, 'utf8'), 'keep all existing history')`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('disabling a plugin preserves instance and plugin data on disk', async () => {
   const folder = join(directory, 'retained-data');
   await mkdir(folder);
@@ -433,6 +771,18 @@ test('disabling a plugin preserves instance and plugin data on disk', async () =
   assert.equal(await readFile(sentinel, 'utf8'), 'keep all existing history');
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: split packages activate only the services needed for the selected capability
+ * 协作入口 / Collaborators: `machines`, `Features.create`, `assert.deepEqual`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(host.errors, {}, id)`; `assert.deepEqual([...host.enabled], expected, id)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('split packages activate only the services needed for the selected capability', async () => {
   const cases = [
     ['transfers', ['transfers'], ['files', 'bundles', 'workspaces']],
@@ -475,12 +825,55 @@ test('split packages activate only the services needed for the selected capabili
   assert.deepEqual(developmentSections(['metrics']), []);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: standalone metrics invalidate a cached sample when the guest restarts without project listeners
+ * 状态影响 / State effects: `vm.state`, `vm.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `machines`, `vm.live.set`, `Features.create`, `host.metrics.sample`.
+ * 检查边界 / Checked boundaries: `assert.rejects(first, /previous boot/)`; `assert.equal(host.metrics.sample('vm'), first)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('standalone metrics invalidate a cached sample when the guest restarts without project listeners', async () => {
   const vm = machines();
-  vm.state = () => 'running';
+  vm.state = /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`'running'`）。
+   * Result: Return the branch-computed value (`'running'`).
+   * 验证场景 / Scenario: standalone metrics invalidate a cached sample when the guest restarts without project listeners
+   */
+  () => 'running';
   vm.live.set('vm', { startedAt: 'first' } as any);
-  const pending: Array<{ resolve: (value: any) => void; reject: (error: Error) => void }> = [];
-  vm.exec = () => new Promise((resolve, reject) => pending.push({ resolve, reject }));
+  const pending: Array<{ resolve: /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: value: any。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  (value: any) => void; reject: /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: error: Error。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  (error: Error) => void }> = [];
+  vm.exec = /**
+   * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+   * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`new Promise((resolve, reject) => pending.push({ resolve, reject }))`）。
+   * Result: Return the branch-computed value (`new Promise((resolve, reject) => pending.push({ resolve, reject }))`).
+   * 验证场景 / Scenario: standalone metrics invalidate a cached sample when the guest restarts without project listeners
+   */
+  () => new Promise((resolve, reject) => pending.push({ resolve, reject }));
   const host = await Features.create(vm, ['metrics']);
   try {
     const first = host.metrics.sample('vm');
@@ -507,6 +900,18 @@ test('standalone metrics invalidate a cached sample when the guest restarts with
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: nested packs preserve shared and explicit roots and reject cycles and incompatible pins
+ * 协作入口 / Collaborators: `PLUGIN_PACKS.find`, `assert.ok`, `developer.members.some`, `join`.
+ * 检查边界 / Checked boundaries: `assert.ok(developer.members.some((item) => item.kind === 'pack' && item.id === 'development'))`; `assert.ok(manager.view().reasons.commands.some((root) => root.kind === 'pack' && root.id === 'developer'))`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('nested packs preserve shared and explicit roots and reject cycles and incompatible pins', async () => {
   const developer = PLUGIN_PACKS.find((pack) => pack.id === 'developer')!;
   assert.ok(developer.members.some((item) => item.kind === 'pack' && item.id === 'development'));
@@ -532,6 +937,18 @@ test('nested packs preserve shared and explicit roots and reject cycles and inco
   assert.throws(() => validateCatalog(PLUGINS, pins), /版本不匹配/);
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: legacy aggregate selections migrate without rewriting data and old CLI IDs still work
+ * 协作入口 / Collaborators: `join`, `JSON.stringify`, `writeFile`, `manager.init`.
+ * 检查边界 / Checked boundaries: `assert.equal(await readFile(file, 'utf8'), original)`; `assert.deepEqual(manager.view().selection, { schemaVersion: 3, plugins: ['files'], packs: ['development', 'environment', 'essentia…`.
+ * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+ * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+ */
 test('legacy aggregate selections migrate without rewriting data and old CLI IDs still work', async () => {
   const file = join(directory, 'legacy.json');
   const original = JSON.stringify({
@@ -565,8 +982,27 @@ test('legacy aggregate selections migrate without rewriting data and old CLI IDs
   await assert.rejects(new PluginManager(unknown).init());
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: manifest schemas and catalog checks reject ambiguous or unsupported contracts
+ * 协作入口 / Collaborators: `PLUGINS.find`, `assert.throws`.
+ * 检查边界 / Checked boundaries: `assert.throws(() => pluginManifestSchema.parse({ ...files, schemaVersion: 99 }))`; `assert.throws(() => pluginManifestSchema.parse({ ...files, undocumented: true }))`.
+ */
 test('manifest schemas and catalog checks reject ambiguous or unsupported contracts', () => {
   const files = PLUGINS.find((item) => item.id === 'files')!;
+  /**
+   * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+   * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+   * 输入 / Inputs: patch: Partial<typeof files>。
+   * 结果：返回分支计算值（`PLUGINS.map((item) => (item.id === files.id ? { ...files, ...patch } : item))`）。
+   * Result: Return the branch-computed value (`PLUGINS.map((item) => (item.id === files.id ? { ...files, ...patch } : item))`).
+   * 验证场景 / Scenario: manifest schemas and catalog checks reject ambiguous or unsupported contracts
+   * 协作入口 / Collaborators: `PLUGINS.map`.
+   */
   const change = (patch: Partial<typeof files>) =>
     PLUGINS.map((item) => (item.id === files.id ? { ...files, ...patch } : item));
   assert.throws(() => pluginManifestSchema.parse({ ...files, schemaVersion: 99 }));
@@ -583,6 +1019,15 @@ test('manifest schemas and catalog checks reject ambiguous or unsupported contra
     () => validateCatalog(change({ requires: [{ id: 'missing', version: '0.2.0' }] }), PLUGIN_PACKS),
     /不存在/,
   );
+  /**
+   * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+   * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+   * 输入 / Inputs: path: string; projectScoped = false。
+   * 结果：返回分支计算值（`change({ contributes: { ...files.contributes, http: [{ path, projectScoped, meth…`）。
+   * Result: Return the branch-computed value (`change({ contributes: { ...files.contributes, http: [{ path, projectScoped, meth…`).
+   * 验证场景 / Scenario: manifest schemas and catalog checks reject ambiguous or unsupported contracts
+   * 协作入口 / Collaborators: `change`, `path.replace`.
+   */
   const withHttp = (path: string, projectScoped = false) =>
     change({ contributes: { ...files.contributes,
       http: [{ path, projectScoped, methods: ['GET'] }],
@@ -614,6 +1059,18 @@ test('manifest schemas and catalog checks reject ambiguous or unsupported contra
   );
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: HTTP ownership, methods, project scoping and socket gates come from declarations
+ * 协作入口 / Collaborators: `assert.equal`, `routeContribution`, `socketOwner`, `Features.create`.
+ * 检查边界 / Checked boundaries: `assert.equal(routeContribution('/api/vms/vm/commands')?.owner, 'commands')`; `assert.equal(routeContribution('/api/vms/vm/commands')?.projectScoped, true)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('HTTP ownership, methods, project scoping and socket gates come from declarations', async () => {
   assert.equal(routeContribution('/api/vms/vm/commands')?.owner, 'commands');
   assert.equal(routeContribution('/api/vms/vm/commands')?.projectScoped, true);
@@ -637,16 +1094,54 @@ test('HTTP ownership, methods, project scoping and socket gates come from declar
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: module mismatches are rejected before activation and cannot clean up another plugin
+ * 状态影响 / State effects: `loaders.images`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `Features.create`, `machines`, `assert.match`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.match(host.errors.images, /入口与声明不一致/)`; `assert.equal(activated, false)`.
+ */
 test('module mismatches are rejected before activation and cannot clean up another plugin', async () => {
   const original = loaders.images;
   let activated = false,
     disposed = false;
-  loaders.images = async () => ({
+  loaders.images = /**
+   * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+   * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`({ ...(await original()), manifest: PLUGINS.find((item) => item.id === 'files')!…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`({ ...(await original()), manifest: PLUGINS.find((item) => item.id === 'files')!…`) through a Promise.
+   * 验证场景 / Scenario: module mismatches are rejected before activation and cannot clean up another plugin
+   * 协作入口 / Collaborators: `original`, `PLUGINS.find`.
+   */
+  async () => ({
     ...(await original()),
     manifest: PLUGINS.find((item) => item.id === 'files')!,
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: module mismatches are rejected before activation and cannot clean up another plugin
+     * 状态影响 / State effects: `activated`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     activate: async () => {
       activated = true;
     },
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 验证场景 / Scenario: module mismatches are rejected before activation and cannot clean up another plugin
+     * 状态影响 / State effects: `disposed`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     */
     deactivate: async () => {
       disposed = true;
     },
@@ -663,17 +1158,64 @@ test('module mismatches are rejected before activation and cannot clean up anoth
   }
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: service contracts reject undeclared reads and writes and await asynchronous cleanup
+ * 状态影响 / State effects: `loaders.images`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `Features.create`, `machines`, `assert.match`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.match( host.errors.images, violation === 'read' ? /未声明服务读取/ : violation === 'write' ? /getter|read only|不可写/ : /未注册声明的服务/, …`; `assert.equal(host.images, undefined)`.
+ */
 test('service contracts reject undeclared reads and writes and await asynchronous cleanup', async () => {
   const original = loaders.images;
   const events: string[] = [];
   for (const violation of ['read', 'write', 'missing'] as const) {
-    loaders.images = async () => ({
+    loaders.images = /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ ...(await original()), activate: async (host) => { if (violation === 'missing…`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ ...(await original()), activate: async (host) => { if (violation === 'missing…`) through a Promise.
+     * 验证场景 / Scenario: service contracts reject undeclared reads and writes and await asynchronous cleanup
+     * 协作入口 / Collaborators: `original`.
+     */
+    async () => ({
       ...(await original()),
+      /**
+       * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+       * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+       * 输入 / Inputs: host。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: service contracts reject undeclared reads and writes and await asynchronous cleanup
+       * 状态影响 / State effects: `host.files`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 协作入口 / Collaborators: `host.provide`, `Object.fromEntries`, `imagesContract.images.contract!.members.map`.
+       */
       activate: async (host) => {
         if (violation === 'missing') return;
         host.provide(imagesContract.images, {
           ...Object.fromEntries(imagesContract.images.contract!.members.map((key) => [key, () => undefined])),
-          jobs: { list: () => [] },
+          jobs: { /**
+           * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+           * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+           * 输入 / Inputs: 无 / none。
+           * 结果：返回列表形式的受控数据，供调用者遍历或比较。
+           * Result: Return controlled data as a list for iteration or comparison.
+           * 验证场景 / Scenario: service contracts reject undeclared reads and writes and await asynchronous cleanup
+           */
+          list: () => [] },
+          /**
+           * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
+           * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
+           * 输入 / Inputs: 无 / none。
+           * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+           * Result: No explicit result value; callers observe completion, state changes or an exception.
+           * 验证场景 / Scenario: service contracts reject undeclared reads and writes and await asynchronous cleanup
+           * 协作入口 / Collaborators: `events.push`.
+           */
           close: async () => {
             events.push('close');
           },
@@ -682,6 +1224,15 @@ test('service contracts reject undeclared reads and writes and await asynchronou
         // @ts-expect-error public service slots are immutable
         else host.files = {} as any;
       },
+      /**
+       * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+       * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+       * 输入 / Inputs: 无 / none。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 验证场景 / Scenario: service contracts reject undeclared reads and writes and await asynchronous cleanup
+       * 协作入口 / Collaborators: `Promise.resolve`, `events.push`.
+       */
       deactivate: async () => {
         await Promise.resolve();
         events.push('deactivate');

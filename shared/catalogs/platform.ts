@@ -1,5 +1,8 @@
 /**
- * 模块职责：平台进阶功能目录，记录远程、安全、灾备与协作能力的标识和当前状态。
+ * 模块职责（中文）：平台进阶功能目录，记录远程、安全、灾备与协作能力的标识和当前状态。
+ * Module responsibility (English): maintaining platform capability identifiers, descriptions, implementation state and catalog projections.
+ * 详细范围（中文）：公开入口包括 nextFeatureCatalog, NextFeatureId, NextFeatureState, NextFeature；职责覆盖维护platform能力的标识、描述、实现状态及目录投影，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include nextFeatureCatalog, NextFeatureId, NextFeatureState, NextFeature. The scope covers maintaining platform capability identifiers, descriptions, implementation state and catalog projections. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 export const nextFeatureCatalog = [
   [

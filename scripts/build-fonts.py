@@ -1,4 +1,5 @@
 # 从固定且许可明确的字体源生成应用 WOFF2 子集，校验 Git blob 并维护字体清单。
+# Generate application WOFF2 subsets from pinned licensed sources, verify Git blob identities and maintain the font manifest.
 """Rebuild the checked-in, local web fonts. Not required by npm build/start.
 
 python -m pip install --target .tools/font-python -r scripts/font-requirements.txt
@@ -53,6 +54,8 @@ SOURCES = [
 ]
 
 
+# 复用或下载固定字体源，按 Git blob SHA-1 核对原始字节后才写入缓存。
+# Reuse/download pinned font sources and validate original bytes by Git blob SHA-1 before caching.
 def checked_source(url, blob):
     path = CACHE / blob
     data = path.read_bytes() if path.exists() else urlopen(
@@ -66,6 +69,8 @@ def checked_source(url, blob):
     return path
 
 
+# 将子集家庭与 PostScript 命名改为应用专用名称，保持许可要求与字体选择一致。
+# Rename subset family/PostScript records to application-specific names for consistent selection/license handling.
 def rename(font, family):
     names = font["name"]
     values = {
@@ -79,6 +84,8 @@ def rename(font, family):
     # Copyright, license, designer, and upstream version metadata remain intact.
 
 
+# 按固定字集与许可源生成可变 WOFF2 字体，保留字重轴并写出资源摘要清单。
+# Generate variable WOFF2 from fixed corpora/licensed sources, preserve weight axes and write asset-hash records.
 def main():
     CACHE.mkdir(parents=True, exist_ok=True)
     OUTPUT.mkdir(parents=True, exist_ok=True)

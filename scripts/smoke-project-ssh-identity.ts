@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目 SSH 的持久账户、目录/网络绑定及真实客户端身份。 */
+/** 烟雾验收：验证项目 SSH 的持久账户、目录/网络绑定及真实客户端身份。
+ * Smoke acceptance for persistent SSH accounts, directory/network binding and real client identity. */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
@@ -28,6 +29,8 @@ if (process.argv.length === 2 || process.argv[2] === '--describe') {
   await run(reused ? process.argv[4] : undefined);
 }
 
+/** 新建或核验指定自有 Alpine 夹具，通过正式 SSH 端点验证登录、exec/SFTP/转发的 UID 与域隔离、替代票据拒绝及完整清理。
+ * Create or validate an owned Alpine fixture and verify production SSH login/exec/SFTP/forwarding UID-domain isolation/replacement-receipt denial/full cleanup. */
 async function run(ownedDirectory?: string) {
   const workspace = await realpath('.'),
     parent = join(workspace, '.data/project-ssh-identity-test-temp');
@@ -38,6 +41,8 @@ async function run(ownedDirectory?: string) {
     : await mkdtemp(join(parent, 'sakura-ssh-identity-'));
   assert.equal(dirname(await realpath(root)), parent);
   assert.match(basename(root), /^sakura-ssh-identity-/);
+  /** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+   * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
   const invocation = randomUUID(),
     hash = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
   const proof: any = {
@@ -77,6 +82,8 @@ async function run(ownedDirectory?: string) {
     proof.kind = 'owned-ssh-identity-fixture-new-boot';
     proof.previousInvocation = prior.invocation;
   } else proof.kind = 'fresh-owned-ssh-identity-fixture';
+  /** 保存阶段名与时间并输出进度，为中断或失败报告定位最后执行边界。
+   * Retain phase name/time and print progress to locate the last execution boundary after interruption/failure. */
   const phase = (name: string) => {
     proof.phases.push({ name, at: new Date().toISOString() });
     console.log('PHASE ' + name);
@@ -107,6 +114,8 @@ async function run(ownedDirectory?: string) {
     'package.json',
     'package-lock.json',
   ];
+  /** 递归收集工作区源码相对路径并拒绝符号链接，供冻结摘要验证入口及依赖未被替换。
+   * Recursively collect workspace-relative source paths and reject symbolic links for frozen-hash checks against replaced entry points/dependencies. */
   const capture = async (directory: string) => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       assert.equal(entry.isSymbolicLink(), false);
@@ -183,6 +192,8 @@ async function run(ownedDirectory?: string) {
   const children = new Map<ChildProcess, Promise<void>>();
   let vmId = '',
     qemuStarted = false;
+  /** 启动前核验已冻结二进制摘要，登记 argv/PID/exit/close 并限制累计输出；取消只终止自有 child，等待真实 close 后返回结果并清理监听。
+   * Verify frozen binary hashes before spawning, record argv/PID/exit/close and bound accumulated output; cancellation targets only the owned child, then await actual close/clean listeners before returning. */
   async function execute(
     executable: string,
     args: string[],
@@ -232,6 +243,8 @@ async function run(ownedDirectory?: string) {
       }),
     );
     children.set(child, closed);
+    /** 取消只绑定当前自有 child 句柄，终止该进程；存在 receipt/entry 时同时记录取消证据，实际 close 仍由外层等待。
+     * Bind cancellation only to the current owned child and terminate it, recording receipt/entry evidence when present; outer code still awaits physical close. */
     const abort = () => {
       entry.abortRequested = true;
       child.kill();
@@ -258,6 +271,8 @@ async function run(ownedDirectory?: string) {
     }
   }
   const hardware = { memoryMiB: 1536, cpus: 2 };
+  /** 显式拒绝夹具没有授权的运行时能力，使意外走入其他主机操作立即失败，不能静默用替身绕过生产路径。
+   * Explicitly reject runtime capabilities not authorized by this fixture so accidental host operations fail immediately instead of silently bypassing production paths with a substitute. */
   const unsupported = () => {
     throw new Error('Unknown SSH identity test engine operation');
   };
@@ -267,15 +282,21 @@ async function run(ownedDirectory?: string) {
     qemuIoAvailable: false,
     aarch64Available: false,
     runtime: {
+      /** 终止此适配器登记的全部自有子进程并等待实际关闭 Promise；存在总期限时届满失败且清理计时器，不把 kill 调用等同于完成。
+       * Terminate all owned children registered by this adapter and await actual closure promises; where bounded, expiry fails and clears the timer, since calling kill is not completion. */
       close: async () => {
         for (const child of children.keys()) child.kill();
         await Promise.all(children.values());
       },
     },
     runStatus: unsupported,
+    /** 拒绝通用 service 访问，维持此夹具只允许明确 QEMU 启动的最小运行时边界。
+     * Reject generic service access, preserving the fixture’s minimum runtime boundary of explicitly permitted QEMU launch only. */
     get service() {
       return unsupported();
     },
+    /** 只允许指定自有磁盘的固定镜像创建和一次精确 QEMU 启动，逐项校验驱动器/启动参数并拒绝其他入口；调用 execute 保留实际进程关闭证据。
+     * Allow only fixed owned-disk image creation/one exact QEMU boot, validating drives/launch arguments and rejecting other entry points; execute retains physical-process closure evidence. */
     run: async (tool: string, args: string[], options?: Parameters<Engine['run']>[2]) => {
       if (tool === 'sakura-img') {
         const disk = args.at(-2)!;
@@ -290,6 +311,8 @@ async function run(ownedDirectory?: string) {
       assert.equal(tool, 'sakura-qemu');
       assert.ok(vmId && !qemuStarted);
       qemuStarted = true;
+      /** 转义正则表达式的元字符，按字面匹配夹具路径或标记，避免名称被解释为匹配规则。
+       * Escape regular-expression metacharacters so fixture paths/markers match literally rather than act as pattern syntax. */
       const escape = (value: string) => value.replaceAll(',', ',,');
       const drives = args.flatMap((arg, index) => (arg === '-drive' ? [args[index + 1]] : []));
       assert.deepEqual(drives, [
@@ -319,17 +342,23 @@ async function run(ownedDirectory?: string) {
   const projectParent = '/srv/projects/ssh-' + invocation;
   const clients = new Set<import('ssh2').Client>();
   const channels = new Set<import('ssh2').ClientChannel>();
+  /** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+   * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
   async function guest(command: string, timeout = 30000) {
     const result = await machines.exec(vmId, command, timeout);
     assert.equal(result.code, 0, result.stderr || result.stdout);
     return result.stdout.trim();
   }
+  /** 按名称执行异步断言，成功后记录返回证据；异常直接传播，不记录通过。
+   * By case name, run asynchronous assertions and retain returned evidence on success; propagate errors without recording a pass. */
   async function check(name: string, action: () => Promise<unknown>) {
     phase(name);
     const observation = await action();
     proof.cases.push({ name, observation });
     console.log('PASS ' + name);
   }
+  /** 创建自有私有网络项目并通过精确迁移计划授权，返回目录与非 root 身份，保持生产目录入口。
+   * Create an owned private-network project/authorize via exact migration and return directory/nonroot identity while preserving production directory admission. */
   async function project(name: string, environment: Record<string, string> = {}) {
     const directory = projectParent + '/' + name;
     await guest('mkdir ' + quote(directory));
@@ -342,7 +371,8 @@ async function run(ownedDirectory?: string) {
     const index = await spaces.projects.create(vmId, name + '-' + invocation.slice(0, 8), () =>
       writeStore(projectMetadataFile(vmId, spaces.projects.current(vmId)), config),
     );
-    const identity = await spaces.projects.with(vmId, index.active, async () => {
+    const identity = await spaces.projects.with(vmId, index.active, /** 按正式迁移 preview 的 planId+sha256 显式 apply，要求 applied 后才返回 activatedIdentity，SSH 身份不能从未审阅目录计划推测。
+ * Explicitly apply the formal migration preview by planId/digest and return activatedIdentity only after applied state; never infer SSH identity from an unreviewed directory plan. */ async () => {
       const preview = await migrations.preview(vmId);
       assert.ok(preview.plan);
       const applied = await migrations.apply(vmId, {
@@ -358,9 +388,13 @@ async function run(ownedDirectory?: string) {
     return { id: index.active, directory, identity };
   }
   type OwnedProject = Awaited<ReturnType<typeof project>>;
+  /** 在目标项目上下文启动真实 SSH 服务，返回正式启动结果。
+   * Start the real SSH service in target-project context and return production results. */
   async function start(project: OwnedProject) {
     return spaces.projects.with(vmId, project.id, () => service.start(vmId));
   }
+  /** 按生产项目端点/私钥建立回环 SSH，pin 公钥摘要并登记 client，六十秒内 ready，外层统一释放。
+   * Connect loopback SSH from production project endpoint/private key, pin its public-key hash/register client and require ready within sixty seconds for outer teardown. */
   async function connect(project: OwnedProject) {
     const configured = await spaces.projects.inScope(vmId, project.id, () => spaces.config(vmId));
     const endpoint = await service.endpoint(vmId, configured);
@@ -371,7 +405,8 @@ async function run(ownedDirectory?: string) {
       privateKey = await readFile(endpoint.identity),
       client = new ssh2.Client();
     clients.add(client);
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>(/** 连接回环桥端口并以冻结 SHA-256 host fingerprint 校验真实 SSH 服务，ready 最多 60 秒；连接错误拒绝，不放宽主机身份。
+ * Connect to the loopback bridge using the frozen SHA-256 host fingerprint to authenticate real SSH, with sixty-second readiness and error rejection without weakening host identity. */ (resolve, reject) => {
       client.once('ready', resolve);
       client.once('error', reject);
       client.connect({
@@ -380,18 +415,26 @@ async function run(ownedDirectory?: string) {
         username: 'root',
         privateKey,
         hostHash: 'sha256',
+        /** 只接受与目标项目公钥 SHA-256 一致的主机指纹。
+         * Accept only the host fingerprint matching the target project public-key SHA-256. */
         hostVerifier: (fingerprint: string) => fingerprint === expected,
         readyTimeout: 60000,
       });
     });
     return client;
   }
+  /** 返回指定项目的真实已认证 SSH 连接，由 connect 执行 pin 和客户端登记。
+   * Return the project’s real authenticated SSH connection through connect, which enforces pinning/client registration. */
   async function clientFor(project: OwnedProject) {
     return connect(project);
   }
+  /** 在真实 SSH 连接执行命令、可选单独 stdin，保存原字节 stdout 和 stderr；六十秒/两 MiB stdout 超限关闭通道并拒绝，actual close 清理登记。
+   * Run real SSH exec with optional separate stdin, retaining raw stdout/stderr; close/reject at sixty seconds/two-MiB stdout and clear registration on actual close. */
   async function sshExecute(client: import('ssh2').Client, command: string, input?: Buffer) {
-    return await new Promise<{ code: number; output: Buffer; stderr: string }>((resolve, reject) => {
-      client.exec(command, (error, channel) => {
+    return await new Promise<{ code: number; output: Buffer; stderr: string }>(/** 真实 SSH exec 以 stdin 传输入，登记活动 channel 并最多等 60 秒；stdout 限 2 MiB，超额主动关闭，close 清理登记/计时并返回原退出码与字节。
+ * Send input through real SSH exec, register the active channel and wait at most sixty seconds; bound stdout to 2 MiB and close on overflow, removing registration/timer on close and returning original status/bytes. */ (resolve, reject) => {
+      client.exec(command, /** 仅成功 channel 进入活动集合，先监听输出/关闭再结束 stdin；stdout 超额或超时关闭通道，真实 close 才删除集合记录并兑现结果。
+ * Register only successfully created channels and attach output/close listeners before ending stdin; close on stdout overflow/deadline and remove the active record/resolve only on actual close. */ (error, channel) => {
         if (error) return reject(error);
         channels.add(channel);
         const stdout: Buffer[] = [],
@@ -419,11 +462,15 @@ async function run(ownedDirectory?: string) {
       });
     });
   }
+  /** 通过 SSH 运行隔离 Python 源码，要求零退出后解析原始输出 JSON，保留 stderr 诊断。
+   * Run isolated Python over SSH, require zero exit and parse raw JSON output with stderr diagnostics. */
   async function json(client: import('ssh2').Client, source: string) {
     const result = await sshExecute(client, '/usr/bin/python3 -I -S -c ' + quote(source));
     assert.equal(result.code, 0, result.stderr || result.output.toString());
     return JSON.parse(result.output.toString());
   }
+  /** 有限轮询异步谓词，达到条件即返回，期限届满用标签断言失败。
+   * Poll the async predicate with a deadline, returning on success and asserting expiry with its label. */
   async function waitFor(action: () => boolean | Promise<boolean>, label: string, milliseconds = 30000) {
     const deadline = Date.now() + milliseconds;
     while (!(await action())) {
@@ -488,7 +535,8 @@ async function run(ownedDirectory?: string) {
     );
     await start(alpha);
     await start(beta);
-    await check('real SSH commands use the private project UID, home and protected environment', async () => {
+    await check('real SSH commands use the private project UID, home and protected environment', /** 通过正式 SSH 会话读取真实 UID/Home/cwd/网络/cgroup 与环境，邻项目文件必须不可读；独立扫 root argv 确认保护环境未泄漏，输出证据掩去私值。
+ * Observe real UID/Home/cwd/network/cgroup/environment through formal SSH and deny neighbor files; independently scan root argv for protected-environment leakage and mask private values in evidence. */ async () => {
       const client = await clientFor(alpha);
       const result = await json(
         client,
@@ -532,6 +580,8 @@ async function run(ownedDirectory?: string) {
     });
     await check(
       'SFTP uploads and downloads binary data as the project UID and refuses foreign files',
+      /** SFTP 往返 256 KiB 随机字节并核验文件 UID/GID/0600，拒绝邻项目路径；关闭 subsystem/client 后返回摘要和所有权证明。
+       * Round-trip 256 KiB random bytes through SFTP, verify UID/GID/0600 and deny neighbor paths; close subsystem/client and return digest/ownership evidence. */
       async () => {
         const client = await clientFor(alpha),
           sftp = await new Promise<import('ssh2').SFTPWrapper>((resolve, reject) =>
@@ -573,7 +623,8 @@ async function run(ownedDirectory?: string) {
         return { ...ownership, bytes: bytes.length, sha256: hash(bytes), foreignDenied: true };
       },
     );
-    await check('PTY input and resize preserve interactive execution after Ctrl-C', async () => {
+    await check('PTY input and resize preserve interactive execution after Ctrl-C', /** 在真实项目 PTY 调整窗口并由来宾 ioctl 证明尺寸与 UID，Ctrl-C 应只中断前台 sleep 且 shell 仍可写标记；exit 后等待实际 close，失败保留尾部日志。
+ * Resize a real project PTY and prove dimensions/UID via guest ioctl; Ctrl-C interrupts foreground sleep while shell can still write a marker, then await actual close after exit and retain tail logs on failure. */ async () => {
       const client = await clientFor(alpha),
         channel = await new Promise<import('ssh2').ClientChannel>((resolve, reject) =>
           client.shell({ term: 'xterm-256color', rows: 28, cols: 100 }, (error, stream) =>
@@ -637,6 +688,8 @@ async function run(ownedDirectory?: string) {
     });
     await check(
       'manager reload checks the existing full ticket and refuses weakened command permissions',
+      /** 重建 SSH 服务只读复用原票据，真实连接仍为项目 UID；暂放宽 command 权限后 status/endpoint 必须拒绝，finally 恢复权限。
+       * Rebuild SSH service read-only with the original receipt and verify a real connection retains project UID; weaken command permissions temporarily and require status/endpoint refusal, restoring permissions in finally. */
       async () => {
         const runs = await scopes.sshRuns(vmId, alpha.id),
           ticket = await scopes.sshRun(vmId, alpha.id, runs[0].runId);
@@ -663,6 +716,8 @@ async function run(ownedDirectory?: string) {
     );
     await check(
       'whole-service stop kills detached UID children before closing the exact original ticket',
+      /** 会话关闭后脱离子进程仍在原 SSH 域，正式 stop 必须清完整域及票据且保留 beta；重新 start 发新 runId，旧票据不再授权。
+       * A detached child remains in the original SSH domain after connection close; formal stop must clear the whole domain/receipt while preserving beta, and restart issues a new runId without authorizing the old receipt. */
       async () => {
         const alphaTicket = await scopes.sshRun(
           vmId,
@@ -719,7 +774,8 @@ async function run(ownedDirectory?: string) {
         };
       },
     );
-    await check('SESSION frames refuse missing client descriptors and combined terminal flags', async () => {
+    await check('SESSION frames refuse missing client descriptors and combined terminal flags', /** 保持正文摘要一致而分别注入缺会话描述符与组合 flags，要求原生帧拒绝且正文文件未创建；finally 精确停止原 run。
+ * Keep body digests consistent while injecting missing session descriptors/combined flags, requiring native-frame refusal and no body file, then stop the original run exactly in finally. */ async () => {
       const run = await identities.prepare(vmId, alpha.identity);
       try {
         for (const flag of [2, 3]) {
@@ -748,6 +804,8 @@ async function run(ownedDirectory?: string) {
         partial
           ? 'an injected pre-ticket receipt remains recoverable without authorizing readonly sessions'
           : 'a lost native activation acknowledgement recovers the full original ticket before cleanup',
+        /** 模拟 native SSH 入场成功但 host 尚为 intent 时确认丢失，可额外移走精确 RUN 文件；正式失败恢复须关原 cgroup/SSH receipt、撤 host intent，并保留邻项目与可重新启动性。
+         * Model successful native SSH admission while host remains intent and lose its ACK, optionally removing the exact RUN file; failure recovery must close original cgroup/SSH receipt, remove host intent and preserve neighbor/restartability. */
         async () => {
           await spaces.projects.with(vmId, alpha.id, () => service.stop(vmId));
           await service.close();
@@ -756,7 +814,8 @@ async function run(ownedDirectory?: string) {
           const prepare = core.prepareSsh.bind(core);
           let original: import('../server/project-identity.ts').ProjectIdentityRun | undefined;
           let nativeRecordSha256: string | undefined;
-          core.prepareSsh = async (...args) => {
+          core.prepareSsh = /** 先真实 prepareSsh 再证明未确认 host intent 不授权会话；可按 inode、权限、摘要和 SSH receipt 精确移走原 RUN，随后统一丢确认以测试恢复备用票据。
+ * Call real prepareSsh and prove unacknowledged host intent cannot authorize sessions; optionally remove original RUN after inode/permission/digest/SSH-receipt checks, then lose ACK to test alternate-receipt recovery. */ async (...args) => {
             original = await prepare(...args);
             const intent = (await faultScopes.sshRuns(vmId, alpha.id))[0];
             assert.equal(intent.run, null);

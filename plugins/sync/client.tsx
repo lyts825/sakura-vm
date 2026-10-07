@@ -1,5 +1,8 @@
 /**
- * 模块职责：“目录同步”插件的双向目录同步、变更预览、冲突解决和运行记录标签，使用宿主传入的实例、项目和请求上下文。
+ * 模块职责（中文）：“目录同步”插件的双向目录同步、变更预览、冲突解决和运行记录标签，使用宿主传入的实例、项目和请求上下文。
+ * Module responsibility (English): UI interaction and state presentation for bidirectional directory sync, conflicts and rollback.
+ * 详细范围（中文）：公开入口包括 SyncPanel, tabs；职责覆盖双向目录同步、冲突与回滚的界面交互与状态呈现，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include SyncPanel, tabs. The scope covers UI interaction and state presentation for bidirectional directory sync, conflicts and rollback. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
@@ -20,6 +23,12 @@ const driverNames = {
   'merge-text': '尝试三方文本合并',
 } as const;
 
+/**
+ * 中文：呈现双向目录同步、冲突与回滚的界面交互与状态呈现中的 SyncPanel 界面，订阅 /vms/{vm.id}/sync，组合 SyncIcon、TimeWindowFields、Save、ThreeWayMerge，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the SyncPanel surface for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback, subscribing to /vms/{vm.id}/sync and composing SyncIcon, TimeWindowFields, Save, ThreeWayMerge. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ vm, request } 提供 vm（vm 状态）、request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { vm, request } provides context fields vm (vm state), request (transport capability bound to identity/authority scope)
+ */
 export function SyncPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<SyncView>(request, `/vms/${vm.id}/sync`, true, 2500);
   const [config, setConfig] = useState<SyncConfig>({ host: '', guest: '/workspace/shared', auto: false });
@@ -30,7 +39,7 @@ export function SyncPanel({ vm, request }: FeatureProps) {
     [previewQuery, setPreviewQuery] = useState('');
   const [loadedProject, setLoadedProject] = useState('');
   const action = useAction();
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [remote.data, loadedProject] 变化时loadedProject 状态，config 状态，preview 状态，decisions 状态，manualMerges 状态，mergeContext 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data, loadedProject] change, loadedProject state, config state, preview state, decisions state, manualMerges state, mergeContext state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     const projectId = remote.data?.projectId || 'default';
     if (remote.data && projectId !== loadedProject) {
       setLoadedProject(projectId);
@@ -42,8 +51,14 @@ export function SyncPanel({ vm, request }: FeatureProps) {
       setMergeContext(null);
     }
   }, [remote.data, loadedProject]);
+  /**
+   * 中文：提交 POST /vms/{vm.id}/sync，完成双向目录同步、冲突与回滚的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/sync for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：direction：复制或粘贴的传输方向
+   * English: Inputs: direction: copy/paste transfer direction
+   */
   const sync = (direction: 'both' | 'push' | 'pull') =>
-    action.run(async () => {
+    action.run(/** 中文：提交 POST /vms/{vm.id}/sync，完成双向目录同步、冲突与回滚的界面交互与状态呈现的数据交互并更新preview 状态、manualMerges 状态、mergeContext 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/sync for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback and update preview state, manualMerges state, mergeContext state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
       await request(`/vms/${vm.id}/sync`, 'POST', {
         direction,
         ...(direction === 'both' && preview ? { token: preview.token, decisions, merges: manualMerges } : {}),
@@ -53,7 +68,13 @@ export function SyncPanel({ vm, request }: FeatureProps) {
       setMergeContext(null);
       remote.reload();
     });
-  const openMerge = (path: string) => action.run(async (signal) => {
+  /**
+   * 中文：提交 POST /vms/{vm.id}/sync-merge，完成双向目录同步、冲突与回滚的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST /vms/{vm.id}/sync-merge for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：path：目标文件或请求路径
+   * English: Inputs: path: target file/request path
+   */
+  const openMerge = (path: string) => action.run(/** 中文：提交 POST /vms/{vm.id}/sync-merge，完成双向目录同步、冲突与回滚的界面交互与状态呈现的数据交互并更新mergeContext 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/sync-merge for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback and update mergeContext state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting | 中文：拒绝原因：请先预览同步变更；合并预览已过期，请重新预览。这些错误交给直接调用者或本函数 catch 处理 | English: Refusal reasons: 请先预览同步变更; 合并预览已过期，请重新预览. These errors reach the direct caller or this function's catch handler */ async (signal) => {
     if (!preview) throw new Error('请先预览同步变更');
     const context = await request<typeof mergeContext>(`/vms/${vm.id}/sync-merge`, 'POST',
       { path, token: preview.token }, signal);
@@ -314,7 +335,7 @@ export function SyncPanel({ vm, request }: FeatureProps) {
           className="secondary compact"
           disabled={action.busy || !remote.data?.config || !!remote.data?.queue}
           onClick={() =>
-            void action.run(async () => {
+            void action.run(/** 中文：提交 POST /vms/{vm.id}/sync-queue，完成双向目录同步、冲突与回滚的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/sync-queue for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
               await request(`/vms/${vm.id}/sync-queue`, 'POST', {});
               remote.reload();
             }, '已排队，将在实例在线且处于允许时间窗时执行')
@@ -327,7 +348,7 @@ export function SyncPanel({ vm, request }: FeatureProps) {
             className="secondary compact"
             disabled={action.busy}
             onClick={() =>
-              void action.run(async () => {
+              void action.run(/** 中文：提交 DELETE /vms/{vm.id}/sync-queue，完成双向目录同步、冲突与回滚的界面交互与状态呈现的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform DELETE /vms/{vm.id}/sync-queue for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                 await request(`/vms/${vm.id}/sync-queue`, 'DELETE');
                 remote.reload();
               }, '已取消排队')
@@ -340,7 +361,7 @@ export function SyncPanel({ vm, request }: FeatureProps) {
           className="secondary compact"
           disabled={action.busy || remote.data?.job?.status === 'running'}
           onClick={() =>
-            void action.run(async () => {
+            void action.run(/** 中文：提交 PUT /vms/{vm.id}/sync，完成双向目录同步、冲突与回滚的界面交互与状态呈现的数据交互并更新preview 状态、manualMerges 状态、mergeContext 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform PUT /vms/{vm.id}/sync for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback and update preview state, manualMerges state, mergeContext state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
               await request(`/vms/${vm.id}/sync`, 'PUT', {
                 ...config,
                 ignore: config.ignore?.map((v) => v.trim()).filter(Boolean),
@@ -364,7 +385,7 @@ export function SyncPanel({ vm, request }: FeatureProps) {
             vm.status !== 'running'
           }
           onClick={() =>
-            void action.run(async (signal) => {
+            void action.run(/** 中文：提交 POST /vms/{vm.id}/sync-preview，完成双向目录同步、冲突与回滚的界面交互与状态呈现的数据交互并更新preview 状态、decisions 状态、manualMerges 状态、mergeContext 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/sync-preview for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback and update preview state, decisions state, manualMerges state, mergeContext state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
               setPreview(await request(`/vms/${vm.id}/sync-preview`, 'POST', {}, signal));
               setDecisions({});
               setManualMerges({});
@@ -567,7 +588,7 @@ export function SyncPanel({ vm, request }: FeatureProps) {
                   disabled={action.busy || remote.data.job?.status === 'running' || vm.status !== 'running'}
                   onClick={() => {
                     if (confirm('恢复此次同步修改前的文件及共同版本？同步后另行编辑过的文件会阻止恢复。'))
-                      void action.run(async () => {
+                      void action.run(/** 中文：提交 POST /vms/{vm.id}/sync-rollback，完成双向目录同步、冲突与回滚的界面交互与状态呈现的数据交互并更新preview 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /vms/{vm.id}/sync-rollback for UI interaction and state presentation for bidirectional directory sync, conflicts and rollback and update preview state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async () => {
                         await request(`/vms/${vm.id}/sync-rollback`, 'POST', { checkpoint: point.id });
                         setPreview(null);
                         remote.reload();

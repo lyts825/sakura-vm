@@ -1,4 +1,5 @@
-/** 烟雾验收：验证WireGuard 握手、加密来宾通信和停止/重启恢复。 */
+/** 烟雾验收：验证WireGuard 握手、加密来宾通信和停止/重启恢复。
+ * Smoke acceptance for real WireGuard handshakes/encrypted guest communication and stop/restart recovery. */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,6 +20,8 @@ const secrets = new Secrets(machines, async (_operation, value) => value);
 const wireguard = new WireGuardOverlay(machines, () => secrets);
 const signal = new AbortController().signal;
 
+/** 启动给定实例，然后轮询正式状态至 running；只在源码限定的启动期限内等待，超时或停止/错误状态将抛错并附启动日志。
+ * Start the specified VM, then poll production state until running within the source-defined startup deadline; timeout or stopped/error state fails with boot logs. */
 async function boot(id: string) {
   await machines.start(id);
   const deadline = Date.now() + 300_000;
@@ -28,6 +31,8 @@ async function boot(id: string) {
     await delay(300);
   }
 }
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 async function guest(id: string, command: string) {
   const result = await machines.exec(id, command, 30_000);
   assert.equal(result.code, 0, result.stderr || result.stdout);
@@ -58,6 +63,8 @@ try {
   assert.ok(!JSON.stringify(started).includes(ownPrivate));
   assert.equal(await guest(vm.id,
     "find /run -maxdepth 1 -name 'sakura-wireguard-*.conf' -print"), '');
+  /** 写入私有临时 WireGuard 配置并创建夹具 peer 接口，只允许精确 /32 对端，配置后删除密钥文件并启用地址/路由。
+   * Write private temporary WireGuard settings/create the fixture peer interface with exact /32 peer permission, remove the key file and enable address/route. */
   async function startPeer() {
     const content = `[Interface]\nPrivateKey = ${peerPrivate}\nListenPort = 51822\n` +
       `[Peer]\nPublicKey = ${ownPublic}\nEndpoint = 127.0.0.1:51821\n` +

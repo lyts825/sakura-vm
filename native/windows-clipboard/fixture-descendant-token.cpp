@@ -1,12 +1,18 @@
+/**
+ * 模块职责（中文）：受控 token 孩子在私有 station 报告入口策略、argv、环境、目录、session 和标准句柄证据，marker 用于发现本应拒绝时的意外执行。
+ * Module responsibilities (English): A controlled token child reports entry policy/argv/environment/directory/session/standard-handle evidence in a private station, with a marker detecting accidental execution on refused paths.
+ */
 /** 后代令牌场景入口，在策略就绪状态下调用共享令牌夹具并输出 JSON 证据。 */
 #include "fixture-descendant-token.h"
 #include <shellapi.h>
 
+/** 中文：把宽字符串转为 UTF-8 并转义 JSON 引号、反斜杠和控制字节，供身份和 argv 输出。 English: Convert wide text to UTF-8 and escape JSON quotes/backslashes/control bytes for identity/argv output. 参数声明 / Declared parameters: const std::wstring& wide. */
 static std::string tokenJson(const std::wstring& wide) {
   const int size=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,wide.data(),int(wide.size()),nullptr,0,nullptr,nullptr);
   std::string bytes(size,'\0'),result="\"";if(size)WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,wide.data(),int(wide.size()),bytes.data(),size,nullptr,nullptr);
   for(const unsigned char c:bytes){if(c=='\\' || c=='"')result+='\\';if(c<32){char value[8]{};std::snprintf(value,sizeof(value),"\\u%04x",unsigned(c));result+=value;}else result+=char(c);}return result+'"';
 }
+/** 中文：按 owner/PID/创建时间核验共享 ABI、活动和就绪状态，结束释放映射与句柄。 English: Validate shared ABI/active/readiness by owner/PID/creation time and release mapping/handle afterward. */
 static bool tokenEntryPolicy() {
   const auto owner=descendantFixtureArgument(L"--token-owner=");
   const auto name=L"Local\\SakuraClipboard."+owner+L"."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(processCreation(GetCurrentProcess()));
@@ -15,6 +21,7 @@ static bool tokenEntryPolicy() {
   const bool ready=policy && policy->magic==SakuraClipboardMagic && policy->version==SakuraClipboardVersion && policy->pid==GetCurrentProcessId() && policy->creationTime==processCreation(GetCurrentProcess()) && policy->status==1 && policy->active && !(policy->sequence&1);
   if(policy)UnmapViewOfFile(policy);if(section)CloseHandle(section);return ready;
 }
+/** 中文：选择私有 station 后写入入口 marker，并经私有管道报告真实 argv、工作目录、环境、令牌和标准句柄证据，等控制命令后关闭管道。 English: Select private station, create an entry marker and report actual argv/cwd/environment/token/standard-handle evidence through a private pipe, closing it after the control command. */
 int wmain() {
   const bool entryReady=tokenEntryPolicy();
   const auto marker=descendantFixtureArgument(L"--token-marker="),stationName=descendantFixtureArgument(L"--token-station="),pipeName=descendantFixtureArgument(L"--token-pipe=");

@@ -1,4 +1,5 @@
-/** 烟雾验收：验证主进程项目 UID 作用域、旧启动代次停止与替代对象保护。 */
+/** 烟雾验收：验证主进程项目 UID 作用域、旧启动代次停止与替代对象保护。
+ * Smoke acceptance for main-process project UID scope, old-generation stopping and replacement-object protection. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
@@ -39,29 +40,46 @@ const vm = [...machines.records.values()][0];
 assert.equal(vm.id, prior.vmId); assert.equal(vm.name, 'guest-task-cgroup-smoke'); assert.equal(vm.distro, distro);
 assert.equal(machines.state(vm.id), 'stopped');
 const token = 'owned-main-fixture-secret';
-const spaces = new Workspaces(machines, { secrets: { resolve: async () => ({ TOKEN: token }) } as any });
+const spaces = new Workspaces(machines, { secrets: { /** 保存延迟 Promise 的完成信号，供已观测到的主进程生命周期事件解除等待。
+ * Hold the deferred promise completion signal used to release waits after observed main-process lifecycle events. */ resolve: async () => ({ TOKEN: token }) } as any });
 const nativeExec = machines.exec.bind(machines), nativeInput = machines.execInput.bind(machines);
 const sources = ['server/project-service-scope.ts', 'server/project-main.ts', 'server/project-services.ts', 'server/workspaces.ts'];
 const proof: any = { version: 1, vmId: vm.id, distro, fixture: root, client: { node: process.version, execArgv: process.execArgv },
   sourceSha256: {}, cases: [] };
 for (const source of sources) proof.sourceSha256[source] = createHash('sha256').update(await readFile(resolve(source))).digest('hex');
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (command: string, timeout = 30000) => {
   const result = await nativeExec(vm.id, command, timeout);
   assert.equal(result.code, 0, result.stderr + result.stdout); return result.stdout.trim();
 };
+/** 生成隔离 Python 命令，将整段源码作为单个字面参数；-I/-S 避免用户环境和 site 初始化改变观测，执行权限由外层来宾入口控制。
+ * Build an isolated Python command with the source as one literal argument; -I/-S exclude user environment/site initialization, while the outer guest entry controls execution authority. */
 const py = (source: string) => '/usr/bin/python3 -I -S -c ' + quote(source);
+/** 从固定请求标记行解码原生控制 JSON，未包含标记返回 null；用于精确故障阶段识别，正文不重新执行。
+ * Decode native-control JSON from its fixed request-marker line, returning null if absent; identify exact fault phases without reexecuting bodies. */
 const request = (command: string) => {
   const line = command.split('\n').find(value => value.startsWith('# SAKURA_PROJECT_MAIN_REQUEST='));
   return line ? JSON.parse(Buffer.from(line.split('=')[1], 'base64').toString()) : null;
 };
+/** 暂时把原 live SSH 端口指向未监听端口，断言连接拒绝/超时，finally 恢复原端口以验证回复丢失后的恢复。
+ * Temporarily point the original live SSH port at an unlistened port, assert refusal/timeout and restore it in finally to exercise recovery after lost replies. */
 const failConnection = async (command: string) => {
   const live = machines.live.get(vm.id)!, saved = live.sshPort; live.sshPort = await freePort();
   try { await assert.rejects(nativeExec(vm.id, command, 350), /ECONNREFUSED|refused|timed out/); }
   finally { live.sshPort = saved; }
 };
+/** 读取指定自有 PID 的出生 ticks、cgroup 和网络域为 JSON，供前后精确身份比较。
+ * Read the owned PID’s birth ticks/cgroup/network as JSON for exact before/after identity comparison. */
 const proc = async (pid: number) => JSON.parse(await run(py(`import json,os\nf=open('/proc/${pid}/stat').read().rsplit(') ',1)[1].split()\nprint(json.dumps({'pid':${pid},'ticks':f[19],'cgroup':open('/proc/${pid}/cgroup').read().strip(),'network':os.readlink('/proc/${pid}/ns/net')}))`)));
+/** 核对原 PID 的出生 ticks 且状态不为僵尸/死亡，消失返回 false；HTTP 包装返回来宾文本，由场景比较。
+ * Check original PID birth ticks/nonzombie-nondead state and return false on disappearance; the HTTP wrapper returns guest text for scenario comparison. */
 const alive = async (value: { pid: number; ticks: string }) => (await run(py(`try:\n f=open('/proc/${value.pid}/stat').read().rsplit(') ',1)[1].split()\n print(f[0] not in ['Z','X'] and f[19]==${JSON.stringify(value.ticks)})\nexcept FileNotFoundError: print(False)`))) === 'True';
+/** 先打开 pidfd 再验证 /proc 出生 ticks，一致才发送 SIGKILL；通过稳定句柄避免 PID 重用误杀。
+ * Open pidfd/verify /proc birth ticks before SIGKILL, using a stable handle to avoid PID-reuse mistakes. */
 const killOwned = async (value: { pid: number; ticks: string }) => run(py(`import os,signal\npid=${value.pid};fd=os.pidfd_open(pid)\nassert open('/proc/'+str(pid)+'/stat').read().rsplit(') ',1)[1].split()[19]==${JSON.stringify(value.ticks)}\nsignal.pidfd_send_signal(fd,signal.SIGKILL);os.close(fd)`));
+/** 有限次轮询自有应用的结果文件，出现后返回；期限内未发布则失败，避免使用上一阶段缺失结果。
+ * Poll the owned application result file for a bounded number of attempts, returning when published and failing on absence rather than using missing prior-stage evidence. */
 const waitFile = async (file: string) => {
   for (let attempt = 0; attempt < 120; ++attempt) {
     if ((await nativeExec(vm.id, 'test -f ' + quote(file), 5000)).code === 0) return;
@@ -70,6 +88,8 @@ const waitFile = async (file: string) => {
   throw new Error('Owned application did not publish ' + file);
 };
 const base = '/workspace/main-scope-smoke';
+/** 保留正式项目身份，仅对本夹具根下无链接的 root/项目所有目录授权为 0700，最后正式核验身份。
+ * Reserve production project identity, authorize only physical root-or-project-owned directories below this fixture root as 0700 and verify identity through production. */
 const authorizeFixtureDirectory = async (project: ReturnType<typeof projectSchema.parse>, paths: string[]) => {
   const scopes = new ProjectRunScopes(machines), identity = await scopes.reserve(vm.id, project);
   // This test explicitly authorizes only its newly created owned directories.
@@ -80,6 +100,8 @@ const authorizeFixtureDirectory = async (project: ReturnType<typeof projectSchem
   }
   await scopes.identity(vm.id, project);
 };
+/** 等待自有主进程及脱离组/会话子进程各自发布记录，返回精确出生身份数组供完整域清理核查。
+ * Await reports from the owned main/process-group/session-detached children and return exact birth-identity records for whole-domain cleanup verification. */
 const children = async (directory: string) => {
   const values: any[] = [];
   for (const name of ['main', 'newgroup', 'setsid', 'doublefork']) {
@@ -88,6 +110,8 @@ const children = async (directory: string) => {
   }
   return values;
 };
+/** 生成忽略 SIGTERM 且含新组/setsid/双 fork 后代的应用，报告 PID+ticks/域/环境，验证强制整域收敛。
+ * Generate an app ignoring SIGTERM with new-group/setsid/double-fork children reporting PID+ticks/domain/environment for forced whole-domain convergence. */
 const app = (directory: string, exitMain = false) => py(`import json,os,signal,time
 signal.signal(signal.SIGTERM,signal.SIG_IGN)
 def report(name):
@@ -108,6 +132,8 @@ if first==0:
  report('doublefork');stay()
 os.waitpid(first,0)
 ${exitMain ? 'os._exit(0)' : 'stay()'}`);
+/** 分配唯一自有目录并保存私有网络项目，绑定秘密和重复 setup 标记，再按正式身份授权后返回配置。
+ * Allocate an owned unique directory/save a private-network project with secret/repeated-setup marker, authorize production identity and return settings. */
 const projectFor = async (label: string, exitMain = false) => {
   const directory = base + '/' + label + '-' + randomUUID(); await run('mkdir -p ' + quote(directory));
   const project = projectSchema.parse({ directory, command: app(directory, exitMain), networkIsolation: 'private',
@@ -115,16 +141,24 @@ const projectFor = async (label: string, exitMain = false) => {
     setup: 'echo initialized >> ' + quote(directory + '/setup-runs') });
   await spaces.save(vm.id, project); await authorizeFixtureDirectory(project, [directory]); return { project, directory };
 };
+/** 执行项目主进程/服务操作并等待正式任务结束，检查私密标记不在日志/错误中后返回任务记录。
+ * Execute a project main/service operation and await production job completion, returning its record only after checking logs/errors exclude private markers. */
 const job = async (action: 'start' | 'stop', service?: string) => {
   const value = await spaces.run(vm.id, action, service); await spaces.jobs.wait(spaces.projects.key(vm.id));
   assert.equal((value.error || '').includes(token), false); assert.equal(value.log.includes(token), false); return value;
 };
+/** 等待项目操作并要求终态 done，错误附任务诊断；返回正式记录供后续身份核验。
+ * Await project work/require final done, reporting job diagnostics on failure and returning the production record for identity checks. */
 const requireDone = async (action: 'start' | 'stop', service?: string) => {
   const value = await job(action, service); assert.equal(value.status, 'done', value.error + '\n' + value.log); return value;
 };
+/** 逐个验证捕获的原子进程身份已经死亡，任何自有后代存活都会使整域清理验收失败。
+ * Verify each captured original process identity is dead; any surviving owned descendant fails whole-domain cleanup acceptance. */
 const allStopped = async (values: any[]) => {
   for (const child of values) assert.equal(await alive(child), false, 'Owned child survived: ' + JSON.stringify(child));
 };
+/** 启动自有实例并在四分半内等 running，停止/错误和超时附日志失败。
+ * Start the owned VM/wait four-and-a-half minutes for running, failing stopped/error/timeout with logs. */
 const startVM = async () => {
   await machines.start(vm.id);
   const deadline = Date.now() + 270000;
@@ -134,6 +168,8 @@ const startVM = async () => {
   }
 };
 let outside: any, tmuxServer: any;
+/** 验证域外对照与 root tmux server 仍是原存活对象且 cgroup 不变，证明主域停止没有越界。
+ * Verify outside controls/root tmux remain original live objects with unchanged cgroup, proving main-domain stop did not cross ownership boundaries. */
 const preserveOutside = async () => {
   assert.equal(await alive(outside), true); assert.equal(await alive(tmuxServer), true);
   assert.equal((await proc(tmuxServer.pid)).cgroup, tmuxServer.cgroup);
@@ -156,7 +192,8 @@ try {
     const { project, directory } = await projectFor(mode, mode === 'startup-exit');
     const scope = new ProjectMainScope(machines, vm.id, project), values: any[] = [], events: string[] = [];
     let stops = 0;
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 在 main prepare/COMMIT/stop 边界注入确认丢失、取消和真实连接失败；COMMIT 前核验 durable host 票据与原 cgroup 且正文未开始，故障后保留原执行结果的真实性。
+ * Inject lost ACKs, cancellation and real connection failures at main prepare/COMMIT/stop boundaries; before COMMIT prove durable host receipts/original cgroup and absent body execution, preserving whether real operations already completed. */ async (id, command, timeout, signal, output, agent) => {
       const input = request(command);
       if (input?.op === 'stop') {
         ++stops;
@@ -185,7 +222,8 @@ try {
       if (input?.op === 'stop' && mode === 'stop-ack-lost' && stops === 1 && result.code === 0) throw new Error('owned stopped ACK lost');
       return result;
     }) as typeof machines.exec;
-    machines.execInput = (async (id, command, input, ...rest) => {
+    machines.execInput = (/** 真实启动 pane 后仅在指定模式丢 start 回包，其他 stdin 操作原样转发，验证回滚寻找原 pane 而非重复创建。
+ * Lose the start reply only after real pane creation in the selected mode and forward other stdin operations unchanged, testing rollback of the original pane instead of duplicate creation. */ async (id, command, input, ...rest) => {
       const result = await nativeInput(id, command, input, ...rest);
       if (request(command)?.op === 'start' && mode === 'pane-ack-lost' && result.code === 0)
         throw new Error(token + ' owned pane ACK lost');
@@ -274,7 +312,8 @@ try {
   }
   {
     const { project, directory } = await projectFor('late-prepare-cancelled'); let deferred = '';
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 截住自有 prepare 命令并延后交付，其他 exec 透明转发；用于证明已失败事务的迟到 prepare 不能复活正文。
+ * Intercept/delay the owned prepare command while forwarding other exec transparently, proving late prepare delivery cannot revive a failed transaction’s body. */ async (id, command, timeout, signal, output, agent) => {
       if (request(command)?.op === 'prepare') { deferred = command; throw new Error('owned prepare delivery delayed'); }
       return nativeExec(id, command, timeout, signal, output, agent);
     }) as typeof machines.exec;
@@ -311,7 +350,8 @@ try {
     const { project, directory } = await projectFor('replacement-after-lost-stop'); await requireDone('start');
     const scope = new ProjectMainScope(machines, vm.id, project), values = await children(directory), record = (await scope.status()).record!;
     const path = '/sys/fs/cgroup/' + record.scopeName, marker = directory + '/replacement.json'; let replaced = false;
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 真实 stop 成功后建立同名新 cgroup 和无关自有进程，再丢原回应；重试必须识别原 inode 消失并保护替代域，不能按名字杀新对象。
+ * After real stop succeeds create a same-name new cgroup/unrelated owned process and lose the old reply; retries must recognize original-inode disappearance and preserve replacement domains rather than kill by name. */ async (id, command, timeout, signal, output, agent) => {
       const result = await nativeExec(id, command, timeout, signal, output, agent);
       if (request(command)?.op === 'stop' && result.code === 0 && !replaced) {
         replaced = true; await run('mkdir ' + quote(path));
@@ -330,7 +370,8 @@ try {
   {
     const { project, directory } = await projectFor('replacement-pane'); await requireDone('start');
     const values = await children(directory); let replacement: any;
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 原 stop 完成后创建同名 tmux 新 pane，再故意丢回应；测试精确出生票据保护新 pane，旧事务重试不能重获同名会话所有权。
+ * Create a same-name new tmux pane after original stop and deliberately lose the reply, testing birth-ticket protection so retrying an old transaction cannot acquire ownership of the new session. */ async (id, command, timeout, signal, output, agent) => {
       const result = await nativeExec(id, command, timeout, signal, output, agent);
       if (request(command)?.op === 'stop' && result.code === 0 && !replacement) {
         await run('tmux new-session -d -s ' + mainSession(project) + ' /bin/sleep 3600');
@@ -368,7 +409,8 @@ try {
     for (const name of ['main', 'newgroup', 'setsid', 'doublefork'])
       await run('rm -f ' + quote(directory + '/service/' + name + '.json'));
     await requireDone('start'); const secondServiceValues = await children(directory + '/service');
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 只对 main stop 注入真实 SSH 连接失败并保留其他操作，验证混合托管/非托管入口清理失败时不猜测 PID 或隐去错误。
+ * Inject real SSH connection failure only for main stop while preserving other operations, testing that mixed managed/unmanaged cleanup neither guesses PIDs nor hides failure. */ async (id, command, timeout, signal, output, agent) => {
       if (request(command)?.op === 'stop') { await failConnection(command); throw new Error(token + ' owned mixed main cleanup connection failed'); }
       return nativeExec(id, command, timeout, signal, output, agent);
     }) as typeof machines.exec;
@@ -401,7 +443,8 @@ try {
     const catalog = await spaces.projects.create(vm.id, 'Owned empty legacy main ' + randomUUID().slice(0, 8),
       async () => spaces.save(vm.id, { directory: base, command: '' }).then(() => {}));
     const blocked: string[] = [];
-    await spaces.projects.with(vm.id, catalog.active, async () => {
+    await spaces.projects.with(vm.id, catalog.active, /** 创建自有旧 tmux main，暂停时变更按 scope changed 拒绝、恢复后按 unmanaged 拒绝；正式 stop 也必须报错且保留原进程，夹具精确清理后才允许完成。
+ * Create an owned legacy tmux main; reject edits as scope-changed while suspended and unmanaged after resume, and require formal stop failure preserving the process until exact fixture cleanup permits completion. */ async () => {
       const project = await spaces.config(vm.id); await run('tmux new-session -d -s ' + mainSession(project) + ' /bin/sleep 3600');
       const legacy = await proc(Number(await run("tmux list-panes -t =" + mainSession(project) + ": -F '#{pane_pid}'")));
       const updates = { command: { command: 'sleep 3601' }, environment: { environment: { NEW_VALUE: 'owned' } },
@@ -488,7 +531,8 @@ try {
     assert.equal(JSON.parse(await run('cat ' + quote(owner))).runId, newRun);
     await run(py(`import json,os\np=${JSON.stringify(owner)}\nassert json.load(open(p))['runId']==${JSON.stringify(newRun)}\nos.unlink(p)`));
     let probes = 0, stopSignals = 0;
-    machines.exec = (async (id, command, timeout, signal, output, agent) => {
+    machines.exec = (/** 记录 stop 信号并只让首次重启探针连接真实失败，其他 exec 保持原行为，验证重启观测失败不能触发猜测式退役。
+ * Record stop signals and fail only the first real reboot-probe connection while preserving other exec, proving failed reboot observation cannot trigger guessed retirement. */ async (id, command, timeout, signal, output, agent) => {
       if (request(command)?.op === 'stop') ++stopSignals;
       if (request(command)?.op === 'probe-reboot' && ++probes === 1) { await failConnection(command); throw new Error(token + ' owned reboot probe connection failed'); }
       return nativeExec(id, command, timeout, signal, output, agent);

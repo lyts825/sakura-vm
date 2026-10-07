@@ -1,4 +1,5 @@
-/** 打包项目身份控制器、C 启动器与协议源码，生成供来宾安装核实的摘要清单。 */
+/** 打包项目身份控制器、C 启动器与协议源码，生成供来宾安装核实的摘要清单。
+ * Package project identity controller/launcher/protocol sources into a hash-bound native build, enforcing each source byte limit. */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

@@ -1,4 +1,5 @@
-/** 烟雾验收：验证公开扩展入口下的项目 UID TCP 反向隧道、授权和票据关闭。 */
+/** 烟雾验收：验证公开扩展入口下的项目 UID TCP 反向隧道、授权和票据关闭。
+ * Smoke acceptance for public-extension project-UID reverse TCP tunnels, authorization and ticket closure. */
 import assert from 'node:assert/strict';
 import { connect } from 'node:net';
 import { once } from 'node:events';
@@ -9,6 +10,8 @@ const selected = process.argv.find((value, index) => index > 1 && !value.startsW
 assert.ok(['alpine', 'debian', 'ubuntu'].includes(selected));
 const distro = selected as 'alpine' | 'debian' | 'ubuntu';
 
+/** 通过自有回环 TCP 发送字节，可半关闭写端，收集完整回流至 close；十五秒超时销毁 socket 并拒绝。
+ * Send bytes through owned-loopback TCP with optional write half-close, collecting returned data until close; destroy/reject after fifteen seconds. */
 async function exchange(port: number, bytes: Buffer | string, halfClose = false) {
   return new Promise<Buffer>((resolve, reject) => {
     const socket = connect(port, '127.0.0.1'), chunks: Buffer[] = [];
@@ -25,7 +28,8 @@ if (process.argv.includes('--validate-only')) {
     migration: 'explicit mkdir and reviewed preview/apply for default plus two named projects',
     fixture: 'fresh owned and retained', observerBytes: Buffer.byteLength(reverseSmokeKernel),
     rootTestReceiverBytes: Buffer.byteLength(reverseSmokeReceiver), nativeCleanup: 'full original service domain before VM shutdown' }));
-} else await withOwnedReverseSmoke(distro, async ({ machines, workspaces, vmId, alpha, beta, directories,
+} else await withOwnedReverseSmoke(distro, /** 通过三项目正式 UID broker 验证同 guest 端口分网络隔离、二进制半关闭/EOF、闲置保活与路由变化拒绝。入口请求取消不拥有已建立隧道寿命，按项目停止/到期/暂停撤销主机入口后仍须精确验证原服务域和票据清空。
+ * Use three formal UID brokers to verify same-guest-port namespace isolation, binary half-close/EOF, idle survival and route-change refusal. Cancelling the opening request does not own established tunnel lifetime; after project stop/expiry/pause revokes host entry, still prove original service-domain/receipt cleanup. */ async ({ machines, workspaces, vmId, alpha, beta, directories,
   namespaces, job, prove, stopped, scope, recordCase }) => {
   const host = await job('default', 'open'), hostRecord = await prove('default');
   const first = await job(alpha, 'open'), firstRecord = await prove(alpha);

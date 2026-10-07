@@ -1,4 +1,5 @@
-/** 烟雾验收：验证新建单 VM 的启动持久性、源文件身份与最终 QEMU 关闭证据。 */
+/** 烟雾验收：验证新建单 VM 的启动持久性、源文件身份与最终 QEMU 关闭证据。
+ * Smoke acceptance for a newly owned VM’s boot persistence, exact source identity and final QEMU exit evidence. */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
@@ -30,16 +31,26 @@ const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
 const { vmDir } = await import('../server/model.ts');
 const runFile = promisify(execFile);
+/** 对传入内容计算 SHA-256 十六进制摘要，供夹具完整性和前后状态比较；不修改输入。
+ * Compute a hexadecimal SHA-256 digest of the input for fixture integrity/before-and-after comparison without mutating it. */
 const sha256 = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
 const sources = ['server/machines.ts', 'server/seed.ts'];
+/** 并行读取已列源码并返回路径到 SHA-256 映射，供多轮启动前后确认生产实现未改变。
+ * Read enumerated sources concurrently and return path-to-SHA-256 mappings for production-source preservation across boot rounds. */
 const sourceHashes = async () => Object.fromEntries(await Promise.all(sources.map(async source =>
   [source, sha256(await readFile(join(repository, source)))])));
+/** 从本夹具 RSA 私钥导出公开 JWK 并编码 SSH 公钥行，不把私钥正文写入云初始化配置。
+ * Derive public JWK from the fixture RSA key/encode an SSH public-key line without publishing private-key bytes to cloud-init. */
 const publicText = (privateKey: Buffer) => {
   const key = createPublicKey(createPrivateKey(privateKey)).export({ format: 'jwk' });
+  /** 按大端四字节长度封装 SSH 二进制字段，返回新拼接 Buffer。
+   * Wrap an SSH binary field with four-byte big-endian length in a newly concatenated Buffer. */
   const field = (value: Buffer) => {
     const length = Buffer.alloc(4); length.writeUInt32BE(value.length);
     return Buffer.concat([length, value]);
   };
+  /** 解码 base64url 正整数，最高位为一时补零避免 SSH mpint 被解释为负数，再封装长度。
+   * Decode a base64url positive integer, prefix zero if its top bit is set to avoid negative SSH mpint interpretation, then wrap length. */
   const mpint = (value: string) => {
     const bytes = Buffer.from(value, 'base64url');
     return field(bytes[0] & 128 ? Buffer.concat([Buffer.from([0]), bytes]) : bytes);
@@ -56,12 +67,18 @@ const proof: any = {
   observation: 'Only append read-only boot_id output to the existing initialization SSH script, before running; no additional sync or first-running SSH command.',
   events: [] as Event[], rounds: [], controllers: [], qemuExecutions: [], cleanup: [],
 };
+/** 为事件增加单调序号、墙上时间和性能时钟，关联可选轮次并保存后返回，供启动/停止时序证明。
+ * Add monotonic sequence/wall time/performance clock and optional round, retaining/returning events for boot/stop timing evidence. */
 const stamp = (event: string, round?: number) => {
   const entry: Event = { sequence: proof.events.length + 1, at: new Date().toISOString(),
     milliseconds: performance.now(), event, ...(round ? { round } : {}) };
   proof.events.push(entry); return entry;
 };
+/** 把完整启动持久性证据写入自有夹具文件，返回写入完成 Promise。
+ * Write complete boot-persistence evidence to the owned fixture and return its completion promise. */
 const saveProof = () => writeFile(join(fixture, 'boot-persistence-evidence.json'), JSON.stringify(proof, null, 2) + '\n');
+/** 按专用根目录 needle 查询真实 Windows QEMU 出生元组，规范返回数组，供零残留核查。
+ * Query actual Windows QEMU birth tuples using the dedicated-root needle and normalize arrays for zero-residue checks. */
 const ownedProcesses = async () => {
   // The environment carries a literal path; no command is constructed from it.
   // Query only QEMU and match this new fixture, never a name or a guessed PID.
@@ -79,10 +96,13 @@ let currentRound: any;
 let generation = 0, explicitGuestCommands = 0;
 const marker = distro === 'alpine' ? '/var/lib/cloud/.bootstrap-complete' : '/var/lib/cloud/instance/boot-finished';
 const hostname = 'boot-persistence-' + distro;
+/** 创建真实运行时与 Machines，包装自有 QEMU/exec 以记录执行起止和初始化边界；其他调用保持生产实现，重建时保留落盘身份。
+ * Create the real runtime/Machines and observe owned QEMU/exec start-end/initialization boundaries while forwarding other work unchanged, preserving saved identity across reconstruction. */
 const controller = async () => {
   const engine = await createRuntime();
   const nativeRun = engine.run.bind(engine);
-  engine.run = (async (...args: Parameters<typeof nativeRun>) => {
+  engine.run = (/** 只为 argv 引用本夹具的 sakura-qemu 记录轮次、参数哈希与结算时间，其他调用直接转发；异常保留并重抛，finally 不论退出方式都标记结算。
+ * Record round, argv digest and settlement only for sakura-qemu referencing this fixture, forwarding other calls directly; retain/rethrow errors and mark settlement in finally for every exit path. */ async (...args: Parameters<typeof nativeRun>) => {
     if (args[0] !== 'sakura-qemu' || !args[1].some(value => value.includes(fixture))) return nativeRun(...args);
     const execution: any = { generation, round: currentRound?.number, tool: args[0],
       argvSha256: sha256(JSON.stringify(args[1])), started: stamp('owned-qemu-run-started', currentRound?.number), settled: false };
@@ -98,7 +118,8 @@ const controller = async () => {
     records: [...machines.records.values()].map(value => ({ id: value.id, name: value.name, distro: value.distro })),
     engine: engine.version });
   const nativeExec = machines.exec.bind(machines);
-  machines.exec = async (...args: Parameters<typeof nativeExec>) => {
+  machines.exec = /** 仅允许自有 VM 命令，首轮不额外发 SSH；对正式初始化追加成功 bootId 观测并从返回 stdout 剥离，后续只允许固定只读验证，保持退出码与输入参数。
+ * Allow only owned-VM commands and no extra first-round SSH; append a successful bootId observation to formal initialization and strip it from returned stdout, allowing only fixed read-only later verification while preserving exit codes/arguments. */ async (...args: Parameters<typeof nativeExec>) => {
     assert.equal(args[0], id, 'Only this fresh fixture may execute guest commands.');
     const boot = args[1].includes('test -f ' + marker) && args[1].includes('/bin/sync');
     const command: any = { kind: boot ? 'product-initialization' : 'smoke-read-only-verification',
@@ -114,7 +135,8 @@ const controller = async () => {
     // its original status/stdout. The observation happens before running and
     // neither writes guest files nor creates another SSH connection or sync.
     const suffix = '\nsakura_smoke_status=$?\nif [ "$sakura_smoke_status" = 0 ]; then\n printf "\\nSAKURA_SMOKE_BOOT_ID="\n cat /proc/sys/kernel/random/boot_id\nfi\nexit "$sakura_smoke_status"\n';
-    const result = await nativeExec(args[0], args[1] + (boot ? suffix : ''), ...args.slice(2) as [number?, AbortSignal?, ((data: string) => void)?, string?]);
+    const result = await nativeExec(args[0], args[1] + (boot ? suffix : ''), ...args.slice(2) as [number?, AbortSignal?, (/** 沿用原 exec 的增量文本输出回调，观测包装不改变原调用方接收的数据。
+ * Preserve the original exec incremental-text output callback; the observer wrapper does not alter data delivered to its caller. */ (data: string) => void)?, string?]);
     command.completed = stamp('guest-command-completed', currentRound?.number);
     command.code = result.code;
     if (!boot || result.code !== 0) return result;
@@ -135,6 +157,8 @@ printf 'AUTHORIZED_KEYS_BEGIN\\n'; cat /root/.ssh/authorized_keys; printf 'AUTHO
 test -f ${marker}; printf 'CLOUD_INIT_COMPLETE=true\\n'
 test -d /workspace; printf 'WORKSPACE_EXISTS=true\\n'
 `;
+/** 重载后要求唯一原实例、名称/发行版/停机状态和私钥/seed 摘要不变，返回身份保留证据。
+ * After reload require the unique original VM/name/distribution/stopped state and unchanged private-key/seed hashes, returning identity-preservation evidence. */
 const checkReloadedIdentity = async () => {
   assert.equal(machines!.records.size, 1);
   const record = machines!.get(id);
@@ -144,6 +168,8 @@ const checkReloadedIdentity = async () => {
   assert.equal(sha256(await readFile(join(vmDir(id), 'seed.iso'))), expectedSeedHash);
   return { singleRecord: true, vmId: id, hostname, privateKeyUnchanged: true, seedUnchanged: true };
 };
+/** 记录首次强停时刻与来宾命令计数，等待正式 stop 并核对 live 撤销及 stopped，记录完成时序。
+ * Record forced-stop time/guest-command count, await production stop and verify live revocation/stopped state with completion timing. */
 const forceStop = (round: any) => {
   round.forceStopRequested = stamp('force-stop-requested', round.number);
   round.guestCommandsAtStop = explicitGuestCommands;
@@ -154,13 +180,21 @@ const forceStop = (round: any) => {
     assert.equal(round.liveRemoved, true); assert.equal(round.stateAfterStop, 'stopped');
   });
 };
+/** 用首次 running 事件作为就绪边界，可立刻强停以验证生产初始化已经同步；270 秒期限且 finally 清理监听/计时器，逐轮核对新 bootId。
+ * Use the first running event as readiness, optionally force-stop immediately to verify synchronized production initialization; bound by 270 seconds/clean listeners-timer in finally and compare new boot IDs per round. */
 const start = async (round: any, stopImmediately: boolean) => {
   currentRound = round;
   const ownMachines = machines!;
   let settled = false;
+  /** 用启动或停止错误拒绝本轮 ready Promise，保证失败不会被后续状态变化改成成功。
+   * Reject this round’s ready promise with boot/stop errors so later state changes cannot convert failure to success. */
+  /** 兑现本轮首次 running 等待，无参数；调用方在该边界之后才能核验持久性。
+   * Resolve this round’s first-running wait without arguments, establishing the boundary for subsequent persistence checks. */
   let resolveReady!: () => void, rejectReady!: (error: Error) => void;
   const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   void ready.catch(() => {}); // A host process query can finish after a boot failure.
+  /** 仅处理首个终态：running 记录就绪并可强停，error/stopped 拒绝；settled 防止重复事件重入。
+   * Handle only the first terminal observation: record running/optionally force-stop, reject error/stopped, and use settled to prevent repeated-event reentry. */
   const changed = () => {
     if (settled) return;
     const state = ownMachines.state(id);
@@ -195,6 +229,8 @@ const start = async (round: any, stopImmediately: boolean) => {
     }
   } finally { clearTimeout(timer); ownMachines.off('change', changed); }
 };
+/** 核对该轮精确 QEMU 计数为零且唯一执行 settled，保存串口日志并关闭 Machines，再落盘关闭证据。
+ * Require zero exact QEMU matches/one settled execution, retain serial logs/close Machines and persist closure evidence. */
 const stopEvidence = async (round: any) => {
   round.ownedQemuAfterStop = await ownedProcesses();
   assert.equal(round.ownedQemuAfterStop.length, 0, 'This owned fixture still has a QEMU process.');
@@ -235,6 +271,8 @@ try {
       const stopped = forceStop(round);
       void stopped.catch(() => {}); // Finally also waits for this owned stop if a check fails.
       assert.equal(result.code, 0, result.stderr);
+      /** 从来宾自检 stdout 提取指定固定字段的一行值，不存在返回 undefined 供断言失败。
+       * Extract one fixed named field from guest self-check stdout, returning undefined if absent for assertion failure. */
       const get = (name: string) => new RegExp('^' + name + '=([^\\r\\n]+)', 'm').exec(result.stdout)?.[1];
       const keys = /AUTHORIZED_KEYS_BEGIN\r?\n([\s\S]*?)AUTHORIZED_KEYS_END/.exec(result.stdout)?.[1].trim();
       assert.equal(get('ROOT_UID'), '0'); assert.equal(get('BOOT_ID'), round.observedBootId);

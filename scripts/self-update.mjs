@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/** 自更新预检、暂存、激活与回滚，校验发行摘要并用隔离数据目录进行候选健康检查，再替换活动版本指针。 */
+/** 自更新预检、暂存、激活与回滚，校验发行摘要并用隔离数据目录进行候选健康检查，再替换活动版本指针。
+ * Preflight, stage, activate and roll back verified releases; run isolated candidate health before replacing the active pointer. */
 import { networkFor } from './network-client.mjs';
 const updateNetwork = networkFor('tool:self-update');
 const { fetch, createServer } = updateNetwork;
@@ -13,6 +14,8 @@ import { inside, releaseEntriesFor, verifyReleaseManifest } from './release-mani
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
+/** 在受管网络代理环境中启动外部工具并等待成功，finally 关闭本轮代理租约，启动或非零退出抛错。
+ * Run external tools with the managed proxy environment, await success and close this proxy lease in finally; spawn/nonzero failures throw. */
 async function run(command, args, cwd) {
   const proxy = await updateNetwork.proxyEnvironment();
   try {
@@ -25,6 +28,8 @@ async function run(command, args, cwd) {
   } finally { await proxy.close(); }
 }
 
+/** 短暂绑定 IPv4 回环端口取得可用性结论并关闭 listener，不能以既有服务响应证明端口属于候选。
+ * Probe port availability by briefly binding IPv4 loopback and closing the listener, without accepting existing service replies as candidate ownership. */
 export async function portAvailable() {
   const server = createServer();
   await new Promise((done, fail) => server.listen(0, '127.0.0.1', done).once('error', fail));
@@ -33,6 +38,8 @@ export async function portAvailable() {
   return port;
 }
 
+/** 在总截止内检查子进程存活及连续健康窗口；启动错误、退出或超时失败，避免瞬时健康即激活。
+ * Require child liveness and a continuous health window within the deadline; spawn errors, exit or timeout fail instead of accepting momentary health. */
 export async function waitForHealth(child, port, timeoutMs = 60000) {
   const deadline = Date.now() + timeoutMs;
   let readySince = 0;
@@ -56,6 +63,8 @@ export async function waitForHealth(child, port, timeoutMs = 60000) {
   throw new Error('候选服务未通过 60 秒启动健康检查');
 }
 
+/** 用独立临时数据目录和自有端口启动候选服务，健康后记录验证指纹，finally 停止候选并清理本轮数据。
+ * Start the candidate with isolated temporary data/owned port, record its verified fingerprint after health and stop/clean owned data in finally. */
 export async function canary(candidate, installation = root) {
   const temp = await mkdtemp(join(installation, '.sakura-update', 'canary-'));
   if (!inside(join(installation, '.sakura-update'), temp)) throw new Error('临时目录越界');
@@ -76,6 +85,8 @@ export async function canary(candidate, installation = root) {
   }
 }
 
+/** 仅允许当前根或 versions 下固定 32 位十六进制目录，拒绝点段、绝对路径与逃逸。
+ * Allow only the installation root or fixed 32-hex directories under versions, rejecting dot segments/absolute paths/escape. */
 export function versionPath(installation, value) {
   if (value === '.') return installation;
   if (typeof value !== 'string' || !/^versions\/[a-f0-9]{32}$/.test(value))
@@ -85,6 +96,8 @@ export function versionPath(installation, value) {
   return path;
 }
 
+/** 读取活动/previous 指针并验证每个版本路径，缺失时使用当前根，畸形记录拒绝。
+ * Read/validate active and previous version pointers, defaulting to the installation root only on absence and rejecting malformed records. */
 export async function pointer(installation = root) {
   const file = join(installation, '.sakura-update', 'current.json');
   let value;
@@ -101,6 +114,8 @@ export async function pointer(installation = root) {
   return value;
 }
 
+/** 以独占临时文件写入新 active/previous，再在同目录 rename 替换，失败清理本轮临时文件。
+ * Write active/previous through an exclusive temporary and same-directory rename, cleaning only this temporary on failure. */
 export async function setPointer(installation, active, previous) {
   // 指针只接受已限定的版本路径；同目录临时记录经 rename 发布，读取方不会看到半份 JSON。
   versionPath(installation, active);
@@ -116,6 +131,8 @@ export async function setPointer(installation, active, previous) {
   } finally { await rm(temp, { force: true }); }
 }
 
+/** 要求版本准备脚本字节一致，复用已核实工具目录并以 npm ci 禁用生命周期脚本安装生产依赖。
+ * Require identical runtime preparation scripts, reuse validated tool directories and install production dependencies with npm ci lifecycle scripts disabled. */
 async function prepareRuntime(candidate, installation) {
   const expected = await readFile(join(installation, 'scripts', 'versions.mjs'), 'utf8');
   const actual = await readFile(join(candidate, 'scripts', 'versions.mjs'), 'utf8');
@@ -129,6 +146,8 @@ async function prepareRuntime(candidate, installation) {
   }
 }
 
+/** 完整核实发行清单后复制到新候选目录，再核实副本、准备运行时与隔离健康检查；失败清理本次暂存。
+ * Verify the full release manifest, copy to a fresh candidate, reverify/prepare runtime/run isolated health and clean this stage on failure. */
 export async function stageUpdate(source, installation = root, options = {}) {
   // 候选先复制到新版本目录并再次验摘要；使用独立数据目录预检，成功后才允许修改活动指针。
   const selected = await realpath(source);
@@ -163,6 +182,8 @@ export async function stageUpdate(source, installation = root, options = {}) {
   }
 }
 
+/** 重新核对候选目录、发行指纹和健康标记后替换活动指针，previous 保留原活动版本用于启动失败回滚。
+ * Revalidate candidate directory/release fingerprint/health marker before pointer replacement, retaining the prior active version for rollback. */
 export async function activateUpdate(version, installation = root) {
   const candidate = versionPath(installation, version);
   if (version === '.') throw new Error('请选择已预检的新版本');
@@ -177,6 +198,8 @@ export async function activateUpdate(version, installation = root) {
   return await pointer(installation);
 }
 
+/** 要求已记录 previous，切回该版本并清空 previous，避免重复回滚环路。
+ * Require a recorded previous version, switch back and clear previous to prevent repeated rollback loops. */
 export async function rollbackUpdate(installation = root) {
   const before = await pointer(installation);
   if (!before.previous) throw new Error('没有可回滚的上一个版本');

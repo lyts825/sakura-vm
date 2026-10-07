@@ -1,4 +1,5 @@
-/** 烟雾验收：验证真实项目 SSH agent 转发、保留 socket、秘密脱敏、路由拒绝与取消。 */
+/** 烟雾验收：验证真实项目 SSH agent 转发、保留 socket、秘密脱敏、路由拒绝与取消。
+ * Smoke acceptance for real project agent forwarding, retained sockets, secret redaction, route refusal and cancellation. */
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
@@ -26,20 +27,26 @@ const { ProjectDirectoryMigrations } = await import('../server/project-directory
 const machines = new Machines(await createRuntime());
 await machines.init();
 const secrets = new Secrets(machines), workspaces = new Workspaces(machines, { secrets });
+/** 将整数编码成 SSH 协议的大端四字节长度字段，返回新 Buffer。
+ * Encode an integer as the SSH protocol’s four-byte big-endian length in a new Buffer. */
 const u32 = (value: number) => {
   const output = Buffer.alloc(4);
   output.writeUInt32BE(value);
   return output;
 };
+/** 保留输入原始字节并增加大端长度前缀，构造 SSH agent 字符串字段。
+ * Preserve raw input bytes and prefix their big-endian length to construct an SSH-agent string field. */
 const sshString = (value: Buffer | string) => {
   const content = Buffer.isBuffer(value) ? value : Buffer.from(value);
   return Buffer.concat([u32(content.length), content]);
 };
 const publicBlob = Buffer.concat([sshString('ssh-ed25519'), sshString(randomBytes(32))]);
 let queries = 0;
-const agent = createServer((socket) => {
+const agent = createServer(/** 为每个自有 Agent socket 保存独立拆帧缓冲，仅实现 identities 请求并返回固定公钥；其他消息销毁连接，验证转发协议而不保存私钥或模拟签名。
+ * Maintain an independent framing buffer per owned Agent socket, implement identities requests with a fixed public key and destroy on other messages, testing forwarding without persisting private keys or simulating signatures. */ (socket) => {
   let pending = Buffer.alloc(0);
-  socket.on('data', (chunk) => {
+  socket.on('data', /** 累积可能分片/粘包的数据，完整四字节长度帧才消费；只接纳消息11并构造带长度的消息12，剩余字节留待下一次回调。
+ * Accumulate fragmented/coalesced input and consume only complete four-byte-length frames; accept message 11 and construct length-prefixed message 12, retaining leftover bytes for the next callback. */ (chunk) => {
     pending = Buffer.concat([pending, chunk]);
     while (pending.length >= 4 && pending.length >= 4 + pending.readUInt32BE(0)) {
       const length = pending.readUInt32BE(0);

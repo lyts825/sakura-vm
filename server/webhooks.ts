@@ -1,5 +1,6 @@
 /**
  * 模块职责：收集并发送匹配事件的 Webhook，校验目标 URL 与配置并管理后台投递状态。
+ * Module purpose: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
  */
 import { networkFor } from './network/index.ts';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
@@ -28,6 +29,17 @@ const limits = { subscriptions: 16, pending: 500, history: 200, attempts: 5, sou
 const hour = 3600000;
 const time = z.number().finite().nonnegative();
 const label = z.string().trim().min(1).max(24);
+/**
+ * 入口 / Entry: unique.
+ * 功能：在收集并发送匹配事件的 Webhook中，执行此领域的具体处理步骤并返回其结果；本入口产生 `z .array(schema) .max(max) .refine((values) => new Set(values).size === values.length, '条目不能重复')` 供上层消费（`webhooks.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `webhooks.ts`; this entry produces `z .array(schema) .max(max) .refine((values) => new Set(values).size === values.length, '条目不能重复')` for its caller. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+ * 处理：通过 `z.array().max().refine`, `z.array().max`, `z.array` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.array().max().refine`, `z.array().max`, `z.array`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: schema: T; max: number
+ * 输出 / Returns: `z .array(schema) .max(max) .refine((values) => new Set(values).size === values.length, '条目不能重复')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const unique = <T extends z.ZodType>(schema: T, max: number) =>
   z
     .array(schema)
@@ -41,6 +53,17 @@ const filter = {
   statuses: unique(z.enum(webhookJobStatuses), 4).default([]),
   kinds: unique(z.enum(webhookAlertKinds), 7).default([]),
 };
+/**
+ * 入口 / Entry: callback@47.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.string().max().refine / 使用 HTTPS 接收地址（本机测试可用 HTTP），不允许账号、查询参数或片段）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.string().max().refine / 使用 HTTPS 接收地址（本机测试可用 HTTP），不允许账号、查询参数或片段).
+ * 输入 / Inputs: value
+ * 输出 / Returns: `( !url.username && !url.password && !url.hash && !url.search && (url.protocol === 'https:' || (url.protocol === 'http:' && ['…`; `false`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ * 失败处理：catch 分支执行 `return false;`，是否吞掉错误或重新拒绝由这些语句决定。
+ * Failure handling: Catch paths execute `return false;`; these statements determine whether a failure is absorbed or rejected again.
+ */
 const destination = z
   .string()
   .max(2048)
@@ -127,8 +150,39 @@ export const webhookRequest = z.discriminatedUnion('action', [
   z.object({ action: z.literal('retry'), id: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
   z.object({ action: z.literal('cancel'), id: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
 ]);
+/**
+ * 入口 / Entry: digest.
+ * 功能：在收集并发送匹配事件的 Webhook中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(value).digest('hex')` 供上层消费（`webhooks.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `webhooks.ts`; this entry produces `createHash('sha256').update(value).digest('hex')` for its caller. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: value: string
+ * 输出 / Returns: `createHash('sha256').update(value).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+/**
+ * 入口 / Entry: waiting.
+ * 功能：从当前输入或状态计算 `['pending', 'sending'].includes(delivery.status)`，供调用方后续验证或使用。
+ * Purpose: Computes `['pending', 'sending'].includes(delivery.status)` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: delivery: WebhookDelivery
+ * 输出 / Returns: `['pending', 'sending'].includes(delivery.status)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const waiting = (delivery: WebhookDelivery) => ['pending', 'sending'].includes(delivery.status);
+/**
+ * 入口 / Entry: matchesWebhook.
+ * 功能：在收集并发送匹配事件的 Webhook中，执行此领域的具体处理步骤并返回其结果；本入口产生 `( event.type !== 'test' && rule.types.includes(event.type) && (!rule.vmIds.length || (!!event.vmId && rule.vmIds.includes(eve…` 供上层消费（`webhooks.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `webhooks.ts`; this entry produces `( event.type !== 'test' && rule.types.includes(event.type) && (!rule.vmIds.length || (!!event.vmId && rule.vmIds.includes(eve…` for its caller. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+ * 处理：通过 `rule.types.includes`, `rule.vmIds.includes`, `rule.projectIds.includes`, `rule.tags.every` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `rule.types.includes`, `rule.vmIds.includes`, `rule.projectIds.includes`, `rule.tags.every`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: rule: WebhookFilter; event: WebhookEvent
+ * 输出 / Returns: `( event.type !== 'test' && rule.types.includes(event.type) && (!rule.vmIds.length || (!!event.vmId && rule.vmIds.includes(eve…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function matchesWebhook(rule: WebhookFilter, event: WebhookEvent) {
   return (
     event.type !== 'test' &&
@@ -144,11 +198,31 @@ export function matchesWebhook(rule: WebhookFilter, event: WebhookEvent) {
 }
 
 /** A fixed metadata allowlist; commands, titles, messages, values and logs never enter the payload. */
+/**
+ * 入口 / Entry: collectWebhookEvents.
+ * 功能：在收集并发送匹配事件的 Webhook中，执行此领域的具体处理步骤并返回其结果；本入口产生 `candidates.flatMap((candidate) => { const value = eventSchema.safeParse(candidate); return value.success ? [value.data] : [];…` 供上层消费（`webhooks.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `webhooks.ts`; this entry produces `candidates.flatMap((candidate) => { const value = eventSchema.safeParse(candidate); return value.success ? [value.data] : [];…` for its caller. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+ * 处理：通过 `jobs.filter().map`, `jobs.filter`, `alerts.map`, `candidates.flatMap` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `jobs.filter().map`, `jobs.filter`, `alerts.map`, `candidates.flatMap`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: machines: Pick<Machines, 'records'>; jobs: JobView[]; alerts: AlertEvent[]
+ * 输出 / Returns: WebhookEvent[]；结果来自 / values from `candidates.flatMap((candidate) => { const value = eventSchema.safeParse(candidate); return value.success ? [value.data] : [];…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function collectWebhookEvents(
   machines: Pick<Machines, 'records'>,
   jobs: JobView[],
   alerts: AlertEvent[],
 ): WebhookEvent[] {
+  /**
+   * 入口 / Entry: collectWebhookEvents.tags.
+   * 功能：从当前输入或状态计算 `(id ? [...new Set(machines.records.get(id)?.organization?.tags || [])] : [])`，供调用方后续验证或使用。
+   * Purpose: Computes `(id ? [...new Set(machines.records.get(id)?.organization?.tags || [])] : [])` from current inputs/state for the caller to validate or consume.
+   * 输入 / Inputs: id: string optional
+   * 输出 / Returns: `(id ? [...new Set(machines.records.get(id)?.organization?.tags || [])] : [])`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const tags = (id?: string) => (id ? [...new Set(machines.records.get(id)?.organization?.tags || [])] : []);
   const candidates = [
     ...jobs
@@ -189,6 +263,14 @@ export class Webhooks {
   private active?: { id: string; subscriptionId: string; abort: AbortController };
   private closed = false;
   private error?: string;
+  /**
+   * 入口 / Entry: Webhooks.constructor.
+   * 功能：建立 Webhooks 的收集并发送匹配事件的 Webhook上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the Webhooks context for this module's responsibility: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: source: () => Promise<WebhookEvent[]>; file: default=join(DATA, 'webhooks.json'); fetcher: typeof fetch default=fetch; now: default=Date.now; blocked: () => boolean default=() => false; mutation: (delta: number) => void default=() => {}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private source: () => Promise<WebhookEvent[]>,
     private file = join(DATA, 'webhooks.json'),
@@ -197,6 +279,18 @@ export class Webhooks {
     private blocked: () => boolean = () => false,
     private mutation: (delta: number) => void = () => {},
   ) {}
+  /**
+   * 入口 / Entry: Webhooks.init.
+   * 功能：在收集并发送匹配事件的 Webhook中，初始化并核对当前领域状态；处理结果记录到 `this.state`, `this.timer`（`Webhooks`）。
+   * Purpose: Initializes and verifies current domain state in `Webhooks`; the outcome is recorded in `this.state`, `this.timer`. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+   * 处理：通过 `stat().catch`, `stat`, `info.isFile`, `stateSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `stat().catch`, `stat`, `info.isFile`, `stateSchema.parse`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `schedule`.
+   * 输入 / Inputs: schedule: default=true
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `scheduler.register`; 更新 / updates `this.state`, `this.timer`.
+   * 拒绝 / Refusals: 条件 / conditions `info && (!info.isFile() || info.size > 16 * 1024 ** 2)`; `new Set(this.state.subscriptions.map((value) => value.id)).size !== this.state.subscriptions.length || new Set(this.state.del…`; 异常 / errors `new AppError('Webhook 存储类型或大小无效')`; `new AppError('Webhook 存储记录无效')`.
+   */
   async init(schedule = true) {
     const info = await stat(this.file).catch((error) => {
       if (error.code !== 'ENOENT') throw error;
@@ -213,12 +307,35 @@ export class Webhooks {
       throw new AppError('Webhook 存储记录无效');
     if (schedule) {
       this.timer = scheduler.register({ owner: 'core:webhooks', label: 'Webhook 事件投递', intervalMs: 5000,
-        immediate: true, overlap: 'skip', backoff: { initialMs: 5000, maxMs: 60000 }, run: async () => {
+        immediate: true, overlap: 'skip', backoff: { initialMs: 5000, maxMs: 60000 },
+        /**
+         * 入口 / Entry: Webhooks.init.run.
+         * 功能：在收集并发送匹配事件的 Webhook中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`Webhooks`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `Webhooks`; the calls and state transitions below complete the operation. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+         * 处理：通过 `this.tick` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `this.tick`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 拒绝 / Refusals: 条件 / conditions `this.error`; 异常 / errors `new AppError(this.error, 503)`.
+         */
+        run: async () => {
           await this.tick();
           if (this.error) throw new AppError(this.error, 503);
         } });
     }
   }
+  /**
+   * 入口 / Entry: Webhooks.view.
+   * 功能：在收集并发送匹配事件的 Webhook中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ subscriptions: this.state.subscriptions.map(({ secret, ...value }) => ({ ...value, hasSecret: !!secret, })), deliveries: st…` 供上层消费（`Webhooks`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `Webhooks`; this entry produces `{ subscriptions: this.state.subscriptions.map(({ secret, ...value }) => ({ ...value, hasSecret: !!secret, })), deliveries: st…` for its caller. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+   * 处理：通过 `this.state.subscriptions.map`, `structuredClone().sort`, `structuredClone` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.state.subscriptions.map`, `structuredClone().sort`, `structuredClone`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: WebhookView；结果来自 / values from `{ subscriptions: this.state.subscriptions.map(({ secret, ...value }) => ({ ...value, hasSecret: !!secret, })), deliveries: st…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   view(): WebhookView {
     return {
       subscriptions: this.state.subscriptions.map(({ secret, ...value }) => ({
@@ -231,12 +348,41 @@ export class Webhooks {
       limits,
     };
   }
+  /**
+   * 入口 / Entry: Webhooks.serial.
+   * 功能：在收集并发送匹配事件的 Webhook中，执行此领域的具体处理步骤并返回其结果；本入口产生 `task` 供上层消费（`Webhooks`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Webhooks`; this entry produces `task` for its caller. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+   * 处理：通过 `this.queue.catch().then`, `this.queue.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.queue.catch().then`, `this.queue.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: work: () => Promise<T>
+   * 输出 / Returns: Promise<T>；结果来自 / values from `task`.
+   * 副作用 / Effects: 更新 / updates `this.queue`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const task = this.queue.catch(() => {}).then(work);
     this.queue = task;
     return task;
   }
+  /**
+   * 入口 / Entry: Webhooks.change.
+   * 功能：把本层请求转交 `this.serial`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.serial` and propagates the provider result or rejection.
+   * 输入 / Inputs: edit: (next: State) => T
+   * 输出 / Returns: Promise<T>；结果来自 / values from `this.serial(async () => { const next = structuredClone(this.state), result = edit(next); const completed = next.deliveries .f…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async change<T>(edit: (next: State) => T): Promise<T> {
+    /**
+     * 入口 / Entry: Webhooks.change.callback@240.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `result`.
+     * 副作用 / Effects: `writeStore`; 更新 / updates `next.deliveries`, `this.state`.
+     * 拒绝 / Refusals: 条件 / conditions `next.deliveries.filter(waiting).length > limits.pending`; 异常 / errors `new AppError('Webhook 待投递队列已满，请处理积压', 409)`.
+     */
     return this.serial(async () => {
       const next = structuredClone(this.state),
         result = edit(next);
@@ -253,6 +399,19 @@ export class Webhooks {
       return result;
     });
   }
+  /**
+   * 入口 / Entry: Webhooks.configure.
+   * 功能：按动作保存订阅、重试或取消待投递记录，核对配置和队列边界。
+   * Purpose: Saves subscriptions or retries/cancels delivery records under configuration/queue bounds.
+   * 设计：变更在串行持久状态内完成，进行中的投递以原身份检查；计数与维护状态 finally 恢复。
+   * Design: Mutations serialize against durable state and active deliveries retain identity checks; finally restores accounting/maintenance state.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: `{ ...this.view(), ...(secret ? { secret } : {}) }`.
+   * 副作用 / Effects: `this.active.abort.abort`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `this.blocked()`; 异常 / errors `new AppError('服务正在关闭', 503)`; `new AppError('数据目录迁移维护中', 409)`.
+   * 收尾：退出 try 区域时始终执行 `this.mutation(-1);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.mutation(-1);`; these steps also apply to exceptional exits.
+   */
   async configure(input: unknown) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
     const value = webhookRequest.parse(input);
@@ -260,6 +419,15 @@ export class Webhooks {
     this.mutation(1);
     try {
       let secret: string | undefined;
+      /**
+       * 入口 / Entry: Webhooks.configure.callback@263.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.change）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.change).
+       * 输入 / Inputs: next
+       * 输出 / Returns: `void`.
+       * 副作用 / Effects: `next.subscriptions.push`; 更新 / updates `delivery.status`, `delivery.error`, `delivery.updatedAt`, `delivery.attempts`.
+       * 拒绝 / Refusals: 条件 / conditions `value.action === 'retry' || value.action === 'cancel'`; `!delivery`; `value.action === 'cancel'`; 异常 / errors `new AppError('投递记录不存在', 404)`; `new AppError('只能取消等待或投递中的记录', 409)`.
+       */
       await this.change((next) => {
         if (value.action === 'retry' || value.action === 'cancel') {
           const delivery = next.deliveries.find((item) => item.id === value.id);
@@ -336,6 +504,18 @@ export class Webhooks {
       this.mutation(-1);
     }
   }
+  /**
+   * 入口 / Entry: Webhooks.enqueue.
+   * 功能：在收集并发送匹配事件的 Webhook中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`Webhooks`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Webhooks`; this entry produces `void` for its caller. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+   * 处理：通过 `digest`, `next.deliveries.some`, `next.deliveries.push`, `this.now` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `digest`, `next.deliveries.some`, `next.deliveries.push`, `this.now`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `next.deliveries.some((item) => item.id === id)`.
+   * 输入 / Inputs: next: State; subscription: State['subscriptions'][number]; event: WebhookEvent
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `next.deliveries.push`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private enqueue(next: State, subscription: State['subscriptions'][number], event: WebhookEvent) {
     const id = digest(`${subscription.id}:${subscription.version}:${event.id}`);
     if (next.deliveries.some((item) => item.id === id)) return;
@@ -350,6 +530,18 @@ export class Webhooks {
       updatedAt: this.now(),
     });
   }
+  /**
+   * 入口 / Entry: Webhooks.collect.
+   * 功能：在收集并发送匹配事件的 Webhook中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`Webhooks`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Webhooks`; this entry produces `void` for its caller. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+   * 处理：通过 `this.blocked`, `this.state.subscriptions.some`, `inline.map().filter().sort`, `inline.map().filter` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.blocked`, `this.state.subscriptions.some`, `inline.map().filter().sort`, `inline.map().filter`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed || this.blocked() || !this.state.subscriptions.some((item) => item.enabled)`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `full`; 异常 / errors `new AppError('Webhook 队列或去重窗口已满，部分新事件等待下轮采集', 409)`.
+   */
   async collect() {
     if (this.closed || this.blocked() || !this.state.subscriptions.some((item) => item.enabled)) return;
     const events = (await this.source())
@@ -361,6 +553,15 @@ export class Webhooks {
       )
       .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
     let full = false;
+    /**
+     * 入口 / Entry: Webhooks.collect.callback@364.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.change）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.change).
+     * 输入 / Inputs: next
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 更新 / updates `full`, `queued`, `next.observed[event.id]`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     await this.change((next) => {
       for (const [id, at] of Object.entries(next.observed))
         if (at < this.now() - 48 * hour) delete next.observed[id];
@@ -388,10 +589,33 @@ export class Webhooks {
     });
     if (full) throw new AppError('Webhook 队列或去重窗口已满，部分新事件等待下轮采集', 409);
   }
+  /**
+   * 入口 / Entry: Webhooks.tick.
+   * 功能：在收集并发送匹配事件的 Webhook中，执行此领域的具体处理步骤并返回其结果；本入口产生 `Promise.resolve()` / `this.pending` 供上层消费（`Webhooks`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `Webhooks`; this entry produces `Promise.resolve()` / `this.pending` for its caller. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+   * 处理：通过 `this.blocked`, `Promise.resolve`, `this.mutation`, `inline().finally` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.blocked`, `Promise.resolve`, `this.mutation`, `inline().finally`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed || this.blocked()`; `this.pending`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>；结果来自 / values from `Promise.resolve()`; `this.pending`; `task`.
+   * 副作用 / Effects: 更新 / updates `this.pending`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   tick(): Promise<void> {
     if (this.closed || this.blocked()) return Promise.resolve();
     if (this.pending) return this.pending;
     this.mutation(1);
+    /**
+     * 入口 / Entry: Webhooks.tick.callback@395.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（inline）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (inline).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 更新 / updates `this.error`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     * 失败处理：catch 分支执行 `this.error = '事件采集或存储失败，请检查队列容量与数据目录。';`; `this.error = '投递记录保存失败，待恢复后继续；接收端应按投递标识去重。';`，是否吞掉错误或重新拒绝由这些语句决定。
+     * Failure handling: Catch paths execute `this.error = '事件采集或存储失败，请检查队列容量与数据目录。';`; `this.error = '投递记录保存失败，待恢复后继续；接收端应按投递标识去重。';`; these statements determine whether a failure is absorbed or rejected again.
+     */
     const task = (async () => {
       this.error = undefined;
       try {
@@ -411,6 +635,21 @@ export class Webhooks {
     this.pending = task;
     return task;
   }
+  /**
+   * 入口 / Entry: Webhooks.deliver.
+   * 功能：按原订阅签名并发送事件，记录响应、重试期限和最终投递状态。
+   * Purpose: Signs/sends events under the original subscription and records responses, retry deadlines and terminal delivery state.
+   * 设计：实际发送前重查订阅，HTTPS 目标与输出有界；网络结果和持久终态分开确认，失败不会丢失原投递记录。
+   * Design: Subscription is rechecked before bounded HTTPS delivery; network results and persistence are distinct, preserving failed delivery evidence.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `false`; `true`.
+   * 副作用 / Effects: `createHmac().update().digest`; `createHmac().update`; `createHmac`; `this.fetcher`; `AbortSignal.any`; 更新 / updates `this.active`, `status`, `retryAfter`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `this.active = undefined;`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.active = undefined;`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 ，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute ; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async deliver() {
     const candidate = this.state.deliveries.find((item) => waiting(item) && item.nextAttemptAt <= this.now());
     if (!candidate) return false;
@@ -430,6 +669,15 @@ export class Webhooks {
       return true;
     }
     let admitted: WebhookDelivery | undefined;
+    /**
+     * 入口 / Entry: Webhooks.deliver.callback@433.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.change）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.change).
+     * 输入 / Inputs: next
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: 更新 / updates `item.status`, `item.error`, `item.updatedAt`, `admitted`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     await this.change((next) => {
       const item = next.deliveries.find((item) => item.id === candidate.id);
       const current = next.subscriptions.find((rule) => rule.id === candidate.subscriptionId);
@@ -486,6 +734,15 @@ export class Webhooks {
       this.active = undefined;
     }
     if (this.closed) return false; // Persisted 'sending' is retried with the same delivery id after restart.
+    /**
+     * 入口 / Entry: Webhooks.deliver.callback@489.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.change）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.change).
+     * 输入 / Inputs: next
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: 更新 / updates `item.httpStatus`, `item.updatedAt`, `item.status`, `item.error`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     await this.change((next) => {
       const item = next.deliveries.find((value) => value.id === admitted!.id);
       if (!item || item.status !== 'sending') return;
@@ -504,6 +761,17 @@ export class Webhooks {
     });
     return true;
   }
+  /**
+   * 入口 / Entry: Webhooks.close.
+   * 功能：在收集并发送匹配事件的 Webhook中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`Webhooks`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `Webhooks`; the outcome is recorded in `this.closed`. Module context: Collects/sends matching event hooks, validating target URLs/settings and owning scheduled delivery state.
+   * 处理：通过 `this.active.abort.abort`, `this.timer.close`, `this.queue.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.active.abort.abort`, `this.timer.close`, `this.queue.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.active.abort.abort`; `this.timer.close`; 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true;
     this.active?.abort.abort();

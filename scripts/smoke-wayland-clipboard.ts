@@ -1,4 +1,5 @@
-/** 烟雾验收：验证明确停机的自有 Wayland 夹具中 compositor、代理和真实剪贴板策略。 */
+/** 烟雾验收：验证明确停机的自有 Wayland 夹具中 compositor、代理和真实剪贴板策略。
+ * Smoke acceptance for compositor/proxy/real clipboard policies in explicitly stopped owned Wayland fixtures. */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
@@ -50,12 +51,16 @@ const evidence: object[] = [];
 let passed = false, failure: string | undefined, sourceBuild: string | undefined;
 let qtSha256: string | undefined, gtkSha256: string | undefined;
 let sourceFiles: Array<{ name: string; sha256: string }> = [];
+/** 在本验收夹具的指定实例中执行传入脚本，使用函数中的超时约束并断言退出码为零，返回捕获的标准输出；失败附来宾诊断而不被当作空输出。
+ * Execute the supplied script in the specified fixture VM under this function’s timeout, assert exit code zero and return captured stdout; failures include guest diagnostics rather than become empty output. */
 const run = async (script: string, timeout = 30_000) => {
   const result = await machines.exec(vm.id, script, timeout);
   if (result.code !== 0) console.log(result.stdout);
   assert.equal(result.code, 0, result.stdout + result.stderr);
   return result.stdout.trim();
 };
+/** 经真实 SFTP 写入指定夹具字节与权限，等待 pipeline 完成。
+ * Write fixture bytes/mode through real SFTP and await pipeline completion. */
 const upload = async (path: string, bytes: Buffer, mode = 0o600) =>
   machines.sftp(vm.id, (ftp) => pipeline(Readable.from([bytes]), ftp.createWriteStream(path, { flags: 'w', mode })));
 const sessions: string[] = [];
@@ -70,14 +75,19 @@ const mimeText = 'text/plain;charset=utf-8';
 type Rule = typeof rule;
 type Toolkit = 'qt' | 'gtk';
 const directProcesses: Array<{ pid: number; created: string }> = [];
+/** 把请求与精确 owner 编成 base64 交给隔离控制器，返回解析 JSON；owner 不由调用场景覆盖。
+ * Encode request/exact owner as base64 for the isolated controller and return parsed JSON; scenarios cannot override owner. */
 async function action(request: object) {
   const encoded = Buffer.from(JSON.stringify({ ...request, owner })).toString('base64');
   return JSON.parse(await run(`/usr/bin/python3 -I -S ${quote(controller)} ${quote(encoded)}`, 30_000));
 }
+/** 有限轮询结果文件并经 SFTP 读取，限制正文预算且必须观察完整 end/close；超限、截断或未出现都失败。
+ * Poll results with a deadline/read via SFTP under a body budget and require complete end/close; overflow/truncation/absence fail. */
 async function marker(path: string) {
   for (let n = 0; n < 100; n++) {
     const result = await machines.exec(vm.id, `test -f ${quote(path)}`, 10_000);
-    if (result.code === 0) return machines.sftp(vm.id, (ftp) => new Promise<string>((resolveMarker, rejectMarker) => {
+    if (result.code === 0) return machines.sftp(vm.id, (ftp) => new Promise<string>(/** 经 SFTP 读取自有 Wayland 观察标记，最多16781312字节；必须先 end 再 close 才拼接兑现，截断关闭或超额销毁均拒绝。
+ * Read the owned Wayland observation marker through SFTP with a 16781312-byte limit; concatenate/resolve only when end precedes close, rejecting truncated closure or overflow destruction. */ (resolveMarker, rejectMarker) => {
       const stream = ftp.createReadStream(path), chunks: Buffer[] = [];
       let length = 0, ended = false;
       stream.on('error', rejectMarker);
@@ -96,9 +106,13 @@ async function marker(path: string) {
   throw Error('native Wayland fixture marker timed out: ' + path);
 }
 const rule = { copy: true, paste: true, files: false, sensitive: true, maxTextBytes: 1_048_576 };
+/** 使用本夹具显示器与可选认证文件激活固定窗口并按 F8，使观测发生在真实焦点上下文。
+ * Focus a fixed window/press F8 using fixture display/optional authority so observations occur in a real focus context. */
 async function focus() {
   await run(`sleep .25\nenv DISPLAY=${quote(focusDisplay)} ${focusAuthority ? 'XAUTHORITY=' + quote(focusAuthority) : ''} xdotool mousemove 500 380 click 1 key F8`);
 }
+/** 先识别工具包可执行身份，再创建唯一会话并以指定规则/代次进入生产控制器；要求 running 后聚焦，登记 ID 供清理。
+ * Identify toolkit executable identity, create a unique session and enter the production controller with rule/generation; require running/focus and retain ID for cleanup. */
 async function launch(args: string[], policy = rule, toolkit: Toolkit = 'qt') {
   const image = programDirectory + '/fixture-' + toolkit;
   const identity = await action({ action: 'identify', image });
@@ -109,18 +123,26 @@ async function launch(args: string[], policy = rule, toolkit: Toolkit = 'qt') {
   await focus();
   return id;
 }
+/** 列举 owner 的原生会话并按精确 ID 查询，未找到返回 undefined。
+ * List native owner sessions and find the exact ID, returning undefined if absent. */
 async function session(id: string) {
   const result = await action({ action: 'list' });
   return result.sessions.find((item: { id: string }) => item.id === id);
 }
+/** 要求指定原生会话 stop 返回 stopped=true，不将仅发送停止请求当作成功。
+ * Require stopped=true from stopping the native session rather than treating request submission as success. */
 async function stop(id: string) {
   assert.equal((await action({ action: 'stop', id })).stopped, true);
 }
+/** 提交规则、代次和启用状态，断言返回代次/active 一致，验证更新边界。
+ * Submit rule/generation/enabled state and assert returned generation/active to verify update boundaries. */
 async function configure(id: string, policy: Rule, generation: number, enabled = true) {
   const result = await action({ action: 'configure', id, rule: policy, generation, enabled });
   assert.equal(result.generation, generation);
   assert.equal(result.active, enabled);
 }
+/** 以桌面账号清空组并使用上游 Wayland socket 启动普通工具包对照，记录 PID 与出生 ticks，返回精确清理身份。
+ * Launch an ordinary toolkit control with desktop account/cleared groups/upstream Wayland socket, record PID/birth ticks and return exact cleanup identity. */
 async function direct(toolkit: Toolkit, args: string[]) {
   const prefix = guestRoot + '/client-' + (++serial);
   const raw = await run(`set -eu\nsetsid setpriv --reuid sakura-desktop --regid sakura-desktop --clear-groups env -u DISPLAY -u XAUTHORITY -u WAYLAND_SOCKET HOME=/home/sakura-desktop USER=sakura-desktop LOGNAME=sakura-desktop XDG_RUNTIME_DIR=${quote(upstreamSocket.slice(0, upstreamSocket.lastIndexOf('/')))} WAYLAND_DISPLAY=${quote(upstreamSocket)} QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland dbus-run-session -- ${quote(programDirectory + '/fixture-' + toolkit)} ${args.map(quote).join(' ')} >${quote(prefix + '.log')} 2>&1 < /dev/null &\np="$!"\n/usr/bin/python3 -I -S -c ${quote("import sys,json; p=int(sys.argv[1]);r=open('/proc/'+str(p)+'/stat').read();f=r[r.rfind(')')+2:].split();print(json.dumps({'pid':p,'created':f[19]}))")} "$p"`);
@@ -128,6 +150,8 @@ async function direct(toolkit: Toolkit, args: string[]) {
   await focus();
   return identity;
 }
+/** 停止对照进程前重新比对 PID 出生 ticks 与进程组所有者，匹配才发送组 SIGTERM，避免 PID 重用误杀。
+ * Recheck PID birth ticks/process-group ownership before group SIGTERM to prevent killing a reused PID. */
 async function stopDirect(identity: { pid: number; created: string }) {
   await run(`/usr/bin/python3 -I -S -c ${quote(`import os,signal
 p=${identity.pid}
@@ -137,10 +161,14 @@ try:
 except ProcessLookupError: pass
 except FileNotFoundError: pass`)}`);
 }
+/** 为输入正文分配唯一自有路径并上传，返回路径给工具包 owner；文件权限允许该夹具桌面账号读取。
+ * Allocate/upload a unique owned input path and return it to the toolkit owner with mode readable by the fixture desktop account. */
 async function bodyFile(body: Buffer) {
   const input = project + '/input-' + (++serial);
   await upload(input, body, 0o644); return input;
 }
+/** 建立正文文件与 ready 标记，按 managed 选择受控或普通 owner，要求真实 READY 后返回清理句柄。
+ * Prepare body/ready files, choose controlled/ordinary owner from managed and require real READY before returning cleanup handles. */
 async function source(body: Buffer, managed: boolean, toolkit: Toolkit = 'qt', policy = rule,
   mime = mimeText, mode = 'CLIPBOARD', sourceDelay = 0) {
   const input = await bodyFile(body), ready = project + '/ready-' + (++serial);
@@ -149,6 +177,8 @@ async function source(body: Buffer, managed: boolean, toolkit: Toolkit = 'qt', p
   assert.match(await marker(ready), /^READY (?:wayland|gtk-wayland)/);
   return { input, handle, managed };
 }
+/** 按工具包/规则启动读取端并等待结果，随后停止该精确会话或对照进程，返回剪贴板观测。
+ * Start a reader for toolkit/rule, await results and stop the exact session/control process before returning clipboard observations. */
 async function probe(managed: boolean, toolkit: Toolkit = 'qt', policy = rule,
   mime = mimeText, mode = 'CLIPBOARD') {
   const result = project + '/result-' + (++serial), args = ['probe', '/dev/null', result, mime, mode];
@@ -157,9 +187,13 @@ async function probe(managed: boolean, toolkit: Toolkit = 'qt', policy = rule,
   if (managed) await stop(handle as string); else await stopDirect(handle as { pid: number; created: string });
   return value;
 }
+/** 按 source 的 managed 标记选择受控停止或 PID+ticks 对照清理，不混用两种所有权。
+ * Choose controlled stop or PID+ticks cleanup from source.managed without mixing ownership models. */
 async function closeSource(value: Awaited<ReturnType<typeof source>>) {
   if (value.managed) await stop(value.handle as string); else await stopDirect(value.handle as { pid: number; created: string });
 }
+/** 读取本 owner/会话的原生 broker status JSON，供传输状态与剩余资源核查。
+ * Read native broker status JSON for this owner/session to inspect transport state/residue. */
 async function brokerStatus(id: string) {
   return JSON.parse(await run(`cat ${quote('/var/lib/sakura/wayland-clipboard/' + owner + '/' + id + '/status')}`));
 }
@@ -432,7 +466,8 @@ print(json.dumps(names))`)}`));
   production = new WaylandClipboard(machines, async () => {
     const binding = await new DesktopBindings(machines).read(vm.id); assert.ok(binding);
     return { project: await workspaces.resolvedConfig(vm.id), launcherSha256: binding.launcherSha256 };
-  }, { assets, file: () => join(directory, 'wayland-production-' + nonce + '.json'), jobsDirectory: join(directory, 'wayland-jobs-' + nonce) });
+  }, { assets, /** 返回本次 nonce 对应的生产 Wayland 状态文件，避免与其他验收写同一状态。
+ * Return the production Wayland state file for this nonce to avoid sharing state across checks. */ file: () => join(directory, 'wayland-production-' + nonce + '.json'), jobsDirectory: join(directory, 'wayland-jobs-' + nonce) });
   const install = production.install(vm.id), installDeadline = Date.now() + 300_000;
   for (;;) {
     const view = await production.view(vm.id);
@@ -448,6 +483,8 @@ print(json.dumps(names))`)}`));
   publicView = await production.action(vm.id, { action: 'save', version: publicView.version,
     application: { ...publicIdentity, rule } }) as X11ClipboardView;
   assert.ok(!publicView.error, publicView.error);
+  /** 在生产桌面固定位置聚焦并触发 F8，供公开入口的工具包观测。
+   * Focus the production desktop’s fixed position and trigger F8 for public-entry toolkit observations. */
   const productionFocus = async () => run('sleep .4\nenv DISPLAY=:1 XAUTHORITY=/run/sakura-desktop/Xauthority xdotool mousemove 640 400 click 1 key F8');
   const publicInput = await bodyFile(normal), publicReady = project + '/public-ready-' + (++serial);
   const publicSource = await production.action(vm.id, { action: 'launch', version: publicView.version,
@@ -476,6 +513,8 @@ print(json.dumps(names))`)}`));
   publicView = await production.view(vm.id);
   publicView = await production.action(vm.id, { action: 'save', version: publicView.version,
     application: { ...gtkIdentity, rule } }) as X11ClipboardView;
+  /** 读取当前生产版本后经正式 action 启动已识别工具包，登记会话并要求 running，再聚焦返回 ID。
+   * Read the production version, launch the identified toolkit through public action, register/require running and focus before returning ID. */
   const publicLaunch = async (toolkit: Toolkit, args: string[]) => {
     const view = await production!.view(vm.id);
     const item = await production!.action(vm.id, { action: 'launch', version: view.version,

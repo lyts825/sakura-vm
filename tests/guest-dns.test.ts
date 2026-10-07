@@ -1,7 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - DNS diagnostic parses resolver evidence without claiming DNSSEC validation
- * - DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration
+ * 模块职责：回归验证模块，围绕 `guest-dns` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `guest-dns`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: DNS diagnostic parses resolver evidence without claiming DNSSEC validation; DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration.
  */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
@@ -28,6 +30,16 @@ after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: DNS diagnostic parses resolver evidence without claiming DNSSEC validation
+ * 协作入口 / Collaborators: `assert.deepEqual`, `parseGuestDns`, `[ 'SOURCE=/run/systemd/resolve/stub-resolv.conf', 'NAMESERVER=127.0.0.53', …`.
+ * 检查边界 / Checked boundaries: `assert.deepEqual(parseGuestDns([ 'SOURCE=/run/systemd/resolve/stub-resolv.conf', 'NAMESERVER=127.0.0.53', 'NAMESERVER=fd00::1', 'D…`.
+ */
 test('DNS diagnostic parses resolver evidence without claiming DNSSEC validation', () => {
   assert.deepEqual(parseGuestDns([
     'SOURCE=/run/systemd/resolve/stub-resolv.conf',
@@ -49,6 +61,19 @@ test('DNS diagnostic parses resolver evidence without claiming DNSSEC validation
   });
 });
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration
+ * 状态影响 / State effects: `machines.exec`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `assert.equal`, `nextFeatureCatalog.find`, `randomUUID`, `machines.records.set`.
+ * 检查边界 / Checked boundaries: `assert.equal(nextFeatureCatalog.find(([name]) => name === 'private-dns-dnssec')?.[5], 'available')`; `assert.equal(stopped.ready, false)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration', async () => {
   assert.equal(nextFeatureCatalog.find(([name]) => name === 'private-dns-dnssec')?.[5], 'available');
   const machines = new Machines({} as Engine, fakeVmNetwork), id = randomUUID();
@@ -57,8 +82,32 @@ test('DNS diagnostic checks the guest, runs as a recorded task and reports unrea
     createdAt: new Date().toISOString(), snapshots: [],
   });
   const workspaces = {
+    /**
+     * 中文功能：改变测试状态或保存受控输入，为后续调用和故障分支安排条件。
+     * English: Change test state or save controlled input to arrange conditions for later calls and fault branches.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`() => {}`）。
+     * Result: Return the branch-computed value (`() => {}`).
+     * 验证场景 / Scenario: DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration
+     */
     beforeConfigChange: () => () => {},
-    projects: { current: () => 'default', key: (vmId: string) => vmId },
+    projects: { /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`'default'`）。
+     * Result: Return the branch-computed value (`'default'`).
+     * 验证场景 / Scenario: DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration
+     */
+    current: () => 'default', /**
+     * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
+     * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
+     * 输入 / Inputs: vmId: string。
+     * 结果：返回分支计算值（`vmId`）。
+     * Result: Return the branch-computed value (`vmId`).
+     * 验证场景 / Scenario: DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration
+     */
+    key: (vmId: string) => vmId },
   } as unknown as Workspaces;
   const features = new NextFeatures(machines, workspaces);
   try {
@@ -66,7 +115,16 @@ test('DNS diagnostic checks the guest, runs as a recorded task and reports unrea
     assert.equal(stopped.ready, false);
     machines.live.set(id, { status: 'running' } as any);
     const commands: string[] = [];
-    machines.exec = async (_id, command) => {
+    machines.exec = /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: _id; command。
+     * 结果：返回受控对象，公开字段包括 `code, stdout, stderr`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `code, stdout, stderr`; the actual branch determines its shape.
+     * 验证场景 / Scenario: DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration
+     * 协作入口 / Collaborators: `commands.push`.
+     */
+    async (_id, command) => {
       commands.push(command);
       return {
         code: 0,
@@ -93,7 +151,15 @@ test('DNS diagnostic checks the guest, runs as a recorded task and reports unrea
     const result = await features.jobs.result(started.id);
     assert.equal(result.executed, true);
     assert.deepEqual(result.dnssecTools, ['dig']);
-    machines.exec = async () => ({ code: 2, stdout: '', stderr: 'private failure' });
+    machines.exec = /**
+     * 中文功能：提供本组用例使用的执行、请求或启动入口，按受控状态生成结果、事件或失败。
+     * English: Provide the execution, request or launch entry used by this suite, producing results, events or failures from controlled state.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`({ code: 2, stdout: '', stderr: 'private failure' })`），以 Promise 交付。
+     * Result: Return the branch-computed value (`({ code: 2, stdout: '', stderr: 'private failure' })`) through a Promise.
+     * 验证场景 / Scenario: DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration
+     */
+    async () => ({ code: 2, stdout: '', stderr: 'private failure' });
     const failed = baseResult.extend({ exitCode: z.number() }).parse(
       await features.action(id, { action: 'check', featureId: 'private-dns-dnssec' }),
     );

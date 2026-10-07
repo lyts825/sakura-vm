@@ -1,5 +1,6 @@
 /**
  * 模块职责：保存桌面启动器与完整项目会话绑定；连接必须匹配已发布的启动器摘要。
+ * Module purpose: Persists launchers and full project desktop bindings; connections require the exact published launcher digest.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
@@ -38,6 +39,15 @@ export const legacyDesktopBindingSchema = z.object({ version: z.literal(1),
   launcherSha256: z.string().regex(/^[a-f0-9]{64}$/),
   enabled: z.boolean(),
 }).strict();
+/**
+ * 入口 / Entry: callback@48.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（z.object().strict().superRefine）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (z.object().strict().superRefine).
+ * 输入 / Inputs: value; ctx
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `ctx.addIssue`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const projectDesktopBindingSchema = z.object({
   ...legacyDesktopBindingSchema.shape, version: z.literal(2), configVersion: z.string().regex(/^[a-f0-9]{64}$/),
   preferences: desktopPreferencesSchema, state: z.enum(['starting', 'running', 'review', 'stopped']),
@@ -61,12 +71,28 @@ export const desktopBindingSchema = z.union([legacyDesktopBindingSchema, project
 export type DesktopBinding = z.infer<typeof desktopBindingSchema>;
 export type ProjectDesktopBinding = z.infer<typeof projectDesktopBindingSchema>;
 
+/**
+ * 入口 / Entry: bindingProject.
+ * 功能：从当前输入或状态计算 `{ template: 'none', directory: binding.directory, setup: '', command: '', repository: '', networkIsolation: binding.networkIs…`，供调用方后续验证或使用。
+ * Purpose: Computes `{ template: 'none', directory: binding.directory, setup: '', command: '', repository: '', networkIsolation: binding.networkIs…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: binding: DesktopBinding
+ * 输出 / Returns: Project；结果来自 / values from `{ template: 'none', directory: binding.directory, setup: '', command: '', repository: '', networkIsolation: binding.networkIs…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export function bindingProject(binding: DesktopBinding): Project {
   return { template: 'none', directory: binding.directory, setup: '', command: '', repository: '',
     networkIsolation: binding.networkIsolation,
     _workspace: binding.projectId === 'default' ? undefined : binding.projectId };
 }
 
+/**
+ * 入口 / Entry: desktopServiceStop.
+ * 功能：从当前输入或状态计算 `distro === 'alpine' ? 'rc-update del sakura-desktop default >/dev/null 2>&1 || true\n' + 'if rc-service sakura-desktop status…`，供调用方后续验证或使用。
+ * Purpose: Computes `distro === 'alpine' ? 'rc-update del sakura-desktop default >/dev/null 2>&1 || true\n' + 'if rc-service sakura-desktop status…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: distro: default='alpine'
+ * 输出 / Returns: `distro === 'alpine' ? 'rc-update del sakura-desktop default >/dev/null 2>&1 || true\n' + 'if rc-service sakura-desktop status…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export function desktopServiceStop(distro = 'alpine') {
   return distro === 'alpine'
     ? 'rc-update del sakura-desktop default >/dev/null 2>&1 || true\n' +
@@ -75,6 +101,17 @@ export function desktopServiceStop(distro = 'alpine') {
     : 'if systemctl cat sakura-desktop >/dev/null 2>&1; then systemctl disable --now sakura-desktop; fi';
 }
 
+/**
+ * 入口 / Entry: desktopLauncher.
+ * 功能：在保存桌面启动器与完整项目会话绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``#!/bin/sh if [ "\${1-}" != --session ]; then exec /usr/bin/python3 -I -S -c ${quote(`import os if os.getpgrp()!=os.getpid():…` 供上层消费（`desktop-binding.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-binding.ts`; this entry produces ``#!/bin/sh if [ "\${1-}" != --session ]; then exec /usr/bin/python3 -I -S -c ${quote(`import os if os.getpgrp()!=os.getpid():…` for its caller. Module context: Persists launchers and full project desktop bindings; connections require the exact published launcher digest.
+ * 处理：通过 `projectNetworkNamespace`, `envPrefix`, `quote`, `projectNetworkCheckScript` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `projectNetworkNamespace`, `envPrefix`, `quote`, `projectNetworkCheckScript`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: project: Project; distro: default='alpine'
+ * 输出 / Returns: ``#!/bin/sh if [ "\${1-}" != --session ]; then exec /usr/bin/python3 -I -S -c ${quote(`import os if os.getpgrp()!=os.getpid():…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function desktopLauncher(project: Project, distro = 'alpine') {
   const namespace = projectNetworkNamespace(project);
   const credentials = distro === 'alpine' ? '/bin/setpriv' : '/usr/bin/setpriv';
@@ -120,6 +157,15 @@ wait "$child"
 `;
 }
 
+/**
+ * 入口 / Entry: desktopBindingCheck.
+ * 功能：在保存桌面启动器与完整项目会话绑定中，执行此领域的具体处理步骤并返回其结果；本入口产生 ``test -f ${desktopLauncherPath} && test ! -L ${desktopLauncherPath} && ` + `test "$(stat -c %u ${desktopLauncherPath})" = 0 &…` 供上层消费（`desktop-binding.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `desktop-binding.ts`; this entry produces ``test -f ${desktopLauncherPath} && test ! -L ${desktopLauncherPath} && ` + `test "$(stat -c %u ${desktopLauncherPath})" = 0 &…` for its caller. Module context: Persists launchers and full project desktop bindings; connections require the exact published launcher digest.
+ * 输入 / Inputs: binding: DesktopBinding
+ * 输出 / Returns: ``test -f ${desktopLauncherPath} && test ! -L ${desktopLauncherPath} && ` + `test "$(stat -c %u ${desktopLauncherPath})" = 0 &…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 拒绝 / Refusals: 条件 / conditions `binding.version !== 1`; 异常 / errors `new AppError('项目 Desktop 需要完整 UID 会话验证', 409, 'DESKTOP_SCOPE_CHANGED')`.
+ */
 export function desktopBindingCheck(binding: DesktopBinding) {
   if (binding.version !== 1) throw new AppError('项目 Desktop 需要完整 UID 会话验证', 409, 'DESKTOP_SCOPE_CHANGED');
   return `test -f ${desktopLauncherPath} && test ! -L ${desktopLauncherPath} && ` +
@@ -128,7 +174,29 @@ export function desktopBindingCheck(binding: DesktopBinding) {
 }
 
 export class DesktopBindings {
+  /**
+   * 入口 / Entry: DesktopBindings.constructor.
+   * 功能：建立 DesktopBindings 的保存桌面启动器与完整项目会话绑定上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the DesktopBindings context for this module's responsibility: Persists launchers and full project desktop bindings; connections require the exact published launcher digest. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(private machines: Machines) {}
+  /**
+   * 入口 / Entry: DesktopBindings.read.
+   * 功能：在保存桌面启动器与完整项目会话绑定中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `desktopBindingSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'desktop-binding.json'), 'utf8')))` / `null` 供上层消费（`DesktopBindings`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `DesktopBindings`; this entry produces `desktopBindingSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'desktop-binding.json'), 'utf8')))` / `null` for its caller. Module context: Persists launchers and full project desktop bindings; connections require the exact published launcher digest.
+   * 处理：通过 `this.machines.get`, `desktopBindingSchema.parse`, `readFile`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `desktopBindingSchema.parse`, `readFile`, `join`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `(error as NodeJS.ErrnoException).code === 'ENOENT'`.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `desktopBindingSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'desktop-binding.json'), 'utf8')))`; `null`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 异常 / errors `error`.
+   * 失败处理：catch 分支执行 `if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   async read(id: string) {
     this.machines.get(id);
     try {
@@ -139,6 +207,17 @@ export class DesktopBindings {
     }
   }
 
+  /**
+   * 入口 / Entry: DesktopBindings.write.
+   * 功能：在保存桌面启动器与完整项目会话绑定中，校验并提交领域状态变更；本入口产生 `binding` 供上层消费（`DesktopBindings`）。
+   * Purpose: Validates and commits a domain state change in `DesktopBindings`; this entry produces `binding` for its caller. Module context: Persists launchers and full project desktop bindings; connections require the exact published launcher digest.
+   * 处理：通过 `desktopLauncher`, `this.machines.get`, `legacyDesktopBindingSchema.parse`, `createHash().update().digest` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `desktopLauncher`, `this.machines.get`, `legacyDesktopBindingSchema.parse`, `createHash().update().digest`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; project: Project; signal: AbortSignal optional
+   * 输出 / Returns: `binding`.
+   * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`; `writeStore`; `this.machines.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `prepared.code !== 0`; `result.code !== 0`; 异常 / errors `new AppError('无法准备桌面启动程序', 409)`; `new AppError('无法发布项目桌面启动程序', 409)`.
+   */
   async write(id: string, project: Project, signal?: AbortSignal) {
     const script = desktopLauncher(project, this.machines.get(id).distro || 'alpine');
     const binding = legacyDesktopBindingSchema.parse({ version: 1, projectId: project._workspace || 'default',
@@ -169,6 +248,17 @@ export class DesktopBindings {
     return binding;
   }
 
+  /**
+   * 入口 / Entry: DesktopBindings.enable.
+   * 功能：在保存桌面启动器与完整项目会话绑定中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`DesktopBindings`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `DesktopBindings`; the calls and state transitions below complete the operation. Module context: Persists launchers and full project desktop bindings; connections require the exact published launcher digest.
+   * 处理：通过 `this.read`, `isDeepStrictEqual`, `writeStore`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.read`, `isDeepStrictEqual`, `writeStore`, `join`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; binding: DesktopBinding; enabled: boolean
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `writeStore`.
+   * 拒绝 / Refusals: 条件 / conditions `!current || !isDeepStrictEqual(current, binding)`; 异常 / errors `new AppError('桌面启动绑定已变化，请重试', 409)`.
+   */
   async enable(id: string, binding: DesktopBinding, enabled: boolean) {
     const current = await this.read(id);
     if (!current || !isDeepStrictEqual(current, binding))
@@ -176,6 +266,17 @@ export class DesktopBindings {
     await writeStore(join(vmDir(id), 'desktop-binding.json'), { ...current, enabled });
   }
 
+  /**
+   * 入口 / Entry: DesktopBindings.save.
+   * 功能：在保存桌面启动器与完整项目会话绑定中，校验并提交领域状态变更；完成下述调用及状态处理（`DesktopBindings`）。
+   * Purpose: Validates and commits a domain state change in `DesktopBindings`; the calls and state transitions below complete the operation. Module context: Persists launchers and full project desktop bindings; connections require the exact published launcher digest.
+   * 处理：通过 `this.read`, `isDeepStrictEqual`, `writeStore`, `join` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.read`, `isDeepStrictEqual`, `writeStore`, `join`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; binding: ProjectDesktopBinding; previous: DesktopBinding | null
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `writeStore`.
+   * 拒绝 / Refusals: 条件 / conditions `!isDeepStrictEqual(current, previous)`; `current?.version === 1`; `current?.version === 2 && current.execution.record.runId !== binding.execution.record.runId && current.state !== 'stopped'`; 异常 / errors `new AppError('Desktop 原绑定已变化，拒绝覆盖', 409, 'DESKTOP_SCOPE_CHANGED')`; `new AppError('旧共享 Desktop 没有完整 UID 票据，只能审阅，不能自动接管', 409, 'DESKTOP_LEGACY_REVIEW_REQUIRED')`.
+   */
   async save(id: string, binding: ProjectDesktopBinding, previous: DesktopBinding | null) {
     const current = await this.read(id);
     if (!isDeepStrictEqual(current, previous))
@@ -187,6 +288,17 @@ export class DesktopBindings {
     await writeStore(join(vmDir(id), 'desktop-binding.json'), projectDesktopBindingSchema.parse(binding));
   }
 
+  /**
+   * 入口 / Entry: DesktopBindings.clear.
+   * 功能：在保存桌面启动器与完整项目会话绑定中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`DesktopBindings`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `DesktopBindings`; the calls and state transitions below complete the operation. Module context: Persists launchers and full project desktop bindings; connections require the exact published launcher digest.
+   * 处理：通过 `this.machines.get`, `rm`, `join`, `vmDir` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.get`, `rm`, `join`, `vmDir`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `rm`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async clear(id: string) {
     this.machines.get(id);
     await rm(join(vmDir(id), 'desktop-binding.json'), { force: true });

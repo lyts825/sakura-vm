@@ -1,5 +1,6 @@
 /**
  * 模块职责：组合并校验核心与插件操作目录，发布前要求明确的请求及响应契约。
+ * Module purpose: Combines/validates core and plugin catalogues, requiring explicit request/response contracts before publication.
  */
 import { z } from 'zod';
 import { isDeepStrictEqual } from 'node:util';
@@ -27,6 +28,15 @@ export type OperationEntry = {
   media?: string;
   inspect?: boolean;
 };
+/**
+ * 入口 / Entry: normalize.
+ * 功能：从当前输入或状态计算 `path.replace(/:([a-zA-Z0-9_]+)/g, '{$1}')`，供调用方后续验证或使用。
+ * Purpose: Computes `path.replace(/:([a-zA-Z0-9_]+)/g, '{$1}')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: path: string
+ * 输出 / Returns: `path.replace(/:([a-zA-Z0-9_]+)/g, '{$1}')`.
+ * 副作用 / Effects: `path.replace`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const normalize = (path: string) => path.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
 const socketEntries: OperationEntry[] = [
   {
@@ -195,6 +205,24 @@ const socketEntries: OperationEntry[] = [
   }
 ];
 
+/**
+ * 入口 / Entry: callback@214.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（pluginHttpRoutes().map）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (pluginHttpRoutes().map).
+ * 输入 / Inputs: route
+ * 输出 / Returns: OperationEntry；结果来自 / values from `{ declaration: { id, owner: route.owner, method: route.method, path: normalize(route.path), ...route.policy, contract: respon…`.
+ * 副作用 / Effects: `requestContract`.
+ * 拒绝 / Refusals: 条件 / conditions `route.handler === 'operation' && !typed?.response`; 异常 / errors `new Error('插件操作缺少响应契约：' + id)`.
+ */
+/**
+ * 入口 / Entry: callback@199.
+ * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（coreOperations.map）。
+ * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (coreOperations.map).
+ * 输入 / Inputs: item
+ * 输出 / Returns: OperationEntry；结果来自 / values from `({ declaration: { id: 'core.' + item.id, owner: 'core', method: item.method as OperationDeclaration['method'], path: normaliz…`.
+ * 副作用 / Effects: `requestContract`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export const operationEntries: readonly OperationEntry[] = [
   ...coreOperations.map((item): OperationEntry => {
     const input = requestContract('core.' + item.id, item.policy, item.method, coreRequestSchema(item.body) || undefined, item.body);
@@ -242,6 +270,17 @@ export const operationEntries: readonly OperationEntry[] = [
 ];
 
 /** Fail publication before any listener starts, including incomplete policies supplied by plugins. */
+/**
+ * 入口 / Entry: validateOperationEntries.
+ * 功能：在组合并校验核心与插件操作目录中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`operation-catalog.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `operation-catalog.ts`; the calls and state transitions below complete the operation. Module context: Combines/validates core and plugin catalogues, requiring explicit request/response contracts before publication.
+ * 处理：通过 `operationDeclarationSchema.parse`, `inline.includes`, `input.query.shape[...].isOptional`, `keys.has` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `operationDeclarationSchema.parse`, `inline.includes`, `input.query.shape[...].isOptional`, `keys.has`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: entries: readonly OperationEntry[]
+ * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+ * 副作用 / Effects: `keys.add`; `ids.add`.
+ * 拒绝 / Refusals: 条件 / conditions `!entry.requestContract || !declaration.request`; `declaration.request.kind !== input.kind || declaration.request.required !== input.required || declaration.request.media !== i…`; `input.media !== expectedMedia || (input.kind === 'none' && input.required) || (['none', 'binary'].includes(input.kind) && (in…`; 异常 / errors `new Error('操作缺少明确请求契约：' + declaration.id)`; `new Error('操作输入声明与实际请求协议不一致：' + declaration.id)`.
+ */
 export function validateOperationEntries(entries: readonly OperationEntry[]) {
   const keys = new Set<string>(), ids = new Set<string>();
   for (const entry of entries) {
@@ -303,6 +342,15 @@ export function validateOperationEntries(entries: readonly OperationEntry[]) {
 }
 validateOperationEntries(operationEntries);
 
+/**
+ * 入口 / Entry: operationDirectory.
+ * 功能：从当前输入或状态计算 `operationEntries.map(({ declaration }) => ({ ...declaration, enabled: declaration.owner === 'core' || enabled.has(declaration…`，供调用方后续验证或使用。
+ * Purpose: Computes `operationEntries.map(({ declaration }) => ({ ...declaration, enabled: declaration.owner === 'core' || enabled.has(declaration…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: active: Iterable<string>
+ * 输出 / Returns: `operationEntries.map(({ declaration }) => ({ ...declaration, enabled: declaration.owner === 'core' || enabled.has(declaration…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function operationDirectory(active: Iterable<string>) {
   const enabled = new Set(active);
   return operationEntries.map(({ declaration }) => ({ ...declaration,

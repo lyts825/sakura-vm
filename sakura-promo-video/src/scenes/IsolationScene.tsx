@@ -1,10 +1,13 @@
-/** 运行边界章节，将项目账户和目录隔离的 Manim 片段与说明文本按旁白 cue 对齐。 */
+/** 运行边界章节，将项目账户和目录隔离的 Manim 片段与说明文本按旁白 cue 对齐。
+ * Align project-account/IDMAP isolation diagrams and boundary explanations with narration cues. */
 import {Interactive} from 'remotion';
 import {Icon} from '../components';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Tag, useScene} from '../stage';
 import {colors} from '../theme';
 import {ManimClip} from './KernelScene';
 
+/** 按 cue 显现本机入口、项目 UID/Home 与可选沙箱边界，组合预渲染项目隔离图解解释运行权限。
+ * Reveal local entry points, project UID/Home and optional sandbox boundaries at cues, using the prerendered isolation diagram to explain execution authority. */
 const IsolationInner: React.FC<SceneProps> = ({style}) => {
   const {cue} = useScene('isolation');
   return <ScenePaper id="isolation" style={style}>

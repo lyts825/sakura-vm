@@ -1,7 +1,7 @@
-# Python 回归入口：校验辅助进程的协议、输入和失败路径；平台要求以各用例中的条件检查为准。
-# 覆盖：test_network_diagnostics_probe_real_dns_tcp_tls_failure_and_closed_port
-# 覆盖：test_network_diagnostics_deadline_terminates_stalled_https
-# 覆盖：test_network_diagnostics_resolves_a_real_local_route
+# 模块职责：能力执行器回归：校验请求和能力策略，在受控执行环境核对返回与拒绝。
+# Module: Capability-runner regression: validate requests and capability policy, checking results and rejection in a controlled execution environment.
+# 阅读方式：按初始化、具名辅助函数与测试情景阅读；便携模型与模拟接口不能证明真实 Linux 隔离。
+# Reading guide: Follow initialization, named helpers and cases; portable models and substituted interfaces do not attest real Linux isolation.
 import importlib.util
 import json
 import os
@@ -24,22 +24,53 @@ spec.loader.exec_module(runner)
 
 
 class Capabilities(unittest.TestCase):
+    # 中文功能：准备本用例的独立目录与状态，使用例之间的输入和失败注入相互隔离。
+    # English: Prepare a private directory and state for this case so inputs and injected failures are isolated between cases.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `self.directory`, `self.root`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `tempfile.TemporaryDirectory`, `Path`.
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix='sakura-capability-test-')
         self.root = Path(self.directory.name)
 
+    # 中文功能：执行测试或夹具中的关闭、释放、删除或终止步骤；实际对象及拒绝条件以函数体为准。
+    # English: Perform closing, release, removal or termination within the test/model; the body defines the affected objects and rejection conditions.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.directory.cleanup`.
     def tearDown(self):
         self.directory.cleanup()
 
+    # 中文功能：修改受控文件系统或持久化测试状态，用于安排事务提交、归属变化和故障情景。
+    # English: Modify the controlled filesystem or persisted test state to arrange transaction commits, ownership changes and fault cases.
+    # 输入 / Inputs: self, name, value。
+    # 结果：返回分支计算值（`file`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`file`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `file.parent.mkdir`, `file.write_text`.
     def write(self, name, value):
         file = self.root / name
         file.parent.mkdir(parents=True, exist_ok=True)
         file.write_text(value, encoding='utf-8')
         return file
 
+    # 中文功能：提供受控执行或协议入口，根据模型输入产生结果、状态变化或可观察失败。
+    # English: Provide a controlled execution/protocol entry that produces results, state changes or observable failure from model inputs.
+    # 输入 / Inputs: self, operation, **parameters。
+    # 结果：返回分支计算值（`runner.capability_execute(self.root, operation, parameters)`），实际类型由实现及使用处约定。
+    # Result: Return the branch-computed value (`runner.capability_execute(self.root, operation, parameters)`); its implementation and call sites define the actual type.
+    # 协作入口 / Collaborators: `runner.capability_execute`.
     def execute(self, operation, **parameters):
         return runner.capability_execute(self.root, operation, parameters)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `socket.socket`, `listener.bind`, `listener.getsockname`, `listener.listen`.
     def test_network_diagnostics_probe_real_dns_tcp_tls_failure_and_closed_port(self):
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
@@ -47,6 +78,12 @@ class Capabilities(unittest.TestCase):
             listener.listen(4)
             listener.settimeout(5)
 
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: 无 / none。
+            # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+            # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+            # 协作入口 / Collaborators: `range`, `listener.accept`, `connection.sendall`.
             def refuse_tls():
                 for _ in range(2):
                     connection, _ = listener.accept()
@@ -70,6 +107,14 @@ class Capabilities(unittest.TestCase):
         closed = self.execute('network-diagnostics', target='127.0.0.1', port=port, probes=['tcp'], timeout=2)
         self.assertEqual(closed['code'], 1)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `socket.socket`, `listener.bind`, `listener.listen`, `listener.settimeout`.
+    # 设计思路：将主体计算与 finally 收尾分开，使返回和异常路径经过相同收尾步骤。
+    # Design: Separate body computation from finally-based finalization so return and exception paths share the same finalization step.
     def test_network_diagnostics_deadline_terminates_stalled_https(self):
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
@@ -77,6 +122,12 @@ class Capabilities(unittest.TestCase):
             listener.settimeout(4)
             release = threading.Event()
 
+            # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+            # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+            # 输入 / Inputs: 无 / none。
+            # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+            # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+            # 协作入口 / Collaborators: `listener.accept`, `release.wait`.
             def stall():
                 connection, _ = listener.accept()
                 with connection:
@@ -94,12 +145,24 @@ class Capabilities(unittest.TestCase):
                 release.set()
                 worker.join(5)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.execute`, `self.assertEqual`, `self.assertIn`, `unittest.skipUnless`.
     @unittest.skipUnless(shutil.which('ip'), 'requires Linux iproute2 or BusyBox ip')
     def test_network_diagnostics_resolves_a_real_local_route(self):
         result = self.execute('network-diagnostics', target='127.0.0.1', probes=['route'], timeout=3)
         self.assertEqual(result['code'], 0, result)
         self.assertIn('127.0.0.1', result['results'][0]['routes'][0]['output'])
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `dict`, `json.dumps`, `self.execute`.
     def test_dependency_graph_resolves_nested_and_shared_packages_without_running_scripts(self):
         self.write('package.json', '{"name":"fixture"}')
         lock = dict(name='fixture', lockfileVersion=3, packages={
@@ -115,6 +178,14 @@ class Capabilities(unittest.TestCase):
         self.assertIsNone(next(item for item in report['edges'] if item['name'] == 'optional-missing')['target'])
         self.assertFalse(report['updatesChecked'])
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `dict`, `json.dumps`, `self.write`, `patch.object`.
+    # 设计思路：用显式模型状态和受控适配调用排列边界情景，测试只依据其断言证明相应模型行为，不能外推真实系统权限。
+    # Design: Arrange boundary cases with explicit model state and controlled adapters. Assertions establish the corresponding model behavior without attesting real system privileges.
     def test_dependency_bot_scans_applies_and_restores_reviewed_npm_upgrade(self):
         manifest = dict(name='fixture', version='1.0.0', dependencies={'is-number': '^1.0.0'},
                         scripts={'postinstall': 'exit 77'})
@@ -127,6 +198,13 @@ class Capabilities(unittest.TestCase):
         self.write('package-lock.json', original_lock)
         commands = []
 
+        # 中文功能：完成该测试辅助步骤并交付其计算结果或可观察状态，供相邻验证流程复用。
+        # English: Perform this test-helper step and expose its computed result or observable state for reuse by adjacent verification flows.
+        # 输入 / Inputs: args, cwd = None, **_。
+        # 结果：返回分支计算值（`dict(code=1, stdout=json.dumps({'is-number': {'wanted': '1.1.0', 'latest': '2.0.0'}}), stderr='') / dict(code=0, stdout='"1.1.0"', stderr='')`），实际类型由实现及使用处约定。
+        # Result: Return the branch-computed value (`dict(code=1, stdout=json.dumps({'is-number': {'wanted': '1.1.0', 'latest': '2.0.0'}}), stderr='') / dict(code=0, stdout='"1.1.0"', stderr='')`); its implementation and call sites define the actual type.
+        # 状态影响 / State effects: `staged_manifest['dependencies']['is-number']`, `staged_lock['packages']['']['dependencies']['is-number']`, `staged_lock['packages']['node_modules/is-number']['version']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+        # 协作入口 / Collaborators: `commands.append`, `dict`, `json.dumps`, `self.assertEqual`.
         def npm(args, cwd=None, **_):
             commands.append(args)
             if args[1] == 'outdated':
@@ -164,6 +242,13 @@ class Capabilities(unittest.TestCase):
             self.assertEqual((self.root / 'package-lock.json').read_text(), original_lock)
         self.assertEqual(len([args for args in commands if args[1] == 'install']), 1)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `manifest['description']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `dict`, `self.write`, `json.dumps`, `patch.object`.
     def test_dependency_bot_refuses_changed_source_and_recovers_interrupted_publication(self):
         manifest = dict(name='fixture', dependencies={'sample': '^1.0.0'})
         lock = dict(lockfileVersion=3, packages={'': dict(dependencies={'sample': '^1.0.0'}),
@@ -197,6 +282,12 @@ class Capabilities(unittest.TestCase):
         self.assertEqual((self.root / 'package.json').read_bytes(), originals['package.json'])
         self.assertEqual((self.root / 'package-lock.json').read_bytes(), originals['package-lock.json'])
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `json.dumps`, `dict`, `patch.object`.
     def test_dependency_bot_does_not_convert_file_dependency_to_registry_package(self):
         self.write('package.json', json.dumps(dict(name='fixture', dependencies={'sample': 'file:vendor/sample'})))
         self.write('package-lock.json', json.dumps(dict(lockfileVersion=3, packages={
@@ -209,6 +300,12 @@ class Capabilities(unittest.TestCase):
         self.assertEqual(scan['skipped'][0]['name'], 'sample')
         self.assertEqual(command.call_count, 1)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `dict`, `patch.object`, `self.execute`, `self.assertEqual`.
     def test_environment_lock_verifies_changes_and_rejects_unsafe_packages_before_install(self):
         sample = dict(version=1, system={'ID': 'alpine', 'VERSION_ID': '3.23', 'architecture': 'x86_64', 'manager': 'apk'},
                       packages={'nodejs': '24.1-r0'}, tools={'node': 'v24.1'}, locks={'package-lock.json': 'a' * 64})
@@ -227,6 +324,12 @@ class Capabilities(unittest.TestCase):
                 self.execute('reproducible-env', mode='install', installSystem=True)
             command.assert_not_called()
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `patch.object`, `self.assertRaises`, `self.execute`, `command.assert_not_called`.
     def test_runtime_install_validates_family_and_explicit_pin_before_executing(self):
         with patch.object(runner.shutil, 'which', return_value='/sbin/apk'), patch.object(runner, 'run') as command:
             with self.assertRaises(runner.Failure):
@@ -237,6 +340,12 @@ class Capabilities(unittest.TestCase):
                 self.execute('runtime-matrix', mode='install', runtime='go', package='go', version='$(touch escaped)')
             command.assert_not_called()
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `json.dumps`, `dict`, `runner.run`.
     @unittest.skipUnless(shutil.which('apk') or shutil.which('dpkg-query'), 'requires a Linux package database')
     def test_actual_environment_lock_and_frozen_dependency_install(self):
         self.write('package.json', json.dumps(dict(name='locked-fixture', version='1.0.0', scripts={'install': 'touch escaped'})))
@@ -250,6 +359,12 @@ class Capabilities(unittest.TestCase):
         self.write('package.json', '{"name":"changed"}')
         self.assertEqual(self.execute('reproducible-env', mode='verify')['code'], 1)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `dict`, `self.execute`, `self.assertTrue`.
     def test_build_cache_uses_input_fingerprint_and_verifies_content(self):
         self.write('lock.json', 'v1')
         self.write('dist/output.txt', 'compiled')
@@ -270,6 +385,12 @@ class Capabilities(unittest.TestCase):
             self.execute('build-cache', mode='restore', target='tampered', **parameters)
         self.assertFalse((self.root / 'tampered').exists())
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.execute`, `self.assertEqual`, `self.assertRaises`.
     def test_onboarding_tracks_members_independently_and_persists(self):
         added = self.execute('onboarding-checklist', mode='add', title='运行测试', member='Alice')
         step = added['steps'][0]['id']
@@ -281,6 +402,12 @@ class Capabilities(unittest.TestCase):
         with self.assertRaises(runner.Failure):
             self.execute('onboarding-checklist', mode='complete', stepId='missing', member='Alice')
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `runner.run`, `self.write`, `self.execute`, `self.assertEqual`.
     def test_branch_preview_has_real_worktree_and_rejects_dirty_removal(self):
         runner.run(['git', 'init'], self.root)
         runner.run(['git', 'config', 'user.email', 'test@example.invalid'], self.root)
@@ -300,6 +427,12 @@ class Capabilities(unittest.TestCase):
         self.execute('branch-preview', mode='remove', previewId=created['id'])
         self.assertFalse(preview.exists())
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `runner.run`, `self.write`, `self.execute`, `Path`.
     def test_worktree_management_creates_branch_opens_and_protects_dirty_content(self):
         runner.run(['git', 'init'], self.root)
         runner.run(['git', 'config', 'user.email', 'test@example.invalid'], self.root)
@@ -325,6 +458,12 @@ class Capabilities(unittest.TestCase):
         self.execute('git-worktrees', mode='remove', directory=directory)
         self.assertFalse(tree.exists())
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `(self.root / 'src/empty').mkdir`, `self.execute`, `self.assertEqual`.
     def test_directory_snapshot_diff_and_verified_restore(self):
         self.write('src/a.txt', 'before')
         (self.root / 'src/empty').mkdir()
@@ -346,6 +485,12 @@ class Capabilities(unittest.TestCase):
             self.execute('directory-history', mode='restore', path='src', revision=record['revision'], target='bad')
         self.assertFalse((self.root / 'bad').exists())
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `dict`, `self.execute`, `self.assertEqual`.
     def test_shards_are_deterministic_and_all_failures_survive(self):
         files = ['tests/a.py', 'tests/b.py', 'tests/c.py', 'tests/d.py']
         for file in files:
@@ -361,6 +506,12 @@ class Capabilities(unittest.TestCase):
         with self.assertRaises(runner.Failure):
             self.execute('test-sharding', **dict(p, mode='run', argv=[sys.executable, '--version']))
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `dict`, `self.execute`, `self.assertEqual`, `result['stdout'].strip`.
     def test_argv_parameters_do_not_execute_shell_syntax(self):
         injection = '$(touch escaped); & echo wrong'
         p = dict(mode='run', argv=[sys.executable, '-c', 'import sys; print(sys.argv[1])', '${VALUE}'],
@@ -374,6 +525,12 @@ class Capabilities(unittest.TestCase):
         with self.assertRaises(runner.Failure):
             self.execute('command-forms', **dict(p, values=dict(VALUE='x', UNKNOWN='bad')))
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `self.execute`, `self.assertTrue`, `self.assertEqual`.
     def test_review_thread_reply_resolve_and_persistence(self):
         self.write('file.txt', 'first\nsecond\n')
         item = self.execute('review-comments', mode='comment', path='file.txt', line=2, body='Review', author='A')['thread']
@@ -385,6 +542,12 @@ class Capabilities(unittest.TestCase):
         with self.assertRaises(runner.Failure):
             self.execute('review-comments', mode='comment', path='file.txt', line=99, body='outside', author='A')
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `self.execute`, `self.assertEqual`.
     def test_code_index_search_stale_and_exclusions(self):
         self.write('src/a.txt', 'Alpha\nneedle\n')
         self.write('node_modules/ignored.txt', 'needle')
@@ -396,6 +559,12 @@ class Capabilities(unittest.TestCase):
         result = self.execute('code-search-index', mode='search', query='needle', caseSensitive=False, limit=100)
         self.assertEqual(result['stale'], ['src/a.txt'])
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `self.execute`, `self.assertEqual`.
     def test_disk_analysis_totals_and_types(self):
         self.write('src/a.py', 'abcd')
         self.write('src/b.txt', 'xy')
@@ -404,6 +573,12 @@ class Capabilities(unittest.TestCase):
         self.assertEqual(result['files'], 2)
         self.assertEqual({item['type']: item['bytes'] for item in result['types']}, {'.py': 4, '.txt': 2})
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `self.write`, `self.execute`, `self.assertEqual`, `self.assertNotIn`.
     def test_pii_reports_locations_without_values(self):
         secret = 'person@example.invalid'
         self.write('data.txt', secret + '\npassword=very-secret-token\n')
@@ -412,6 +587,12 @@ class Capabilities(unittest.TestCase):
         self.assertNotIn(secret, json.dumps(result))
         self.assertNotIn('very-secret-token', json.dumps(result))
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `subprocess.run`, `str`, `json.dumps`, `dict`.
     def test_public_worker_dispatch_and_exit_code(self):
         result = subprocess.run([sys.executable, str(source)], input=json.dumps(dict(
             directory=str(self.root), operation='capability-command',
@@ -420,6 +601,13 @@ class Capabilities(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)['code'], 9)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 状态影响 / State effects: `document['end']`. Follow the actual model assignments / 以模型中的实际赋值为准。
+    # 协作入口 / Collaborators: `runner.run`, `self.write`, `self.execute`, `self.assertTrue`.
     @unittest.skipUnless(shutil.which('openssl') and shutil.which('git'), 'Signing requires OpenSSL and Git')
     def test_signed_patch_rejects_wrong_key_and_modified_metadata(self):
         runner.run(['git', 'init', '-b', 'main'], self.root)
@@ -442,6 +630,12 @@ class Capabilities(unittest.TestCase):
         with self.assertRaises(runner.Failure):
             self.execute('patch-bundle', mode='verify', target='patch.json', publicKey='key.pub')
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `runner.run`, `self.write`, `json.dumps`, `self.execute`.
     @unittest.skipIf(os.name == 'nt' or not shutil.which('npm'), 'Linux guest runs the actual npm workflow')
     def test_locked_environment_is_recreated_and_lint_failures_propagate(self):
         runner.run(['git', 'init', '-b', 'main'], self.root)
@@ -463,6 +657,12 @@ class Capabilities(unittest.TestCase):
         with self.assertRaises(runner.Failure):
             self.execute('format-lint', mode='format', tool='auto', timeout=60)
 
+    # 中文功能：安排该边界情景的输入并执行断言，验证生产辅助流程或受控模型的对应行为。
+    # English: Arrange inputs and assertions for this boundary case, verifying the corresponding production-helper or controlled-model behavior.
+    # 输入 / Inputs: self。
+    # 结果：无显式返回值；效果通过模型状态、断言或异常观察。
+    # Result: No explicit return value; effects are observed through model state, assertions or exceptions.
+    # 协作入口 / Collaborators: `(self.root / 'escape').symlink_to`, `self.assertRaises`, `self.execute`, `unittest.skipIf`.
     @unittest.skipIf(os.name == 'nt', 'Guest validates POSIX symlinks')
     def test_paths_cannot_read_outside_project(self):
         (self.root / 'escape').symlink_to('/etc/passwd')

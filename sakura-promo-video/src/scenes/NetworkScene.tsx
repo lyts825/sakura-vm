@@ -1,10 +1,15 @@
-/** 网络与服务章节示意，展示端口转发、本机预览以及数据库/API/网页按依赖就绪的过程。 */
+/** 网络与服务章节示意，展示端口转发、本机预览以及数据库/API/网页按依赖就绪的过程。
+ * Illustrate port forwarding/local previews and database/API/web dependency readiness in order. */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Chapter, FlowArrow, ScenePaper, type SceneProps, SoftFocus, Status, Tag, Terminal, Typed, useScene, Window} from '../stage';
 import {colors, font} from '../theme';
 
+/** 根据 active 显示服务已通过就绪检查或仍在等待依赖，并组合服务名与副标题，服务状态由场景时间提供。
+ * Show a service as readiness-checked or waiting for dependencies from active, with name/subtitle; scene timing supplies the illustrative state. */
 const ServiceNode = ({name, subtitle, active}: {name: string; subtitle: string; active: boolean}) => <div style={{width: 198, border: `1px solid ${active ? '#afc4b8' : colors.line}`, padding: '12px 18px', borderRadius: 12, background: active ? colors.greenSoft : '#fff'}}><div style={{fontSize: 25, fontWeight: 600}}>{name}</div><div style={{fontSize: 18, color: colors.muted, marginTop: 8}}>{subtitle}</div><div style={{fontSize: 17, marginTop: 8, color: active ? colors.green : colors.muted}}>{active ? '就绪检查通过' : '等待依赖'}</div></div>;
+/** 按 cue 先显示端口就绪，再依次标示数据库、API、Web 的依赖启动，表达服务检查后再对外预览的流程。
+ * Show port readiness first, then database/API/web dependency startup at cues, illustrating preview availability after service checks. */
 const NetworkInner: React.FC<SceneProps> = ({style}) => {
   const {seconds, cue} = useScene('network');
   const ready = seconds > cue(0) + 2;

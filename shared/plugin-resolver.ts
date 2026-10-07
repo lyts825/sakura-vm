@@ -1,5 +1,8 @@
 /**
- * 模块职责：校验插件目录并解析插件/插件包选择，检测版本、依赖、路由重叠和循环并迁移旧配置。
+ * 模块职责（中文）：校验插件目录并解析插件/插件包选择，检测版本、依赖、路由重叠和循环并迁移旧配置。
+ * Module responsibility (English): Validating catalogs and expanding dependencies, packs and legacy selection migrations.
+ * 详细范围（中文）：公开入口包括 validateCatalog, resolveSelection, migrateSelection, selectionReasons；职责覆盖校验目录并展开依赖、插件包和旧配置迁移，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include validateCatalog, resolveSelection, migrateSelection, selectionReasons. The scope covers Validating catalogs and expanding dependencies, packs and legacy selection migrations. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import {
   pluginManifestSchema,
@@ -17,10 +20,30 @@ import {
   type PluginRoot,
 } from './plugin-protocol.ts';
 
+/**
+ * 中文：比较集合与原数组长度，重复声明时抛出带标签错误；只校验，不改变顺序或自动去重。
+ * English: Compare set/array lengths and throw a labeled error for duplicate declarations; validate without changing order or silently deduplicating.
+ * 中文：输入：values：签名所示 string[] 业务值；label：签名所示 string 业务值
+ * English: Inputs: values: the string[] domain value in the signature; label: the string domain value in the signature
+ * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+ * English: Result: deliver through the described state/resource effects without returning business data
+ */
 function unique(values: string[], label: string) {
   if (new Set(values).size !== values.length) throw new Error(`${label}重复`);
 }
+/**
+ * 中文：按斜杠拆分路由并移除空段，供前缀与参数重叠判断。
+ * English: Split routes by slashes/drop empty segments for prefix/parameter-overlap checks.
+ * 中文：输入：path：目标文件或请求路径
+ * English: Inputs: path: target file/request path
+ */
 const segments = (path: string) => path.split('/').filter(Boolean);
+/**
+ * 中文：比较两路由共有长度的段，vmId 参数视为可匹配任意实例；批量路由与实例子路由有明确例外，避免误报。
+ * English: Compare segments over shared route length, treating vmId as matching any VM; explicitly exclude batch-versus-instance-child overlap to avoid false positives.
+ * 中文：输入：a：签名所示 string 业务值；b：签名所示 string 业务值
+ * English: Inputs: a: the string domain value in the signature; b: the string domain value in the signature
+ */
 function overlaps(a: string, b: string) {
   if (
     (a === '/api/vms/batch' && b.startsWith('/api/vms/:vmId/')) ||
@@ -33,6 +56,14 @@ function overlaps(a: string, b: string) {
     .slice(0, Math.min(left.length, right.length))
     .every((part, i) => part === right[i] || part === ':vmId' || right[i] === ':vmId');
 }
+/**
+ * 中文：校验所有清单、精确版本依赖与服务/路由/界面归属，要求 HTTP 前缀拥有显式精确操作策略并检查未选中的依赖循环。发布在服务启动前拒绝歧义目录。
+ * English: Validate every manifest, exact dependency version and service/route/UI owner. Require explicit exact-operation policies under HTTP prefixes and detect cycles even in unselected entries, rejecting ambiguous releases before services start.
+ * 中文：输入：plugins：签名所示 PluginManifest[] 业务值；packs：签名所示 PluginPack[] 业务值
+ * English: Inputs: plugins: the PluginManifest[] domain value in the signature; packs: the PluginPack[] domain value in the signature
+ * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+ * English: Result: deliver through the described state/resource effects without returning business data
+ */
 export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) {
   plugins.forEach((item) => pluginManifestSchema.parse(item));
   packs.forEach((item) => pluginPackSchema.parse(item));
@@ -154,6 +185,12 @@ export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) 
           prefix.every((part, index) => part === path[index]);
       })) throw new Error(`操作不属于插件 HTTP 命名空间：${plugin.id}.${operation.id}`);
       const route = plugin.contributes.routes.find(item => item.id === operation.id && item.handler === 'operation');
+      /**
+       * 中文：把冒号路径参数统一为契约花括号形状，供精确路径与操作描述比较。
+       * English: Normalize colon path parameters to contract braces for exact route/operation-description comparisons.
+       * 中文：输入：value：待校验、转换或保存的输入值
+       * English: Inputs: value: input value to validate/transform/save
+       */
       const normalize = (value: string) => value.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
       if (!route || route.method !== operation.method || normalize(route.path) !== normalize(operation.path) ||
           route.status !== operation.status)
@@ -162,6 +199,12 @@ export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) 
     unique(plugin.contributes.routes.map(item => item.id), `${plugin.id} 的精确操作标识`);
     unique(plugin.contributes.routes.map(item => item.method + ':' + item.path), `${plugin.id} 的精确操作路径`);
     for (const route of plugin.contributes.routes) {
+      /**
+       * 中文：把冒号路径参数统一为契约花括号形状，供精确路径与操作描述比较。
+       * English: Normalize colon path parameters to contract braces for exact route/operation-description comparisons.
+       * 中文：输入：value：待校验、转换或保存的输入值
+       * English: Inputs: value: input value to validate/transform/save
+       */
       const normalize = (value: string) => value.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
       if (!plugin.contributes.http.some(prefix => {
         const base = normalize(prefix.path), path = normalize(route.path);
@@ -171,6 +214,12 @@ export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) 
         throw new Error(`精确操作缺少类型化处理器：${plugin.id}.${route.id}`);
     }
     for (const prefix of plugin.contributes.http) {
+      /**
+       * 中文：把冒号路径参数统一为契约花括号形状，供精确路径与操作描述比较。
+       * English: Normalize colon path parameters to contract braces for exact route/operation-description comparisons.
+       * 中文：输入：value：待校验、转换或保存的输入值
+       * English: Inputs: value: input value to validate/transform/save
+       */
       const normalize = (value: string) => value.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
       for (const method of prefix.methods)
         if (!plugin.contributes.routes.some(route => route.method === method &&
@@ -195,9 +244,25 @@ export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) 
     }
   }
   // Validate unused packages too, so a broken release fails before any services start.
-  const checkCycles = (keys: string[], next: (key: string) => string[], label: string) => {
+  /**
+   * 中文：用 visiting 检测当前 DFS 环、visited 避免重复遍历，覆盖全部目录键；循环错误携带依赖链供修复清单。
+   * English: Use visiting for the current DFS cycle/visited for reuse across all catalog keys, reporting dependency chains to repair manifests.
+   * 中文：输入：keys：签名所示 string[] 业务值；next：待采用的新状态或数据；label：签名所示 string 业务值
+   * English: Inputs: keys: the string[] domain value in the signature; next: new state/data to adopt; label: the string domain value in the signature
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
+  const checkCycles = (keys: string[], next: /** 中文：返回当前目录键的直接依赖供 DFS 检测循环；这是 validateCatalog.checkCycles 的调用契约 | English: Return direct dependencies of a catalog key for DFS cycle detection; this is the callable contract of validateCatalog.checkCycles | 中文：输入：key：签名所示 string 业务值 | English: Inputs: key: the string domain value in the signature | 中文：结果：string[]；调用者依赖此类型约定 | English: Result: string[]; callers depend on this type contract */ (key: string) => string[], label: string) => {
     const visiting = new Set<string>(),
       visited = new Set<string>();
+    /**
+     * 中文：在校验目录并展开依赖、插件包和旧配置迁移流程中登记集合或存储条目，删除匹配条目；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Validating catalogs and expanding dependencies, packs and legacy selection migrations, register collection/storage entries, delete matching entries. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：输入：key：签名所示 string 业务值
+     * English: Inputs: key: the string domain value in the signature
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     const visit = (key: string) => {
       if (visiting.has(key)) throw new Error(`${label}依赖循环：${[...visiting, key].join(' → ')}`);
       if (visited.has(key)) return;
@@ -221,6 +286,12 @@ export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) 
 }
 
 // 只自动启用 requires；optional 必须已被其他选择启用。依赖先于插件入序，排序使结果不受用户选择顺序影响。
+/**
+ * 中文：先校验整个目录，再排序展开用户选中的插件/插件包并递归加入 requires；依赖先入序，optional 不自动启用，结果不受选择输入顺序影响。
+ * English: Validate the whole catalog, then deterministically expand selected plugins/packs and recursively add required dependencies. Dependencies enter first, optional dependencies are not enabled automatically, and selection input order does not affect the result.
+ * 中文：输入：selection：签名所示 PluginSelection 业务值；plugins：签名所示 PluginManifest[] 业务值；packs：签名所示 PluginPack[] 业务值
+ * English: Inputs: selection: the PluginSelection domain value in the signature; plugins: the PluginManifest[] domain value in the signature; packs: the PluginPack[] domain value in the signature
+ */
 export function resolveSelection(selection: PluginSelection, plugins: PluginManifest[], packs: PluginPack[]) {
   pluginSelectionSchema.parse(selection);
   validateCatalog(plugins, packs);
@@ -229,6 +300,14 @@ export function resolveSelection(selection: PluginSelection, plugins: PluginMani
   const visited = new Set<string>(),
     visitedPacks = new Set<string>(),
     order: string[] = [];
+  /**
+   * 中文：在校验目录并展开依赖、插件包和旧配置迁移流程中登记集合或存储条目；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Validating catalogs and expanding dependencies, packs and legacy selection migrations, register collection/storage entries. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：id：目标资源标识
+   * English: Inputs: id: target resource identifier
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const visit = (id: string) => {
     if (visited.has(id)) return;
     const plugin = byId.get(id);
@@ -237,6 +316,14 @@ export function resolveSelection(selection: PluginSelection, plugins: PluginMani
     visited.add(id);
     order.push(id);
   };
+  /**
+   * 中文：在校验目录并展开依赖、插件包和旧配置迁移流程中登记集合或存储条目；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Validating catalogs and expanding dependencies, packs and legacy selection migrations, register collection/storage entries. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：id：目标资源标识
+   * English: Inputs: id: target resource identifier
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const visitPack = (id: string) => {
     if (visitedPacks.has(id)) return;
     const pack = packById.get(id);
@@ -250,6 +337,14 @@ export function resolveSelection(selection: PluginSelection, plugins: PluginMani
 }
 
 // 旧版 automation 的调度能力拆成独立插件；迁移保留原先的调度意图，当前版选择不自动增加它。
+/**
+ * 中文：按输入 schemaVersion 校验旧选择，把拆分的旧插件映射为插件包，并为旧 automation 选择保留调度器；去重排序并返回可解释的迁移记录，不改变当前版用户选择意图。
+ * English: Validate legacy selections by schemaVersion, map split legacy plugins to packs and preserve the scheduler for old automation selections. Deduplicate/sort and return explanatory migration records without changing current-version intent.
+ * 中文：输入：input：尚待校验的输入数据；packs：签名所示 PluginPack[] 业务值
+ * English: Inputs: input: input data requiring validation; packs: the PluginPack[] domain value in the signature
+ * 中文：结果：包含 selection、migrations 的对象，字段供调用者读取状态或调用操作
+ * English: Result: an object containing selection, migrations for caller state reads/operations
+ */
 export function migrateSelection(input: unknown, packs: PluginPack[]) {
   const source = zSelection(input);
   const selection = {
@@ -274,6 +369,12 @@ export function migrateSelection(input: unknown, packs: PluginPack[]) {
   selection.packs = [...new Set(selection.packs)].sort();
   return { selection, migrations };
 }
+/**
+ * 中文：在校验目录并展开依赖、插件包和旧配置迁移流程中按指定 Schema 校验并解码；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+ * English: In Validating catalogs and expanding dependencies, packs and legacy selection migrations, validate/decode with the specified schema. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+ * 中文：输入：input：尚待校验的输入数据
+ * English: Inputs: input: input data requiring validation
+ */
 function zSelection(input: unknown) {
   const version = (input as { schemaVersion?: unknown })?.schemaVersion;
   if (version === 1) return legacySelectionSchema.parse(input);
@@ -281,6 +382,12 @@ function zSelection(input: unknown) {
   return pluginSelectionSchema.parse(input);
 }
 
+/**
+ * 中文：逐个用户插件或包根独立展开依赖，把每个启用插件关联到导致其启用的根列表，避免仅按最终集合丢失来源。
+ * English: Independently expand each selected plugin/pack root and associate enabled plugins with every causing root, retaining provenance lost by a final-set-only view.
+ * 中文：输入：selection：签名所示 PluginSelection 业务值；plugins：签名所示 PluginManifest[] 业务值；packs：签名所示 PluginPack[] 业务值
+ * English: Inputs: selection: the PluginSelection domain value in the signature; plugins: the PluginManifest[] domain value in the signature; packs: the PluginPack[] domain value in the signature
+ */
 export function selectionReasons(selection: PluginSelection, plugins: PluginManifest[], packs: PluginPack[]) {
   const reasons: Record<string, PluginRoot[]> = Object.create(null);
   for (const kind of ['plugin', 'pack'] as const)

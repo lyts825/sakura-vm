@@ -1,5 +1,8 @@
 /**
- * 模块职责：定义工作区导航目标和命令元数据，供菜单与命令面板共享状态判断。
+ * 模块职责（中文）：定义工作区导航目标和命令元数据，供菜单与命令面板共享状态判断。
+ * Module responsibility (English): Sharing workspace command definitions, targets and busy-state decisions.
+ * 详细范围（中文）：公开入口包括 WorkspaceTarget, WorkspaceCommandAction, WorkspaceCommandDefinition, workspaceCommandDefinitions；职责覆盖共享工作区命令定义、目标和忙碌状态判断，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include WorkspaceTarget, WorkspaceCommandAction, WorkspaceCommandDefinition, workspaceCommandDefinitions. The scope covers Sharing workspace command definitions, targets and busy-state decisions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import type { VMStatus, VMView } from '../shared/contracts/vm.ts';
 
@@ -27,6 +30,12 @@ const statusLabel: Record<VMStatus, string> = {
   error: '需要检查',
 };
 
+/**
+ * 中文：识别会阻止重复生命周期操作的实例状态，供工作区命令可用性判断。
+ * English: Recognize VM states that block duplicate lifecycle operations for workspace-command availability.
+ * 中文：输入：status：签名所示 VMStatus 业务值
+ * English: Inputs: status: the VMStatus domain value in the signature
+ */
 const isBusy = (status: VMStatus) => status === 'starting' || status === 'stopping';
 
 /**
@@ -35,6 +44,24 @@ const isBusy = (status: VMStatus) => status === 'starting' || status === 'stoppi
  * The definitions contain no callbacks. The app supplies the callbacks so the
  * same list can be rendered and exercised without coupling this navigation
  * model to React or the network layer.
+ */
+/**
+ * 中文：根据实例、项目、任务和启用能力生成命令定义；每个入口携带对应目标、快捷键和禁用原因。
+ * English: Build command definitions from VM/project/job/enabled-capability context, attaching each target/shortcut/disabled reason.
+ * 中文：输入：{
+  vms,
+  currentId,
+  canCreate = true,
+  busy = false,
+} 提供 vms（vms 状态）、currentId（currentId 状态）、canCreate（canCreate 状态）、busy（忙碌标记） 上下文字段
+ * English: Inputs: {
+  vms,
+  currentId,
+  canCreate = true,
+  busy = false,
+} provides context fields vms (vms state), currentId (currentId state), canCreate (canCreate state), busy (busy flag)
+ * 中文：结果：WorkspaceCommandDefinition[]，包含上述计算或传输完成值；抛错分支不提供成功结果
+ * English: Result: WorkspaceCommandDefinition[] carrying the described computation/transport result; throwing branches do not provide success
  */
 export function workspaceCommandDefinitions({
   vms,

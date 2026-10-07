@@ -1,4 +1,5 @@
-/** 烟雾验收：验证项目依赖缓存的离线复用、root 文件身份和完整性。 */
+/** 烟雾验收：验证项目依赖缓存的离线复用、root 文件身份和完整性。
+ * Smoke acceptance for offline project-cache reuse, root file identity and integrity. */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -41,6 +42,8 @@ try {
       throw new Error(machines.logs.get(vm.id));
     await delay(250);
   }
+  /** 执行自有实例命令并要求零退出，保留 stdout/stderr/code 结果供缓存结构和失败诊断使用。
+   * Execute owned-VM commands/require zero exit and retain stdout/stderr/code for cache-structure assertions and diagnostics. */
   const run = async (command: string, timeout = 300000) => {
     const result = await machines.exec(vm.id, command, timeout);
     assert.equal(result.code, 0, result.stdout + result.stderr);
@@ -50,6 +53,8 @@ try {
     'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y nodejs npm python3-pip python3-venv iproute2 git');
   await run('mkdir -p /workspace/npm-cache-test /workspace/pip-cache-test');
   await run('cd /workspace/npm-cache-test && npm init -y >/dev/null && npm install --package-lock-only --ignore-scripts --no-audit --no-fund is-number@7.0.0');
+  /** 用 base64 字面参数把文本写入夹具文件，避免内容经 shell 插值改变。
+   * Write fixture text via a base64 literal argument to prevent shell interpolation from altering content. */
   const write = async (path: string, content: string) => run(
     `printf '%s' ${quote(Buffer.from(content).toString('base64'))} | base64 -d > ${quote(path)}`);
   const nodeHook = `const fs=require('node:fs');fs.appendFileSync('/workspace/npm-cache-test/import-hook-network',JSON.stringify({uid:process.getuid(),gid:process.getgid(),home:process.env.HOME,cwd:process.cwd(),network:fs.readlinkSync('/proc/self/ns/net'),cgroup:fs.readFileSync('/proc/self/cgroup','utf8').trim()})+'\\n');`;
@@ -63,6 +68,8 @@ try {
       NPM_CONFIG_USERCONFIG: '/workspace/npm-cache-test/.npmrc' },
     secrets: { DOWNLOAD_TOKEN: 'missing-secret-provider' } };
   const jobs: { manager: string; operation: string; status: string; log: string }[] = [];
+  /** 执行指定依赖预取/缓存安装任务，检查预期成功或错误表达式和秘密不泄漏，记录本次任务证据。
+   * Run dependency prefetch/cached install, check expected success/error pattern and secret nonleakage, and retain job evidence. */
   const dev = async (manager: 'npm' | 'pip', operation: 'prefetch-dependencies' | 'install-cached-dependencies', expectedError?: RegExp) => {
     suite.dev(vm.id, { operation, manager });
     await suite.jobs.wait(`${vm.id}:dev`);
@@ -72,6 +79,8 @@ try {
     assert.ok(!job.log.includes('private-prefetch-secret'));
     jobs.push({ manager, operation, status: job.status, log: job.log });
   };
+  /** 预览目录迁移并以 reviewed planId/sha256 确认，要求 applied 且激活非 root 身份后返回票据。
+   * Preview migration/confirm reviewed planId and sha256, require applied/nonroot activated identity and return its receipt. */
   const authorize = async () => {
     const preview = await migrations.preview(vm.id); assert.ok(preview.plan);
     const result = await migrations.apply(vm.id, { action: 'apply', version: 1, reviewed: true,
@@ -80,11 +89,15 @@ try {
     assert.notEqual(result.plan.activatedIdentity.uid, 0);
     return result.plan.activatedIdentity;
   };
+  /** 隔离 Python 遍历缓存，拒绝链接、非 root 或可写对象，将路径/元数据/内容加入摘要并统计文件与字节。
+   * Traverse cache with isolated Python, rejecting links/nonroot/writable objects and hashing paths/metadata/content while counting files/bytes. */
   const cacheSnapshot = async (manager: 'npm' | 'pip') => {
     const source = `import hashlib,json,os,stat\nroot=${JSON.stringify('/var/cache/sakura/project-deps/default/') }+${JSON.stringify(manager)}\nsha=hashlib.sha256();count=0;total=0\nfor parent,dirs,files in os.walk(root,followlinks=False):\n for name in sorted(dirs+files):\n  path=os.path.join(parent,name);info=os.lstat(path)\n  assert info.st_uid==0 and not info.st_mode&0o022 and not stat.S_ISLNK(info.st_mode)\n  sha.update(os.path.relpath(path,root).encode());sha.update(str((info.st_uid,info.st_gid,info.st_mode)).encode())\n  if stat.S_ISREG(info.st_mode):\n   count+=1;total+=info.st_size\n   with open(path,'rb') as stream:\n    for block in iter(lambda:stream.read(65536),b''):sha.update(block)\nprint(json.dumps({'sha256':sha.hexdigest(),'files':count,'bytes':total}))\n`;
     return JSON.parse((await run('/usr/bin/env -i HOME=/ PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 -I -S -c ' + quote(source))).stdout);
   };
   const closures: unknown[] = [];
+  /** 逐一核对身份日志、传输归档与来宾退休票据完全关闭，数据目录与 cgroup 消失且所有者/正文哈希一致。
+   * Compare identity journals/transfer archives/guest retirement receipts for complete closure, absent data/cgroups and consistent owner/body hashes. */
   const verifyClosedCache = async (manager: 'npm' | 'pip') => {
     const journal = JSON.parse(await readFile(join(vmDir(vm.id), 'project-identities', 'default.json'), 'utf8'));
     const entries = journal.runs.filter((entry: any) => entry.cacheTransfer?.manager === manager);

@@ -1,4 +1,5 @@
-/** 烟雾验收：验证配对 TLS 在线迁移的 RAM 标记、项目配置、目标就绪和源 fencing。 */
+/** 烟雾验收：验证配对 TLS 在线迁移的 RAM 标记、项目配置、目标就绪和源 fencing。
+ * Smoke acceptance for paired TLS migration of RAM markers/project config, target readiness and source fencing. */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -32,6 +33,8 @@ try {
   target = new Machines(engine);
   await source.init();
   await target.init();
+  /** 返回迁移夹具的固定资源与实例计数，供生产对等服务的状态接口，不影响真实迁移接收器。
+   * Return fixed fixture resources/VM counts for the production peer-status interface without altering the real migration receiver. */
   const peerStatus = async () => ({ platform: process.platform, arch: process.arch,
     cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFree: 4 * 1024 ** 3,
     load: [0, 0, 0], vmCount: 1, runningVms: 0 });
@@ -58,9 +61,17 @@ try {
   await targetPeers.configure({ operation: 'allow-activate', id: inboundId, enabled: true });
   const receiver = new LiveMigrationReceiver(target, targetPeers);
   peerHandlers.set(targetPeers, { ...peerHandlers.get(targetPeers), liveMigrationReceiver: {
+    /** 将会话输入转发到生产接收器 prepare，返回预备票据并传播验证/资源失败。
+     * Forward session input to production receiver prepare, returning its preparation receipt and propagating validation/resource failures. */
     prepare: (input) => receiver.prepare(input),
+    /** 转发完成输入给生产接收器，使认证票据和所有权交接仍由正式实现验证。
+     * Forward completion input to the production receiver so authenticated receipts/ownership transfer remain validated by the real implementation. */
     complete: (input) => receiver.complete(input),
+    /** 转发指定会话的撤销输入，保持正式接收器的资源归属和阶段检查。
+     * Forward abort input for the specified session, retaining production ownership/phase checks. */
     abort: (input) => receiver.abort(input),
+    /** 调用 verifiedStatus 返回经验证会话状态，避免用夹具伪造迁移完成证据。
+     * Call verifiedStatus for validated session state instead of fabricating completion evidence in the fixture. */
     status: (input) => receiver.verifiedStatus(input),
   } });
   const vm = await source.create({ name: 'migration-source', accelerator: 'tcg',
@@ -80,7 +91,8 @@ try {
   await writeFile(join(vmDir(vm.id), 'projects.json'), JSON.stringify(projectIndex));
   await writeFile(join(vmDir(vm.id), 'project.json'), JSON.stringify(projectConfig));
   let lastMigrationStatus = '';
-  const tracedQmp = (async (qmpPort: number, command: string,
+  const tracedQmp = (/** 透明代理 QMP，打印状态变化和非查询命令，抑制重复 query-migrate 日志；错误记录后重抛，保持 QMP 原结果和超时。
+ * Proxy QMP transparently, logging status transitions/nonquery commands while suppressing repeated query-migrate logs; log/rethrow errors and preserve QMP results/timeouts. */ async (qmpPort: number, command: string,
     args?: Record<string, unknown>, timeoutMs?: number) => {
     try {
       const result = await qmp(qmpPort, command, args, timeoutMs);

@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：定义 Detours 早期载荷 GUID 与跨架构固定 ABI，绑定构建、进程创建时间和策略段。载荷在服务持久接管暂停孩子后复制，原应用导入初始化前验证。
+ * Module responsibilities (English): Define the Detours early-payload GUID/fixed cross-architecture ABI binding build/process creation time/policy section, copied after durable service ownership and verified before original application imports initialize.
+ */
 /** Detours 早期导入载荷 ABI，绑定策略段、进程创建时间和构建摘要，用于原应用初始化代码运行前配置策略。 */
 #pragma once
 #include "protocol.h"

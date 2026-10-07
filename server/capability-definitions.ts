@@ -1,5 +1,6 @@
 /**
  * 模块职责：集中声明能力目录与参数校验规则，供界面展示及服务端执行前验证共同使用。
+ * Module purpose: Declares the capability catalogue and parameter schemas shared by presentation and execution-time validation.
  */
 import { z } from 'zod';
 import type { CapabilityActionView } from '../shared/capability-actions.ts';
@@ -58,6 +59,17 @@ const projectId = z
   .regex(/^(default|[a-f0-9]{16})$/)
   .default('default');
 const target = z.object({ vmId: uuid, projectId }).strict();
+/**
+ * 入口 / Entry: action.
+ * 功能：在集中声明能力目录与参数校验规则中，执行此领域的具体处理步骤并返回其结果；本入口产生 `({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes })` 供上层消费（`capability-definitions.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `capability-definitions.ts`; this entry produces `({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes })` for its caller. Module context: Declares the capability catalogue and parameter schemas shared by presentation and execution-time validation.
+ * 处理：通过 `z.object().strict`, `z.object` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.object().strict`, `z.object`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: name: string; scope: CapabilityActionView['scope']; shape: T; example: Record<string, unknown>; note: string; requiresGuest: default=true; writes: default=false
+ * 输出 / Returns: `({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const action = <T extends z.ZodRawShape>(
   name: string,
   scope: CapabilityActionView['scope'],
@@ -1036,7 +1048,23 @@ export const capabilityDefinitions = {
   ),
 } as const;
 export type CapabilityId = keyof typeof capabilityDefinitions;
+/**
+ * 入口 / Entry: hasCapability.
+ * 功能：从当前输入或状态计算 `Object.hasOwn(capabilityDefinitions, id)`，供调用方后续验证或使用。
+ * Purpose: Computes `Object.hasOwn(capabilityDefinitions, id)` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: id: string
+ * 输出 / Returns: id is CapabilityId；结果来自 / values from `Object.hasOwn(capabilityDefinitions, id)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export const hasCapability = (id: string): id is CapabilityId => Object.hasOwn(capabilityDefinitions, id);
+/**
+ * 入口 / Entry: capabilityViews.
+ * 功能：从当前输入或状态计算 `Object.entries(capabilityDefinitions) .filter(([, value]) => value.scope === scope) .map(([id, value]) => ({ id, name: value.…`，供调用方后续验证或使用。
+ * Purpose: Computes `Object.entries(capabilityDefinitions) .filter(([, value]) => value.scope === scope) .map(([id, value]) => ({ id, name: value.…` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: scope: CapabilityActionView['scope']
+ * 输出 / Returns: CapabilityActionView[]；结果来自 / values from `Object.entries(capabilityDefinitions) .filter(([, value]) => value.scope === scope) .map(([id, value]) => ({ id, name: value.…`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 export function capabilityViews(scope: CapabilityActionView['scope']): CapabilityActionView[] {
   return Object.entries(capabilityDefinitions)
     .filter(([, value]) => value.scope === scope)
@@ -1051,6 +1079,15 @@ export function capabilityViews(scope: CapabilityActionView['scope']): Capabilit
       schema: z.toJSONSchema(value.schema) as Record<string, unknown>,
     }));
 }
+/**
+ * 入口 / Entry: capabilityParameters.
+ * 功能：把本层请求转交 `capabilityDefinitions[...].schema.parse`，沿用该实现的结果与失败路径。
+ * Purpose: Delegates this request to `capabilityDefinitions[...].schema.parse` and propagates the provider result or rejection.
+ * 输入 / Inputs: id: CapabilityId; input: unknown
+ * 输出 / Returns: Record<string, unknown>；结果来自 / values from `capabilityDefinitions[id].schema.parse(input) as Record<string, unknown>`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export function capabilityParameters(id: CapabilityId, input: unknown): Record<string, unknown> {
   return capabilityDefinitions[id].schema.parse(input) as Record<string, unknown>;
 }

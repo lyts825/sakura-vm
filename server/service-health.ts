@@ -1,5 +1,6 @@
 /**
  * 模块职责：采样项目服务健康状态并维护期望值，后台检查遵循当前实例与项目运行状态。
+ * Module purpose: Samples project service health against expectations, following current VM/project runtime state for background checks.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -18,6 +19,17 @@ const lifecycleRefusals = new Set([
   'SERVICE_SCOPE_UNMANAGED', 'SERVICE_SCOPE_CHANGED',
   'SERVICE_IDENTITY_REQUIRED',
 ]);
+/**
+ * 入口 / Entry: needsManualCleanup.
+ * 功能：在采样项目服务健康状态并维护期望值中，执行此领域的具体处理步骤并返回其结果；本入口产生 `error instanceof AppError && (lifecycleRefusals.has(error.code || '') || error.code?.startsWith('PROJECT_IDENTITY_') || error…` 供上层消费（`service-health.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `service-health.ts`; this entry produces `error instanceof AppError && (lifecycleRefusals.has(error.code || '') || error.code?.startsWith('PROJECT_IDENTITY_') || error…` for its caller. Module context: Samples project service health against expectations, following current VM/project runtime state for background checks.
+ * 处理：通过 `lifecycleRefusals.has`, `error.code.startsWith` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `lifecycleRefusals.has`, `error.code.startsWith`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: error: unknown
+ * 输出 / Returns: `error instanceof AppError && (lifecycleRefusals.has(error.code || '') || error.code?.startsWith('PROJECT_IDENTITY_') || error…`.
+ * 副作用 / Effects: `error.code.startsWith`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const needsManualCleanup = (error: unknown) => error instanceof AppError &&
   (lifecycleRefusals.has(error.code || '') || error.code?.startsWith('PROJECT_IDENTITY_') ||
     error.code?.startsWith('PROJECT_DIRECTORY_') || error.code?.startsWith('DIRECTORY_MIGRATION_'));
@@ -41,8 +53,29 @@ export class ServiceHealth {
   private pending?: Promise<void>;
   private closed = false;
   private timer?: ScheduleHandle;
+  /**
+   * 签名 / Signature: ServiceHealth.removeAction.
+   * 功能：为采样项目服务健康状态并维护期望值声明 removeAction 的输入与结果契约，所属容器为 ServiceHealth。
+   * Purpose: Declares the input/result contract for removeAction in ServiceHealth. Module responsibility: Samples project service health against expectations, following current VM/project runtime state for background checks.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: void.
+   * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+   * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+   */
   private removeAction?: () => void;
   private initialized = false;
+  /**
+   * 入口 / Entry: ServiceHealth.onChange.
+   * 功能：在采样项目服务健康状态并维护期望值中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `state.desired`, `state.status`（`ServiceHealth`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ServiceHealth`; the outcome is recorded in `state.desired`, `state.status`. Module context: Samples project service health against expectations, following current VM/project runtime state for background checks.
+   * 处理：通过 `this.states.keys`, `this.machines.live.has`, `key.split`, `this.blockedChecks.delete` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.states.keys`, `this.machines.live.has`, `key.split`, `this.blockedChecks.delete`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `!this.machines.live.has(key.split(':')[0])`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `this.blockedChecks.delete`; `this.checks.get().abort`; `this.generations.set`; 更新 / updates `state.desired`, `state.status`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private onChange = () => {
     for (const key of this.states.keys())
       if (!this.machines.live.has(key.split(':')[0])) {
@@ -56,6 +89,15 @@ export class ServiceHealth {
         }
       }
   };
+  /**
+   * 入口 / Entry: ServiceHealth.constructor.
+   * 功能：建立 ServiceHealth 的采样项目服务健康状态并维护期望值上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the ServiceHealth context for this module's responsibility: Samples project service health against expectations, following current VM/project runtime state for background checks. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: machines: Machines; workspaces: WorkspacesV1; options: { deferInitialization?: boolean } default={}
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   constructor(
     private machines: Machines,
     private workspaces: WorkspacesV1,
@@ -63,6 +105,20 @@ export class ServiceHealth {
   ) {
     if (!options.deferInitialization) this.init();
   }
+  /**
+   * 入口 / Entry: ServiceHealth.init.
+   * 功能：在采样项目服务健康状态并维护期望值中，初始化并核对当前领域状态；本入口产生 `void` 供上层消费（`ServiceHealth`）。
+   * Purpose: Initializes and verifies current domain state in `ServiceHealth`; this entry produces `void` for its caller. Module context: Samples project service health against expectations, following current VM/project runtime state for background checks.
+   * 处理：通过 `this.workspaces.beforeAction`, `this.machines.on`, `scheduler.register`, `this.machines.off` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.workspaces.beforeAction`, `this.machines.on`, `scheduler.register`, `this.machines.off`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.initialized`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `scheduler.register`; 更新 / updates `this.removeAction`, `this.timer`, `this.initialized`.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; 异常 / errors `new AppError('服务健康检查已关闭', 503)`; `error`.
+   * 失败处理：catch 分支执行 `this.machines.off('change', this.onChange);`; `this.removeAction?.();`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `this.machines.off('change', this.onChange);`; `this.removeAction?.();`; these statements determine whether a failure is absorbed or rejected again.
+   */
   init() {
     if (this.closed) throw new AppError('服务健康检查已关闭', 503);
     if (this.initialized) return;
@@ -70,7 +126,20 @@ export class ServiceHealth {
       this.removeAction = this.workspaces.beforeAction((id, action, service) => this.expect(id, action, service));
       this.machines.on('change', this.onChange);
       this.timer = scheduler.register({ owner: 'plugin:service-health', label: '项目服务健康检查', intervalMs: 5000,
-        overlap: 'skip', run: async () => {
+        overlap: 'skip',
+        /**
+         * 入口 / Entry: ServiceHealth.init.run.
+         * 功能：在采样项目服务健康状态并维护期望值中，执行此领域的具体处理步骤并返回其结果；处理结果记录到 `this.pending`（`ServiceHealth`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `ServiceHealth`; the outcome is recorded in `this.pending`. Module context: Samples project service health against expectations, following current VM/project runtime state for background checks.
+         * 处理：通过 `this.tick().finally`, `this.tick` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `this.tick().finally`, `this.tick`; the branches below determine continuation, return or refusal.
+         * 分支 / Branches: `!this.pending`.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: 更新 / updates `this.pending`.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
+        run: async () => {
           if (!this.pending)
             this.pending = this.tick()
               .finally(() => {
@@ -86,6 +155,17 @@ export class ServiceHealth {
       throw error;
     }
   }
+  /**
+   * 入口 / Entry: ServiceHealth.expect.
+   * 功能：在采样项目服务健康状态并维护期望值中，执行此领域的具体处理步骤并返回其结果；本入口产生 `(success: boolean) => { if (this.generations.get(key) !== generation || this.closed) return; if (!success) { this.states.set(…` 供上层消费（`ServiceHealth`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ServiceHealth`; this entry produces `(success: boolean) => { if (this.generations.get(key) !== generation || this.closed) return; if (!success) { this.states.set(…` for its caller. Module context: Samples project service health against expectations, following current VM/project runtime state for background checks.
+   * 处理：通过 `this.workspaces.projects.key`, `this.workspaces.jobs.view`, `this.checks.get().abort`, `this.checks.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.workspaces.projects.key`, `this.workspaces.jobs.view`, `this.checks.get().abort`, `this.checks.get`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; action: 'start' | 'stop'; service: string optional
+   * 输出 / Returns: `(success: boolean) => { if (this.generations.get(key) !== generation || this.closed) return; if (!success) { this.states.set(…`.
+   * 副作用 / Effects: `this.checks.get().abort`; `this.generations.set`; `previous.set`; `this.states.set`.
+   * 拒绝 / Refusals: 条件 / conditions `this.workspaces.jobs.view(key)?.status === 'running'`; 异常 / errors `new AppError('请等待项目操作完成', 409)`.
+   */
   async expect(id: string, action: 'start' | 'stop', service?: string) {
     const key = this.workspaces.projects?.key(id) || id;
     if (this.workspaces.jobs.view(key)?.status === 'running') throw new AppError('请等待项目操作完成', 409);
@@ -106,6 +186,15 @@ export class ServiceHealth {
     for (const name of names)
       previous.set(name, { name, desired: false, status: 'stopped', failures: 0, restarts: 0, nextCheck: 0 });
     this.states.set(key, previous);
+    /**
+     * 入口 / Entry: ServiceHealth.expect.callback@109.
+     * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（current continuation）。
+     * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (current continuation).
+     * 输入 / Inputs: success: boolean
+     * 输出 / Returns: `void`.
+     * 副作用 / Effects: `this.states.set`; `previous.set`; `this.blockedChecks.get().delete`; `this.blockedChecks.delete`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     return (success: boolean) => {
       if (this.generations.get(key) !== generation || this.closed) return;
       if (!success) {
@@ -125,6 +214,17 @@ export class ServiceHealth {
       if (!this.blockedChecks.get(key)?.size) this.blockedChecks.delete(key);
     };
   }
+  /**
+   * 入口 / Entry: ServiceHealth.view.
+   * 功能：在采样项目服务健康状态并维护期望值中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ services: (config.services || []) .filter((s) => s.health) .map<HealthView>( (s) => this.states.get(key)?.get(s.name) || { …` 供上层消费（`ServiceHealth`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `ServiceHealth`; this entry produces `{ services: (config.services || []) .filter((s) => s.health) .map<HealthView>( (s) => this.states.get(key)?.get(s.name) || { …` for its caller. Module context: Samples project service health against expectations, following current VM/project runtime state for background checks.
+   * 处理：通过 `this.workspaces.projects.key`, `this.workspaces.config`, `inline.filter().map`, `inline.filter` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.workspaces.projects.key`, `this.workspaces.config`, `inline.filter().map`, `inline.filter`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `{ services: (config.services || []) .filter((s) => s.health) .map<HealthView>( (s) => this.states.get(key)?.get(s.name) || { …`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async view(id: string) {
     const key = this.workspaces.projects?.key(id) || id;
     const config = await this.workspaces.config(id);
@@ -145,20 +245,65 @@ export class ServiceHealth {
       job: this.jobs.view(key),
     };
   }
+  /**
+   * 入口 / Entry: ServiceHealth.observed.
+   * 功能：把本层请求转交 `inline.flatMap`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `inline.flatMap` and propagates the provider result or rejection.
+   * 输入 / Inputs: id: string
+   * 输出 / Returns: `[...this.states].flatMap(([key, states]) => { const [vmId, projectId = 'default'] = key.split(':'); return vmId === id ? [...…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   observed(id: string) {
     return [...this.states].flatMap(([key, states]) => {
       const [vmId, projectId = 'default'] = key.split(':');
       return vmId === id ? [...states.values()].map((state) => ({ ...state, projectId })) : [];
     });
   }
+  /**
+   * 入口 / Entry: ServiceHealth.tick.
+   * 功能：在采样项目服务健康状态并维护期望值中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`ServiceHealth`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `ServiceHealth`; the calls and state transitions below complete the operation. Module context: Samples project service health against expectations, following current VM/project runtime state for background checks.
+   * 处理：通过 `key.split`, `this.workspaces.projects.inScope`, `check` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `key.split`, `this.workspaces.projects.inScope`, `check`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.workspaces.projects`.
+   * 输入 / Inputs: now: default=Date.now()
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async tick(now = Date.now()) {
     for (const [key, states] of this.states) {
       const [id, projectId = 'default'] = key.split(':');
+      /**
+       * 入口 / Entry: ServiceHealth.tick.check.
+       * 功能：把本层请求转交 `this.checkProject`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `this.checkProject` and propagates the provider result or rejection.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: `this.checkProject(id, key, states, now)`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       const check = () => this.checkProject(id, key, states, now);
       if (this.workspaces.projects) await this.workspaces.projects.inScope(id, projectId, check);
       else await check();
     }
   }
+  /**
+   * 入口 / Entry: ServiceHealth.checkProject.
+   * 功能：检查项目服务完整归属和探测结果，更新健康状态并按期望策略处理。
+   * Purpose: Checks full project-service ownership/probe results and updates health state under expectations.
+   * 设计：配置、执行代次及原会话在每次检查中固定；未知服务不自动停止或重启，失败仍释放检查准备资源。
+   * Design: Each check pins configuration/generation/session; unknown services are not automatically restarted and failures release check preparation.
+   * 输入 / Inputs: id: string; key: string; states: Map<string, HealthView>; now: number
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.checks.set`; `this.jobs.start`; `blocked.add`; `this.blockedChecks.set`; `this.checks.delete`; 更新 / updates `privateValues`, `state.nextCheck`, `state.checkedAt`, `state.status`.
+   * 拒绝 / Refusals: 条件 / conditions `ownership.status === 'prepared' || ownership.status === 'unconfirmed' || (ownership.status === 'running' && ownership.record?…`; `ownership.status === 'running'`; `!ownership.record || !await identities.hasRun(id, ownership.record.projectId, ownership.record.runId)`; 异常 / errors `new AppError('服务启动或配置归属未确认，请先停止并重建', 409, 'SERVICE_SCOPE_CHANGED')`; `new AppError('服务尚未接入项目账号，请先确认停止全部后代再重新启动', 409, 'SERVICE_IDENTITY_REQUIRED')`.
+   * 收尾：退出 try 区域时始终执行 `if (this.checks.get(key) === abort) this.checks.delete(key);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `if (this.checks.get(key) === abort) this.checks.delete(key);`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `if (!abort.signal.aborted && generation === this.generations.get(key)) { const unconfirmed = needsManualCleanup(error); const…`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `if (!abort.signal.aborted && generation === this.generations.get(key)) { const unconfirmed = needsManualCleanup(error); const…`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async checkProject(id: string, key: string, states: Map<string, HealthView>, now: number) {
     if (
       this.closed ||
@@ -231,6 +376,19 @@ export class ServiceHealth {
               (dependency) => dependency.name === service.name,
             ),
         );
+        /**
+         * 入口 / Entry: ServiceHealth.checkProject.callback@236.
+         * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.jobs.start）。
+         * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.jobs.start).
+         * 输入 / Inputs: rawLog; signal
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: `blocked.add`; `this.blockedChecks.set`; 更新 / updates `state.status`, `paused.status`, `paused.error`, `state.error`.
+         * 拒绝 / Refusals: 条件 / conditions `generation !== this.generations.get(key)`; 异常 / errors `new AppError('服务意图已改变')`; `new AppError(detail, error instanceof AppError ? error.status : 500, error instanceof AppError ? error.code : undefined)`.
+         * 收尾：退出 try 区域时始终执行 `output.flush();`；这些步骤也适用于异常退出。
+         * Finalization: Leaving the try region always executes `output.flush();`; these steps also apply to exceptional exits.
+         * 失败处理：catch 分支执行 `const detail = redactValues((error as Error).message, projectPrivateValues(project));`; `if (generation === this.generations.get(key)) { if (needsManualCleanup(error)) { const blocked = this.blockedChecks.get(key) …`，是否吞掉错误或重新拒绝由这些语句决定。
+         * Failure handling: Catch paths execute `const detail = redactValues((error as Error).message, projectPrivateValues(project));`; `if (generation === this.generations.get(key)) { if (needsManualCleanup(error)) { const blocked = this.blockedChecks.get(key) …`; these statements determine whether a failure is absorbed or rejected again.
+         */
         this.jobs.start(
           key,
           async (rawLog, signal) => {
@@ -300,6 +458,17 @@ export class ServiceHealth {
       if (this.checks.get(key) === abort) this.checks.delete(key);
     }
   }
+  /**
+   * 入口 / Entry: ServiceHealth.close.
+   * 功能：在采样项目服务健康状态并维护期望值中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`, `this.removeAction`（`ServiceHealth`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `ServiceHealth`; the outcome is recorded in `this.closed`, `this.removeAction`. Module context: Samples project service health against expectations, following current VM/project runtime state for background checks.
+   * 处理：通过 `this.machines.off`, `this.removeAction`, `this.checks.values`, `abort.abort` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.machines.off`, `this.removeAction`, `this.checks.values`, `abort.abort`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `abort.abort`; `this.timer.close`; `this.jobs.close`; 更新 / updates `this.closed`, `this.removeAction`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true;
     this.machines.off('change', this.onChange);

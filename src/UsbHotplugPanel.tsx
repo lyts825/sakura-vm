@@ -1,5 +1,8 @@
 /**
- * 模块职责：配置 USB 热插拔匹配规则，查看设备、连接事件并提交挂载/移除操作。
+ * 模块职责（中文）：配置 USB 热插拔匹配规则，查看设备、连接事件并提交挂载/移除操作。
+ * Module responsibility (English): Managing USB matching rules, connection events and attachment operations.
+ * 详细范围（中文）：公开入口包括 UsbHotplugPanel；职责覆盖管理 USB 匹配规则、连接事件与挂载操作，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include UsbHotplugPanel. The scope covers Managing USB matching rules, connection events and attachment operations. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useState } from 'react';
 import { formatDateTime } from './localization';
@@ -11,9 +14,29 @@ type Event = { id: string; operation: 'attach' | 'detach'; status: string;
   vendorId: number; productId: number; source: string; at: string; error?: string };
 type View = { ready: boolean; hostDevices: string; hostError: string;
   rules: Rule[]; configured: Device[]; events: Event[] };
+/**
+ * 中文：把 USB 标识数字转换为四位大写十六进制文本，供表单回显。
+ * English: Convert numeric USB identifiers into four-digit uppercase hexadecimal for form display.
+ * 中文：输入：value：待校验、转换或保存的输入值
+ * English: Inputs: value: input value to validate/transform/save
+ */
 const hex = (value: number) => value.toString(16).padStart(4, '0').toUpperCase();
+/**
+ * 中文：仅四位十六进制文本转换为整数，无效值返回零由表单校验继续处理。
+ * English: Convert only four-digit hexadecimal text to an integer; invalid input returns zero for subsequent form validation.
+ * 中文：输入：value：待校验、转换或保存的输入值
+ * English: Inputs: value: input value to validate/transform/save
+ */
 const parse = (value: string) => /^[0-9a-fA-F]{4}$/.test(value) ? Number.parseInt(value, 16) : 0;
 
+/**
+ * 中文：呈现管理 USB 匹配规则、连接事件与挂载操作中的 UsbHotplugPanel 界面，订阅 path，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the UsbHotplugPanel surface for Managing USB matching rules, connection events and attachment operations, subscribing to path. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request, vmId } 提供 request（带身份和权限作用域的传输能力）、vmId（当前实例标识） 上下文字段
+ * English: Inputs: { request, vmId } provides context fields request (transport capability bound to identity/authority scope), vmId (current VM identifier)
+ * 中文：结果：当前状态对应的 React 节点，未满足显示条件的分支可返回空节点
+ * English: Result: React nodes for current state; branches without display conditions may return an empty node
+ */
 export function UsbHotplugPanel({ request, vmId }: { request: Request; vmId: string }) {
   const path = `/vms/${vmId}/usb-hotplug`;
   const remote = useRemote<View>(request, path, true, 5000);
@@ -21,12 +44,24 @@ export function UsbHotplugPanel({ request, vmId }: { request: Request; vmId: str
   const [vendor, setVendor] = useState('');
   const [product, setProduct] = useState('');
   const vendorId = parse(vendor), productId = parse(product);
-  const submit = (operation: 'save-rule' | 'attach') => void action.run(async (signal) => {
+  /**
+   * 中文：提交 POST path，完成管理 USB 匹配规则、连接事件与挂载操作的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST path for Managing USB matching rules, connection events and attachment operations. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：operation：签名所示 'save-rule' | 'attach' 业务值
+   * English: Inputs: operation: the 'save-rule' | 'attach' domain value in the signature
+   */
+  const submit = (operation: 'save-rule' | 'attach') => void action.run(/** 中文：提交 POST path，完成管理 USB 匹配规则、连接事件与挂载操作的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST path for Managing USB matching rules, connection events and attachment operations. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
     await request(path, 'POST', { operation, vendorId, productId }, signal);
     remote.reload();
   }, operation === 'save-rule' ? '转发规则已保存' : '已向 QEMU 配置临时 USB 转发');
+  /**
+   * 中文：提交 POST path，完成管理 USB 匹配规则、连接事件与挂载操作的数据交互；异步失败传给此处的捕获分支或外层动作反馈
+   * English: Perform POST path for Managing USB matching rules, connection events and attachment operations. Propagate asynchronous failure to this catch path or the outer action feedback
+   * 中文：输入：operation：签名所示 'remove-rule' | 'apply-rule' | 'detach' 业务值；value：待校验、转换或保存的输入值
+   * English: Inputs: operation: the 'remove-rule' | 'apply-rule' | 'detach' domain value in the signature; value: input value to validate/transform/save
+   */
   const apply = (operation: 'remove-rule' | 'apply-rule' | 'detach', value: object) =>
-    void action.run(async (signal) => {
+    void action.run(/** 中文：提交 POST path，完成管理 USB 匹配规则、连接事件与挂载操作的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST path for Managing USB matching rules, connection events and attachment operations. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
       await request(path, 'POST', { operation, ...value }, signal);
       remote.reload();
     }, operation === 'detach' ? '已请求移除 USB 设备' : 'USB 转发规则已更新');

@@ -1,5 +1,6 @@
 /**
  * 模块职责：检查并执行受限客户机命令，核对原启动身份并收集系统调用限制结果。
+ * Module purpose: Checks/runs restricted guest commands against original boot identity and records syscall policy results.
  */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
@@ -167,6 +168,15 @@ if __name__ == '__main__':
 
 const helperPath = '/usr/local/lib/sakura/seccomp-run.py';
 const helperSha256 = createHash('sha256').update(helper).digest('hex');
+/**
+ * 入口 / Entry: systemCommand.
+ * 功能：从当前输入或状态计算 `'/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('cd /\nset -eu\n' + body)`，供调用方后续验证或使用。
+ * Purpose: Computes `'/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('cd /\nset -eu\n' + body)` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: body: string
+ * 输出 / Returns: `'/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('cd /\nset -eu\n' + body)`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const systemCommand = (body: string) =>
   '/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('cd /\nset -eu\n' + body);
 const systemDirectory = `import os,stat
@@ -207,8 +217,28 @@ finally:
 const fixedPython = '/usr/bin/python3 -I -c ' + quote(helper);
 const probe = systemCommand('/usr/bin/python3 -I -S -c ' + quote(verifyHelper) + '\n' +
   fixedPython + ' --self-test restricted\n' + fixedPython + ' --self-test networkless');
+/**
+ * 入口 / Entry: changed.
+ * 功能：从当前输入或状态计算 `new AppError('受限命令原客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`，供调用方后续验证或使用。
+ * Purpose: Computes `new AppError('受限命令原客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED')` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: `new AppError('受限命令原客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const changed = () => new AppError('受限命令原客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
 
+/**
+ * 入口 / Entry: checkSyscallProfile.
+ * 功能：在检查并执行受限客户机命令中，核对调用资格、输入或资源归属；本入口产生 `{ ready: false, executed: false, reason: '请先启动实例。' }` / `{ ready: result.code === 0, executed: false, profiles: ['restricted', 'networkless'], reason: result.code === 0 ? '客户机 seccom…` 供上层消费（`syscall-profile.ts`）。
+ * Purpose: Checks admission, input or resource ownership in `syscall-profile.ts`; this entry produces `{ ready: false, executed: false, reason: '请先启动实例。' }` / `{ ready: result.code === 0, executed: false, profiles: ['restricted', 'networkless'], reason: result.code === 0 ? '客户机 seccom…` for its caller. Module context: Checks/runs restricted guest commands against original boot identity and records syscall policy results.
+ * 处理：通过 `machines.state`, `machines.live.get`, `changed`, `signal.throwIfAborted` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `machines.state`, `machines.live.get`, `changed`, `signal.throwIfAborted`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `machines.state(id) !== 'running'`.
+ * 输入 / Inputs: machines: Machines; id: string; signal: AbortSignal optional
+ * 输出 / Returns: `{ ready: false, executed: false, reason: '请先启动实例。' }`; `{ ready: result.code === 0, executed: false, profiles: ['restricted', 'networkless'], reason: result.code === 0 ? '客户机 seccom…`.
+ * 副作用 / Effects: `machines.exec`.
+ * 拒绝 / Refusals: 条件 / conditions `!live`; `machines.live.get(id) !== live || machines.state(id) !== 'running'`; 异常 / errors `changed()`.
+ */
 export async function checkSyscallProfile(machines: Machines, id: string,
   signal?: AbortSignal) {
   if (machines.state(id) !== 'running')
@@ -226,6 +256,20 @@ export async function checkSyscallProfile(machines: Machines, id: string,
     ...(result.code === 0 ? {} : { diagnostic: result.stderr.slice(-1000) }) };
 }
 
+/**
+ * 入口 / Entry: runSyscallProfile.
+ * 功能：在检查并执行受限客户机命令中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ code: status.ready ? 0 : 1, ...status }` / `{ code: 0, ...checked, executed: true }` 供上层消费（`syscall-profile.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `syscall-profile.ts`; this entry produces `{ code: status.ready ? 0 : 1, ...status }` / `{ code: 0, ...checked, executed: true }` for its caller. Module context: Checks/runs restricted guest commands against original boot identity and records syscall policy results.
+ * 处理：通过 `syscallProfileInput.parse`, `checkSyscallProfile`, `machines.requireUnlocked`, `machines.state` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `syscallProfileInput.parse`, `checkSyscallProfile`, `machines.requireUnlocked`, `machines.state`; the branches below determine continuation, return or refusal.
+ * 分支 / Branches: `options.mode === 'status'`.
+ * 输入 / Inputs: machines: Machines; id: string; input: unknown; signal: AbortSignal optional; workspaces: WorkspacesV1 optional; taskOptions: SyscallProjectTaskOptions default={}
+ * 输出 / Returns: `{ code: status.ready ? 0 : 1, ...status }`; `{ code: 0, ...checked, executed: true }`; `workspaces ? await run() : await scope.projects.with(id, undefined, run)`.
+ * 副作用 / Effects: `machines.exec`; `install.stderr.slice`; `machines.writeGuestFile`; `tasks.close`; `owned.close`.
+ * 拒绝 / Refusals: 条件 / conditions `machines.state(id) !== 'running'`; `options.mode === 'install'`; `install.code !== 0`; 异常 / errors `new AppError('请先启动实例', 409)`; `new AppError('安装 seccomp 依赖失败：' + install.stderr.slice(-1000), 409)`.
+ * 收尾：退出 try 区域时始终执行 `try { await tasks.close(); } finally { await owned?.close(); }`; `await owned?.close();`；这些步骤也适用于异常退出。
+ * Finalization: Leaving the try region always executes `try { await tasks.close(); } finally { await owned?.close(); }`; `await owned?.close();`; these steps also apply to exceptional exits.
+ */
 export async function runSyscallProfile(machines: Machines, id: string,
   input: unknown, signal?: AbortSignal, workspaces?: WorkspacesV1, taskOptions: SyscallProjectTaskOptions = {}) {
   const options = syscallProfileInput.parse(input);
@@ -237,6 +281,17 @@ export async function runSyscallProfile(machines: Machines, id: string,
   if (machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
   if (options.mode === 'install') {
     const live = machines.live.get(id);
+    /**
+     * 入口 / Entry: runSyscallProfile.assertOrigin.
+     * 功能：在检查并执行受限客户机命令中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`syscall-profile.ts`）。
+     * Purpose: Checks admission, input or resource ownership in `syscall-profile.ts`; the calls and state transitions below complete the operation. Module context: Checks/runs restricted guest commands against original boot identity and records syscall policy results.
+     * 处理：通过 `signal.throwIfAborted`, `machines.live.get`, `machines.state`, `changed` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `signal.throwIfAborted`, `machines.live.get`, `machines.state`, `changed`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 拒绝 / Refusals: 条件 / conditions `!live || machines.live.get(id) !== live || machines.state(id) !== 'running'`; 异常 / errors `changed()`.
+     */
     const assertOrigin = () => {
       signal?.throwIfAborted();
       if (!live || machines.live.get(id) !== live || machines.state(id) !== 'running') throw changed();
@@ -267,7 +322,32 @@ export async function runSyscallProfile(machines: Machines, id: string,
   const owned = workspaces ? undefined : new Workspaces(machines);
   const scope = workspaces || owned!;
   const tasks = new SyscallProjectTasks(machines, scope, taskOptions);
-  const run = () => tasks.withProject(id, signal, undefined, async () => {
+  /**
+   * 入口 / Entry: runSyscallProfile.callback@270.
+   * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（tasks.withProject）。
+   * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (tasks.withProject).
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ code: result.code, stdout: tasks.redact(id, result.stdout), stderr: tasks.redact(id, result.stderr), ready: result.code ===…`.
+   * 副作用 / Effects: `tasks.exec`.
+   * 拒绝 / Refusals: 条件 / conditions `!checked.ready`; 异常 / errors `new AppError(checked.reason, 409)`.
+   */
+  /**
+   * 入口 / Entry: runSyscallProfile.run.
+   * 功能：把本层请求转交 `tasks.withProject`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `tasks.withProject` and propagates the provider result or rejection.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `tasks.withProject(id, signal, undefined, async () => { const project = tasks.project(id); const checked = await checkSyscallP…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
+  const run = () => tasks.withProject(id, signal, undefined,
+  /**
+   * 中文功能：复核原项目与 syscall profile 准入，执行有界客户机命令，返回脱敏结果、超时标记及原项目目录/网络信息。
+   * English: Rechecks original-project/profile admission, executes the bounded guest command and returns redacted output, timeout status and original directory/network metadata.
+   * 所属 / Owner: runSyscallProfile.run.
+   * 输入 / Inputs: 无显式参数 / no explicit parameters.
+   */
+  async () => {
     const project = tasks.project(id);
     const checked = await checkSyscallProfile(machines, id, signal);
     await tasks.assertCurrent(id);

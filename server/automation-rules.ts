@@ -1,5 +1,6 @@
 /**
  * 模块职责：保存事件自动化与 Runbook 执行记录；动作成功但回执写入失败时保留待核对状态。
+ * Module purpose: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
  */
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { stat } from 'node:fs/promises';
@@ -21,6 +22,17 @@ import {
 
 const hour = 3600_000;
 const limits = { rules: 24, history: 300, observed: 20_000, dailyActions: 25 };
+/**
+ * 入口 / Entry: unique.
+ * 功能：在保存事件自动化与 Runbook 执行记录中，执行此领域的具体处理步骤并返回其结果；本入口产生 `z.array(item).max(max) .refine((items) => new Set(items).size === items.length, '筛选值不能重复')` 供上层消费（`automation-rules.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `automation-rules.ts`; this entry produces `z.array(item).max(max) .refine((items) => new Set(items).size === items.length, '筛选值不能重复')` for its caller. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+ * 处理：通过 `z.array().max().refine`, `z.array().max`, `z.array` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `z.array().max().refine`, `z.array().max`, `z.array`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: item: T; max: number
+ * 输出 / Returns: `z.array(item).max(max) .refine((items) => new Set(items).size === items.length, '筛选值不能重复')`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const unique = <T extends z.ZodType>(item: T, max: number) => z.array(item).max(max)
   .refine((items) => new Set(items).size === items.length, '筛选值不能重复');
 const filterSchema = z.object({
@@ -80,6 +92,15 @@ export type AutomationView = {
   rules: AutomationRule[]; executions: AutomationExecution[]; error?: string; collecting: boolean;
   limits: typeof limits;
 };
+/**
+ * 签名 / Signature: RunbookExecutor.RunbookExecutor.
+ * 功能：为保存事件自动化与 Runbook 执行记录声明 RunbookExecutor 的输入与结果契约，所属容器为 RunbookExecutor。
+ * Purpose: Declares the input/result contract for RunbookExecutor in RunbookExecutor. Module responsibility: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+ * 输入 / Inputs: id: string; steps: RunbookStep[]; projectId: string | undefined; signal: AbortSignal
+ * 输出 / Returns: Promise<{ code: number; results?: Array<{ code: number; skipped?: boolean }> }>.
+ * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
+ * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
+ */
 export type RunbookExecutor = (id: string, steps: RunbookStep[], projectId: string | undefined,
   signal: AbortSignal) => Promise<{ code: number; results?: Array<{ code: number; skipped?: boolean }> }>;
 export const automationRequest = z.discriminatedUnion('operation', [
@@ -88,7 +109,26 @@ export const automationRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('remove'), id: z.uuid(), version: z.number().int().positive() }).strict(),
   z.object({ operation: z.literal('preview'), id: z.uuid() }).strict(),
 ]);
+/**
+ * 入口 / Entry: digest.
+ * 功能：在保存事件自动化与 Runbook 执行记录中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHash('sha256').update(text).digest('hex')` 供上层消费（`automation-rules.ts`）。
+ * Purpose: Executes the domain-specific processing steps and returns their outcome in `automation-rules.ts`; this entry produces `createHash('sha256').update(text).digest('hex')` for its caller. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+ * 处理：通过 `createHash().update().digest`, `createHash().update`, `createHash` 协调依赖；下列分支决定是否继续、返回或拒绝。
+ * Processing: Coordinates its dependencies through `createHash().update().digest`, `createHash().update`, `createHash`; the branches below determine continuation, return or refusal.
+ * 输入 / Inputs: text: string
+ * 输出 / Returns: `createHash('sha256').update(text).digest('hex')`.
+ * 副作用 / Effects: `createHash().update().digest`; `createHash().update`; `createHash`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 const digest = (text: string) => createHash('sha256').update(text).digest('hex');
+/**
+ * 入口 / Entry: defaultState.
+ * 功能：从当前输入或状态计算 `({ version: 1, rules: [], executions: [], observed: {}, lastAttempt: {}, daily: {}, })`，供调用方后续验证或使用。
+ * Purpose: Computes `({ version: 1, rules: [], executions: [], observed: {}, lastAttempt: {}, daily: {}, })` from current inputs/state for the caller to validate or consume.
+ * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+ * 输出 / Returns: State；结果来自 / values from `({ version: 1, rules: [], executions: [], observed: {}, lastAttempt: {}, daily: {}, })`.
+ * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+ */
 const defaultState = (): State => ({
   version: 1, rules: [], executions: [], observed: {}, lastAttempt: {}, daily: {},
 });
@@ -102,6 +142,14 @@ export class AutomationRules {
   private pending?: Promise<void>;
   private closed = false;
   private error?: string;
+  /**
+   * 入口 / Entry: AutomationRules.constructor.
+   * 功能：建立 AutomationRules 的保存事件自动化与 Runbook 执行记录上下文，绑定本实例使用的依赖、初始状态及下述字段。
+   * Purpose: Constructs the AutomationRules context for this module's responsibility: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence. Instance dependencies and initial fields are bound below.
+   * 输入 / Inputs: source: () => Promise<WebhookEvent[]>; machines: Pick<Machines, 'get' | 'requireUnlocked' | 'start' | 'stop' | 'suspend' | 'resume'> &…; file: default=join(DATA, 'automation-rules.json'); now: default=Date.now; blocked: () => boolean default=() => false; mutation: (delta: number) => void default=() => {}; runbook: RunbookExecutor optional
+   * 输出 / Returns: 初始化后的实例 / initialized instance.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   constructor(
     private source: () => Promise<WebhookEvent[]>,
     private machines: Pick<Machines, 'get' | 'requireUnlocked' | 'start' | 'stop' | 'suspend' | 'resume'> &
@@ -112,12 +160,35 @@ export class AutomationRules {
     private mutation: (delta: number) => void = () => {},
     private runbook?: RunbookExecutor,
   ) {}
+  /**
+   * 入口 / Entry: AutomationRules.approval.
+   * 功能：在保存事件自动化与 Runbook 执行记录中，执行此领域的具体处理步骤并返回其结果；本入口产生 `createHmac('sha256', this.approvalKey) .update(JSON.stringify({ id, version, reviewed })).digest('hex')` 供上层消费（`AutomationRules`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `AutomationRules`; this entry produces `createHmac('sha256', this.approvalKey) .update(JSON.stringify({ id, version, reviewed })).digest('hex')` for its caller. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+   * 处理：通过 `createHmac().update().digest`, `createHmac().update`, `createHmac` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `createHmac().update().digest`, `createHmac().update`, `createHmac`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: id: string; version: number; rule: z.infer<typeof ruleInput>
+   * 输出 / Returns: `createHmac('sha256', this.approvalKey) .update(JSON.stringify({ id, version, reviewed })).digest('hex')`.
+   * 副作用 / Effects: `createHmac().update().digest`; `createHmac().update`; `createHmac`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private approval(id: string, version: number, rule: z.infer<typeof ruleInput>) {
     const reviewed = { name: rule.name, filter: rule.filter, action: rule.action,
       steps: rule.steps, cooldownSeconds: rule.cooldownSeconds };
     return createHmac('sha256', this.approvalKey)
       .update(JSON.stringify({ id, version, reviewed })).digest('hex');
   }
+  /**
+   * 入口 / Entry: AutomationRules.init.
+   * 功能：在保存事件自动化与 Runbook 执行记录中，初始化并核对当前领域状态；处理结果记录到 `this.state`, `this.timer`（`AutomationRules`）。
+   * Purpose: Initializes and verifies current domain state in `AutomationRules`; the outcome is recorded in `this.state`, `this.timer`. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+   * 处理：通过 `stat().catch`, `stat`, `info.isFile`, `stateSchema.parse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `stat().catch`, `stat`, `info.isFile`, `stateSchema.parse`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `schedule`.
+   * 输入 / Inputs: schedule: default=true
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `scheduler.register`; 更新 / updates `this.state`, `this.timer`.
+   * 拒绝 / Refusals: 条件 / conditions `info && (!info.isFile() || info.size > 4 * 1024 ** 2)`; `new Set(this.state.rules.map((rule) => rule.id)).size !== this.state.rules.length || Object.keys(this.state.observed).length …`; 异常 / errors `new AppError('事件自动化存储类型或大小无效')`; `new AppError('事件自动化存储记录无效')`.
+   */
   async init(schedule = true) {
     const info = await stat(this.file).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error;
@@ -132,9 +203,30 @@ export class AutomationRules {
       throw new AppError('事件自动化存储记录无效');
     if (schedule) {
       this.timer = scheduler.register({ owner: 'core:automation-rules', label: '事件自动化规则', intervalMs: 5000,
-        immediate: true, overlap: 'skip', backoff: { initialMs: 5000, maxMs: 60000 }, run: () => this.tick() });
+        immediate: true, overlap: 'skip', backoff: { initialMs: 5000, maxMs: 60000 },
+        /**
+         * 入口 / Entry: AutomationRules.init.run.
+         * 功能：把本层请求转交 `this.tick`，沿用该实现的结果与失败路径。
+         * Purpose: Delegates this request to `this.tick` and propagates the provider result or rejection.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `this.tick()`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
+        run: () => this.tick() });
     }
   }
+  /**
+   * 入口 / Entry: AutomationRules.view.
+   * 功能：在保存事件自动化与 Runbook 执行记录中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ rules: structuredClone(this.state.rules), executions: structuredClone(this.state.executions).reverse(), error: this.error, …` 供上层消费（`AutomationRules`）。
+   * Purpose: Reads/verifies domain state and constructs a caller-facing result in `AutomationRules`; this entry produces `{ rules: structuredClone(this.state.rules), executions: structuredClone(this.state.executions).reverse(), error: this.error, …` for its caller. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+   * 处理：通过 `structuredClone`, `structuredClone().reverse` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `structuredClone`, `structuredClone().reverse`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: AutomationView；结果来自 / values from `{ rules: structuredClone(this.state.rules), executions: structuredClone(this.state.executions).reverse(), error: this.error, …`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   view(): AutomationView {
     return {
       rules: structuredClone(this.state.rules),
@@ -142,12 +234,41 @@ export class AutomationRules {
       error: this.error, collecting: !!this.pending, limits,
     };
   }
+  /**
+   * 入口 / Entry: AutomationRules.serial.
+   * 功能：在保存事件自动化与 Runbook 执行记录中，执行此领域的具体处理步骤并返回其结果；本入口产生 `task` 供上层消费（`AutomationRules`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `AutomationRules`; this entry produces `task` for its caller. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+   * 处理：通过 `this.queue.catch().then`, `this.queue.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.queue.catch().then`, `this.queue.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: work: () => Promise<T>
+   * 输出 / Returns: Promise<T>；结果来自 / values from `task`.
+   * 副作用 / Effects: 更新 / updates `this.queue`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const task = this.queue.catch(() => {}).then(work);
     this.queue = task;
     return task;
   }
+  /**
+   * 入口 / Entry: AutomationRules.change.
+   * 功能：把本层请求转交 `this.serial`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `this.serial` and propagates the provider result or rejection.
+   * 输入 / Inputs: edit: (next: State) => T
+   * 输出 / Returns: Promise<T>；结果来自 / values from `this.serial(async () => { const next = structuredClone(this.state); const result = edit(next); next.executions = next.executi…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   private async change<T>(edit: (next: State) => T): Promise<T> {
+    /**
+     * 入口 / Entry: AutomationRules.change.callback@151.
+     * 功能：处理传入串行或作用域入口的状态分支，返回值由该入口按自身契约消费（this.serial）。
+     * Purpose: Processes the state branch supplied to a serialized/scoped entry, whose own contract determines consumption of its return value (this.serial).
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `result`.
+     * 副作用 / Effects: `next.executions.slice`; `writeStore`; 更新 / updates `next.executions`, `this.state`.
+     * 拒绝 / Refusals: 条件 / conditions `Object.keys(next.observed).length > limits.observed`; 异常 / errors `new AppError('事件自动化去重窗口已满，请稍后重试', 409)`.
+     */
     return this.serial(async () => {
       const next = structuredClone(this.state);
       const result = edit(next);
@@ -161,6 +282,19 @@ export class AutomationRules {
       return result;
     });
   }
+  /**
+   * 入口 / Entry: AutomationRules.configure.
+   * 功能：在保存事件自动化与 Runbook 执行记录中，校验并提交领域状态变更；本入口产生 `{ rule, ...(rule.action === 'runbook' ? { approval: this.approval(rule.id, rule.version, rule) } : {}), matches: events.filte…` / `this.view()` 供上层消费（`AutomationRules`）。
+   * Purpose: Validates and commits a domain state change in `AutomationRules`; this entry produces `{ rule, ...(rule.action === 'runbook' ? { approval: this.approval(rule.id, rule.version, rule) } : {}), matches: events.filte…` / `this.view()` for its caller. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+   * 处理：通过 `this.blocked`, `automationRequest.parse`, `this.state.rules.find`, `this.source` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.blocked`, `automationRequest.parse`, `this.state.rules.find`, `this.source`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: input: unknown
+   * 输出 / Returns: `{ rule, ...(rule.action === 'runbook' ? { approval: this.approval(rule.id, rule.version, rule) } : {}), matches: events.filte…`; `this.view()`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `this.closed`; `this.blocked()`; `value.operation === 'preview'`; 异常 / errors `new AppError('服务正在关闭', 503)`; `new AppError('数据目录迁移维护中', 409)`.
+   * 收尾：退出 try 区域时始终执行 `this.mutation(-1);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.mutation(-1);`; these steps also apply to exceptional exits.
+   */
   async configure(input: unknown) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
     if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
@@ -179,6 +313,15 @@ export class AutomationRules {
     }
     this.mutation(1);
     try {
+      /**
+       * 入口 / Entry: AutomationRules.configure.callback@182.
+       * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.change）。
+       * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.change).
+       * 输入 / Inputs: next
+       * 输出 / Returns: `void`.
+       * 副作用 / Effects: `next.rules.splice`; `next.rules.push`; 更新 / updates `next.rules[index]`.
+       * 拒绝 / Refusals: 条件 / conditions `value.operation === 'remove'`; `index < 0`; `next.rules[index].version !== value.version`; 异常 / errors `new AppError('自动化规则不存在', 404)`; `new AppError('规则已变化，请刷新', 409)`.
+       */
       await this.change((next) => {
         const index = next.rules.findIndex((rule) => rule.id === value.id);
         if (value.operation === 'remove') {
@@ -216,6 +359,18 @@ export class AutomationRules {
       this.mutation(-1);
     }
   }
+  /**
+   * 入口 / Entry: AutomationRules.tick.
+   * 功能：在保存事件自动化与 Runbook 执行记录中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` / `this.pending` 供上层消费（`AutomationRules`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `AutomationRules`; this entry produces `void` / `this.pending` for its caller. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+   * 处理：通过 `this.blocked`, `this.state.rules.some`, `this.mutation`, `this.collect().catch().finally` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.blocked`, `this.state.rules.some`, `this.mutation`, `this.collect().catch().finally`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `this.closed || this.blocked()`; `!this.state.rules.some((rule) => rule.enabled)`; `this.pending`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: Promise<void>；结果来自 / values from `void`; `this.pending`; `task`.
+   * 副作用 / Effects: 更新 / updates `this.pending`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async tick(): Promise<void> {
     if (this.closed || this.blocked()) return;
     if (!this.state.rules.some((rule) => rule.enabled)) return;
@@ -230,6 +385,21 @@ export class AutomationRules {
     this.pending = task;
     return task;
   }
+  /**
+   * 入口 / Entry: AutomationRules.collect.
+   * 功能：从最近事件选择匹配规则，去重登记执行并触发实例动作或有期限的 Runbook。
+   * Purpose: Selects matching recent events, records deduplicated executions and runs VM actions or deadline-bound Runbooks.
+   * 设计：动作前保存 pending；动作成功而结束写入失败时保留待核对记录，避免重放已发生的外部效果。
+   * Design: Pending intent is durable before effects; a lost terminal write after success retains evidence rather than replaying the action.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: `this.state.executions.some`; `this.machines.start`; `this.machines.stop`; `this.activeRunbooks.add`; `this.activeRunbooks.delete`; 更新 / updates `this.error`, `stepResults`.
+   * 拒绝 / Refusals: 条件 / conditions `this.blocked() || this.closed`; `!this.runbook`; `outcome.code !== 0`; 异常 / errors `new AppError('操作已停止', 409)`; `new AppError('自动修复执行器不可用', 503)`.
+   * 收尾：退出 try 区域时始终执行 `this.machines.off?.('incident-lockdown', lockdown);`; `this.activeRunbooks.delete(controller);`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `this.machines.off?.('incident-lockdown', lockdown);`; `this.activeRunbooks.delete(controller);`; these steps also apply to exceptional exits.
+   * 失败处理：catch 分支执行 `await this.change((next) => { const entry = next.executions.find((item) => item.id === id); if (entry) { entry.status = 'fail…`; `continue;`，是否吞掉错误或重新拒绝由这些语句决定。
+   * Failure handling: Catch paths execute `await this.change((next) => { const entry = next.executions.find((item) => item.id === id); if (entry) { entry.status = 'fail…`; `continue;`; these statements determine whether a failure is absorbed or rejected again.
+   */
   private async collect() {
     if (!this.state.rules.some((rule) => rule.enabled)) return;
     this.error = undefined;
@@ -260,6 +430,15 @@ export class AutomationRules {
             '触发过于频繁或已达到每日操作上限' } : {}),
           ...(status !== 'pending' ? { finishedAt: this.now() } : {}),
         };
+        /**
+         * 入口 / Entry: AutomationRules.collect.callback@263.
+         * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.change）。
+         * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.change).
+         * 输入 / Inputs: next
+         * 输出 / Returns: `void`.
+         * 副作用 / Effects: `next.executions.push`; 更新 / updates `next.observed[key]`, `next.daily[rule.id]`, `next.lastAttempt[rule.id]`.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         await this.change((next) => {
           if (Object.hasOwn(next.observed, key)) return;
           if (!next.rules.some((candidate) => candidate.id === rule.id &&
@@ -275,6 +454,15 @@ export class AutomationRules {
         if (status !== 'pending') continue;
         const current = this.state.rules.find((candidate) => candidate.id === rule.id);
         if (!current?.enabled || current.previewOnly || current.version !== rule.version) {
+          /**
+           * 入口 / Entry: AutomationRules.collect.callback@278.
+           * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（this.change）。
+           * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (this.change).
+           * 输入 / Inputs: next
+           * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+           * 副作用 / Effects: `next.executions.find`; 更新 / updates `entry.status`, `entry.finishedAt`, `entry.reason`, `next.lastAttempt[rule.id]`.
+           * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+           */
           await this.change((next) => {
             const entry = next.executions.find((item) => item.id === id);
             if (entry) { entry.status = 'skipped'; entry.finishedAt = this.now();
@@ -299,6 +487,18 @@ export class AutomationRules {
           else {
             if (!this.runbook) throw new AppError('自动修复执行器不可用', 503);
             const controller = new AbortController();
+            /**
+             * 入口 / Entry: AutomationRules.collect.lockdown.
+             * 功能：在保存事件自动化与 Runbook 执行记录中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`AutomationRules`）。
+             * Purpose: Executes the domain-specific processing steps and returns their outcome in `AutomationRules`; the calls and state transitions below complete the operation. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+             * 处理：通过 `controller.abort` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `controller.abort`; the branches below determine continuation, return or refusal.
+             * 分支 / Branches: `target === event.vmId`.
+             * 输入 / Inputs: target: string
+             * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+             * 副作用 / Effects: `controller.abort`.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             const lockdown = (target: string) => {
               if (target === event.vmId) controller.abort(new AppError('实例已进入应急锁定', 409));
             };
@@ -339,6 +539,17 @@ export class AutomationRules {
       }
     }
   }
+  /**
+   * 入口 / Entry: AutomationRules.close.
+   * 功能：在保存事件自动化与 Runbook 执行记录中，结束、撤销或清理本次拥有的领域资源；处理结果记录到 `this.closed`（`AutomationRules`）。
+   * Purpose: Ends, revokes or cleans resources owned by this domain action in `AutomationRules`; the outcome is recorded in `this.closed`. Module context: Persists event rules and Runbook execution state; successful effects with lost persistence retain pending evidence.
+   * 处理：通过 `controller.abort`, `this.timer.close`, `this.queue.catch` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `controller.abort`, `this.timer.close`, `this.queue.catch`; the branches below determine continuation, return or refusal.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: `controller.abort`; `this.timer.close`; 更新 / updates `this.closed`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   async close() {
     this.closed = true;
     for (const controller of this.activeRunbooks) controller.abort();

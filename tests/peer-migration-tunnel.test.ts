@@ -1,6 +1,9 @@
 /**
- * 回归范围（完整情景见下方用例与断言）：
- * - migration streams use pinned peer TLS, session authority and revocable local forwards
+ * 模块职责：回归验证模块，围绕 `peer-migration-tunnel` 组织输入、可观察结果与失败边界；用例标题和断言定义最终验收条件。
+ * Module: Regression verification for `peer-migration-tunnel`. Arrange inputs, observable results and failure boundaries; case titles and assertions define acceptance.
+ * 阅读方式：先看本模块的情景与夹具，再沿具名辅助函数、受控接口和复杂回调阅读；测试替身与模型不构成真实资源隔离的证明。
+ * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
+ * 重点情景 / Key scenarios: migration streams use pinned peer TLS, session authority and revocable local forwards.
  */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import test from 'node:test';
@@ -14,10 +17,26 @@ import { basename, dirname, join } from 'node:path';
 import { HostPeers } from '../server/host-peers.ts';
 import { createSshKey, seedIso } from '../server/seed.ts';
 
+/**
+ * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+ * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+ * 输入 / Inputs: 无 / none。
+ * 结果：返回分支计算值（`({ platform: process.platform, arch: process.arch, cpus: 4, memoryTotal: 8 * 102…`），以 Promise 交付。
+ * Result: Return the branch-computed value (`({ platform: process.platform, arch: process.arch, cpus: 4, memoryTotal: 8 * 102…`) through a Promise.
+ */
 const status = async () => ({ platform: process.platform, arch: process.arch,
   cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFree: 4 * 1024 ** 3,
   load: [0, 0, 0], vmCount: 0, runningVms: 0 });
 
+/**
+ * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+ * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+ * 输入 / Inputs: server: Server。
+ * 结果：返回分支计算值（`address.port`），以 Promise 交付。
+ * Result: Return the branch-computed value (`address.port`) through a Promise.
+ * 失败 / Failure: `new Error('No test port')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `server.address`.
+ */
 async function listen(server: Server) {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -25,6 +44,20 @@ async function listen(server: Server) {
   return address.port;
 }
 
+/**
+ * 中文功能：执行该回归情景的输入安排、业务调用和断言，核对下述场景的实际结果。
+ * English: Arrange inputs, invoke the subject and assert actual results for the regression scenario below.
+ * 输入 / Inputs: 无 / none。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 验证场景 / Scenario: migration streams use pinned peer TLS, session authority and revocable local forwards
+ * 状态影响 / State effects: `target`, `forward`, `client`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 失败 / Failure: `new Error('No pairing code')`; `new Error('Refusing unexpected test cleanup path')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+ * 协作入口 / Collaborators: `mkdtemp`, `join`, `tmpdir`, `createServer`.
+ * 检查边界 / Checked boundaries: `assert.rejects(source.prepareLiveTarget(outbound.id, prepare), /HTTP 403/)`; `assert.throws(() => target.registerMigrationSession(inbound.requesterId, { disk: echoPort, state: echoPort }), /权限/)`.
+ * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+ * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+ */
 test('migration streams use pinned peer TLS, session authority and revocable local forwards', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sakura-peer-stream-'));
   const echo = createServer((socket) => {
@@ -68,23 +101,63 @@ test('migration streams use pinned peer TLS, session authority and revocable loc
     await target.configure({ operation: 'allow-activate', id: inbound.id, enabled: true });
     const prepared = { targetVmId: randomUUID(), sessionId: randomUUID(),
       targetDiskNode: '#block23', diskPort: echoPort, statePort: echoPort };
-    peerHandlers.set(target, { ...peerHandlers.get(target), liveMigrationReceiver: { prepare: async (input) => {
+    peerHandlers.set(target, { ...peerHandlers.get(target), liveMigrationReceiver: { /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: input。
+     * 结果：返回分支计算值（`prepared`），以 Promise 交付。
+     * Result: Return the branch-computed value (`prepared`) through a Promise.
+     * 验证场景 / Scenario: migration streams use pinned peer TLS, session authority and revocable local forwards
+     * 协作入口 / Collaborators: `assert.equal`, `assert.deepEqual`, `Buffer.from`.
+     * 检查边界 / Checked boundaries: `assert.equal(input.requesterId, inbound.requesterId)`; `assert.equal(input.transferId, prepare.transferId)`.
+     */
+    prepare: async (input) => {
       assert.equal(input.requesterId, inbound.requesterId);
       assert.equal(input.transferId, prepare.transferId);
       assert.equal(input.key, identity.key);
       assert.deepEqual(input.seed, Buffer.from(identity.seedBase64, 'base64'));
       return prepared;
-    }, complete: async (input) => {
+    }, /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: input。
+     * 结果：返回受控对象，公开字段包括 `targetVmId, status, originStatus`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `targetVmId, status, originStatus`; the actual branch determines its shape.
+     * 验证场景 / Scenario: migration streams use pinned peer TLS, session authority and revocable local forwards
+     * 协作入口 / Collaborators: `assert.equal`.
+     * 检查边界 / Checked boundaries: `assert.equal(input.requesterId, inbound.requesterId)`; `assert.equal(input.sessionId, prepared.sessionId)`.
+     */
+    complete: async (input) => {
       assert.equal(input.requesterId, inbound.requesterId);
       assert.equal(input.sessionId, prepared.sessionId);
       return { targetVmId: prepared.targetVmId,
         status: 'starting' as const, originStatus: 'received' as const };
-    }, abort: async (input) => {
+    }, /**
+     * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。
+     * English: Compute or supply the controlled result required by this suite for subsequent execution or assertions.
+     * 输入 / Inputs: input。
+     * 结果：返回受控对象，公开字段包括 `targetVmId, aborted`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `targetVmId, aborted`; the actual branch determines its shape.
+     * 验证场景 / Scenario: migration streams use pinned peer TLS, session authority and revocable local forwards
+     * 协作入口 / Collaborators: `assert.equal`.
+     * 检查边界 / Checked boundaries: `assert.equal(input.requesterId, inbound.requesterId)`; `assert.equal(input.sessionId, prepared.sessionId)`.
+     */
+    abort: async (input) => {
       assert.equal(input.requesterId, inbound.requesterId);
       assert.equal(input.sessionId, prepared.sessionId);
       assert.equal(input.sourceRunning, true);
       return { targetVmId: prepared.targetVmId, aborted: true as const };
-    }, status: async (input) => {
+    }, /**
+     * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
+     * English: Read or resolve observable fixture state for business calls or subsequent assertions.
+     * 输入 / Inputs: input。
+     * 结果：返回受控对象，公开字段包括 `targetVmId, status, originStatus`；各分支以实际返回对象为准。
+     * Result: Return a controlled object exposing fields such as `targetVmId, status, originStatus`; the actual branch determines its shape.
+     * 验证场景 / Scenario: migration streams use pinned peer TLS, session authority and revocable local forwards
+     * 协作入口 / Collaborators: `assert.equal`.
+     * 检查边界 / Checked boundaries: `assert.equal(input.requesterId, inbound.requesterId)`.
+     */
+    status: async (input) => {
       assert.equal(input.requesterId, inbound.requesterId);
       return { targetVmId: prepared.targetVmId,
         status: 'paused' as const, originStatus: 'prepared' as const };

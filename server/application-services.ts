@@ -1,5 +1,6 @@
 /**
  * 模块职责：创建并连接应用领域服务及恢复来源；服务就绪和关闭由共同生命周期约束。
+ * Module purpose: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
  */
 import type { BrowserIdeV1, ColdMigrationsV1, HaHostFailoverV1, HaLocalFailoversV1, HostPeersV1, NotebookEnvironmentsV1, RecoveryCatalogV1, ResourceScopeV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
@@ -73,8 +74,28 @@ import { Workspaces } from './workspaces.ts';
 import { RuntimeDiagnostics } from './runtime-diagnostics.ts';
 import type { SystemServiceContracts } from './service-contracts.ts';
 
+/**
+ * 入口 / Entry: createApplicationServices.
+ * 功能：按依赖装配系统和插件领域服务，注册恢复来源并返回 HTTP/WebSocket 共用的服务集合。
+ * Purpose: Assembles system/plugin domains in dependency order, registers recovery sources and returns shared HTTP/WebSocket services.
+ * 设计：资源先登记后异步初始化；延迟依赖在就绪阶段验证，恢复目录读取原领域证据，失败清理由统一作用域保留。
+ * Design: Resources are registered before asynchronous initialization; late dependencies are verified at readiness, recovery reads domain evidence, and the shared scope retains failed cleanup.
+ * 输入 / Inputs: resources: ResourceScopeV1; plugins: PluginManager
+ * 输出 / Returns: `{ access, assistant, audit, automationRules, browserExtensions, buildFarm, changeApprovals, coldMigrations, dev, features, fl…`.
+ * 副作用 / Effects: `resources.defer`; `recoveries.register`; `plugins.system.start`; `createRuntime`; `releaseRuntimeOwnership`; 更新 / updates `Jobs.instrument`, `features`, `notebooks`, `browserIde`.
+ * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+ */
 export async function createApplicationServices(resources: ResourceScopeV1, plugins: PluginManager) {
   let acceptingRequests = false;
+  /**
+   * 入口 / Entry: createApplicationServices.requireAdmission.
+   * 功能：在创建并连接应用领域服务及恢复来源中，核对调用资格、输入或资源归属；完成下述调用及状态处理（`application-services.ts`）。
+   * Purpose: Checks admission, input or resource ownership in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 拒绝 / Refusals: 条件 / conditions `!acceptingRequests`; 异常 / errors `new AppError('服务尚未就绪或正在关闭', 503, 'SERVICE_NOT_READY')`.
+   */
   const requireAdmission = () => {
     if (!acceptingRequests) throw new AppError('服务尚未就绪或正在关闭', 503, 'SERVICE_NOT_READY');
   };
@@ -96,6 +117,18 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   await recoveries.init();
   let refreshPending = false;
   let refreshRequested = false;
+  /**
+   * 入口 / Entry: createApplicationServices.refreshRecoveries.
+   * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `void` 供上层消费（`application-services.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `void` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+   * 处理：通过 `withoutOperationContext().catch().finally`, `withoutOperationContext().catch`, `withoutOperationContext` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `withoutOperationContext().catch().finally`, `withoutOperationContext().catch`, `withoutOperationContext`; the branches below determine continuation, return or refusal.
+   * 分支 / Branches: `refreshPending`.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `void`.
+   * 副作用 / Effects: 更新 / updates `refreshRequested`, `refreshPending`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const refreshRecoveries = () => {
     refreshRequested = true;
     if (refreshPending) return;
@@ -122,16 +155,59 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     ClosePhase.audit - 2,
   );
   plugins.system.ready('@pluginDirectory', plugins.directory);
-  const connectionHooks = { terminate: () => {} };
+  const connectionHooks = {
+  /**
+   * 入口 / Entry: createApplicationServices.terminate.
+   * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`application-services.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
+  terminate: () => {} };
   let token = randomBytes(32).toString('hex');
+  /**
+   * 入口 / Entry: createApplicationServices.sessionChanged.
+   * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`application-services.ts`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+   * 输入 / Inputs: _locked: boolean; _transitioned: boolean
+   * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   */
   let sessionChanged = (_locked: boolean, _transitioned: boolean) => {};
   let features: Features;
   const session = await plugins.system.start({
     id: 'session',
     startup: 'required',
     requires: [],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned))`，供调用方后续验证或使用。
+     * Purpose: Computes `new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned))` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned))`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned)),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 10,
   });
@@ -139,8 +215,34 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'access',
     startup: 'required',
     requires: [],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new AccessControl()`，供调用方后续验证或使用。
+     * Purpose: Computes `new AccessControl()` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new AccessControl()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => new AccessControl(),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 20,
   });
@@ -148,8 +250,34 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'passkeys',
     startup: 'required',
     requires: ['access'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new Passkeys(dependencies.get('access'), PORT)`，供调用方后续验证或使用。
+     * Purpose: Computes `new Passkeys(dependencies.get('access'), PORT)` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new Passkeys(dependencies.get('access'), PORT)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new Passkeys(dependencies.get('access'), PORT),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：在创建并连接应用领域服务及恢复来源中，初始化并核对当前领域状态；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Initializes and verifies current domain state in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     initialize: () => {},
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 40,
   });
@@ -157,10 +285,37 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'sso',
     startup: 'required',
     requires: ['access'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new SingleSignOn(dependencies.get('access'), PORT, undefined, undefined, undefined, undefined, () => { connectionHooks.termin…`，供调用方后续验证或使用。
+     * Purpose: Computes `new SingleSignOn(dependencies.get('access'), PORT, undefined, undefined, undefined, undefined, () => { connectionHooks.termin…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new SingleSignOn(dependencies.get('access'), PORT, undefined, undefined, undefined, undefined, () => { connectionHooks.termin…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new SingleSignOn(dependencies.get('access'), PORT, undefined, undefined, undefined, undefined, () => {
         connectionHooks.terminate();
       }),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 30,
   });
@@ -186,13 +341,40 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     requires: ['@machines'],
     lateRequires: ['projectTerminals'],
     disposeRequires: ['projectTerminals'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new TerminalSharing( dependencies.vm(), undefined, undefined, () => { requireAdmission(); return dependencies.late('projectTe…`，供调用方后续验证或使用。
+     * Purpose: Computes `new TerminalSharing( dependencies.vm(), undefined, undefined, () => { requireAdmission(); return dependencies.late('projectTe…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new TerminalSharing( dependencies.vm(), undefined, undefined, () => { requireAdmission(); return dependencies.late('projectTe…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new TerminalSharing(
         dependencies.vm(),
         undefined,
         undefined,
         () => { requireAdmission(); return dependencies.late('projectTerminals'); },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 50,
   });
@@ -200,8 +382,37 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'jitPrivileges',
     startup: 'required',
     requires: ['access', '@machines'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new JitPrivileges(dependencies.get('access'), dependencies.vm())` 供上层消费（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new JitPrivileges(dependencies.get('access'), dependencies.vm())` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 处理：通过 `dependencies.get`, `dependencies.vm` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `dependencies.get`, `dependencies.vm`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new JitPrivileges(dependencies.get('access'), dependencies.vm())`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new JitPrivileges(dependencies.get('access'), dependencies.vm()),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 80,
   });
@@ -210,8 +421,35 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'browser-extensions.json'),
     requires: ['access'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new BrowserExtensions(dependencies.get('access'))`，供调用方后续验证或使用。
+     * Purpose: Computes `new BrowserExtensions(dependencies.get('access'))` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new BrowserExtensions(dependencies.get('access'))`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new BrowserExtensions(dependencies.get('access')),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 120,
   });
@@ -222,6 +460,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'required',
     requires: ['@audit', 'session'],
     lateRequires: ['@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new RemoteAuditLock( dependencies.get('@audit'), undefined, undefined, undefined, undefined, () => acceptingRequests && !depe…`，供调用方后续验证或使用。
+     * Purpose: Computes `new RemoteAuditLock( dependencies.get('@audit'), undefined, undefined, undefined, undefined, () => acceptingRequests && !depe…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new RemoteAuditLock( dependencies.get('@audit'), undefined, undefined, undefined, undefined, () => acceptingRequests && !depe…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new RemoteAuditLock(
         dependencies.get('@audit'),
         undefined,
@@ -230,10 +477,37 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
         undefined,
         () => acceptingRequests && !dependencies.late('@plugins')?.migration?.blocked && !dependencies.get('session').view().locked,
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 350,
   });
+  /**
+   * 入口 / Entry: createApplicationServices.Jobs.instrument.
+   * 功能：把本层请求转交 `audit.span`，沿用该实现的结果与失败路径。
+   * Purpose: Delegates this request to `audit.span` and propagates the provider result or rejection.
+   * 输入 / Inputs: job; work
+   * 输出 / Returns: `audit.span( { kind: 'job', name: (job.scope || 'task') + ':' + (job.action || 'run'), vmId: job.vmId, projectId: job.projectI…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   Jobs.instrument = (job, work) =>
     audit.span(
       {
@@ -251,6 +525,14 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     requires: [],
     lateRequires: ['@plugins'],
     disposeRequires: ['@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new FeatureRollouts( undefined, () => !acceptingRequests || !!dependencies.late('@plugins')?.migration?.blocked, (delta) => {…`，供调用方后续验证或使用。
+     * Purpose: Computes `new FeatureRollouts( undefined, () => !acceptingRequests || !!dependencies.late('@plugins')?.migration?.blocked, (delta) => {…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new FeatureRollouts( undefined, () => !acceptingRequests || !!dependencies.late('@plugins')?.migration?.blocked, (delta) => {…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => new FeatureRollouts(
         undefined,
         () => !acceptingRequests || !!dependencies.late('@plugins')?.migration?.blocked,
@@ -258,7 +540,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           if (dependencies.late('@plugins')) dependencies.late('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 200,
   });
@@ -270,8 +570,36 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'projectTerminals',
     startup: 'required',
     requires: ['@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `dependencies.get('@plugins').terminalHandle()` 供上层消费（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `dependencies.get('@plugins').terminalHandle()` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 处理：通过 `dependencies.get().terminalHandle`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `dependencies.get().terminalHandle`, `dependencies.get`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `dependencies.get('@plugins').terminalHandle()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => dependencies.get('@plugins').terminalHandle(),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：在创建并连接应用领域服务及恢复来源中，初始化并核对当前领域状态；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Initializes and verifies current domain state in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     initialize: () => {},
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 70,
   });
@@ -279,8 +607,36 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'projectExecution',
     startup: 'required',
     requires: ['projectTerminals', '@machines'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new ProjectExecution(dependencies.vm(), dependencies.get('projectTerminals').preparation)` 供上层消费（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new ProjectExecution(dependencies.vm(), dependencies.get('projectTerminals').preparation)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new ProjectExecution(dependencies.vm(), dependencies.get('projectTerminals').preparation)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new ProjectExecution(dependencies.vm(), dependencies.get('projectTerminals').preparation),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：在创建并连接应用领域服务及恢复来源中，初始化并核对当前领域状态；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Initializes and verifies current domain state in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     initialize: () => {},
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 60,
   });
@@ -289,6 +645,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'usbHotplug',
     startup: 'required',
     requires: ['@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new UsbHotplug( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependenc…`，供调用方后续验证或使用。
+     * Purpose: Computes `new UsbHotplug( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependenc…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new UsbHotplug( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependenc…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new UsbHotplug(
         dependencies.vm(),
         undefined,
@@ -297,7 +662,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 220,
   });
@@ -305,6 +688,17 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'mediaDevices',
     startup: 'required',
     requires: ['usbHotplug', '@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new MediaDevices( dependencies.vm(), dependencies.get('usbHotplug'), () => !!dependencies.get('@plugins').migration?.blocked,…` 供上层消费（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new MediaDevices( dependencies.vm(), dependencies.get('usbHotplug'), () => !!dependencies.get('@plugins').migration?.blocked,…` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new MediaDevices( dependencies.vm(), dependencies.get('usbHotplug'), () => !!dependencies.get('@plugins').migration?.blocked,…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new MediaDevices(
         dependencies.vm(),
         dependencies.get('usbHotplug'),
@@ -313,7 +707,24 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：在创建并连接应用领域服务及恢复来源中，初始化并核对当前领域状态；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Initializes and verifies current domain state in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     initialize: () => {},
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 230,
   });
@@ -323,6 +734,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'memory-reclaim.json'),
     requires: ['@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new MemoryReclaim( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { depend…`，供调用方后续验证或使用。
+     * Purpose: Computes `new MemoryReclaim( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { depend…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new MemoryReclaim( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { depend…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new MemoryReclaim(
         dependencies.vm(),
         undefined,
@@ -331,7 +751,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 240,
   });
@@ -339,6 +777,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'hostMounts',
     startup: 'required',
     requires: ['@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new HostMounts( dependencies.vm(), () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependencies.get('@p…`，供调用方后续验证或使用。
+     * Purpose: Computes `new HostMounts( dependencies.vm(), () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependencies.get('@p…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new HostMounts( dependencies.vm(), () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependencies.get('@p…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new HostMounts(
         dependencies.vm(),
         () => !!dependencies.get('@plugins').migration?.blocked,
@@ -346,7 +793,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 250,
   });
@@ -355,6 +820,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'virtioFsShares',
     startup: 'required',
     requires: ['@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new VirtioFsShares( dependencies.vm(), () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependencies.get…`，供调用方后续验证或使用。
+     * Purpose: Computes `new VirtioFsShares( dependencies.vm(), () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependencies.get…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new VirtioFsShares( dependencies.vm(), () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependencies.get…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new VirtioFsShares(
         dependencies.vm(),
         () => !!dependencies.get('@plugins').migration?.blocked,
@@ -362,7 +836,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 260,
   });
@@ -371,6 +863,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'trustedBoot',
     startup: 'required',
     requires: ['@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new TrustedBootService( dependencies.vm(), () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependencies…`，供调用方后续验证或使用。
+     * Purpose: Computes `new TrustedBootService( dependencies.vm(), () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependencies…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new TrustedBootService( dependencies.vm(), () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependencies…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new TrustedBootService(
         dependencies.vm(),
         () => !!dependencies.get('@plugins').migration?.blocked,
@@ -378,7 +879,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 270,
   });
@@ -388,6 +907,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'gpu-profiles.json'),
     requires: ['@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new GpuProfiles( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependen…`，供调用方后续验证或使用。
+     * Purpose: Computes `new GpuProfiles( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependen…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new GpuProfiles( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependen…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new GpuProfiles(
         dependencies.vm(),
         undefined,
@@ -396,7 +924,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 280,
   });
@@ -405,6 +951,17 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'build-farm.json'),
     requires: ['projectTerminals', '@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new BuildFarm( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependenci…` 供上层消费（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new BuildFarm( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependenci…` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new BuildFarm( dependencies.vm(), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (delta) => { dependenci…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new BuildFarm(
         dependencies.vm(),
         undefined,
@@ -415,7 +972,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
         undefined,
         dependencies.get('projectTerminals'),
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 290,
   });
@@ -423,8 +998,37 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'projectPermissions',
     startup: 'required',
     requires: ['access', '@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new ProjectPermissions(dependencies.get('access'), dependencies.vm(), dependencies.get('@plugins').workspaces)` 供上层消费（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new ProjectPermissions(dependencies.get('access'), dependencies.vm(), dependencies.get('@plugins').workspaces)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 处理：通过 `dependencies.get`, `dependencies.vm` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `dependencies.get`, `dependencies.vm`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new ProjectPermissions(dependencies.get('access'), dependencies.vm(), dependencies.get('@plugins').workspaces)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new ProjectPermissions(dependencies.get('access'), dependencies.vm(), dependencies.get('@plugins').workspaces),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 90,
   });
@@ -432,8 +1036,35 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'policyBundles',
     startup: 'required',
     requires: ['projectPermissions'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new PolicyBundles(dependencies.get('projectPermissions'))`，供调用方后续验证或使用。
+     * Purpose: Computes `new PolicyBundles(dependencies.get('projectPermissions'))` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new PolicyBundles(dependencies.get('projectPermissions'))`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new PolicyBundles(dependencies.get('projectPermissions')),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 100,
   });
@@ -442,8 +1073,34 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
         id: 'changeApprovals',
         startup: 'required',
         requires: ['projectPermissions', '@plugins'],
+        /**
+         * 入口 / Entry: createApplicationServices.create.
+         * 功能：从当前输入或状态计算 `new ChangeApprovals(dependencies.get('projectPermissions'), dependencies.get('@plugins').workspaces)`，供调用方后续验证或使用。
+         * Purpose: Computes `new ChangeApprovals(dependencies.get('projectPermissions'), dependencies.get('@plugins').workspaces)` from current inputs/state for the caller to validate or consume.
+         * 输入 / Inputs: dependencies
+         * 输出 / Returns: `new ChangeApprovals(dependencies.get('projectPermissions'), dependencies.get('@plugins').workspaces)`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         create: (dependencies) => new ChangeApprovals(dependencies.get('projectPermissions'), dependencies.get('@plugins').workspaces),
+        /**
+         * 入口 / Entry: createApplicationServices.initialize.
+         * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+         * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+         * 输入 / Inputs: value
+         * 输出 / Returns: `value.init()`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         initialize: (value) => value.init(),
+        /**
+         * 入口 / Entry: createApplicationServices.dispose.
+         * 功能：在创建并连接应用领域服务及恢复来源中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`application-services.ts`）。
+         * Purpose: Ends, revokes or cleans resources owned by this domain action in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         */
         dispose: () => {},
         disposePhase: ClosePhase.services,
       })
@@ -453,21 +1110,72 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'processInterop',
     startup: 'required',
     requires: ['session', '@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new ProcessInterop(dependencies.vm(), PORT, () => { dependencies.get('session').requireUnlocked(); if (dependencies.get('@plu…`，供调用方后续验证或使用。
+     * Purpose: Computes `new ProcessInterop(dependencies.vm(), PORT, () => { dependencies.get('session').requireUnlocked(); if (dependencies.get('@plu…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new ProcessInterop(dependencies.vm(), PORT, () => { dependencies.get('session').requireUnlocked(); if (dependencies.get('@plu…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new ProcessInterop(dependencies.vm(), PORT, () => {
         dependencies.get('session').requireUnlocked();
         if (dependencies.get('@plugins').migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
       }),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：在创建并连接应用领域服务及恢复来源中，初始化并核对当前领域状态；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Initializes and verifies current domain state in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     initialize: () => {},
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：在创建并连接应用领域服务及恢复来源中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Ends, revokes or cleans resources owned by this domain action in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     dispose: () => {},
     disposePhase: ClosePhase.services,
   });
 
+  /**
+   * 入口 / Entry: createApplicationServices.callback@471.
+   * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（plugins.system.start）。
+   * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (plugins.system.start).
+   * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+   * 输出 / Returns: `{ platform: platform(), arch: arch(), cpus: Math.max(1, cpus().length), memoryTotal: totalmem(), memoryFree: freemem(), load:…`.
+   * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   */
   const hostPeers: HostPeersV1 = await plugins.system.start({
     id: 'hostPeers',
     startup: 'required',
     requires: ['rollouts', 'session', '@machines', '@plugins'],
     lateRequires: ['mobileCompanion', 'liveMigrationReceiver'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new HostPeers( async () => { const vms = await dependencies.get('@machines').list(); return { platform: platform(), arch: arc…` 供上层消费（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new HostPeers( async () => { const vms = await dependencies.get('@machines').list(); return { platform: platform(), arch: arc…` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 处理：通过 `hostname().slice`, `hostname` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `hostname().slice`, `hostname`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new HostPeers( async () => { const vms = await dependencies.get('@machines').list(); return { platform: platform(), arch: arc…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new HostPeers(
+        /**
+         * 中文功能：读取当前实例列表并组合宿主平台、CPU、内存、负载与运行实例数量，作为 peer 状态快照。
+         * English: Reads the current VM list and combines host platform, CPU, memory, load and running-instance counts into a peer-status snapshot.
+         * 所属 / Owner: createApplicationServices.hostPeers.create.
+         * 输入 / Inputs: 无显式参数 / no explicit parameters.
+         */
         async () => {
           const vms = await dependencies.get('@machines').list();
           return {
@@ -489,26 +1197,150 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
         },
         undefined,
         (): HostPeerDependencies => ({
+          /**
+           * 入口 / Entry: createApplicationServices.mobileHandler.
+           * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `dependencies.late('mobileCompanion').handle(request, response)` 供上层消费（`application-services.ts`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `dependencies.late('mobileCompanion').handle(request, response)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+           * 处理：通过 `requireAdmission`, `dependencies.late().handle`, `dependencies.late` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `requireAdmission`, `dependencies.late().handle`, `dependencies.late`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: request; response
+           * 输出 / Returns: `dependencies.late('mobileCompanion').handle(request, response)`.
+           * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+           * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+           */
           mobileHandler: (request, response) => { requireAdmission(); return dependencies.late('mobileCompanion').handle(request, response); },
           rolloutReceiver: {
+            /**
+             * 入口 / Entry: createApplicationServices.view.
+             * 功能：在创建并连接应用领域服务及恢复来源中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `{ hostId: dependencies.self().view().hostId, policies: dependencies.get('rollouts').view().policies }` 供上层消费（`application-services.ts`）。
+             * Purpose: Reads/verifies domain state and constructs a caller-facing result in `application-services.ts`; this entry produces `{ hostId: dependencies.self().view().hostId, policies: dependencies.get('rollouts').view().policies }` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+             * 处理：通过 `requireAdmission`, `dependencies.self().view`, `dependencies.self`, `dependencies.get().view` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `requireAdmission`, `dependencies.self().view`, `dependencies.self`, `dependencies.get().view`; the branches below determine continuation, return or refusal.
+             * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+             * 输出 / Returns: `{ hostId: dependencies.self().view().hostId, policies: dependencies.get('rollouts').view().policies }`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             view: () => { requireAdmission(); return { hostId: dependencies.self().view().hostId, policies: dependencies.get('rollouts').view().policies }; },
+            /**
+             * 入口 / Entry: createApplicationServices.save.
+             * 功能：在创建并连接应用领域服务及恢复来源中，校验并提交领域状态变更；本入口产生 `dependencies.get('rollouts').configure(input)` 供上层消费（`application-services.ts`）。
+             * Purpose: Validates and commits a domain state change in `application-services.ts`; this entry produces `dependencies.get('rollouts').configure(input)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+             * 处理：通过 `requireAdmission`, `dependencies.get().configure`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `requireAdmission`, `dependencies.get().configure`, `dependencies.get`; the branches below determine continuation, return or refusal.
+             * 输入 / Inputs: input
+             * 输出 / Returns: `dependencies.get('rollouts').configure(input)`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             save: (input) => { requireAdmission(); return dependencies.get('rollouts').configure(input); },
           },
           liveMigrationReceiver: {
+            /**
+             * 入口 / Entry: createApplicationServices.prepare.
+             * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `dependencies.late('liveMigrationReceiver').prepare(input)` 供上层消费（`application-services.ts`）。
+             * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `dependencies.late('liveMigrationReceiver').prepare(input)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+             * 处理：通过 `requireAdmission`, `dependencies.late().prepare`, `dependencies.late` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `requireAdmission`, `dependencies.late().prepare`, `dependencies.late`; the branches below determine continuation, return or refusal.
+             * 输入 / Inputs: input
+             * 输出 / Returns: `dependencies.late('liveMigrationReceiver').prepare(input)`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             prepare: (input) => { requireAdmission(); return dependencies.late('liveMigrationReceiver').prepare(input); },
+            /**
+             * 入口 / Entry: createApplicationServices.complete.
+             * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `dependencies.late('liveMigrationReceiver').complete(input)` 供上层消费（`application-services.ts`）。
+             * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `dependencies.late('liveMigrationReceiver').complete(input)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+             * 处理：通过 `requireAdmission`, `dependencies.late().complete`, `dependencies.late` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `requireAdmission`, `dependencies.late().complete`, `dependencies.late`; the branches below determine continuation, return or refusal.
+             * 输入 / Inputs: input
+             * 输出 / Returns: `dependencies.late('liveMigrationReceiver').complete(input)`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             complete: (input) => { requireAdmission(); return dependencies.late('liveMigrationReceiver').complete(input); },
+            /**
+             * 入口 / Entry: createApplicationServices.abort.
+             * 功能：在创建并连接应用领域服务及恢复来源中，结束、撤销或清理本次拥有的领域资源；本入口产生 `dependencies.late('liveMigrationReceiver').abort(input)` 供上层消费（`application-services.ts`）。
+             * Purpose: Ends, revokes or cleans resources owned by this domain action in `application-services.ts`; this entry produces `dependencies.late('liveMigrationReceiver').abort(input)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+             * 处理：通过 `requireAdmission`, `dependencies.late().abort`, `dependencies.late` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `requireAdmission`, `dependencies.late().abort`, `dependencies.late`; the branches below determine continuation, return or refusal.
+             * 输入 / Inputs: input
+             * 输出 / Returns: `dependencies.late('liveMigrationReceiver').abort(input)`.
+             * 副作用 / Effects: `dependencies.late().abort`.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             abort: (input) => { requireAdmission(); return dependencies.late('liveMigrationReceiver').abort(input); },
+            /**
+             * 入口 / Entry: createApplicationServices.status.
+             * 功能：在创建并连接应用领域服务及恢复来源中，读取或核对领域状态并构造调用方可消费的结果；本入口产生 `dependencies.late('liveMigrationReceiver').verifiedStatus(input)` 供上层消费（`application-services.ts`）。
+             * Purpose: Reads/verifies domain state and constructs a caller-facing result in `application-services.ts`; this entry produces `dependencies.late('liveMigrationReceiver').verifiedStatus(input)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+             * 处理：通过 `requireAdmission`, `dependencies.late().verifiedStatus`, `dependencies.late` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `requireAdmission`, `dependencies.late().verifiedStatus`, `dependencies.late`; the branches below determine continuation, return or refusal.
+             * 输入 / Inputs: input
+             * 输出 / Returns: `dependencies.late('liveMigrationReceiver').verifiedStatus(input)`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             status: (input) => { requireAdmission(); return dependencies.late('liveMigrationReceiver').verifiedStatus(input); },
           },
           importReceiver: createHostImportReceiver(dependencies.vm(), {
+            /**
+             * 入口 / Entry: createApplicationServices.bundles.
+             * 功能：从当前输入或状态计算 `dependencies.get('@plugins').bundles`，供调用方后续验证或使用。
+             * Purpose: Computes `dependencies.get('@plugins').bundles` from current inputs/state for the caller to validate or consume.
+             * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+             * 输出 / Returns: `dependencies.get('@plugins').bundles`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             bundles: () => dependencies.get('@plugins').bundles,
+            /**
+             * 入口 / Entry: createApplicationServices.requireSessionUnlocked.
+             * 功能：在创建并连接应用领域服务及恢复来源中，核对调用资格、输入或资源归属；本入口产生 `dependencies.get('session').requireUnlocked()` 供上层消费（`application-services.ts`）。
+             * Purpose: Checks admission, input or resource ownership in `application-services.ts`; this entry produces `dependencies.get('session').requireUnlocked()` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+             * 处理：通过 `dependencies.get().requireUnlocked`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+             * Processing: Coordinates its dependencies through `dependencies.get().requireUnlocked`, `dependencies.get`; the branches below determine continuation, return or refusal.
+             * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+             * 输出 / Returns: `dependencies.get('session').requireUnlocked()`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             requireSessionUnlocked: () => dependencies.get('session').requireUnlocked(),
+            /**
+             * 入口 / Entry: createApplicationServices.migrationBlocked.
+             * 功能：从当前输入或状态计算 `!!dependencies.get('@plugins').migration?.blocked`，供调用方后续验证或使用。
+             * Purpose: Computes `!!dependencies.get('@plugins').migration?.blocked` from current inputs/state for the caller to validate or consume.
+             * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+             * 输出 / Returns: `!!dependencies.get('@plugins').migration?.blocked`.
+             * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+             * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+             */
             migrationBlocked: () => !!dependencies.get('@plugins').migration?.blocked,
           }),
         }),
         () => acceptingRequests,
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 320,
   });
@@ -516,7 +1348,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   resources.defer('live-migration-completion-port', registerLiveMigrationCompletionPort(machines, migrationCompletion),
     ClosePhase.services);
   resources.defer('live-migration-target-port', registerLiveMigrationTargetPort(machines, {
+    /**
+     * 入口 / Entry: createApplicationServices.bindSession.
+     * 功能：把本层请求转交 `machines.bindIncomingSession`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `machines.bindIncomingSession` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; receipt
+     * 输出 / Returns: `machines.bindIncomingSession(id, receipt)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     bindSession: (id, receipt) => machines.bindIncomingSession(id, receipt),
+    /**
+     * 入口 / Entry: createApplicationServices.recover.
+     * 功能：把本层请求转交 `machines.recoverIncoming`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `machines.recoverIncoming` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; sessionId
+     * 输出 / Returns: `machines.recoverIncoming(id, sessionId)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     recover: (id, sessionId) => machines.recoverIncoming(id, sessionId),
     authenticated: isAuthenticatedMigrationCompletion,
   }), ClosePhase.services);
@@ -524,6 +1374,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'mobileCompanion',
     startup: 'required',
     requires: ['access', 'session', '@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new MobileCompanion( dependencies.get('access'), async () => { const vms = await dependencies.get('@machines').list(); return…`，供调用方后续验证或使用。
+     * Purpose: Computes `new MobileCompanion( dependencies.get('access'), async () => { const vms = await dependencies.get('@machines').list(); return…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new MobileCompanion( dependencies.get('access'), async () => { const vms = await dependencies.get('@machines').list(); return…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new MobileCompanion(
         dependencies.get('access'),
         async () => {
@@ -543,7 +1402,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 130,
   });
@@ -551,12 +1428,39 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'liveMigrationReceiver',
     startup: 'required',
     requires: ['hostPeers', 'session', '@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new LiveMigrationReceiver(dependencies.vm(), dependencies.get('hostPeers'), () => { dependencies.get('session').requireUnlock…` 供上层消费（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new LiveMigrationReceiver(dependencies.vm(), dependencies.get('hostPeers'), () => { dependencies.get('session').requireUnlock…` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new LiveMigrationReceiver(dependencies.vm(), dependencies.get('hostPeers'), () => { dependencies.get('session').requireUnlock…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new LiveMigrationReceiver(dependencies.vm(), dependencies.get('hostPeers'), () => {
         dependencies.get('session').requireUnlocked();
         if (dependencies.get('@plugins').migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
         if (!dependencies.get('@plugins').next) throw new AppError('请先启用扩展功能插件', 503);
       }),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：在创建并连接应用领域服务及恢复来源中，初始化并核对当前领域状态；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Initializes and verifies current domain state in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     initialize: () => {},
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：在创建并连接应用领域服务及恢复来源中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Ends, revokes or cleans resources owned by this domain action in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     dispose: () => {},
     disposePhase: ClosePhase.services,
   });
@@ -564,6 +1468,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'fleetRollouts',
     startup: 'required',
     requires: ['hostPeers', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new FleetPolicyRollouts( dependencies.get('hostPeers'), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (…`，供调用方后续验证或使用。
+     * Purpose: Computes `new FleetPolicyRollouts( dependencies.get('hostPeers'), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new FleetPolicyRollouts( dependencies.get('hostPeers'), undefined, () => !!dependencies.get('@plugins').migration?.blocked, (…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new FleetPolicyRollouts(
         dependencies.get('hostPeers'),
         undefined,
@@ -572,7 +1485,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 210,
   });
@@ -581,11 +1512,52 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'capabilityChecks',
     startup: 'required',
     requires: ['access', 'session', 'remoteAudit', 'hostPeers', 'mobileCompanion', 'projectTerminals', '@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `({ mutation: (delta) => { dependencies.get('@plugins').operations.change(delta); }, acmeAllowed: () => !dependencies.get('ses…`，供调用方后续验证或使用。
+     * Purpose: Computes `({ mutation: (delta) => { dependencies.get('@plugins').operations.change(delta); }, acmeAllowed: () => !dependencies.get('ses…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `({ mutation: (delta) => { dependencies.get('@plugins').operations.change(delta); }, acmeAllowed: () => !dependencies.get('ses…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => ({
+        /**
+         * 入口 / Entry: createApplicationServices.mutation.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get().operations.change`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get().operations.change`, `dependencies.get`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: delta
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         mutation: (delta) => {
           dependencies.get('@plugins').operations.change(delta);
         },
+        /**
+         * 入口 / Entry: createApplicationServices.acmeAllowed.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `!dependencies.get('session').view().locked && !dependencies.get('@plugins').migration?.blocked` 供上层消费（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `!dependencies.get('session').view().locked && !dependencies.get('@plugins').migration?.blocked` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get().view`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get().view`, `dependencies.get`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `!dependencies.get('session').view().locked && !dependencies.get('@plugins').migration?.blocked`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         acmeAllowed: () => !dependencies.get('session').view().locked && !dependencies.get('@plugins').migration?.blocked,
+        /**
+         * 入口 / Entry: createApplicationServices.mobileCheck.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `({ ready: dependencies.get('access').enabled && dependencies.get('hostPeers').view().listener.active && dependencies.get('hos…` 供上层消费（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `({ ready: dependencies.get('access').enabled && dependencies.get('hostPeers').view().listener.active && dependencies.get('hos…` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get`, `dependencies.get().view`, `dependencies.get().users().find`, `dependencies.get().users` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get`, `dependencies.get().view`, `dependencies.get().users().find`, `dependencies.get().users`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `({ ready: dependencies.get('access').enabled && dependencies.get('hostPeers').view().listener.active && dependencies.get('hos…`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         mobileCheck: () => ({
           ready:
             dependencies.get('access').enabled &&
@@ -600,7 +1572,32 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
               ? '请启用局域网 HTTPS 同伴入口并重启服务。'
               : undefined,
         }),
+        /**
+         * 入口 / Entry: createApplicationServices.scoreHosts.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `dependencies.get('hostPeers').score(input)` 供上层消费（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `dependencies.get('hostPeers').score(input)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get().score`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get().score`, `dependencies.get`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: input
+         * 输出 / Returns: `dependencies.get('hostPeers').score(input)`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         scoreHosts: (input) => dependencies.get('hostPeers').score(input),
+        /**
+         * 入口 / Entry: createApplicationServices.sharedDesktopCheck.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: false, reason: '请先启用账户模式。' }` / `{ ready: false, reason: '请先启用桌面插件并重启 Sakura。' }` 供上层消费（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `{ ready: false, reason: '请先启用账户模式。' }` / `{ ready: false, reason: '请先启用桌面插件并重启 Sakura。' }` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get`, `dependencies.get().socketEnabled`, `dependencies.get().desktops.view` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get`, `dependencies.get().socketEnabled`, `dependencies.get().desktops.view`; the branches below determine continuation, return or refusal.
+         * 分支 / Branches: `!dependencies.get('access').enabled`; `!dependencies.get('@plugins').socketEnabled('desktop')`.
+         * 输入 / Inputs: id
+         * 输出 / Returns: `{ ready: false, reason: '请先启用账户模式。' }`; `{ ready: false, reason: '请先启用桌面插件并重启 Sakura。' }`; `desktop.status === 'ready' ? { ready: true } : { ready: false, reason: '实例桌面尚未就绪。' }`；另有分支返回 / additional branch-specific returns.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         * 失败处理：catch 分支执行 `return { ready: false, reason: (error as Error).message };`，是否吞掉错误或重新拒绝由这些语句决定。
+         * Failure handling: Catch paths execute `return { ready: false, reason: (error as Error).message };`; these statements determine whether a failure is absorbed or rejected again.
+         */
         sharedDesktopCheck: async (id) => {
           if (!dependencies.get('access').enabled) return { ready: false, reason: '请先启用账户模式。' };
           if (!dependencies.get('@plugins').socketEnabled('desktop'))
@@ -614,12 +1611,43 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
             return { ready: false, reason: (error as Error).message };
           }
         },
+        /**
+         * 入口 / Entry: createApplicationServices.passkeyCheck.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `({ ready: dependencies.get('access').enabled, registered: dependencies.get('access').users().reduce((count, user) => count + …` 供上层消费（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `({ ready: dependencies.get('access').enabled, registered: dependencies.get('access').users().reduce((count, user) => count + …` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get`, `dependencies.get().users().reduce`, `dependencies.get().users` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get`, `dependencies.get().users().reduce`, `dependencies.get().users`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `({ ready: dependencies.get('access').enabled, registered: dependencies.get('access').users().reduce((count, user) => count + …`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         passkeyCheck: () => ({
           ready: dependencies.get('access').enabled,
           registered: dependencies.get('access').users().reduce((count, user) => count + dependencies.get('access').passkeysFor(user.id).length, 0),
           ...(!dependencies.get('access').enabled ? { reason: '请先启用账户模式。' } : {}),
         }),
+        /**
+         * 入口 / Entry: createApplicationServices.accountModeReady.
+         * 功能：从当前输入或状态计算 `dependencies.get('access').enabled`，供调用方后续验证或使用。
+         * Purpose: Computes `dependencies.get('access').enabled` from current inputs/state for the caller to validate or consume.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `dependencies.get('access').enabled`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         accountModeReady: () => dependencies.get('access').enabled,
+        /**
+         * 入口 / Entry: createApplicationServices.remoteAuditCheck.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: Boolean( status.target && status.last && status.local.valid && status.protected && status.lastVerifiedAt && Date.now…` 供上层消费（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `{ ready: Boolean( status.target && status.last && status.local.valid && status.protected && status.lastVerifiedAt && Date.now…` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get().status`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get().status`, `dependencies.get`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `{ ready: Boolean( status.target && status.last && status.local.valid && status.protected && status.lastVerifiedAt && Date.now…`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         remoteAuditCheck: async () => {
           const status = await dependencies.get('remoteAudit').status();
           return {
@@ -639,6 +1667,20 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
               : status.lastError || (!status.last ? '配置后请同步首个审计锚点。' : undefined),
           };
         },
+        /**
+         * 入口 / Entry: createApplicationServices.sharedTerminalCheck.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ready: false, reason: '请先启用账户模式。' }` / `{ ready: false, reason: '请先启用可恢复终端会话插件并重启 Sakura。' }` 供上层消费（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `{ ready: false, reason: '请先启用账户模式。' }` / `{ ready: false, reason: '请先启用可恢复终端会话插件并重启 Sakura。' }` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get`, `dependencies.get().socketEnabled`, `dependencies.get().state`, `dependencies.get().exec` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get`, `dependencies.get().socketEnabled`, `dependencies.get().state`, `dependencies.get().exec`; the branches below determine continuation, return or refusal.
+         * 分支 / Branches: `!dependencies.get('access').enabled`; `!dependencies.get('@plugins').socketEnabled('terminal-session')`; `dependencies.get('@machines').state(id) !== 'running'`.
+         * 输入 / Inputs: id
+         * 输出 / Returns: `{ ready: false, reason: '请先启用账户模式。' }`; `{ ready: false, reason: '请先启用可恢复终端会话插件并重启 Sakura。' }`; `{ ready: false, reason: '请先启动实例。' }`；另有分支返回 / additional branch-specific returns.
+         * 副作用 / Effects: `dependencies.get().exec`.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         * 失败处理：catch 分支执行 `return { ready: false, reason: (error as Error).message };`，是否吞掉错误或重新拒绝由这些语句决定。
+         * Failure handling: Catch paths execute `return { ready: false, reason: (error as Error).message };`; these statements determine whether a failure is absorbed or rejected again.
+         */
         sharedTerminalCheck: async (id) => {
           if (!dependencies.get('access').enabled) return { ready: false, reason: '请先启用账户模式。' };
           if (!dependencies.get('@plugins').socketEnabled('terminal-session'))
@@ -652,7 +1694,23 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           }
         },
       }) satisfies import('./host-service-contracts.ts').HostServiceContracts['capabilityChecks'],
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：在创建并连接应用领域服务及恢复来源中，初始化并核对当前领域状态；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Initializes and verifies current domain state in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     initialize: () => {},
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：在创建并连接应用领域服务及恢复来源中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Ends, revokes or cleans resources owned by this domain action in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     dispose: () => {},
     disposePhase: ClosePhase.services,
   });
@@ -667,8 +1725,37 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       id: 'notebookEnvironments',
       startup: 'required',
       requires: ['@plugins', '@machines'],
+      /**
+       * 入口 / Entry: createApplicationServices.create.
+       * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new NotebookEnvironments(dependencies.vm(), dependencies.get('@plugins').workspaces)` 供上层消费（`application-services.ts`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new NotebookEnvironments(dependencies.vm(), dependencies.get('@plugins').workspaces)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: dependencies
+       * 输出 / Returns: `new NotebookEnvironments(dependencies.vm(), dependencies.get('@plugins').workspaces)`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       create: (dependencies) => new NotebookEnvironments(dependencies.vm(), dependencies.get('@plugins').workspaces),
+      /**
+       * 入口 / Entry: createApplicationServices.initialize.
+       * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value.init()`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       initialize: (value) => value.init(),
+      /**
+       * 入口 / Entry: createApplicationServices.dispose.
+       * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value?.close()`.
+       * 副作用 / Effects: `value.close`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       dispose: (value) => value?.close(),
       disposePhase: 370,
     });
@@ -677,8 +1764,37 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       id: 'browserIde',
       startup: 'required',
       requires: ['@plugins', '@machines'],
+      /**
+       * 入口 / Entry: createApplicationServices.create.
+       * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new BrowserIde(dependencies.vm(), dependencies.get('@plugins').workspaces)` 供上层消费（`application-services.ts`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new BrowserIde(dependencies.vm(), dependencies.get('@plugins').workspaces)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: dependencies
+       * 输出 / Returns: `new BrowserIde(dependencies.vm(), dependencies.get('@plugins').workspaces)`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       create: (dependencies) => new BrowserIde(dependencies.vm(), dependencies.get('@plugins').workspaces),
+      /**
+       * 入口 / Entry: createApplicationServices.initialize.
+       * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value.init()`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       initialize: (value) => value.init(),
+      /**
+       * 入口 / Entry: createApplicationServices.dispose.
+       * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value?.close()`.
+       * 副作用 / Effects: `value.close`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       dispose: (value) => value?.close(),
       disposePhase: 360,
     });
@@ -688,8 +1804,36 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       id: 'coldMigrations',
       startup: 'required',
       requires: ['hostPeers', '@machines', '@plugins'],
+      /**
+       * 入口 / Entry: createApplicationServices.create.
+       * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new ColdMigrations(dependencies.vm(), dependencies.get('@plugins').bundles, dependencies.get('hostPeers'))` 供上层消费（`application-services.ts`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new ColdMigrations(dependencies.vm(), dependencies.get('@plugins').bundles, dependencies.get('hostPeers'))` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: dependencies
+       * 输出 / Returns: `new ColdMigrations(dependencies.vm(), dependencies.get('@plugins').bundles, dependencies.get('hostPeers'))`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       create: (dependencies) => new ColdMigrations(dependencies.vm(), dependencies.get('@plugins').bundles, dependencies.get('hostPeers')),
+      /**
+       * 入口 / Entry: createApplicationServices.initialize.
+       * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value.init()`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       initialize: (value) => value.init(),
+      /**
+       * 入口 / Entry: createApplicationServices.dispose.
+       * 功能：在创建并连接应用领域服务及恢复来源中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`application-services.ts`）。
+       * Purpose: Ends, revokes or cleans resources owned by this domain action in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       */
       dispose: () => {},
       disposePhase: ClosePhase.services,
     });
@@ -698,12 +1842,40 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       id: 'snapshotReplications',
       startup: 'required',
       requires: ['hostPeers', '@machines', '@plugins'],
+      /**
+       * 入口 / Entry: createApplicationServices.create.
+       * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new SnapshotReplications( dependencies.vm(), dependencies.get('@plugins').bundles, dependencies.get('hostPeers'), )` 供上层消费（`application-services.ts`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new SnapshotReplications( dependencies.vm(), dependencies.get('@plugins').bundles, dependencies.get('hostPeers'), )` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: dependencies
+       * 输出 / Returns: `new SnapshotReplications( dependencies.vm(), dependencies.get('@plugins').bundles, dependencies.get('hostPeers'), )`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       create: (dependencies) => new SnapshotReplications(
           dependencies.vm(),
           dependencies.get('@plugins').bundles,
           dependencies.get('hostPeers'),
         ),
+      /**
+       * 入口 / Entry: createApplicationServices.initialize.
+       * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value.init()`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       initialize: (value) => value.init(),
+      /**
+       * 入口 / Entry: createApplicationServices.dispose.
+       * 功能：在创建并连接应用领域服务及恢复来源中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`application-services.ts`）。
+       * Purpose: Ends, revokes or cleans resources owned by this domain action in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       */
       dispose: () => {},
       disposePhase: ClosePhase.services,
     });
@@ -716,6 +1888,17 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       id: 'haHostFailover',
       startup: 'required',
       requires: ['hostPeers', 'snapshotReplications', '@machines', '@plugins'],
+      /**
+       * 入口 / Entry: createApplicationServices.create.
+       * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new HaHostFailover( dependencies.vm(), dependencies.get('hostPeers'), dependencies.get('snapshotReplications')!, () => depend…` 供上层消费（`application-services.ts`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new HaHostFailover( dependencies.vm(), dependencies.get('hostPeers'), dependencies.get('snapshotReplications')!, () => depend…` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: dependencies
+       * 输出 / Returns: `new HaHostFailover( dependencies.vm(), dependencies.get('hostPeers'), dependencies.get('snapshotReplications')!, () => depend…`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       create: (dependencies) => new HaHostFailover(
           dependencies.vm(),
           dependencies.get('hostPeers'),
@@ -723,7 +1906,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           () => dependencies.get('@plugins').next!.haPolicies(),
           witnessClient,
         ),
+      /**
+       * 入口 / Entry: createApplicationServices.initialize.
+       * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value.init()`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       initialize: (value) => value.init(),
+      /**
+       * 入口 / Entry: createApplicationServices.dispose.
+       * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value?.close()`.
+       * 副作用 / Effects: `value.close`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       dispose: (value) => value?.close(),
       disposePhase: 310,
     });
@@ -732,6 +1933,17 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       id: 'haLocalFailovers',
       startup: 'required',
       requires: ['haHostFailover', 'snapshotReplications', 'hostPeers', '@machines', '@plugins'],
+      /**
+       * 入口 / Entry: createApplicationServices.create.
+       * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new HaLocalFailovers( dependencies.vm(), dependencies.get('@plugins').next.haFailureMonitor, dependencies.get('hostPeers'), d…` 供上层消费（`application-services.ts`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new HaLocalFailovers( dependencies.vm(), dependencies.get('@plugins').next.haFailureMonitor, dependencies.get('hostPeers'), d…` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: dependencies
+       * 输出 / Returns: `new HaLocalFailovers( dependencies.vm(), dependencies.get('@plugins').next.haFailureMonitor, dependencies.get('hostPeers'), d…`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       create: (dependencies) => new HaLocalFailovers(
           dependencies.vm(),
           dependencies.get('@plugins').next.haFailureMonitor,
@@ -739,9 +1951,39 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('snapshotReplications')!,
           () => dependencies.get('@plugins').next!.haPolicies(),
           () => !dependencies.get('@plugins').migration?.blocked && !dependencies.get('@machines').closing,
-          { disarmWitness: (id, failureThreshold) => dependencies.get('haHostFailover')!.disarm(id, failureThreshold) },
+          {
+          /**
+           * 入口 / Entry: createApplicationServices.disarmWitness.
+           * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `dependencies.get('haHostFailover')!.disarm(id, failureThreshold)` 供上层消费（`application-services.ts`）。
+           * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `dependencies.get('haHostFailover')!.disarm(id, failureThreshold)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+           * 处理：通过 `inline.disarm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+           * Processing: Coordinates its dependencies through `inline.disarm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+           * 输入 / Inputs: id; failureThreshold
+           * 输出 / Returns: `dependencies.get('haHostFailover')!.disarm(id, failureThreshold)`.
+           * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+           * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+           */
+          disarmWitness: (id, failureThreshold) => dependencies.get('haHostFailover')!.disarm(id, failureThreshold) },
         ),
+      /**
+       * 入口 / Entry: createApplicationServices.initialize.
+       * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value.init()`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       initialize: (value) => value.init(),
+      /**
+       * 入口 / Entry: createApplicationServices.dispose.
+       * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+       * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+       * 输入 / Inputs: value
+       * 输出 / Returns: `value?.close()`.
+       * 副作用 / Effects: `value.close`.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       dispose: (value) => value?.close(),
       disposePhase: 300,
     });
@@ -751,12 +1993,39 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       id: 'disasterRecovery',
       startup: 'required',
       requires: ['@plugins', '@machines'],
+      /**
+       * 入口 / Entry: createApplicationServices.create.
+       * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `new DisasterRecoveryDrill( dependencies.vm(), dependencies.get('@plugins').backups, dependencies.get('@plugins').bundles, )` 供上层消费（`application-services.ts`）。
+       * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `new DisasterRecoveryDrill( dependencies.vm(), dependencies.get('@plugins').backups, dependencies.get('@plugins').bundles, )` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 处理：通过 `dependencies.vm`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+       * Processing: Coordinates its dependencies through `dependencies.vm`, `dependencies.get`; the branches below determine continuation, return or refusal.
+       * 输入 / Inputs: dependencies
+       * 输出 / Returns: `new DisasterRecoveryDrill( dependencies.vm(), dependencies.get('@plugins').backups, dependencies.get('@plugins').bundles, )`.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+       */
       create: (dependencies) => new DisasterRecoveryDrill(
           dependencies.vm(),
           dependencies.get('@plugins').backups,
           dependencies.get('@plugins').bundles,
         ),
+      /**
+       * 入口 / Entry: createApplicationServices.initialize.
+       * 功能：在创建并连接应用领域服务及恢复来源中，初始化并核对当前领域状态；完成下述调用及状态处理（`application-services.ts`）。
+       * Purpose: Initializes and verifies current domain state in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       */
       initialize: () => {},
+      /**
+       * 入口 / Entry: createApplicationServices.dispose.
+       * 功能：在创建并连接应用领域服务及恢复来源中，结束、撤销或清理本次拥有的领域资源；完成下述调用及状态处理（`application-services.ts`）。
+       * Purpose: Ends, revokes or cleans resources owned by this domain action in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+       * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+       * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+       * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+       */
       dispose: () => {},
       disposePhase: ClosePhase.services,
     });
@@ -765,6 +2034,14 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'native-integration.json'),
     requires: ['session', '@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new NativeIntegration( () => nativeMappings(dependencies.get('@plugins')), undefined, undefined, undefined, undefined, (id?: …`，供调用方后续验证或使用。
+     * Purpose: Computes `new NativeIntegration( () => nativeMappings(dependencies.get('@plugins')), undefined, undefined, undefined, undefined, (id?: …` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new NativeIntegration( () => nativeMappings(dependencies.get('@plugins')), undefined, undefined, undefined, undefined, (id?: …`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => new NativeIntegration(
         () => nativeMappings(dependencies.get('@plugins')),
         undefined,
@@ -780,7 +2057,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           }
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 160,
   });
@@ -789,14 +2084,71 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'native-clipboard.json') + '，并确认原生剪贴板组件可用',
     requires: ['session', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new NativeClipboard({ guard: () => dependencies.get('session').requireUnlocked(), maintenance: () => !!dependencies.get('@plu…`，供调用方后续验证或使用。
+     * Purpose: Computes `new NativeClipboard({ guard: () => dependencies.get('session').requireUnlocked(), maintenance: () => !!dependencies.get('@plu…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new NativeClipboard({ guard: () => dependencies.get('session').requireUnlocked(), maintenance: () => !!dependencies.get('@plu…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => new NativeClipboard({
+        /**
+         * 入口 / Entry: createApplicationServices.guard.
+         * 功能：在创建并连接应用领域服务及恢复来源中，核对调用资格、输入或资源归属；本入口产生 `dependencies.get('session').requireUnlocked()` 供上层消费（`application-services.ts`）。
+         * Purpose: Checks admission, input or resource ownership in `application-services.ts`; this entry produces `dependencies.get('session').requireUnlocked()` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get().requireUnlocked`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get().requireUnlocked`, `dependencies.get`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `dependencies.get('session').requireUnlocked()`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         guard: () => dependencies.get('session').requireUnlocked(),
+        /**
+         * 入口 / Entry: createApplicationServices.maintenance.
+         * 功能：从当前输入或状态计算 `!!dependencies.get('@plugins').migration?.blocked`，供调用方后续验证或使用。
+         * Purpose: Computes `!!dependencies.get('@plugins').migration?.blocked` from current inputs/state for the caller to validate or consume.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `!!dependencies.get('@plugins').migration?.blocked`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         maintenance: () => !!dependencies.get('@plugins').migration?.blocked,
+        /**
+         * 入口 / Entry: createApplicationServices.mutation.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get().operations.change`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get().operations.change`, `dependencies.get`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: delta
+         * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         mutation: (delta) => {
           dependencies.get('@plugins').operations.change(delta);
         },
       }),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 170,
   });
@@ -805,8 +2157,34 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'local-assistant.json'),
     requires: [],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new LocalAssistant()`，供调用方后续验证或使用。
+     * Purpose: Computes `new LocalAssistant()` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new LocalAssistant()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => new LocalAssistant(),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 150,
   });
@@ -814,12 +2192,70 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'communityPlugins',
     startup: 'required',
     requires: ['@machines', '@plugins', '@pluginDirectory'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new CommunityPlugins(undefined, undefined, undefined, undefined, dependencies.get('@pluginDirectory'), { events: async () => …`，供调用方后续验证或使用。
+     * Purpose: Computes `new CommunityPlugins(undefined, undefined, undefined, undefined, dependencies.get('@pluginDirectory'), { events: async () => …` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new CommunityPlugins(undefined, undefined, undefined, undefined, dependencies.get('@pluginDirectory'), { events: async () => …`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new CommunityPlugins(undefined, undefined, undefined, undefined, dependencies.get('@pluginDirectory'), {
+        /**
+         * 入口 / Entry: createApplicationServices.events.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list())…` 供上层消费（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list())…` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `collectWebhookEvents`, `dependencies.get`, `dependencies.get().jobStores().flatMap`, `dependencies.get().jobStores` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `collectWebhookEvents`, `dependencies.get`, `dependencies.get().jobStores().flatMap`, `dependencies.get().jobStores`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list())…`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         events: async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list()), (await dependencies.get('@plugins').suite?.alertEvents()) || []),
+        /**
+         * 入口 / Entry: createApplicationServices.blocked.
+         * 功能：从当前输入或状态计算 `!!dependencies.get('@plugins').migration?.blocked`，供调用方后续验证或使用。
+         * Purpose: Computes `!!dependencies.get('@plugins').migration?.blocked` from current inputs/state for the caller to validate or consume.
+         * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+         * 输出 / Returns: `!!dependencies.get('@plugins').migration?.blocked`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         blocked: () => !!dependencies.get('@plugins').migration?.blocked,
+        /**
+         * 入口 / Entry: createApplicationServices.mutation.
+         * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；本入口产生 `dependencies.get('@plugins').operations.change(delta)` 供上层消费（`application-services.ts`）。
+         * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; this entry produces `dependencies.get('@plugins').operations.change(delta)` for its caller. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+         * 处理：通过 `dependencies.get().operations.change`, `dependencies.get` 协调依赖；下列分支决定是否继续、返回或拒绝。
+         * Processing: Coordinates its dependencies through `dependencies.get().operations.change`, `dependencies.get`; the branches below determine continuation, return or refusal.
+         * 输入 / Inputs: delta
+         * 输出 / Returns: `dependencies.get('@plugins').operations.change(delta)`.
+         * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+         * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+         */
         mutation: (delta) => dependencies.get('@plugins').operations.change(delta),
       }),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 140,
   });
@@ -828,6 +2264,14 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'webhooks.json'),
     requires: ['@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new Webhooks( async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMa…`，供调用方后续验证或使用。
+     * Purpose: Computes `new Webhooks( async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMa…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new Webhooks( async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMa…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => new Webhooks(
         async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list()), (await dependencies.get('@plugins').suite?.alertEvents()) || []),
         undefined,
@@ -838,15 +2282,53 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 180,
   });
+  /**
+   * 入口 / Entry: createApplicationServices.callback@859.
+   * 功能：处理注册方交给此闭包的异步分支，执行下述状态更新、结果构造或失败处理（plugins.system.startDegradable）。
+   * Purpose: Handles the asynchronous branch supplied by its registrant, performing the state updates, result construction or failure handling below (plugins.system.startDegradable).
+   * 输入 / Inputs: id; steps; projectId; signal
+   * 输出 / Returns: `await workspaces.projects.with(id, projectId, () => runEngineeringOperation( dependencies.vm(), workspaces, id, 'runbooks', {…`.
+   * 副作用 / Effects: `owned.close`.
+   * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+   * 收尾：退出 try 区域时始终执行 `await owned?.close();`；这些步骤也适用于异常退出。
+   * Finalization: Leaving the try region always executes `await owned?.close();`; these steps also apply to exceptional exits.
+   */
   const automationRules = await plugins.system.startDegradable({
     id: 'automationRules',
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'automation-rules.json'),
     requires: ['@plugins', '@machines'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new AutomationRules( async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores()…`，供调用方后续验证或使用。
+     * Purpose: Computes `new AutomationRules( async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores()…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new AutomationRules( async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores()…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     create: (dependencies) => new AutomationRules(
         async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list()), (await dependencies.get('@plugins').suite?.alertEvents()) || []),
         dependencies.vm(),
@@ -856,6 +2338,12 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
         (delta) => {
           dependencies.get('@plugins').operations.change(delta);
         },
+        /**
+         * 中文功能：在指定项目范围执行 runbook；优先复用插件工作区，临时创建的工作区在 finally 关闭。
+         * English: Runs a runbook in the specified project scope, reusing plugin workspaces or closing a temporary workspace in finally.
+         * 所属 / Owner: createApplicationServices.automationRules.create.
+         * 输入 / Inputs: id; steps; projectId; signal.
+         */
         async (id, steps, projectId, signal) => {
           const owned = dependencies.get('@plugins').workspaces
             ? undefined
@@ -877,7 +2365,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           }
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 190,
   });
@@ -886,6 +2392,14 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查并修复 ' + join(DATA, 'log-retention.json'),
     requires: ['@machines', '@plugins'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new LogRetention( () => dependencies.get('@plugins').jobStores(), undefined, () => !!dependencies.get('@plugins').migration?.…`，供调用方后续验证或使用。
+     * Purpose: Computes `new LogRetention( () => dependencies.get('@plugins').jobStores(), undefined, () => !!dependencies.get('@plugins').migration?.…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new LogRetention( () => dependencies.get('@plugins').jobStores(), undefined, () => !!dependencies.get('@plugins').migration?.…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => new LogRetention(
         () => dependencies.get('@plugins').jobStores(),
         undefined,
@@ -895,7 +2409,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           dependencies.get('@plugins').operations.change(delta);
         },
       ),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：把本层请求转交 `value.init`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.init` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value.init()`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     initialize: (value) => value.init(),
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 330,
   });
@@ -904,24 +2436,130 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     startup: 'degradable',
     startupRecovery: '检查 GraphQL 服务的启动诊断及依赖服务',
     requires: ['@plugins', '@machines'],
+    /**
+     * 入口 / Entry: createApplicationServices.create.
+     * 功能：从当前输入或状态计算 `new GraphApi(async () => querySnapshot(dependencies.get('@machines'), dependencies.get('@plugins').jobStores(), dependencies.…`，供调用方后续验证或使用。
+     * Purpose: Computes `new GraphApi(async () => querySnapshot(dependencies.get('@machines'), dependencies.get('@plugins').jobStores(), dependencies.…` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: dependencies
+     * 输出 / Returns: `new GraphApi(async () => querySnapshot(dependencies.get('@machines'), dependencies.get('@plugins').jobStores(), dependencies.…`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     create: (dependencies) => new GraphApi(async () => querySnapshot(dependencies.get('@machines'), dependencies.get('@plugins').jobStores(), dependencies.get('@plugins').enabled)),
+    /**
+     * 入口 / Entry: createApplicationServices.initialize.
+     * 功能：在创建并连接应用领域服务及恢复来源中，初始化并核对当前领域状态；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Initializes and verifies current domain state in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     initialize: () => {},
+    /**
+     * 入口 / Entry: createApplicationServices.dispose.
+     * 功能：把本层请求转交 `value.close`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `value.close` and propagates the provider result or rejection.
+     * 输入 / Inputs: value
+     * 输出 / Returns: `value?.close()`.
+     * 副作用 / Effects: `value.close`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     dispose: (value) => value?.close(),
     disposePhase: 340,
   });
 
   for (const source of domainRecoverySources({
+    /**
+     * 入口 / Entry: createApplicationServices.vmIds.
+     * 功能：从当前输入或状态计算 `[...machines.records.keys()]`，供调用方后续验证或使用。
+     * Purpose: Computes `[...machines.records.keys()]` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `[...machines.records.keys()]`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     vmIds: () => [...machines.records.keys()],
+    /**
+     * 入口 / Entry: createApplicationServices.backups.
+     * 功能：从当前输入或状态计算 `features.enabled.has('backups') ? features.backups : undefined`，供调用方后续验证或使用。
+     * Purpose: Computes `features.enabled.has('backups') ? features.backups : undefined` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `features.enabled.has('backups') ? features.backups : undefined`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     backups: () => features.enabled.has('backups') ? features.backups : undefined,
+    /**
+     * 入口 / Entry: createApplicationServices.coldMigrations.
+     * 功能：从当前输入或状态计算 `plugins.system.has('coldMigrations') ? coldMigrations : undefined`，供调用方后续验证或使用。
+     * Purpose: Computes `plugins.system.has('coldMigrations') ? coldMigrations : undefined` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `plugins.system.has('coldMigrations') ? coldMigrations : undefined`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     coldMigrations: () => plugins.system.has('coldMigrations') ? coldMigrations : undefined,
+    /**
+     * 入口 / Entry: createApplicationServices.sync.
+     * 功能：从当前输入或状态计算 `features.enabled.has('sync') ? features.sync : undefined`，供调用方后续验证或使用。
+     * Purpose: Computes `features.enabled.has('sync') ? features.sync : undefined` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `features.enabled.has('sync') ? features.sync : undefined`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     sync: () => features.enabled.has('sync') ? features.sync : undefined,
   })) recoveries.register(source);
   recoveries.register(haPromotionRecoverySource(() => [...machines.records.values()]));
   recoveries.register(liveMigrationRecoverySource({
+    /**
+     * 入口 / Entry: createApplicationServices.records.
+     * 功能：从当前输入或状态计算 `[...machines.records.values()]`，供调用方后续验证或使用。
+     * Purpose: Computes `[...machines.records.values()]` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `[...machines.records.values()]`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     records: () => [...machines.records.values()],
+    /**
+     * 入口 / Entry: createApplicationServices.peers.
+     * 功能：从当前输入或状态计算 `plugins.system.has('hostPeers') ? hostPeers : undefined`，供调用方后续验证或使用。
+     * Purpose: Computes `plugins.system.has('hostPeers') ? hostPeers : undefined` from current inputs/state for the caller to validate or consume.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `plugins.system.has('hostPeers') ? hostPeers : undefined`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     peers: () => plugins.system.has('hostPeers') ? hostPeers : undefined,
+    /**
+     * 入口 / Entry: createApplicationServices.confirm.
+     * 功能：把本层请求转交 `migrationCompletion.confirm`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `migrationCompletion.confirm` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; fence
+     * 输出 / Returns: `migrationCompletion.confirm(id, fence)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     confirm: (id, fence) => migrationCompletion.confirm(id, fence),
+    /**
+     * 入口 / Entry: createApplicationServices.canConfirm.
+     * 功能：把本层请求转交 `migrationCompletion.canConfirm`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `migrationCompletion.canConfirm` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; fence
+     * 输出 / Returns: `migrationCompletion.canConfirm(id, fence)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     canConfirm: (id, fence) => migrationCompletion.canConfirm(id, fence),
+    /**
+     * 入口 / Entry: createApplicationServices.confirmed.
+     * 功能：把本层请求转交 `migrationCompletion.confirmed`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `migrationCompletion.confirmed` and propagates the provider result or rejection.
+     * 输入 / Inputs: id; fence
+     * 输出 / Returns: `migrationCompletion.confirmed(id, fence)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     confirmed: (id, fence) => migrationCompletion.confirmed(id, fence),
   }));
   await recoveries.refresh();
@@ -968,24 +2606,68 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     webhooks,
     engine,
     plugins,
+    /**
+     * 入口 / Entry: createApplicationServices.requireService.
+     * 功能：把本层请求转交 `plugins.system.require`，沿用该实现的结果与失败路径。
+     * Purpose: Delegates this request to `plugins.system.require` and propagates the provider result or rejection.
+     * 输入 / Inputs: id: K
+     * 输出 / Returns: SystemServiceContracts[K]；结果来自 / values from `plugins.system.require(id)`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     requireService<K extends keyof SystemServiceContracts>(id: K): SystemServiceContracts[K] {
       return plugins.system.require(id);
     },
     connectionHooks,
     diagnostics,
     recoveries: recoveryApi,
+    /**
+     * 入口 / Entry: createApplicationServices.acceptRequests.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 处理：通过 `plugins.assertReady` 协调依赖；下列分支决定是否继续、返回或拒绝。
+     * Processing: Coordinates its dependencies through `plugins.assertReady`; the branches below determine continuation, return or refusal.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 更新 / updates `acceptingRequests`.
+     * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
+     */
     acceptRequests() {
       plugins.assertReady();
       acceptingRequests = true;
     },
     usbHotplug,
     projectExecution,
+    /**
+     * 入口 / Entry: createApplicationServices.token.
+     * 功能：向调用者提供 `token` 的当前视图，不复制独立的业务状态。
+     * Purpose: Exposes the current `token` view rather than creating separate domain state.
+     * 输入 / Inputs: 无显式参数；可使用捕获状态 / no explicit parameters; may use captured state.
+     * 输出 / Returns: `token`.
+     * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
+     */
     get token() {
       return token;
     },
+    /**
+     * 入口 / Entry: createApplicationServices.token.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: value: string
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 更新 / updates `token`.
+     */
     set token(value: string) {
       token = value;
     },
+    /**
+     * 入口 / Entry: createApplicationServices.onSessionChange.
+     * 功能：在创建并连接应用领域服务及恢复来源中，执行此领域的具体处理步骤并返回其结果；完成下述调用及状态处理（`application-services.ts`）。
+     * Purpose: Executes the domain-specific processing steps and returns their outcome in `application-services.ts`; the calls and state transitions below complete the operation. Module context: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
+     * 输入 / Inputs: listener: typeof sessionChanged
+     * 输出 / Returns: 无显式返回值；异步实现成功时完成 Promise / no explicit value; async implementations resolve on success.
+     * 副作用 / Effects: 更新 / updates `sessionChanged`.
+     */
     onSessionChange(listener: typeof sessionChanged) {
       sessionChanged = listener;
     },

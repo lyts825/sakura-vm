@@ -1,3 +1,7 @@
+/**
+ * 模块职责（中文）：策略 DLL 统一拦截 Win32/OLE/控件和后代/Shell 创建。每次使用重读共享 seqlock，未知状态保守拒绝；早期 loader-lock 事务只使用静态系统依赖，普通附加还确认既有 GUI 控件。
+ * Module responsibilities (English): The policy DLL guards Win32/OLE/controls and descendant/Shell creation. Reread shared seqlock per access, conservatively refuse unknown state, use only static system dependencies in early loader-lock transactions and confirm existing GUI controls during ordinary attachment.
+ */
 /** Windows 剪贴板策略 DLL，拦截 Win32、OLE 和控件操作；核实共享策略快照并在早期导入阶段接管后代创建。 */
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0a00
@@ -21,6 +25,7 @@
 
 // MinGW declares these helpers without dllimport. Keep the address used for
 // dependency validation bound to the actual OS import, rather than our thunk.
+/** 中文：声明系统子类化 API 的直接导入，来源核验使用实际 OS 导入地址而非 MinGW 本地 thunk。 English: Declare the direct OS subclass API import so provenance checks use its system address rather than a MinGW local thunk. 参数声明 / Declared parameters: HWND,SUBCLASSPROC,UINT_PTR,DWORD_PTR. */
 extern "C" __declspec(dllimport) BOOL WINAPI SetWindowSubclass(HWND,SUBCLASSPROC,UINT_PTR,DWORD_PTR);
 
 #ifndef SAKURA_CLIPBOARD_BUILD
@@ -34,9 +39,12 @@ static SRWLOCK configureLock = SRWLOCK_INIT;
 static HINSTANCE policyModule=nullptr;
 static thread_local unsigned oleTransport=0;
 struct OleTransportScope {
+  /** 中文：增加线程内 OLE 元数据授权深度，仅在已经授权的 OLE 操作期间允许其内部传输格式。 English: Increase thread-local OLE metadata authorization depth only within an already-authorized OLE operation. */
   OleTransportScope() { ++oleTransport; }
+  /** 中文：退出当前 OLE 授权层，避免元数据例外泄漏到随后普通 Win32 访问。 English: Leave the current authorization layer so metadata exceptions do not leak into subsequent ordinary Win32 access. */
   ~OleTransportScope() { --oleTransport; }
 };
+/** 中文：只在 OLE 授权层内识别两种注册的对象元数据格式，业务数据仍受 GuardedData 检查。 English: Recognize the two registered object metadata formats only inside authorized OLE scope; application data remains guarded. 参数声明 / Declared parameters: UINT format. */
 static bool oleMetadata(UINT format) {
   if (!oleTransport || format<0xc000) return false;
   wchar_t name[64]{};
@@ -44,6 +52,7 @@ static bool oleMetadata(UINT format) {
     (std::wcscmp(name,L"DataObject")==0 || std::wcscmp(name,L"Ole Private Data")==0);
 }
 struct Rule { bool active; uint32_t flags, maximum; };
+/** 中文：最多重读 32 次偶数 seqlock 快照并核对 PID、创建时间、构建和大小上限；缺失或不稳定策略返回活动且禁止方向的保守规则。 English: Retry an even seqlock snapshot up to 32 times and verify PID, creation time, build and size limit; missing/unstable policy returns an active direction-denying rule. */
 static Rule current() {
   if (!shared) return {true, 0, 1024};
   for (int attempt=0; attempt<32; ++attempt) {
@@ -61,19 +70,25 @@ static Rule current() {
   return {true,0,1024};
 }
 #include "descendant-policy.h"
+/** 中文：原子增加对应复制或粘贴拒绝计数并设置 ACCESS_DENIED，不记录剪贴板内容。 English: Atomically increment the copy/paste denial counter and set ACCESS_DENIED without recording clipboard contents. 参数声明 / Declared parameters: bool copy. */
 static void blocked(bool copy) {
   if (shared) InterlockedIncrement64(copy ? &shared->blockedCopy : &shared->blockedPaste);
   SetLastError(ERROR_ACCESS_DENIED);
 }
+/** 中文：依据给定快照判定复制或粘贴方向位，非活动策略允许方向。 English: Test copy/paste direction against the supplied snapshot, allowing it when policy is inactive. 参数声明 / Declared parameters: bool copy,const Rule& rule. */
 static bool directionAllowed(bool copy,const Rule& rule) {
   return !rule.active || (rule.flags & (copy ? CopyAllowed : PasteAllowed));
 }
+/** 中文：读取当前策略并判定指定方向，供每次实际数据访问重新检查。 English: Read current policy and test the requested direction on each actual data access. 参数声明 / Declared parameters: bool copy. */
 static bool direction(bool copy) { return directionAllowed(copy,current()); }
+/** 中文：允许非活动策略、普通文本和 locale；其他格式需允许文件且未启用敏感内容过滤。 English: Allow inactive policy, plain text and locale; other formats require file permission with sensitive filtering disabled. 参数声明 / Declared parameters: UINT format, const Rule& rule. */
 static bool formatAllowed(UINT format, const Rule& rule) {
   return !rule.active || format==CF_TEXT || format==CF_UNICODETEXT || format==CF_OEMTEXT ||
     format==CF_LOCALE || ((rule.flags & FilesAllowed) && !(rule.flags & Sensitive));
 }
+/** 中文：迭代扫描无界 JWT/URL 字段，避免大文本触发递归正则栈溢出，再用有限重复正则识别私钥、令牌和凭据。 English: Scan unbounded JWT/URL fields iteratively to avoid recursive regex stack exhaustion on large text, then use bounded patterns for keys/tokens/credentials. 参数声明 / Declared parameters: const std::string& text. */
 static bool sensitive(const std::string& text) {
+  /** 中文：识别 JWT 段允许的字母、数字和 URL-safe 字符，逐字节扫描不分配匹配栈。 English: Recognize letters, digits and URL-safe characters in JWT segments without allocating a recursive matching stack. 参数声明 / Declared parameters: unsigned char c. */
   const auto base64=[](unsigned char c){return (c>='a'&&c<='z') || (c>='A'&&c<='Z') || (c>='0'&&c<='9') || c=='_' || c=='-';};
   // Scan variable-length JWT and URL fields iteratively. std::regex's recursive
   // repetition can exhaust an application's stack on an otherwise valid 1 MiB
@@ -110,9 +125,11 @@ static bool sensitive(const std::string& text) {
   for (const auto& pattern:patterns) if (std::regex_search(text,pattern)) return true;
   return false;
 }
+/** 中文：区分三种可解析文本格式，决定是否需要内容或流快照检查。 English: Identify the three parseable text formats that require content or stream-snapshot checks. 参数声明 / Declared parameters: UINT format. */
 static bool plainFormat(UINT format) {
   return format==CF_TEXT || format==CF_UNICODETEXT || format==CF_OEMTEXT;
 }
+/** 中文：严格转换 UTF-16 为 UTF-8，按字节限制文本并按敏感标志检测；编码失败或超限拒绝。 English: Strictly convert UTF-16 to UTF-8, apply a byte limit and optional sensitive checks; reject conversion failure or overflow. 参数声明 / Declared parameters: const std::wstring& wide,const Rule& rule. */
 static bool wideAllowed(const std::wstring& wide,const Rule& rule) {
   if(!rule.active)return true;
   const int count=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,wide.data(),int(wide.size()),nullptr,0,nullptr,nullptr);
@@ -121,6 +138,7 @@ static bool wideAllowed(const std::wstring& wide,const Rule& rule) {
   if(count && !WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,wide.data(),int(wide.size()),text.data(),count,nullptr,nullptr))return false;
   return !(rule.flags & Sensitive) || !sensitive(text);
 }
+/** 中文：有界锁定 HGLOBAL、寻找终止符并按 ANSI/OEM/Unicode 解码后核验文本；所有路径解锁，空延迟渲染占位在实际提供数据时再查。 English: Boundedly lock HGLOBAL, find a terminator and decode ANSI/OEM/Unicode text before validation; always unlock, checking delayed-render placeholders when data is supplied later. 参数声明 / Declared parameters: UINT format, HANDLE data, const Rule& rule. */
 static bool contentAllowed(UINT format, HANDLE data, const Rule& rule) {
   if (!rule.active) return true;
   if (!formatAllowed(format,rule)) return false;
@@ -174,6 +192,7 @@ static decltype(&GetMessageW) originalMessageW=nullptr;
 static decltype(&GetMessageA) originalMessageA=nullptr;
 static decltype(&PeekMessageW) originalPeekW=nullptr;
 static decltype(&PeekMessageA) originalPeekA=nullptr;
+/** 中文：粘贴前检查方向和格式、取得原句柄后重读策略检查内容；只对授权 OLE 元数据绕过业务格式过滤。 English: Check paste direction/format before retrieval and reread policy afterward for content; only authorized OLE metadata bypasses application-format filtering. 参数声明 / Declared parameters: UINT format. */
 static HANDLE WINAPI getData(UINT format) {
   auto rule=current();
   // OLE transports its object/format metadata through two registered user32
@@ -186,18 +205,22 @@ static HANDLE WINAPI getData(UINT format) {
   if (!direction(false) || (data && !contentAllowed(format,data,rule))) { blocked(false); return nullptr; }
   return data;
 }
+/** 中文：复制写入前检查方向及实际内容，拒绝返回空句柄并计数；成功保持原 API 的所有权语义。 English: Check copy direction/content before writing, count denials and return null on refusal; successful calls retain original ownership semantics. 参数声明 / Declared parameters: UINT format,HANDLE data. */
 static HANDLE WINAPI setData(UINT format,HANDLE data) {
   const auto rule=current();
   if (!direction(true) || (!oleMetadata(format) && !contentAllowed(format,data,rule))) { blocked(true); return nullptr; }
   return originalSet(format,data);
 }
+/** 中文：仅允许复制方向清空剪贴板，拒绝时保持原内容并设置错误。 English: Permit clipboard clearing only in the copy direction, retaining old contents and setting an error on denial. */
 static BOOL WINAPI empty() {
   if (!direction(true)) { blocked(true); return FALSE; }
   return originalEmpty();
 }
+/** 中文：只暴露当前允许粘贴且允许格式的原可用性结果，不读取内容。 English: Expose original availability only for currently permitted paste formats without reading contents. 参数声明 / Declared parameters: UINT format. */
 static BOOL WINAPI available(UINT format) {
   return direction(false) && formatAllowed(format,current()) ? originalAvailable(format) : FALSE;
 }
+/** 中文：沿原格式序列跳过不允许的格式，粘贴禁用或序列结束返回零。 English: Walk the original format sequence while hiding disallowed formats; return zero when paste is disabled or enumeration ends. 参数声明 / Declared parameters: UINT previous. */
 static UINT WINAPI enumerate(UINT previous) {
   if (!direction(false)) return 0;
   const auto rule=current();
@@ -205,6 +228,7 @@ static UINT WINAPI enumerate(UINT previous) {
   while ((next=originalEnum(next))!=0) if (formatAllowed(next,rule)) return next;
   return 0;
 }
+/** 中文：活动策略下统计过滤后的格式，最多 65536 项；非活动状态委托原计数。 English: Count filtered formats under active policy with a 65536-item bound; delegate original counting when inactive. */
 static int WINAPI count() {
   if (!direction(false)) return 0;
   if (!current().active) return originalCount();
@@ -212,6 +236,7 @@ static int WINAPI count() {
   while ((next=enumerate(next))!=0 && result<65536) ++result;
   return result;
 }
+/** 中文：校验有界格式数组并按调用者顺序选择允许的可用格式，保留原 API 的零与负一结果含义。 English: Validate a bounded format array and choose permitted available formats in caller order, retaining the API meanings of zero and minus one. 参数声明 / Declared parameters: UINT* formats,int length. */
 static int WINAPI priority(UINT* formats,int length) {
   if (!direction(false)) return 0;
   if (!current().active) return originalPriority(formats,length);
@@ -219,6 +244,7 @@ static int WINAPI priority(UINT* formats,int length) {
   for (int i=0;i<length;++i) if (available(formats[i])) return int(formats[i]);
   return count() ? -1 : 0;
 }
+/** 中文：先取得完整更新列表再过滤，输出所需数量；调用者缓冲区不足返回 INSUFFICIENT_BUFFER，禁止粘贴时拒绝。 English: Retrieve the complete updated list before filtering and report required count; return INSUFFICIENT_BUFFER for short output or deny disabled paste. 参数声明 / Declared parameters: PUINT formats,UINT length,PUINT filled. */
 static BOOL WINAPI updated(PUINT formats,UINT length,PUINT filled) {
   if (!filled || (!formats && length)) { SetLastError(ERROR_INVALID_PARAMETER); return FALSE; }
   if (!direction(false)) { *filled=0; blocked(false); return FALSE; }
@@ -248,9 +274,12 @@ struct ControlCreation { bool ansi;const void* type;ControlCreation* previous; }
 static thread_local ControlCreation* controlCreation=nullptr;
 struct ControlCreationScope {
   ControlCreation frame;
+  /** 中文：保存并压入本线程当前 ANSI/Unicode 创建上下文，以辨认内部 A→W thunk 和独立子控件。 English: Push the thread's ANSI/Unicode creation context to distinguish an internal A-to-W thunk from independent child controls. 参数声明 / Declared parameters: bool ansi,const void* type. */
   ControlCreationScope(bool ansi,const void* type):frame{ansi,type,controlCreation}{controlCreation=&frame;}
+  /** 中文：恢复上一层控件创建上下文，支持嵌套创建并避免线程局部状态泄漏。 English: Restore the previous creation context for nesting without leaking thread-local state. */
   ~ControlCreationScope(){controlCreation=frame.previous;}
 };
+/** 中文：仅在 ANSI 创建层内比较同一类名或 atom，识别仍未最终确定编码的内部宽字符创建。 English: Compare the same class name/atom only in an ANSI creation scope to identify an internal wide creation whose encoding is not finalized. 参数声明 / Declared parameters: LPCWSTR type. */
 static bool ansiCreationThunk(LPCWSTR type) {
   if(!controlCreation || !controlCreation->ansi)return false;
   const auto narrow=static_cast<LPCSTR>(controlCreation->type);
@@ -264,11 +293,13 @@ static bool ansiCreationThunk(LPCWSTR type) {
 }
 static constexpr const wchar_t* ansiControlProperty=L"SakuraClipboard.Ansi." SAKURA_CLIPBOARD_BUILD;
 struct AnsiControl {WNDPROC original;};
+/** 中文：只识别本进程 Edit、RichEdit 和对应 WinForms 类，返回普通或富文本类别，其他窗口返回零。 English: Identify only this process's Edit/RichEdit and corresponding WinForms classes, returning plain/rich kind or zero for other windows. 参数声明 / Declared parameters: HWND window. */
 static int controlKind(HWND window) {
   DWORD pid=0;GetWindowThreadProcessId(window,&pid);
   if(pid!=GetCurrentProcessId())return 0;
   wchar_t name[64]{};if(!GetClassNameW(window,name,64))return 0;
   if(CompareStringOrdinal(name,-1,L"Edit",-1,TRUE)==CSTR_EQUAL)return 1;
+  /** 中文：按大小写不敏感的 WindowsForms10 类名前缀识别指定控件类型。 English: Identify a requested control type by its case-insensitive WindowsForms10 class prefix. 参数声明 / Declared parameters: const wchar_t* name,const wchar_t* type. */
   const auto forms=[](const wchar_t* name,const wchar_t* type){
     const std::wstring prefix=L"WindowsForms10."+std::wstring(type)+L".";
     return std::wcslen(name)>=prefix.size() && CompareStringOrdinal(name,int(prefix.size()),prefix.c_str(),int(prefix.size()),TRUE)==CSTR_EQUAL;
@@ -278,6 +309,7 @@ static int controlKind(HWND window) {
     if(CompareStringOrdinal(name,-1,type,-1,TRUE)==CSTR_EQUAL || forms(name,type))return 2;
   return 0;
 }
+/** 中文：按控件类型读取精确选区，限制分配并正确处理 RichEdit 终止标记及 ANSI 编码；普通 Edit 只检查选中的切片。 English: Read the exact selection by control type, bound allocations and handle RichEdit terminal markers/ANSI encoding; validate only the selected slice for ordinary Edit. 参数声明 / Declared parameters: HWND window,int kind,std::wstring& text,const Rule& rule. */
 static bool selectedControlText(HWND window,int kind,std::wstring& text,const Rule& rule) {
   LONG first=0,last=0;
   if(kind==2){
@@ -317,6 +349,7 @@ static bool selectedControlText(HWND window,int kind,std::wstring& text,const Ru
   if(GetWindowTextW(window,all.data(),int(all.size()))!=length)return false;
   text=all.substr(size_t(first),size_t(last-first));return true;
 }
+/** 中文：识别复制、剪切消息和常用键盘组合，排除 Alt 组合并保留其他输入。 English: Recognize copy/cut messages and common key combinations while excluding Alt combinations and retaining other input. 参数声明 / Declared parameters: UINT message,WPARAM key. */
 static bool controlCopyRequest(UINT message,WPARAM key) {
   if(message==WM_COPY || message==WM_CUT)return true;
   if(message==WM_CHAR)return key==3 || key==24;
@@ -325,6 +358,7 @@ static bool controlCopyRequest(UINT message,WPARAM key) {
   if(GetKeyState(VK_MENU)&0x8000)return false;
   return (control && (key=='C' || key=='X' || key==VK_INSERT)) || (!control && shift && key==VK_DELETE);
 }
+/** 中文：在控件默认处理剪切前核验选中文本及最新策略，避免 user32 已清空剪贴板或删除文本后才拒绝。 English: Validate selection/latest policy before default cut processing so refusal precedes user32 clearing the clipboard or deleting text. 参数声明 / Declared parameters: HWND window,UINT message,WPARAM a. */
 static bool allowControlMessage(HWND window,UINT message,WPARAM a) {
   if(controlCopyRequest(message,a)) {
     bool allowed=false;
@@ -340,12 +374,14 @@ static bool allowControlMessage(HWND window,UINT message,WPARAM a) {
   }
   return true;
 }
+/** 中文：响应安装探针、在销毁时移除子类，其他消息通过策略检查后交给 DefSubclassProc。 English: Respond to installation probes, remove the subclass on destruction and forward other messages to DefSubclassProc after policy checks. 参数声明 / Declared parameters: HWND window,UINT message,WPARAM a,LPARAM b,UINT_PTR id,DWORD_PTR. */
 static LRESULT CALLBACK controlProcedure(HWND window,UINT message,WPARAM a,LPARAM b,UINT_PTR id,DWORD_PTR) {
   if(controlProbeMessage && message==controlProbeMessage)return controlConfirmation;
   if(message==WM_NCDESTROY)RemoveWindowSubclass(window,controlProcedure,id);
   else if(!allowControlMessage(window,message,a))return 0;
   return DefSubclassProc(window,message,a,b);
 }
+/** 中文：保持原 ANSI WNDPROC 编码链，先执行复制检查；销毁时移除属性、调用原过程并释放上下文。 English: Retain the original ANSI WNDPROC encoding chain with copy checks; on destruction remove the property, call the original procedure and free context. 参数声明 / Declared parameters: HWND window,UINT message,WPARAM a,LPARAM b. */
 static LRESULT CALLBACK ansiControlProcedure(HWND window,UINT message,WPARAM a,LPARAM b) {
   auto context=reinterpret_cast<AnsiControl*>(GetPropW(window,ansiControlProperty));
   if(!context)return DefWindowProcA(window,message,a,b);
@@ -357,6 +393,7 @@ static LRESULT CALLBACK ansiControlProcedure(HWND window,UINT message,WPARAM a,L
   if(!allowControlMessage(window,message,a))return 0;
   return CallWindowProcA(context->original,window,message,a,b);
 }
+/** 中文：只在窗口所属线程安装保护并防止重入；Unicode 使用公开子类 API，ANSI 保留原编码链，失败使共享状态不就绪。 English: Install only on the window's owning thread with a reentry guard; Unicode uses subclass APIs, ANSI retains its encoding chain and failure marks shared status unready. 参数声明 / Declared parameters: HWND window. */
 static bool installControl(HWND window) {
   if(!controlKind(window))return true;
   if(GetWindowThreadProcessId(window,nullptr)!=GetCurrentThreadId())return false;
@@ -384,6 +421,7 @@ static bool installControl(HWND window) {
   installingControl=false;
   return installed;
 }
+/** 中文：普通窗口消息到达所属 GUI 线程时尝试安装控件保护，跳过创建/销毁阶段并继续钩子链。 English: Attempt protection when ordinary window messages reach their GUI thread, skip creation/destruction phases and continue the hook chain. 参数声明 / Declared parameters: int code,WPARAM a,LPARAM b. */
 static LRESULT CALLBACK controlMessageHook(int code,WPARAM a,LPARAM b) {
   if(code>=0 && b){
     const auto message=reinterpret_cast<const CWPSTRUCT*>(b);
@@ -392,6 +430,7 @@ static LRESULT CALLBACK controlMessageHook(int code,WPARAM a,LPARAM b) {
   }
   return CallNextHookEx(nullptr,code,a,b);
 }
+/** 中文：普通执行中先建立消息队列再安装本线程消息钩子；重入或已安装直接返回，不在 loader lock 中调用。 English: During ordinary execution create the message queue before installing a thread hook; skip reentry/already-installed cases and never call under loader lock. */
 static void prepareControlThread() {
   if(preparingControlThread || controlThreadHook)return;
   preparingControlThread=true;
@@ -401,6 +440,7 @@ static void prepareControlThread() {
   controlThreadHook=SetWindowsHookExW(WH_CALLWNDPROC,controlMessageHook,policyModule,GetCurrentThreadId());
   preparingControlThread=false;
 }
+/** 中文：包围原宽字符创建以记录上下文；同类 ANSI 内部 thunk 延迟安装，其他受保护控件安装失败即销毁并拒绝。 English: Record context around wide creation; defer a same-class ANSI thunk, otherwise destroy/refuse a protected control whose installation fails. 参数声明 / Declared parameters: DWORD ex,LPCWSTR type,LPCWSTR text,DWORD style,int x,int y,int width,int height,HWND parent,HMENU menu,HINSTANCE instance,LPVOID param. */
 static HWND WINAPI createControlW(DWORD ex,LPCWSTR type,LPCWSTR text,DWORD style,int x,int y,int width,int height,HWND parent,HMENU menu,HINSTANCE instance,LPVOID param) {
   // A's internal W thunk has not yet fixed the returned window's ANSI message
   // encoding. Defer only that same class, not independent child controls
@@ -409,23 +449,31 @@ static HWND WINAPI createControlW(DWORD ex,LPCWSTR type,LPCWSTR text,DWORD style
   {ControlCreationScope creating(false,type);window=originalCreateW(ex,type,text,style,x,y,width,height,parent,menu,instance,param);}
   if(window && !deferred && !installControl(window)){DestroyWindow(window);SetLastError(ERROR_ACCESS_DENIED);return nullptr;}return window;
 }
+/** 中文：记录 ANSI 创建上下文并在编码已确定的返回窗口上安装保护，安装失败销毁窗口。 English: Record ANSI creation context and protect the returned window after encoding is finalized, destroying it on installation failure. 参数声明 / Declared parameters: DWORD ex,LPCSTR type,LPCSTR text,DWORD style,int x,int y,int width,int height,HWND parent,HMENU menu,HINSTANCE instance,LPVOID param. */
 static HWND WINAPI createControlA(DWORD ex,LPCSTR type,LPCSTR text,DWORD style,int x,int y,int width,int height,HWND parent,HMENU menu,HINSTANCE instance,LPVOID param) {
   HWND window=nullptr;
   {ControlCreationScope creating(true,type);window=originalCreateA(ex,type,text,style,x,y,width,height,parent,menu,instance,param);}
   if(window && !installControl(window)){DestroyWindow(window);SetLastError(ERROR_ACCESS_DENIED);return nullptr;}return window;
 }
+/** 中文：准备当前 GUI 线程保护后委托宽字符 GetMessage，保持消息过滤参数和返回值。 English: Prepare GUI-thread protection then delegate wide GetMessage with its filters and return value intact. 参数声明 / Declared parameters: LPMSG message,HWND window,UINT first,UINT last. */
 static BOOL WINAPI messageControlW(LPMSG message,HWND window,UINT first,UINT last) {prepareControlThread();return originalMessageW(message,window,first,last);}
+/** 中文：准备当前 GUI 线程保护后委托 ANSI GetMessage，保持编码和阻塞语义。 English: Prepare GUI-thread protection then delegate ANSI GetMessage with encoding/blocking semantics intact. 参数声明 / Declared parameters: LPMSG message,HWND window,UINT first,UINT last. */
 static BOOL WINAPI messageControlA(LPMSG message,HWND window,UINT first,UINT last) {prepareControlThread();return originalMessageA(message,window,first,last);}
+/** 中文：准备当前 GUI 线程保护后委托宽字符 PeekMessage，保留 remove 标志。 English: Prepare GUI-thread protection then delegate wide PeekMessage while retaining the remove flags. 参数声明 / Declared parameters: LPMSG message,HWND window,UINT first,UINT last,UINT remove. */
 static BOOL WINAPI peekControlW(LPMSG message,HWND window,UINT first,UINT last,UINT remove) {prepareControlThread();return originalPeekW(message,window,first,last,remove);}
+/** 中文：准备当前 GUI 线程保护后委托 ANSI PeekMessage，保留消息与 remove 参数。 English: Prepare GUI-thread protection then delegate ANSI PeekMessage with its message/remove parameters intact. 参数声明 / Declared parameters: LPMSG message,HWND window,UINT first,UINT last,UINT remove. */
 static BOOL WINAPI peekControlA(LPMSG message,HWND window,UINT first,UINT last,UINT remove) {prepareControlThread();return originalPeekA(message,window,first,last,remove);}
 struct ControlAttachment {std::vector<HWND> windows;bool ready=true;};
+/** 中文：将可保护控件加入收集结果，继续枚举以便完整确认安装。 English: Collect protectable controls and continue enumeration for complete installation confirmation. 参数声明 / Declared parameters: HWND window,LPARAM pointer. */
 static BOOL CALLBACK collectControl(HWND window,LPARAM pointer) {
   if(controlKind(window))reinterpret_cast<ControlAttachment*>(pointer)->windows.push_back(window);
   return TRUE;
 }
+/** 中文：收集线程顶层窗口及其子控件，回调继续枚举。 English: Collect a thread's top-level window and descendants while continuing enumeration. 参数声明 / Declared parameters: HWND window,LPARAM pointer. */
 static BOOL CALLBACK collectThreadWindow(HWND window,LPARAM pointer) {
   collectControl(window,pointer);EnumChildWindows(window,collectControl,pointer);return TRUE;
 }
+/** 中文：普通配置阶段逐 GUI 线程收集窗口，以临时钩子和有界探针确认保护；挂起或未确认的存活窗口不能报告就绪。 English: Collect windows per GUI thread during ordinary configuration and confirm protection via temporary hooks/bounded probes; hung or unconfirmed live windows prevent readiness. */
 static bool attachExistingControls() {
   // The regular configure export runs outside the loader lock. Existing GUI
   // windows are reached with a temporary thread hook and confirmed by their
@@ -469,16 +517,22 @@ class GuardedFormats final:public IEnumFORMATETC {
   IEnumFORMATETC* source;
   bool copy;
 public:
+  /** 中文：保留源格式枚举器引用并绑定复制/粘贴方向，使每次枚举依据最新策略过滤。 English: Retain the source enumerator and bind its copy/paste direction so each enumeration uses current policy. 参数声明 / Declared parameters: IEnumFORMATETC* value,bool copying. */
   GuardedFormats(IEnumFORMATETC* value,bool copying):source(value),copy(copying) { source->AddRef(); }
+  /** 中文：释放持有的源枚举器引用，不释放已经交付给调用者的 FORMATETC。 English: Release the retained source enumerator without releasing FORMATETC entries already delivered to callers. */
   ~GuardedFormats() { source->Release(); }
+  /** 中文：只提供声明的 IUnknown/本类 COM 接口，清空输出并在成功时 AddRef；空输出或未知 IID 返回对应 HRESULT。 English: Expose only declared IUnknown/class COM interfaces, clear output and AddRef on success; null output/unknown IID return corresponding HRESULTs. 参数声明 / Declared parameters: REFIID id,void** out. */
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id,void** out) override {
     if(!out)return E_POINTER;
     *out=nullptr;
     if(id!=IID_IUnknown && id!=IID_IEnumFORMATETC)return E_NOINTERFACE;
     *out=static_cast<IEnumFORMATETC*>(this);AddRef();return S_OK;
   }
+  /** 中文：原子增加包装对象 COM 引用计数并返回新计数，调用者需与 Release 配对。 English: Atomically increase the wrapper's COM reference count and return it, requiring caller pairing with Release. */
   ULONG STDMETHODCALLTYPE AddRef() override {return ULONG(InterlockedIncrement(&references));}
+  /** 中文：原子减少 COM 引用计数，归零即 delete 当前对象并返回剩余计数。 English: Atomically decrease COM references, delete this object at zero and return the remaining count. */
   ULONG STDMETHODCALLTYPE Release() override {const LONG next=InterlockedDecrement(&references);if(!next)delete this;return ULONG(next);}
+  /** 中文：有界逐项过滤最新策略，不允许的 FORMATETC 释放目标设备内存；限制文本 medium 位并按实际交付数返回 S_OK/S_FALSE。 English: Boundedly filter entries under current policy, free rejected target-device memory, restrict text medium bits and return S_OK/S_FALSE by delivered count. 参数声明 / Declared parameters: ULONG length,FORMATETC* out,ULONG* fetched. */
   HRESULT STDMETHODCALLTYPE Next(ULONG length,FORMATETC* out,ULONG* fetched) override {
     if(fetched)*fetched=0;
     if(!out || (!fetched && length!=1) || length>65536)return E_INVALIDARG;
@@ -498,13 +552,16 @@ public:
     if(fetched)*fetched=accepted;
     return accepted==length?S_OK:S_FALSE;
   }
+  /** 中文：通过受保护 Next 跳过允许项并释放临时目标设备，避免绕过过滤推进原枚举器。 English: Skip permitted entries through guarded Next and free temporary target devices rather than bypassing filtering on the source. 参数声明 / Declared parameters: ULONG count. */
   HRESULT STDMETHODCALLTYPE Skip(ULONG count) override {
     if(count>65536)return E_INVALIDARG;
     for(ULONG i=0;i<count;++i){FORMATETC value{};ULONG fetched=0;const HRESULT answer=Next(1,&value,&fetched);
       if(value.ptd)CoTaskMemFree(value.ptd);if(answer!=S_OK)return answer;}
     return S_OK;
   }
+  /** 中文：委托原枚举器重置游标，后续读取继续执行策略过滤。 English: Reset the source cursor while subsequent reads remain policy-filtered. */
   HRESULT STDMETHODCALLTYPE Reset() override {return source->Reset();}
+  /** 中文：克隆原游标并包装相同方向，失败释放临时引用并报告 HRESULT/内存不足。 English: Clone the source cursor with the same directional guard, releasing temporary references on HRESULT/allocation failure. 参数声明 / Declared parameters: IEnumFORMATETC** out. */
   HRESULT STDMETHODCALLTYPE Clone(IEnumFORMATETC** out) override {
     if(!out)return E_POINTER;
     *out=nullptr;IEnumFORMATETC* data=nullptr;const HRESULT answer=source->Clone(&data);
@@ -518,20 +575,26 @@ class GuardedData final:public IDataObject {
   IDataObject* source;
   bool copy;
 public:
+  /** 中文：保留源 IDataObject 引用并绑定访问方向，缓存代理每次访问仍检查最新策略。 English: Retain source IDataObject and bind direction so cached proxies still check current policy on every access. 参数声明 / Declared parameters: IDataObject* value,bool copying. */
   GuardedData(IDataObject* value,bool copying):source(value),copy(copying) { source->AddRef(); }
+  /** 中文：释放源对象引用，COM 引用计数归零后才销毁包装器。 English: Release the source reference when the wrapper is destroyed after its COM reference count reaches zero. */
   ~GuardedData() { source->Release(); }
+  /** 中文：只提供声明的 IUnknown/本类 COM 接口，清空输出并在成功时 AddRef；空输出或未知 IID 返回对应 HRESULT。 English: Expose only declared IUnknown/class COM interfaces, clear output and AddRef on success; null output/unknown IID return corresponding HRESULTs. 参数声明 / Declared parameters: REFIID id,void** out. */
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id,void** out) override {
     if (!out) return E_POINTER;
     *out=nullptr;
     if (id!=IID_IUnknown && id!=IID_IDataObject) return E_NOINTERFACE;
     *out=static_cast<IDataObject*>(this); AddRef(); return S_OK;
   }
+  /** 中文：原子增加包装对象 COM 引用计数并返回新计数，调用者需与 Release 配对。 English: Atomically increase the wrapper's COM reference count and return it, requiring caller pairing with Release. */
   ULONG STDMETHODCALLTYPE AddRef() override { return ULONG(InterlockedIncrement(&references)); }
+  /** 中文：原子减少 COM 引用计数，归零即 delete 当前对象并返回剩余计数。 English: Atomically decrease COM references, delete this object at zero and return the remaining count. */
   ULONG STDMETHODCALLTYPE Release() override {
     const LONG remaining=InterlockedDecrement(&references);
     if (!remaining) delete this;
     return ULONG(remaining);
   }
+  /** 中文：检查方向/格式后取得 medium 并重读规则；文本流复制到私有字节，先释放可变提供者再检查，失败释放 medium 不向消费者交付。 English: Check direction/format, retrieve a medium and reread policy; snapshot text streams privately, release mutable providers before checking and free refused media instead of delivering them. 参数声明 / Declared parameters: FORMATETC* format,STGMEDIUM* result. */
   HRESULT STDMETHODCALLTYPE GetData(FORMATETC* format,STGMEDIUM* result) override {
     if (!format || !result) return E_POINTER;
     *result={};
@@ -566,6 +629,7 @@ public:
     }
     *result=data; return answer;
   }
+  /** 中文：先在自有临时 medium 中渲染核验，再写调用者空间；流保持当前游标、不 seek/截断/接管所有权，短写或容量不足以 HRESULT 返回。 English: Render/check in an owned temporary before writing caller storage; streams retain their cursor without seeking/truncation/ownership transfer, reporting short writes/capacity errors via HRESULT. 参数声明 / Declared parameters: FORMATETC* format,STGMEDIUM* result. */
   HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC* format,STGMEDIUM* result) override {
     if (!current().active) return source->GetDataHere(format,result);
     if (!format || !result) return E_POINTER;
@@ -614,6 +678,7 @@ public:
     ReleaseStgMedium(&data);
     return outcome;
   }
+  /** 中文：在询问源能力前过滤方向和格式，文本只允许 HGLOBAL/IStream medium 位，不读取内容。 English: Filter direction/format before asking source capabilities, restricting text to HGLOBAL/IStream bits without reading contents. 参数声明 / Declared parameters: FORMATETC* format. */
   HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* format) override {
     if (!format) return E_POINTER;
     const auto rule=current();
@@ -625,7 +690,9 @@ public:
     }
     return source->QueryGetData(&request);
   }
+  /** 中文：保持源对象的标准格式转换契约；实际数据获取仍经 GetData 的检查。 English: Preserve source canonical-format conversion; actual retrieval still passes through GetData checks. 参数声明 / Declared parameters: FORMATETC* a,FORMATETC* b. */
   HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC* a,FORMATETC* b) override { return source->GetCanonicalFormatEtc(a,b); }
+  /** 中文：写入文本流使用已检查的私有快照；只有源成功接收且 release 为真才转移原 medium 所有权，失败释放快照并保留调用者原值。 English: Write text streams through checked private snapshots; transfer original ownership only on successful source acceptance with release=true, otherwise free snapshots and retain the caller's medium. 参数声明 / Declared parameters: FORMATETC* format,STGMEDIUM* value,BOOL release. */
   HRESULT STDMETHODCALLTYPE SetData(FORMATETC* format,STGMEDIUM* value,BOOL release) override {
     if (!format || !value) return E_POINTER;
     if(current().active && value->tymed==TYMED_ISTREAM && plainFormat(format->cfFormat)){
@@ -643,6 +710,7 @@ public:
     }
     return source->SetData(format,value,release);
   }
+  /** 中文：检查方向后包装源枚举器，使返回格式及 medium 继续由 GuardedFormats 过滤。 English: Check direction and wrap the source enumerator so GuardedFormats continues filtering formats/media. 参数声明 / Declared parameters: DWORD mode,IEnumFORMATETC** out. */
   HRESULT STDMETHODCALLTYPE EnumFormatEtc(DWORD mode,IEnumFORMATETC** out) override {
     if(!out)return E_POINTER;
     *out=nullptr;
@@ -652,14 +720,18 @@ public:
     try{*out=new GuardedFormats(data,copy);}catch(...){data->Release();return E_OUTOFMEMORY;}
     data->Release();return answer;
   }
+  /** 中文：活动策略下拒绝未受保护的推送通知通道；非活动状态委托源对象建立订阅。 English: Refuse unguarded push notifications under active policy and delegate subscription when inactive. 参数声明 / Declared parameters: FORMATETC* f,DWORD a,IAdviseSink* s,DWORD* c. */
   HRESULT STDMETHODCALLTYPE DAdvise(FORMATETC* f,DWORD a,IAdviseSink* s,DWORD* c) override {
     return current().active ? OLE_E_ADVISENOTSUPPORTED : source->DAdvise(f,a,s,c);
   }
+  /** 中文：委托源对象取消既有订阅，允许策略收紧后仍清理先前资源。 English: Delegate cancellation so preexisting subscriptions can still be cleaned up after policy tightens. 参数声明 / Declared parameters: DWORD c. */
   HRESULT STDMETHODCALLTYPE DUnadvise(DWORD c) override { return source->DUnadvise(c); }
+  /** 中文：活动策略下不暴露通知枚举通道；非活动时委托源通知枚举。 English: Hide the advisory enumeration channel under active policy and delegate it when inactive. 参数声明 / Declared parameters: IEnumSTATDATA** out. */
   HRESULT STDMETHODCALLTYPE EnumDAdvise(IEnumSTATDATA** out) override {
     return current().active ? OLE_E_ADVISENOTSUPPORTED : source->EnumDAdvise(out);
   }
 };
+/** 中文：检查粘贴方向，在授权元数据作用域取得原对象并返回受保护代理；所有临时 COM 引用在失败和成功后平衡。 English: Check paste direction, retrieve under authorized metadata scope and return a guarded proxy, balancing temporary COM references on success/failure. 参数声明 / Declared parameters: IDataObject** out. */
 static HRESULT WINAPI oleGet(IDataObject** out) {
   if (!out) return E_POINTER;
   *out=nullptr;
@@ -671,6 +743,7 @@ static HRESULT WINAPI oleGet(IDataObject** out) {
   try { *out=new GuardedData(data,false); } catch (...) { data->Release(); return E_OUTOFMEMORY; }
   data->Release(); return answer;
 }
+/** 中文：清空旧剪贴板前完整枚举至多 65536 项并检查每种暴露的文本 medium，允许混合格式过滤但需至少有效业务格式；前后规则变化拒绝。 English: Before clearing old clipboard, fully enumerate up to 65536 entries and inspect each exposed text medium; permit mixed-format filtering but require a usable application format and unchanged policy. 参数声明 / Declared parameters: IDataObject* data. */
 static bool preflightOleCopy(IDataObject* data) {
   const auto initial=current();
   if(!initial.active)return true;
@@ -720,6 +793,7 @@ static bool preflightOleCopy(IDataObject* data) {
   return allowed && complete && eligible && direction(true) && initial.active==latest.active &&
     initial.flags==latest.flags && initial.maximum==latest.maximum;
 }
+/** 中文：先检查延迟对象完整文本再调用原 OleSetClipboard，防止拒绝时已破坏旧内容；写入对象持续用 GuardedData 检查。 English: Inspect delayed-object text before original OleSetClipboard to avoid destroying old contents on refusal, then retain GuardedData checks for later rendering. 参数声明 / Declared parameters: IDataObject* data. */
 static HRESULT WINAPI oleSet(IDataObject* data) {
   if (!direction(true)) { blocked(true); return E_ACCESSDENIED; }
   OleTransportScope transport;
@@ -735,18 +809,22 @@ static HRESULT WINAPI oleSet(IDataObject* data) {
   const HRESULT result=originalOleSet(wrapped);
   wrapped->Release(); return result;
 }
+/** 中文：仅在复制允许时授权 OLE 元数据并委托持久化，拒绝计数和返回 ACCESSDENIED。 English: Authorize OLE metadata and delegate persistence only when copying is allowed; count refusals and return ACCESSDENIED. */
 static HRESULT WINAPI oleFlush() {
   if (!direction(true)) { blocked(true); return E_ACCESSDENIED; }
   OleTransportScope transport;
   return originalOleFlush();
 }
+/** 中文：用 MinHook 按系统模块导出名注册替换，保存原函数入口，仅 MH_OK 表示成功。 English: Register a replacement by system module/export through MinHook and retain the original entry; only MH_OK succeeds. 参数声明 / Declared parameters: const wchar_t* module,const char* name,void* replacement,T* original. */
 template<class T> static bool hook(const wchar_t* module,const char* name,void* replacement,T* original) {
   return MH_CreateHookApi(module,name,replacement,reinterpret_cast<void**>(original))==MH_OK;
 }
+/** 中文：在当前 Detours 事务内绑定静态系统函数并保存 trampoline，失败由调用方中止整个事务。 English: Bind a static system function and retain its trampoline in the current Detours transaction; callers abort the whole transaction on failure. 参数声明 / Declared parameters: T* original,T source,void* replacement. */
 template<class T> static bool earlyHook(T* original,T source,void* replacement) {
   *original=source;
   return DetourAttach(reinterpret_cast<void**>(original),replacement)==NO_ERROR;
 }
+/** 中文：核对已加载模块的完整 System32 路径，拒绝同名私有 DLL，长度/API 失败也返回 false。 English: Verify the loaded module's exact system-directory path, rejecting same-named private DLLs and length/API failures. 参数声明 / Declared parameters: const wchar_t* name. */
 static bool earlySystemModule(const wchar_t* name) {
   wchar_t actual[MAX_PATH]{},system[MAX_PATH]{};
   const HMODULE module=GetModuleHandleW(name);
@@ -756,6 +834,7 @@ static bool earlySystemModule(const wchar_t* name) {
     CompareStringOrdinal(actual,int(size),system,int(size),TRUE)==CSTR_EQUAL && actual[size]==L'\\' &&
     CompareStringOrdinal(actual+size+1,-1,name,-1,TRUE)==CSTR_EQUAL;
 }
+/** 中文：从实际 SetWindowSubclass 地址找到模块并核对受保护系统/WinSxS 来源，而非仅凭文件名。 English: Resolve the module from the actual SetWindowSubclass address and verify protected system/WinSxS provenance rather than a filename alone. */
 static bool systemControlsLoaded() {
   wchar_t actual[MAX_PATH]{};
   HMODULE module=nullptr;
@@ -764,6 +843,7 @@ static bool systemControlsLoaded() {
   const DWORD length=module?GetModuleFileNameW(module,actual,MAX_PATH):0;
   return length && length<MAX_PATH && controlSystemImage(actual);
 }
+/** 中文：loader lock 下只使用已静态加载依赖，核对载荷和共享策略后仅登记启动线程；整组 Detours 原子提交，任何步骤失败不得运行原初始化代码。 English: Under loader lock use only statically loaded dependencies, verify payload/shared policy and enlist only the startup thread; commit all Detours atomically and refuse original initialization on any failure. 参数声明 / Declared parameters: const SakuraClipboardEarly* input. */
 static bool earlyConfigure(const SakuraClipboardEarly* input) {
   // This runs under the loader lock. user32/ole32 are static dependencies of
   // this DLL; never LoadLibrary, freeze other threads or wait for a worker here.
@@ -824,7 +904,9 @@ static bool earlyConfigure(const SakuraClipboardEarly* input) {
 }
 // Detours' first import refers to ordinal 1. The loader resolves this symbol;
 // it does not execute it. The existing named configuration entry stays intact.
+/** 中文：提供 Detours 第一导入所需的序号符号；加载器只解析地址，此空导出不执行配置。 English: Provide the ordinal symbol required by Detours' first import; the loader resolves its address and the empty export does not configure policy. */
 extern "C" __declspec(dllexport) void WINAPI SakuraClipboardEarlyOrdinal() {}
+/** 中文：互斥配置普通运行进程，核对共享身份并安装所有钩子、确认既有控件；失败卸载钩子/映射并返回阶段错误码，同一段重复配置幂等。 English: Serialize ordinary-process configuration, verify shared identity, install all hooks and confirm existing controls; on failure unwind hooks/mapping and return stage codes, with same-section reconfiguration idempotent. 参数声明 / Declared parameters: void* pointer. */
 extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* pointer) {
   const auto input=static_cast<const SakuraClipboardConfigure*>(pointer);
   if (!input || input->magic!=SakuraClipboardMagic || input->version!=SakuraClipboardVersion ||
@@ -889,6 +971,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* poi
   ReleaseSRWLockExclusive(&configureLock);
   return answer;
 }
+/** 中文：保存模块实例并关闭线程通知；静态受控导入必须携带匹配早期载荷且全部配置成功，否则拒绝进程初始化，普通显式加载保留后续配置入口。 English: Save the instance/disable thread notifications; controlled static imports require matching early payload and complete configuration or process initialization is refused, while ordinary explicit loads retain later configuration. 参数声明 / Declared parameters: HINSTANCE instance,DWORD reason,LPVOID reserved. */
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
   if (reason==DLL_PROCESS_ATTACH) {
     policyModule=instance;

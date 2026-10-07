@@ -1,5 +1,8 @@
 /**
- * 模块职责：配置本地模型并预览脱敏上下文，执行问答/解释/修复建议和命令计划请求。
+ * 模块职责（中文）：配置本地模型并预览脱敏上下文，执行问答/解释/修复建议和命令计划请求。
+ * Module responsibility (English): Previewing redacted model context and requesting suggestions and command plans.
+ * 详细范围（中文）：公开入口包括 LocalAssistant；职责覆盖预览脱敏模型上下文并请求建议和命令计划，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include LocalAssistant. The scope covers Previewing redacted model context and requesting suggestions and command plans. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
@@ -21,6 +24,12 @@ const names: Record<AssistantMode, string> = {
   fix: '修复建议',
   plan: '自然语言命令规划',
 };
+/**
+ * 中文：呈现预览脱敏模型上下文并请求建议和命令计划中的 LocalAssistant 界面，订阅 /assistant，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
+ * English: Render the LocalAssistant surface for Previewing redacted model context and requesting suggestions and command plans, subscribing to /assistant. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
+ * 中文：输入：{ request } 提供 request（带身份和权限作用域的传输能力） 上下文字段
+ * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
+ */
 export function LocalAssistant({ request }: { request: Request }) {
   const remote = useRemote<AssistantView>(request, '/assistant', true, 0);
   const [settings, setSettings] = useState<AssistantSettings>({
@@ -41,15 +50,21 @@ export function LocalAssistant({ request }: { request: Request }) {
     [message, setMessage] = useState('');
   const active = useRef<AbortController | null>(null),
     alive = useRef(true);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     alive.current = true;
+    /**
+     * 中文：在预览脱敏模型上下文并请求建议和命令计划流程中取消捕获的异步寿命；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+     * English: In Previewing redacted model context and requesting suggestions and command plans, abort the captured asynchronous lifetime. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+     * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+     * English: Result: deliver through the described state/resource effects without returning business data
+     */
     return () => {
       alive.current = false;
       active.current?.abort();
     };
   }, []);
   const loadedVersion = useRef(0);
-  useEffect(() => {
+  useEffect(/** 中文：当依赖 [remote.data] 变化时settings 状态，preview 状态，操作结果，models 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data] change, settings state, preview state, operation result, models state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (remote.data && remote.data.version !== loadedVersion.current) {
       loadedVersion.current = remote.data.version;
       setSettings(remote.data.settings);
@@ -58,17 +73,43 @@ export function LocalAssistant({ request }: { request: Request }) {
       setModels([]);
     }
   }, [remote.data]);
+  /**
+   * 中文：在预览脱敏模型上下文并请求建议和命令计划流程中preview 状态，操作结果，错误反馈，完成提示；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Previewing redacted model context and requesting suggestions and command plans, preview state, operation result, error feedback, completion message. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const resetPreview = () => {
     setPreview(undefined);
     setResult(undefined);
     setError('');
     setMessage('');
   };
+  /**
+   * 中文：在预览脱敏模型上下文并请求建议和命令计划流程中settings 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Previewing redacted model context and requesting suggestions and command plans, settings state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：value：待校验、转换或保存的输入值
+   * English: Inputs: value: input value to validate/transform/save
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const change = (value: Partial<AssistantSettings>) => {
     setSettings({ ...settings, ...value });
     resetPreview();
   };
-  const run = async (work: (signal: AbortSignal) => Promise<void>) => {
+  /**
+   * 中文：在预览脱敏模型上下文并请求建议和命令计划流程中忙碌标记，错误反馈，完成提示；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Previewing redacted model context and requesting suggestions and command plans, busy flag, error feedback, completion message. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：输入：work：签名所示 (signal: AbortSignal) => Promise<void> 业务值
+   * English: Inputs: work: the (signal: AbortSignal) => Promise<void> domain value in the signature
+   * 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝
+   * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
+   * 中文：设计：成功和失败均执行 finally 释放本轮在途或资源标记，保持下一次调用可继续；释放与业务成功分别判断
+   * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
+   * 中文：设计：等待期间身份或版本可能改变，完成后按捕获代次比较再采用结果，避免旧上下文覆盖新状态
+   * English: Design: identity/version may change while awaiting; compare captured generations before adopting completion to avoid old context replacing new state
+   */
+  const run = async (work: /** 中文：在动作取消信号内执行助手请求，并把结果交回反馈流程；这是 LocalAssistant.run 的调用契约 | English: Execute assistant work within the action cancellation signal and deliver results to feedback; this is the callable contract of LocalAssistant.run | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：Promise<void>；调用者依赖此类型约定，Promise 拒绝表示异步失败 | English: Result: Promise<void>; callers depend on this type contract, with promise rejection representing asynchronous failure */ (signal: AbortSignal) => Promise<void>) => {
     if (active.current) return;
     const abort = new AbortController();
     active.current = abort;
@@ -88,6 +129,12 @@ export function LocalAssistant({ request }: { request: Request }) {
     }
   };
   const dirty = !remote.data || JSON.stringify(settings) !== JSON.stringify(remote.data.settings);
+  /**
+   * 中文：在预览脱敏模型上下文并请求建议和命令计划流程中timeout 状态，创建二进制内容临时 URL；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
+   * English: In Previewing redacted model context and requesting suggestions and command plans, timeout state, create temporary binary-content URLs. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
+   * 中文：结果：通过上述状态或资源副作用交付，不返回业务数据
+   * English: Result: deliver through the described state/resource effects without returning business data
+   */
   const exportResult = () => {
     if (!result) return;
     const data = result.plan
@@ -110,9 +157,16 @@ export function LocalAssistant({ request }: { request: Request }) {
         只发送下方显式输入的内容；会检查模型是否声明远程转发，并在发送前提供脱敏预览。
       </p>
       <form
-        onSubmit={(event) => {
+        onSubmit={/**
+         * 中文功能：拦截配置提交，保存本地助手设置；未取消时清除旧预览与模型列表，显示成功反馈并刷新。
+         * English: Intercept configuration submission and save local-assistant settings; if not cancelled, clear old previews/model lists, show success feedback and refresh.
+         * 输入 / Inputs: event.
+         * 结果：按上述用途返回界面/判定值或完成事件处理；不返回值的分支由状态与动作反馈观察。
+         * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
+         */
+        (event) => {
           event.preventDefault();
-          void run(async (signal) => {
+          void run(/** 中文：提交 POST /assistant，完成预览脱敏模型上下文并请求建议和命令计划的数据交互并更新models 状态、完成提示；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /assistant for Previewing redacted model context and requesting suggestions and command plans and update models state, completion message. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
             await request(
               '/assistant',
               'POST',
@@ -195,7 +249,7 @@ export function LocalAssistant({ request }: { request: Request }) {
               type="button"
               disabled={dirty || !settings.enabled}
               onClick={() =>
-                void run(async (signal) => {
+                void run(/** 中文：提交 POST /assistant，完成预览脱敏模型上下文并请求建议和命令计划的数据交互并更新models 状态、完成提示；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /assistant for Previewing redacted model context and requesting suggestions and command plans and update models state, completion message. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                   const value = await request<{ models: typeof models }>(
                     '/assistant',
                     'POST',
@@ -267,7 +321,7 @@ export function LocalAssistant({ request }: { request: Request }) {
             className="secondary compact"
             disabled={!instruction.trim() || dirty}
             onClick={() =>
-              void run(async (signal) => {
+              void run(/** 中文：提交 POST /assistant，完成预览脱敏模型上下文并请求建议和命令计划的数据交互并更新preview 状态、操作结果；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /assistant for Previewing redacted model context and requesting suggestions and command plans and update preview state, operation result. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 const value = await request<AssistantPreview>(
                   '/assistant',
                   'POST',
@@ -309,7 +363,7 @@ export function LocalAssistant({ request }: { request: Request }) {
             className="primary compact"
             disabled={busy || dirty || !settings.enabled || !preview.model}
             onClick={() =>
-              void run(async (signal) => {
+              void run(/** 中文：提交 POST /assistant，完成预览脱敏模型上下文并请求建议和命令计划的数据交互并更新preview 状态、操作结果；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /assistant for Previewing redacted model context and requesting suggestions and command plans and update preview state, operation result. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
                 const id = preview.id;
                 setPreview(undefined);
                 const value = await request<AssistantResult>(
@@ -329,7 +383,7 @@ export function LocalAssistant({ request }: { request: Request }) {
       {busy && (
         <div className="button-row">
           <span role="status">正在处理模型请求…</span>
-          <button className="secondary compact" onClick={() => active.current?.abort()}>
+          <button className="secondary compact" onClick={/** 中文：在预览脱敏模型上下文并请求建议和命令计划流程中取消捕获的异步寿命；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Previewing redacted model context and requesting suggestions and command plans, abort the captured asynchronous lifetime. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation */ () => active.current?.abort()}>
             取消模型请求
           </button>
         </div>

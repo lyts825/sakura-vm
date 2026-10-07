@@ -1,4 +1,9 @@
-/** 烟雾验收：验证真实 VM 项目 UID 出站隔离、规则持久恢复与网络释放边界。 */
+/**
+ * 模块职责：在新建自有 VM 执行项目出口隔离、普通 SSH/cron、提权助手拒绝、规则恢复及网络释放验收。
+ * Module: Exercise project egress isolation, ordinary SSH/cron, privilege-helper refusal, rule recovery and network release in a newly owned VM.
+ * 设计思路：先固定源码/二进制与自有夹具边界，再按完整 VM、boot、项目和运行身份记录生产回执及内核观察；不同层的完成/关闭证据分别核对，诊断输出不扩大实际验收范围。
+ * Design: Pin sources/binaries and fixture ownership first, then record production receipts/kernel observations against complete VM/boot/project/run identity. Check completion/closure at each layer separately; diagnostics do not broaden actual acceptance.
+ */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
@@ -28,6 +33,18 @@ if (process.argv.length === 2 || process.argv[2] === '--describe') {
   await run(diagnostic ? process.argv[4] : undefined);
 }
 
+/**
+ * 中文功能：构建独立自有 VM，固定工具与控制器来源，验证项目出口隔离、普通服务与重启恢复，并核对客户机和网络清理。
+ * English: Build a separate owned VM, pin tools/controller origins, verify project egress isolation, ordinary services and reboot recovery, then check guest/network cleanup.
+ * 输入 / Inputs: diagnosticDirectory: string。
+ * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+ * Result: No explicit result value; callers observe completion, state changes or an exception.
+ * 状态影响 / State effects: `prior`, `proof.sourceContract`, `proof.base`, `process.env.SAKURA_DATA_DIR`, `process.env.SAKURA_IMAGE_DIR`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+ * 协作入口 / Collaborators: `realpath`, `assert.ok`, `isAbsolute`, `assert.equal`.
+ * 检查边界 / Checked boundaries: `assert.ok(isAbsolute(configuredApkFixture))`; `assert.equal(diagnosticDirectory, undefined, 'Package fixtures apply only to a new owned VM')`.
+ * 设计思路：将真实内核观察、生产控制器回执、宿主进程和 SSH 物理关闭分别记录；只在新自有 VM 内按明确准入错误重启 SSH/cron，避免把通道退出或规则声明等同于实际隔离。
+ * Design: Record real kernel observations, production-controller receipts, host processes and physical SSH closure separately. Restart SSH/cron only for an explicit admission error in the newly owned VM; neither channel exit nor a declared rule proves actual isolation.
+ */
 async function run(diagnosticDirectory?: string) {
   const workspace = await realpath('.');
   const configuredApkFixture = process.env.SAKURA_EGRESS_APK_FIXTURE;
@@ -67,6 +84,14 @@ async function run(diagnosticDirectory?: string) {
       ),
     );
   }
+  /**
+   * 中文功能：计算输入字节的 SHA-256，供源码、二进制或证据内容核对。
+   * English: Compute SHA-256 over input bytes for source, binary or evidence-content checks.
+   * 输入 / Inputs: bytes: Buffer | string。
+   * 结果：返回分支计算值（`createHash('sha256').update(bytes).digest('hex')`）。
+   * Result: Return the branch-computed value (`createHash('sha256').update(bytes).digest('hex')`).
+   * 协作入口 / Collaborators: `createHash('sha256').update(bytes).digest`, `createHash('sha256').update`, `createHash`.
+   */
   const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
   const proof: any = {
     version: 1,
@@ -93,6 +118,18 @@ async function run(diagnosticDirectory?: string) {
   };
   // Capture runtime import dependencies, rather than unrelated concurrently edited HA/Windows code.
   const captured = new Set<string>();
+  /**
+   * 中文功能：记录当前文件、目录或进程观察值及其来源，供后续身份和内容核对。
+   * English: Record current file/directory/process observations with their origins for later identity/content checks.
+   * 输入 / Inputs: file: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `proof.sourceSha256[local]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `resolve`, `relative(workspace, absolute).replaceAll`, `relative`, `assert.ok`.
+   * 检查边界 / Checked boundaries: `assert.ok(!local.startsWith('../') && !local.startsWith('.data/'))`; `assert.equal(await realpath(absolute), absolute)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   async function capture(file: string) {
     const absolute = resolve(workspace, file),
       local = relative(workspace, absolute).replaceAll('\\', '/');
@@ -105,6 +142,14 @@ async function run(diagnosticDirectory?: string) {
     if (!/\.[cm]?[jt]sx?$/.test(local)) return;
     const source = ts.createSourceFile(local, bytes.toString(), ts.ScriptTarget.Latest, true);
     const dependencies: string[] = [];
+    /**
+     * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+     * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+     * 输入 / Inputs: node: ts.Node。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `ts.isImportDeclaration`, `ts.isStringLiteral`, `dependencies.push`, `ts.isExportDeclaration`.
+     */
     const visit = (node: ts.Node) => {
       if (
         ts.isImportDeclaration(node) &&
@@ -194,10 +239,31 @@ async function run(diagnosticDirectory?: string) {
     qemuActive = false,
     boot = 0;
   let apkFixture: Awaited<ReturnType<typeof startAlpineApkFixture>> | undefined;
+  /**
+   * 中文功能：记录本轮验收阶段，供诊断材料关联当前进行的步骤。
+   * English: Record this smoke's phase so diagnostic material identifies the current step.
+   * 输入 / Inputs: name: string。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `proof.phases.push`, `new Date().toISOString`, `console.log`.
+   */
   const phase = (name: string) => {
     proof.phases.push({ name, at: new Date().toISOString() });
     console.log('PHASE ' + name);
   };
+  /**
+   * 中文功能：执行已固定摘要的宿主工具或 VM 进程，记录 PID、退出与流关闭；预算、超时或取消通过本运行的 child 处理。
+   * English: Run a digest-pinned host tool/VM process, recording PID, exit and stream closure; handle budgets/timeouts/cancellation through this run's child.
+   * 输入 / Inputs: executable: string; args: string[]; options: Parameters<Engine['run']>[2] = {}; vm = false。
+   * 结果：返回分支计算值（`'' / Buffer.concat(stdout).toString()`），以 Promise 交付。
+   * Result: Return the branch-computed value (`'' / Buffer.concat(stdout).toString()`) through a Promise.
+   * 状态影响 / State effects: `entry.pid`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 失败 / Failure: `failure`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `assert.equal`, `hash`, `readFile`, `JSON.stringify`.
+   * 检查边界 / Checked boundaries: `assert.equal(hash(await readFile(executable)), proof.binarySha256[executable])`; `assert.equal(entry.outputLimitExceeded, undefined)`.
+   * 设计思路：累计 stdout/stderr 字节并限制为 2 MiB，直到 close 再判定结果，finally 移除定时器与取消监听；进程 exit 与物理流关闭分开留证。
+   * Design: Count stdout/stderr against a 2 MiB budget and decide results only after close. Finally removes timers/abort listeners; retain process exit separately from physical stream closure.
+   */
   async function execute(
     executable: string,
     args: string[],
@@ -251,6 +317,15 @@ async function run(diagnosticDirectory?: string) {
       }),
     );
     children.set(child, closed);
+    /**
+     * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+     * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+     * 输入 / Inputs: 无 / none。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 状态影响 / State effects: `entry.abortRequested`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `child.kill`.
+     */
     const abort = () => {
       entry.abortRequested = true;
       child.kill();
@@ -279,6 +354,14 @@ async function run(diagnosticDirectory?: string) {
     }
   }
   const hardware = { memoryMiB: 1536, cpus: 2 };
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 失败 / Failure: `new Error('Unknown egress fixture Engine operation')`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   */
   const unsupported = () => {
     throw new Error('Unknown egress fixture Engine operation');
   };
@@ -288,15 +371,41 @@ async function run(diagnosticDirectory?: string) {
     qemuIoAvailable: false,
     aarch64Available: false,
     runtime: {
+      /**
+       * 中文功能：结束本轮拥有的运行或资源，按当前分支观察清理完成并保留失败证据。
+       * English: Finalize runs/resources owned by this smoke, observe completion under the implemented branches and retain failed evidence.
+       * 输入 / Inputs: 无 / none。
+       * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+       * Result: No explicit result value; callers observe completion, state changes or an exception.
+       * 协作入口 / Collaborators: `children.keys`, `child.kill`, `Promise.all`, `children.values`.
+       */
       close: async () => {
         for (const child of children.keys()) child.kill();
         await Promise.all(children.values());
       },
     },
     runStatus: unsupported,
+    /**
+     * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+     * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`unsupported()`）。
+     * Result: Return the branch-computed value (`unsupported()`).
+     * 协作入口 / Collaborators: `unsupported`.
+     */
     get service() {
       return unsupported();
     },
+    /**
+     * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+     * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+     * 输入 / Inputs: tool: string; args: string[]; options: Parameters<Engine['run']>[2]。
+     * 结果：返回分支计算值（`execute(img, args, options) / execute(qemu, args, options, true)`），以 Promise 交付。
+     * Result: Return the branch-computed value (`execute(img, args, options) / execute(qemu, args, options, true)`) through a Promise.
+     * 状态影响 / State effects: `qemuActive`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `args.at`, `assert.deepEqual`, `args.slice`, `assert.equal`.
+     * 检查边界 / Checked boundaries: `assert.deepEqual(args.slice(0, 7), ['create', '-f', 'qcow2', '-F', 'qcow2', '-b', base])`; `assert.equal(args.length, 9)`.
+     */
     run: async (tool: string, args: string[], options?: Parameters<Engine['run']>[2]) => {
       if (tool === 'sakura-img') {
         const disk = args.at(-2)!;
@@ -311,6 +420,14 @@ async function run(diagnosticDirectory?: string) {
       assert.equal(tool, 'sakura-qemu');
       assert.ok(vmId && !qemuActive && boot <= 2);
       qemuActive = true;
+      /**
+       * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+       * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+       * 输入 / Inputs: value: string。
+       * 结果：返回分支计算值（`value.replaceAll(',', ',,')`）。
+       * Result: Return the branch-computed value (`value.replaceAll(',', ',,')`).
+       * 协作入口 / Collaborators: `value.replaceAll`.
+       */
       const escaped = (value: string) => value.replaceAll(',', ',,');
       assert.deepEqual(
         args.flatMap((arg, index) => (arg === '-drive' ? [args[index + 1]] : [])),
@@ -338,12 +455,29 @@ async function run(diagnosticDirectory?: string) {
     identities = new ProjectIdentities(machines),
     migrations = new ProjectDirectoryMigrations(machines, spaces),
     managedSsh = new ProjectSsh(machines, spaces);
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: error: unknown。
+   * 结果：返回分支计算值（`({ message: error instanceof Error ? error.message : String(error), code: error …`）。
+   * Result: Return the branch-computed value (`({ message: error instanceof Error ? error.message : String(error), code: error …`).
+   * 协作入口 / Collaborators: `String`, `Reflect.get`.
+   */
   const diagnosticError = (error: unknown) => ({
     message: error instanceof Error ? error.message : String(error),
     code: error instanceof Error ? Reflect.get(error, 'code') || null : null,
   });
   const machineExec = machines.exec.bind(machines);
-  machines.exec = async (...arguments_: Parameters<typeof machineExec>) => {
+  machines.exec = /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: arguments_: Parameters<typeof machineExec>。
+   * 结果：返回分支计算值（`result`），以 Promise 交付。
+   * Result: Return the branch-computed value (`result`) through a Promise.
+   * 失败 / Failure: `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `machineExec`, `proof.controlDiagnostics.push`, `hash`, `new Date().toISOString`.
+   */
+  async (...arguments_: Parameters<typeof machineExec>) => {
     try {
       const result = await machineExec(...arguments_);
       if (result.code !== 0) proof.controlDiagnostics.push({
@@ -358,7 +492,19 @@ async function run(diagnosticDirectory?: string) {
     }
   };
   const sshStatus = managedSsh.status.bind(managedSsh);
-  managedSsh.status = async (...arguments_: Parameters<typeof sshStatus>) => {
+  managedSsh.status = /**
+   * 中文功能：读取当前自有项目、运行或状态证据，供相邻真实环境断言核对。
+   * English: Read current owned-project/run/state evidence for adjacent real-environment assertions.
+   * 输入 / Inputs: arguments_: Parameters<typeof sshStatus>。
+   * 结果：返回分支计算值（`result`），以 Promise 交付。
+   * Result: Return the branch-computed value (`result`) through a Promise.
+   * 状态影响 / State effects: `entry.result`, `entry.error`, `entry.finishedAt`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 失败 / Failure: `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `new Date().toISOString`, `proof.sshStatusDiagnostics.push`, `sshStatus`, `diagnosticError`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
+  async (...arguments_: Parameters<typeof sshStatus>) => {
     const entry: any = { startedAt: new Date().toISOString(), projectId: arguments_[1]._workspace };
     proof.sshStatusDiagnostics.push(entry);
     try {
@@ -383,7 +529,17 @@ async function run(diagnosticDirectory?: string) {
     } finally { entry.finishedAt = new Date().toISOString(); }
   });
   const machineConnect = machines.connect.bind(machines);
-  machines.connect = async (...arguments_: Parameters<typeof machineConnect>) => {
+  machines.connect = /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: arguments_: Parameters<typeof machineConnect>。
+   * 结果：返回分支计算值（`client`），以 Promise 交付。
+   * Result: Return the branch-computed value (`client`) through a Promise.
+   * 状态影响 / State effects: `client`, `connection.readyAt`, `connection.error`, `connection.finishedAt`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 失败 / Failure: `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+   * 协作入口 / Collaborators: `new Date().toISOString`, `proof.machineConnectionDiagnostics.push`, `machineConnect`, `client.once`.
+   */
+  async (...arguments_: Parameters<typeof machineConnect>) => {
     const connection: any = { startedAt: new Date().toISOString() };
     proof.machineConnectionDiagnostics.push(connection);
     let client: Awaited<ReturnType<typeof machineConnect>>;
@@ -398,14 +554,32 @@ async function run(diagnosticDirectory?: string) {
       throw error;
     }
     const original = client.exec;
-    Reflect.set(client, 'exec', (...args: unknown[]) => {
+    Reflect.set(client, 'exec', /**
+     * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+     * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+     * 输入 / Inputs: args: unknown[]。
+     * 结果：返回分支计算值（`Reflect.apply(original, client, args)`）。
+     * Result: Return the branch-computed value (`Reflect.apply(original, client, args)`).
+     * 状态影响 / State effects: `args[args.length - 1]`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 协作入口 / Collaborators: `args.at`, `command.includes`, `hash`, `new Date().toISOString`.
+     */
+    (...args: unknown[]) => {
       const command = args[0], callback = args.at(-1);
       if (typeof command === 'string' && command.includes('sock=socket.create_connection') &&
           typeof callback === 'function') {
         const entry: any = { commandSha256: hash(command), startedAt: new Date().toISOString(),
           stderr: '', exit: null, closed: false };
         proof.relayDiagnostics.push(entry);
-        args[args.length - 1] = (error: Error | undefined, channel: import('ssh2').ClientChannel) => {
+        args[args.length - 1] = /**
+         * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+         * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+         * 输入 / Inputs: error: Error | undefined; channel: import('ssh2').ClientChannel。
+         * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+         * Result: No explicit result value; callers observe completion, state changes or an exception.
+         * 状态影响 / State effects: `entry.setupError`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+         * 协作入口 / Collaborators: `channel.stderr.on`, `channel.once`, `callback`.
+         */
+        (error: Error | undefined, channel: import('ssh2').ClientChannel) => {
           if (error) entry.setupError = error.message;
           if (channel) {
             channel.stderr.on('data', (bytes: Buffer) => {
@@ -426,6 +600,16 @@ async function run(diagnosticDirectory?: string) {
   const clients = new Set<import('ssh2').Client>(),
     channels = new Set<import('ssh2').ClientChannel>();
   const clientClosures = new Map<import('ssh2').Client, Promise<void>>();
+  /**
+   * 中文功能：结束本轮登记的 SSH 客户端，并按当前限时逻辑观察物理关闭。
+   * English: End an SSH client registered for this smoke and observe physical closure through the implemented deadline logic.
+   * 输入 / Inputs: client: import('ssh2').Client。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `client.end`, `Promise.race`, `clientClosures.get`, `proof.cleanupErrors.push`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   async function closeClient(client: import('ssh2').Client) {
     client.end();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -451,14 +635,41 @@ async function run(diagnosticDirectory?: string) {
     beta: Awaited<ReturnType<typeof project>> | undefined,
     serverRecord: any,
     cronInstalled = false;
+  /**
+   * 中文功能：通过本轮客户机传输执行固定命令，按退出状态拒绝失败并交付标准输出。
+   * English: Execute a fixed command through this run's guest transport, reject failed exit status, and return stdout.
+   * 输入 / Inputs: command: string; timeout = 30000。
+   * 结果：返回分支计算值（`result.stdout.trim()`），以 Promise 交付。
+   * Result: Return the branch-computed value (`result.stdout.trim()`) through a Promise.
+   * 协作入口 / Collaborators: `machines.exec`, `assert.equal`, `result.stdout.trim`.
+   * 检查边界 / Checked boundaries: `assert.equal(result.code, 0, result.stderr || result.stdout)`.
+   */
   async function guest(command: string, timeout = 30000) {
     const result = await machines.exec(vmId, command, timeout);
     assert.equal(result.code, 0, result.stderr || result.stdout);
     return result.stdout.trim();
   }
+  /**
+   * 中文功能：把固定 Python 观察程序交给客户机执行，沿当前传输返回其输出或解析结果。
+   * English: Execute a fixed Python observation program in the guest and return output or its parsed result through the current transport.
+   * 输入 / Inputs: source: string; timeout = 30000。
+   * 结果：返回分支计算值（`JSON.parse(await guest('/usr/bin/python3 -I -S -c ' + quote(source), timeout))`），以 Promise 交付。
+   * Result: Return the branch-computed value (`JSON.parse(await guest('/usr/bin/python3 -I -S -c ' + quote(source), timeout))`) through a Promise.
+   * 协作入口 / Collaborators: `JSON.parse`, `guest`, `quote`.
+   */
   async function python(source: string, timeout = 30000) {
     return JSON.parse(await guest('/usr/bin/python3 -I -S -c ' + quote(source), timeout));
   }
+  /**
+   * 中文功能：在客户机固定控制器来源上执行只读准入诊断，分别捕获 registry、网络 realm、NNP 和进程祖先的拒绝证据。
+   * English: Run readonly admission diagnostics against the pinned guest controller, separately capturing registry, network-realm, NNP and process-ancestry refusals.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`python( `import os,json,hashlib,traceback path=${JSON.stringify(controller)};raw…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`python( `import os,json,hashlib,traceback path=${JSON.stringify(controller)};raw…`) through a Promise.
+   * 协作入口 / Collaborators: `source.manifest.files.find`, `python`, `JSON.stringify`.
+   * 设计思路：诊断前后重复核对源码摘要，单项失败保留异常与有界 traceback 而继续其余观察；不能将诊断成功替代生产准入或真实隔离验收。
+   * Design: Recheck source digests before/after diagnosis and retain each failure with bounded traceback while continuing other observations. Diagnostic completion does not replace production admission or real isolation acceptance.
+   */
   async function admissionDiagnosis() {
     const controller = '/usr/local/lib/sakura-project-identity/' + source.manifest.build + '/controller.py';
     const digest = source.manifest.files.find((entry) => entry.name === 'controller.py')!.sha256;
@@ -503,19 +714,60 @@ print(json.dumps(report))`,
       60000,
     );
   }
-  async function waitFor(action: () => Promise<boolean> | boolean, label: string, timeout = 30000) {
+  /**
+   * 中文功能：在限定期限内重复检查观测条件，未达到条件时由断言拒绝验收。
+   * English: Poll an observed condition within a fixed deadline and fail acceptance through assertions if it never holds.
+   * 输入 / Inputs: action: () => Promise<boolean> | boolean; label: string; timeout = 30000。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `Date.now`, `action`, `assert.ok`, `delay`.
+   * 检查边界 / Checked boundaries: `assert.ok(Date.now() < deadline, label)`.
+   */
+  async function waitFor(action: /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => Promise<boolean> | boolean, label: string, timeout = 30000) {
     const deadline = Date.now() + timeout;
     while (!(await action())) {
       assert.ok(Date.now() < deadline, label);
       await delay(250);
     }
   }
-  async function check(name: string, action: () => Promise<unknown>) {
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: name: string; action: () => Promise<unknown>。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `phase`, `action`, `proof.cases.push`, `console.log`.
+   */
+  async function check(name: string, action: /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: 无 / none。
+   * 结果：由声明的返回类型规定结果；实现责任由测试提供者承担。
+   * Result: The declared return type defines the result; its test provider supplies the implementation.
+   */
+  () => Promise<unknown>) {
     phase(name);
     const observation = await action();
     proof.cases.push({ name, observation });
     console.log('PASS ' + name);
   }
+  /**
+   * 中文功能：建立本轮自有项目目录和配置，通过迁移预览及 reviewed 应用取得激活身份。
+   * English: Create an owned project directory/configuration and obtain activated identity through migration preview and reviewed application.
+   * 输入 / Inputs: name: string; networkIsolation: 'host' | 'private' = 'private'。
+   * 结果：返回受控对象，公开字段包括 `id, directory, identity`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `id, directory, identity`; the actual branch determines its shape.
+   * 协作入口 / Collaborators: `guest`, `quote`, `projectSchema.parse`, `spaces.projects.create`.
+   * 设计思路：只针对 private 项目的明确 NNP_RESTART_REQUIRED 在新自有 VM 重启 SSH/cron，再重试一次；其他拒绝直接传播，始终使用预览 planId 与摘要提交。
+   * Design: Only an explicit NNP_RESTART_REQUIRED for a private project restarts SSH/cron in the newly owned VM before one retry. Propagate other refusals and always commit the preview planId/digest.
+   */
   async function project(name: string, networkIsolation: 'host' | 'private' = 'private') {
     const directory = projectParent + '/' + name;
     await guest('mkdir ' + quote(directory));
@@ -523,7 +775,20 @@ print(json.dumps(report))`,
     const index = await spaces.projects.create(vmId, name + '-' + invocation.slice(0, 8), () =>
       writeStore(projectMetadataFile(vmId, spaces.projects.current(vmId)), config),
     );
-    const identity = await spaces.projects.with(vmId, index.active, async () => {
+    const identity = await spaces.projects.with(vmId, index.active, /**
+     * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+     * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+     * 输入 / Inputs: 无 / none。
+     * 结果：返回分支计算值（`applied.plan!.activatedIdentity!`），以 Promise 交付。
+     * Result: Return the branch-computed value (`applied.plan!.activatedIdentity!`) through a Promise.
+     * 状态影响 / State effects: `preview`, `proof.nnpServiceRestart`, `proof.nnpServiceRestart.retryAccepted`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+     * 失败 / Failure: `error`；异常由调用者或用例断言接收 / The caller or test assertions observe the exception.
+     * 协作入口 / Collaborators: `migrations.preview`, `phase`, `String`, `guest`.
+     * 检查边界 / Checked boundaries: `assert.ok(preview.plan)`; `assert.equal(applied.plan?.state, 'applied')`.
+     * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+     * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+     */
+    async () => {
       let preview: Awaited<ReturnType<typeof migrations.preview>>;
       try {
         preview = await migrations.preview(vmId);
@@ -561,6 +826,15 @@ print(json.dumps(report))`,
     });
     return { id: index.active, directory, identity };
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: port: number; username: string; privateKey: string | Buffer; publicKey: string。
+   * 结果：返回分支计算值（`client`），以 Promise 交付。
+   * Result: Return the branch-computed value (`client`) through a Promise.
+   * 协作入口 / Collaborators: `ssh2.utils.parseKey`, `assert.ok`, `Array.isArray`, `hash`.
+   * 检查边界 / Checked boundaries: `assert.ok(!(key instanceof Error) && !Array.isArray(key))`.
+   */
   async function connect(port: number, username: string, privateKey: string | Buffer, publicKey: string) {
     const key = ssh2.utils.parseKey(publicKey);
     assert.ok(!(key instanceof Error) && !Array.isArray(key));
@@ -574,7 +848,15 @@ print(json.dumps(report))`,
       clients.delete(client);
       done();
     })));
-    await new Promise<void>((done, reject) => {
+    await new Promise<void>(/**
+     * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+     * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+     * 输入 / Inputs: done; reject。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `client.once`, `client.connect`.
+     */
+    (done, reject) => {
       client.once('ready', done);
       client.once('error', reject);
       client.connect({
@@ -583,15 +865,47 @@ print(json.dumps(report))`,
         username,
         privateKey,
         hostHash: 'sha256',
+        /**
+         * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+         * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+         * 输入 / Inputs: fingerprint: string。
+         * 结果：返回分支计算值（`fingerprint === expected`）。
+         * Result: Return the branch-computed value (`fingerprint === expected`).
+         */
         hostVerifier: (fingerprint: string) => fingerprint === expected,
         readyTimeout: 60000,
       });
     });
     return client;
   }
+  /**
+   * 中文功能：在已连接 SSH 客户端执行命令，记录通道退出及物理关闭，收集有预算的 stdout 和 stderr。
+   * English: Execute a command through a connected SSH client, record channel exit/physical closure and collect budgeted stdout plus stderr.
+   * 输入 / Inputs: client: import('ssh2').Client; command: string; pty = false。
+   * 结果：返回分支计算值（`new Promise<{ code: number; output: string; stderr: string }>((done, reject) => …`），以 Promise 交付。
+   * Result: Return the branch-computed value (`new Promise<{ code: number; output: string; stderr: string }>((done, reject) => …`) through a Promise.
+   * 设计思路：stdout 超过 1 MiB 或 60 秒未关闭则关闭通道并拒绝；以 close 回执解除登记并返回输出，退出事件单独保留用于诊断。
+   * Design: Close/reject the channel above 1 MiB stdout or after 60 seconds without closure. Unregister and return output on close, retaining the separate exit event for diagnostics.
+   */
   async function sshExec(client: import('ssh2').Client, command: string, pty = false) {
-    return new Promise<{ code: number; output: string; stderr: string }>((done, reject) => {
-      client.exec(command, { pty }, (error, channel) => {
+    return new Promise<{ code: number; output: string; stderr: string }>(/**
+     * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+     * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+     * 输入 / Inputs: done; reject。
+     * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+     * Result: No explicit result value; callers observe completion, state changes or an exception.
+     * 协作入口 / Collaborators: `client.exec`.
+     */
+    (done, reject) => {
+      client.exec(command, { pty }, /**
+       * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+       * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+       * 输入 / Inputs: error; channel。
+       * 结果：返回分支计算值（`reject(error)`）。
+       * Result: Return the branch-computed value (`reject(error)`).
+       * 协作入口 / Collaborators: `reject`, `channels.add`, `proof.sshChannels.push`, `channel.once`.
+       */
+      (error, channel) => {
         if (error) return reject(error);
         channels.add(channel);
         const receipt: any = { closed: false, exit: null };
@@ -653,6 +967,14 @@ int main(int argc,char **argv) {
  puts("]}");return 0;
 }
 `;
+  /**
+   * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+   * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`python( `import os,subprocess,json,struct,hashlib root=${JSON.stringify(helperDi…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`python( `import os,subprocess,json,struct,hashlib root=${JSON.stringify(helperDi…`) through a Promise.
+   * 协作入口 / Collaborators: `python`, `JSON.stringify`.
+   */
   async function installPrivilegeHelpers() {
     return python(
       `import os,subprocess,json,struct,hashlib
@@ -691,6 +1013,18 @@ fd=os.open(sys.argv[1],os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
 with os.fdopen(fd,'w') as stream:json.dump(record,stream);stream.flush();os.fsync(stream.fileno())
 while True:time.sleep(1)
 `;
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`serverRecord`），以 Promise 交付。
+   * Result: Return the branch-computed value (`serverRecord`) through a Promise.
+   * 状态影响 / State effects: `serverRecord`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `python`, `JSON.stringify`, `waitFor`, `assert.equal`.
+   * 检查边界 / Checked boundaries: `assert.equal(serverRecord.pid, launched.pid)`; `assert.equal(serverRecord.cwd, fixture)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   async function startServer() {
     const path = fixture + '/server.py',
       receipt = fixture + '/server-' + boot + '.json';
@@ -716,6 +1050,15 @@ print(json.dumps({'pid':child.pid,'receipt':receipt}))`);
     proof.phases.push({ name: 'owned dual-stack server', boot, record: serverRecord });
     return serverRecord;
   }
+  /**
+   * 中文功能：结束本轮拥有的运行或资源，按当前分支观察清理完成并保留失败证据。
+   * English: Finalize runs/resources owned by this smoke, observe completion under the implemented branches and retain failed evidence.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 状态影响 / State effects: `serverRecord`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `python`, `JSON.stringify`, `hash`, `proof.phases.push`.
+   */
   async function stopServer() {
     if (!serverRecord) return;
     const record = serverRecord;
@@ -734,6 +1077,15 @@ print(json.dumps({'pid':pid,'exactOwnerChecked':True,'stopped':True}))`);
     proof.phases.push({ name: 'owned dual-stack server stopped', boot, observation: stopped });
     serverRecord = undefined;
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（``import json,os,socket,subprocess result={'uid':os.getuid(),'gid':os.getgid(),'n…`）。
+   * Result: Return the branch-computed value (``import json,os,socket,subprocess result={'uid':os.getuid(),'gid':os.getgid(),'n…`).
+   * 协作入口 / Collaborators: `assert.ok`, `JSON.stringify`, `String`.
+   * 检查边界 / Checked boundaries: `assert.ok(serverRecord)`.
+   */
   function socketClient() {
     assert.ok(serverRecord);
     return `import json,os,socket,subprocess
@@ -750,6 +1102,15 @@ for name in ('setuid','filecap'):
 print(json.dumps(result))
 `;
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: value: any。
+   * 结果：返回分支计算值（`value`）。
+   * Result: Return the branch-computed value (`value`).
+   * 协作入口 / Collaborators: `assert.ok`, `assert.equal`, `value.connections.every`.
+   * 检查边界 / Checked boundaries: `assert.ok(alpha)`; `assert.equal(value.uid, alpha.identity.uid)`.
+   */
   function blocked(value: any) {
     assert.ok(alpha);
     assert.equal(value.uid, alpha.identity.uid);
@@ -759,6 +1120,17 @@ print(json.dumps(result))
     assert.ok(value.connections.every((entry: any) => entry.connected === false));
     return value;
   }
+  /**
+   * 中文功能：核对真实 setuid/filecap 助手仍保持项目 UID/EUID、setuid 失败且所有连接尝试被拒绝。
+   * English: Check that real setuid/filecap helpers retain project UID/EUID, fail setuid and have every connection attempt refused.
+   * 输入 / Inputs: value: any。
+   * 结果：返回分支计算值（`value`）。
+   * Result: Return the branch-computed value (`value`).
+   * 协作入口 / Collaborators: `assert.equal`, `assert.ok`, `helper.connections.every`.
+   * 检查边界 / Checked boundaries: `assert.equal(value.noNewPrivileges, 1)`; `assert.equal(helper.uidBefore, alpha!.identity.uid)`.
+   * 设计思路：将 NoNewPrivileges 与实际提权助手、网络结果一起核对，避免只从服务配置推断内核执行效果。
+   * Design: Check NoNewPrivileges together with actual privilege-helper and network results instead of inferring kernel execution from service configuration alone.
+   */
   function privilegesBlocked(value: any) {
     assert.equal(value.noNewPrivileges, 1);
     for (const kind of ['setuid', 'filecap']) {
@@ -771,6 +1143,15 @@ print(json.dumps(result))
     }
     return value;
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`python(`import json,os,subprocess,shutil uid=${alpha.identity.uid};root='/var/li…`），以 Promise 交付。
+   * Result: Return the branch-computed value (`python(`import json,os,subprocess,shutil uid=${alpha.identity.uid};root='/var/li…`) through a Promise.
+   * 协作入口 / Collaborators: `assert.ok`, `python`.
+   * 检查边界 / Checked boundaries: `assert.ok(alpha)`.
+   */
   async function policy() {
     assert.ok(alpha);
     return python(`import json,os,subprocess,shutil
@@ -780,6 +1161,17 @@ table=json.loads(subprocess.check_output([shutil.which('nft',path='/usr/sbin:/us
 print(json.dumps({'bootId':open('/proc/sys/kernel/random/boot_id').read().strip(),'networkInode':str(os.stat('/proc/1/ns/net').st_ino),'owner':owner,'table':table,
  'sshdDependency':open('/etc/conf.d/sshd').read(),'cronDependency':open('/etc/conf.d/crond').read()}))`);
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回分支计算值（`privilegesBlocked(blocked(JSON.parse(result.output)))`），以 Promise 交付。
+   * Result: Return the branch-computed value (`privilegesBlocked(blocked(JSON.parse(result.output)))`) through a Promise.
+   * 协作入口 / Collaborators: `assert.ok`, `guest`, `connect`, `machines.live.get`.
+   * 检查边界 / Checked boundaries: `assert.ok(alpha)`; `assert.equal(result.code, 0, result.stderr || result.output)`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   async function systemSsh() {
     assert.ok(alpha);
     const publicKey = await guest('cat /etc/ssh/ssh_host_ed25519_key.pub');
@@ -797,6 +1189,18 @@ print(json.dumps({'bootId':open('/proc/sys/kernel/random/boot_id').read().strip(
       await closeClient(client);
     }
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回受控对象，公开字段包括 `installed`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `installed`; the actual branch determines its shape.
+   * 状态影响 / State effects: `cronInstalled`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+   * 协作入口 / Collaborators: `assert.ok`, `socketClient().replace`, `socketClient`, `JSON.stringify`.
+   * 检查边界 / Checked boundaries: `assert.ok(alpha)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   async function cron() {
     assert.ok(alpha);
     const program = alpha.directory + '/cron-' + boot + '.py',
@@ -828,6 +1232,17 @@ print(open(path).read())`);
     cronInstalled = false;
     return { ...privilegesBlocked(blocked(result)), installed };
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回受控对象，公开字段包括 `target, neighbor, root`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `target, neighbor, root`; the actual branch determines its shape.
+   * 协作入口 / Collaborators: `assert.ok`, `socketClient`, `blocked`, `JSON.parse`.
+   * 检查边界 / Checked boundaries: `assert.ok(alpha && beta)`; `assert.equal(value.networkInode, serverRecord.networkInode)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   async function ordinary() {
     assert.ok(alpha && beta);
     const source = socketClient(),
@@ -860,6 +1275,17 @@ print(open(path).read())`);
     assert.equal(rootClient.uid, 0);
     return { target, neighbor, root: rootClient };
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：返回受控对象，公开字段包括 `pty`；各分支以实际返回对象为准。
+   * Result: Return a controlled object exposing fields such as `pty`; the actual branch determines its shape.
+   * 协作入口 / Collaborators: `assert.ok`, `spaces.projects.with`, `spaces.projects.inScope`, `managedSsh.endpoint`.
+   * 检查边界 / Checked boundaries: `assert.ok(alpha)`; `assert.ok(endpoint)`.
+   * 设计思路：将结果验证与 `finally` 收尾分离，正常完成和失败都经过相同收尾入口。
+   * Design: Separate result verification from finally-based finalization so success and failure share the same finalization entry.
+   */
   async function managed() {
     assert.ok(alpha);
     await spaces.projects.with(vmId, alpha.id, () => managedSsh.start(vmId));
@@ -898,6 +1324,17 @@ print(json.dumps(result))`;
       await spaces.projects.with(vmId, alpha.id, () => managedSsh.stop(vmId));
     }
   }
+  /**
+   * 中文功能：执行当前模块的真实客户机观察或配置步骤并检查其条件；下述断言摘录明确本函数证明的边界。
+   * English: Perform this module's real guest observation/configuration step and check its conditions; assertion excerpts below identify the established boundaries.
+   * 输入 / Inputs: 无 / none。
+   * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
+   * Result: No explicit result value; callers observe completion, state changes or an exception.
+   * 协作入口 / Collaborators: `phase`, `machines.start`, `waitFor`, `assert.equal`.
+   * 检查边界 / Checked boundaries: `assert.equal(machines.state(vmId), 'running', (await machines.view(vmId)).lastError)`.
+   * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
+   * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
+   */
   async function bootVm() {
     boot++;
     phase('owned Alpine boot ' + boot);
@@ -940,7 +1377,16 @@ print(json.dumps(result))`;
         0,
       );
       await bootVm();
-      await check('actual OpenRC launcher help contracts on exact closed owned VM', async () => {
+      await check('actual OpenRC launcher help contracts on exact closed owned VM', /**
+       * 中文功能：协调本模块中下述具体调用与结果，推进自有真实环境验收或其诊断观察。
+       * English: Coordinate the concrete calls/results below to advance owned real-environment acceptance or diagnostic observations.
+       * 输入 / Inputs: 无 / none。
+       * 结果：返回分支计算值（`observation`），以 Promise 交付。
+       * Result: Return the branch-computed value (`observation`) through a Promise.
+       * 状态影响 / State effects: `proof.diagnostic`, `proof.admissionDiagnosis`；仅以实际赋值及本组夹具归属为准 / Follow the assignments and ownership of this fixture.
+       * 协作入口 / Collaborators: `python`, `admissionDiagnosis`.
+       */
+      async () => {
         const observation = await python(`import os,subprocess,json,shutil
 env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','HOME':'/','LANG':'C','LC_ALL':'C'};records=[]
 for name in ('start-stop-daemon','supervise-daemon'):
