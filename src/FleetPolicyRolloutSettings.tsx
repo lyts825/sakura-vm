@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置跨主机策略批次和目标，执行灰度下发并展示各批次结果。
+ */
 import { useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 

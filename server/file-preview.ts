@@ -1,3 +1,6 @@
+/**
+ * 模块职责：解析文本、表格等有界文件预览，限制 CSV 字段、列数和格式错误。
+ */
 import { gunzipSync } from 'node:zlib';
 import { posix } from 'node:path';
 import { AppError } from '../shared/errors.ts';

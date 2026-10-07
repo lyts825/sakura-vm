@@ -1,3 +1,6 @@
+/**
+ * 模块职责：记录短时间内的启动失败并熔断重复启动，支持检查后的显式复位。
+ */
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：标识操作在业务效果发生前已拒绝，供结果记录区分拒绝与不确定执行状态。
+ */
 const refusals = new WeakMap<object, readonly string[] | undefined>();
 
 /** Only a domain that has proved the requested effect has not begun may use this.

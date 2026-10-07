@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - queued resources revalidate their original operation and release every dimension on revocation
+ * - cancellation during asynchronous authorization returns the granted resource without executing work
+ * - permission checks do not recursively inherit themselves, and trusted control cleanup remains available
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AppError } from '../shared/errors.ts';

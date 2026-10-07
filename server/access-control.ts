@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理本地账户、会话、成员与登录交接凭证；授权与撤销以当前账户状态为准。
+ */
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';

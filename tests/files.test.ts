@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - optimistic editing rejects stale saves without altering the remote file
+ * - editing detects external changes made while the replacement is uploading
+ * - creating a text file never overwrites an existing file
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';

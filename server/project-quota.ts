@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理项目磁盘配额及目录保护，拒绝重叠目录和配额恢复期间的目录变更。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import { join, posix } from 'node:path';

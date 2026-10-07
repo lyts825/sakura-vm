@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理项目运行时探测、选择和安装，按项目串行版本变更并关联原执行作用域。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

@@ -1,3 +1,4 @@
+/** 后代令牌检查与固定：核实 SID、认证 LUID、会话和 primary 类型，限制 CreateProcessAsUser、WithToken、WithLogon 的身份边界。 */
 #pragma once
 #include "protocol.h"
 #include <cstring>

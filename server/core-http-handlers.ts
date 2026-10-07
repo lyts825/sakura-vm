@@ -1,3 +1,6 @@
+/**
+ * 模块职责：汇集核心领域 HTTP 处理器，供统一操作网关按已声明的操作路径分派。
+ */
 import type { ApplicationServices } from './application-services.ts';
 import type { HttpOperationHandler } from './operation-gateway.ts';
 import { combineHttpHandlers, type CoreHttpContext } from './http-core-context.ts';

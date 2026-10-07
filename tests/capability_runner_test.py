@@ -1,3 +1,7 @@
+# Python 回归入口：校验辅助进程的协议、输入和失败路径；平台要求以各用例中的条件检查为准。
+# 覆盖：test_network_diagnostics_probe_real_dns_tcp_tls_failure_and_closed_port
+# 覆盖：test_network_diagnostics_deadline_terminates_stalled_https
+# 覆盖：test_network_diagnostics_resolves_a_real_local_route
 import importlib.util
 import json
 import os

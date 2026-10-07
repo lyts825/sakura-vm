@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“磁盘与诊断”插件的存储、磁盘维护策略与实例诊断标签，使用宿主传入的实例、项目和请求上下文。
+ */
 import { formatDateTime } from '../../src/localization';
 import { Download } from 'lucide-react';
 import { useEffect, useState } from 'react';

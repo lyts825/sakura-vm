@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - recursive host events and guest events trigger scans, with periodic reconciliation and disposal
+ * - missing inotify falls back to scans and closing or replacing a watcher cancels SSH
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';

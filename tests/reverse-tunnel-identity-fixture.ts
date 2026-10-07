@@ -1,3 +1,4 @@
+/** 反向隧道身份夹具；使用受控客户机传输与独立目录构造原项目运行及清理回执。 */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';

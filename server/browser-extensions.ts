@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理浏览器扩展配对码和连接凭证；检查扩展来源、管理员身份与尝试频率。
+ */
 import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';

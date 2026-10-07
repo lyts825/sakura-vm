@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/** 自更新预检、暂存、激活与回滚，校验发行摘要并用隔离数据目录进行候选健康检查，再替换活动版本指针。 */
 import { networkFor } from './network-client.mjs';
 const updateNetwork = networkFor('tool:self-update');
 const { fetch, createServer } = updateNetwork;
@@ -101,6 +102,7 @@ export async function pointer(installation = root) {
 }
 
 export async function setPointer(installation, active, previous) {
+  // 指针只接受已限定的版本路径；同目录临时记录经 rename 发布，读取方不会看到半份 JSON。
   versionPath(installation, active);
   if (previous !== null) versionPath(installation, previous);
   const folder = join(installation, '.sakura-update');
@@ -128,6 +130,7 @@ async function prepareRuntime(candidate, installation) {
 }
 
 export async function stageUpdate(source, installation = root, options = {}) {
+  // 候选先复制到新版本目录并再次验摘要；使用独立数据目录预检，成功后才允许修改活动指针。
   const selected = await realpath(source);
   const manifest = await verifyReleaseManifest(selected);
   await mkdir(join(installation, 'versions'), { recursive: true });

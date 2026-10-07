@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验插件路由及 socket 贡献并解析归属，加载器目录来自生成的插件清单。
+ */
 import { PLUGINS, PLUGIN_PACKS, type HttpContribution } from '../../shared/plugins.ts';
 import { validateCatalog } from '../../shared/plugin-selection.ts';
 import { loaders } from './loaders.generated.ts';

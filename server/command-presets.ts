@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存参数化命令收藏并执行声明过的参数，限制收藏数量和未声明输入。
+ */
 import type { ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
 import { randomUUID } from 'node:crypto';

@@ -1,3 +1,4 @@
+/** LSP/DAP 自有 VM 验证支撑，提供协议探针、项目 UID 断言和精确运行票据清理。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';

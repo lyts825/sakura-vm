@@ -1,3 +1,4 @@
+/** 准备隔离的现代 .NET 剪贴板验证运行时，核对官方发行元数据、下载摘要和复用夹具文件身份。 */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';

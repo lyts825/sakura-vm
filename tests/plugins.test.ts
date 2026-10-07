@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - a fresh install has no optional plugins, listeners, job stores or optional UI surfaces
+ * - every pack resolves version pins and dependencies before consumers without duplicates
+ * - invalid dependencies, cycles, incompatible APIs and pack pins fail before activation
+ */
 type GatewayFixtureHost = import('../server/features.ts').Features;
 type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
 const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {

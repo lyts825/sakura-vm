@@ -1,3 +1,4 @@
+/** 烟雾验收：验证Win32/OLE/WinRT 及常规控件、托管剪贴板接口的真实策略覆盖。 */
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';

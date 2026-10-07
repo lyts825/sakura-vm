@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - local certificate is a valid localhost TLS identity, persists and rotates live
+ * - certificate nearing expiry rotates automatically on service startup
+ * - requesting a domain alias upgrades an older certificate without alias coverage
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { X509Certificate } from 'node:crypto';

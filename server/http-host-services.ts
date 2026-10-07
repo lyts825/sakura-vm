@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理宿主资源、设备及互操作相关 API，将请求转交对应领域服务。
+ */
 import { AppError } from '../shared/errors.ts';
 import { sendJson as send } from './http-response.ts';
 import { assistantRequest } from './local-assistant.ts';

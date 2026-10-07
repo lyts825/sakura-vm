@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目私有网络与隔离通信的实际行为。 */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

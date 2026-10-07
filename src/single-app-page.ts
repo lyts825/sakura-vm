@@ -1,3 +1,6 @@
+/**
+ * 模块职责：单应用弹窗入口：通过带 nonce 的消息完成父窗口握手，连接桌面并执行受控剪贴板传输。
+ */
 import type RFB from '@novnc/novnc';
 import { socketPath } from '../shared/socket-client.ts';
 import { connectDesktop } from './desktop-connection';

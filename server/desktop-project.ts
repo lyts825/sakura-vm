@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理项目桌面的启动、恢复与停止；旧会话或清理未确认的票据继续保留供核查。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';

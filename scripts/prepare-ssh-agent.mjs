@@ -1,3 +1,4 @@
+/** 将来宾 SSH agent 辅助源码封装到服务器资源，记录逐文件身份供安装与执行校验。 */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

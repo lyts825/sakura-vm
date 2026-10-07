@@ -1,3 +1,4 @@
+# 模块职责：核验客户机 SSH Agent 转发的账户、socket 和原运行归属，按原票据准备及清理代理。
 """Fixed root controller; project command bytes never enter this process.
 
 SO_PEERCRED authenticates the connector, not a later recipient of a passed FD.
@@ -43,6 +44,7 @@ def identifier(value):
     require(isinstance(value, str) and str(uuid.UUID(value)) == value, 'CONTEXT_INVALID')
 
 
+# 同时核对任务、账号修订和代理构建摘要；只知道 socket 路径不足以获得原任务的 Agent 权限。
 def context_checked(value):
     require(set(value) == {'resource', 'identity', 'owner', 'sha256'}, 'CONTEXT_INVALID')
     resource, identity, owner = value['resource'], value['identity'], value['owner']
@@ -78,6 +80,7 @@ def info(value):
             'gid': value.st_gid, 'mode': stat.S_IMODE(value.st_mode), 'type': stat.S_IFMT(value.st_mode)}
 
 
+# root 控制目录逐级固定为目录 FD，并核对所有者及权限，避免项目账户替换中间路径。
 def directory(path, mode=None, gid=0, create=False, source=False):
     require(path.startswith('/') and all(part not in ['', '.', '..'] for part in path.split('/')[1:]), 'PATH_INVALID')
     current = os.open('/', os.O_RDONLY | os.O_DIRECTORY | FLAGS)

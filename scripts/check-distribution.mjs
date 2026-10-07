@@ -1,3 +1,4 @@
+/** 验证实际发行目录、编译入口、运行依赖和原生资源摘要，确保安装布局无需源码即可运行。 */
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';

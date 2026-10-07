@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验项目账户、网络和运行票据，部署经摘要验证的固定账户启动器并核对完整身份。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -64,8 +67,7 @@ const manifestSchema = z.object({ version: z.literal(1), build: digest,
 }).strict().refine(value => value.files.every((file, index) => file.name === projectIdentityAssetNames[index]));
 
 export async function projectIdentitySources(sourceDirectory = join(ROOT, '.sakura-server/assets/project-identity')) {
-  // Packaged operation requires the manifest. There is intentionally no fallback
-  // to a checkout's native sources or an unverified guest compiler input.
+  // 发布运行必须有资源清单；不能退回工作区源码或未经摘要核验的客户机编译输入。
   const manifest = manifestSchema.parse(JSON.parse(await readFile(join(sourceDirectory, 'manifest.json'), 'utf8')));
   const files = new Map<string, Buffer>(), aggregate = createHash('sha256');
   for (const expected of manifest.files) {

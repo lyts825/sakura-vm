@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取受支持发行版的软件包清单并查询 OSV，校验包名称、版本与发行版映射。
+ */
 import { networkFor } from './network/index.ts';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';

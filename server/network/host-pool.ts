@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理宿主网络工作进程和连接池，固定目标并在清理失败时保留原租约供重试。
+ */
 import { fork, spawn, type ChildProcess } from 'node:child_process';
 import { createConnection, type Socket } from 'node:net';
 import { randomUUID } from 'node:crypto';

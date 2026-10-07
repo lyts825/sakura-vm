@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验并管理客户机 WireGuard 配置与动作，周期核对隧道状态及私密密钥引用。
+ */
 import type { SecretsV1 } from './service-contracts/v1.ts';
 import { createPrivateKey, createPublicKey, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';

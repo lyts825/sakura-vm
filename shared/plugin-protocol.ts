@@ -1,3 +1,6 @@
+/**
+ * 模块职责：插件清单、插件包和启用选择的公共协议；提供内置插件默认值、精确版本依赖及贡献声明构造器。
+ */
 import type { z } from 'zod';
 import type { PluginInstanceView } from './contracts/plugin-runtime.ts';
 import type {
@@ -10,7 +13,7 @@ import type {
 } from './plugin-schema.ts';
 
 export const PLUGIN_API_VERSION = 5;
-export const BUILTIN_PLUGIN_VERSION = '2.3.5';
+export const BUILTIN_PLUGIN_VERSION = '2.3.6';
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type PluginPack = z.infer<typeof pluginPackSchema>;
 export type PluginSelection = z.infer<typeof pluginSelectionSchema>;
@@ -39,6 +42,7 @@ type PluginInput = Pick<PluginManifest, 'id' | 'name' | 'description' | 'categor
       'kind' | 'schemaVersion' | 'contributes' | 'id' | 'name' | 'description' | 'category'
     >
   > & { contributes?: Partial<PluginManifest['contributes']> };
+// 默认贡献数组总是存在；input 可覆盖元数据，而 contributes 单独展开，避免局部贡献覆盖遗漏其他集合。
 export function definePlugin(input: PluginInput): PluginManifest {
   return {
     schemaVersion: 1,
@@ -77,6 +81,7 @@ export const operation = (
   path: string,
   status = 200,
 ): OperationContribution => ({ id, method, path, status });
+// 插件包只描述选择入口与版本固定成员；服务启动顺序由依赖解析结果决定。
 export function definePack(
   input: Pick<PluginPack, 'id' | 'name' | 'description' | 'members'> &
     Partial<Pick<PluginPack, 'version' | 'replacesPlugins'>>,

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证QEMU xHCI 与 usb-host 的真实 QMP 热插拔。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';

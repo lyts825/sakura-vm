@@ -1,3 +1,4 @@
+/** 烟雾验收：验证私有 window station 上 CLR 初始化阶段剪贴板策略与清理。 */
 import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';

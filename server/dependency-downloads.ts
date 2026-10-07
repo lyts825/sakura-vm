@@ -1,3 +1,6 @@
+/**
+ * 模块职责：解析依赖下载凭证并部署临时认证代理；清理按原临时路径和客户机启动身份执行。
+ */
 import type { SecretsV1 } from './service-contracts/v1.ts';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

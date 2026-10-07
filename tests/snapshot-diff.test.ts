@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - snapshot diff validates states and paths, and parses newline-safe filenames
+ * - snapshot comparison converts the selected state, scans both read-only disks, compares sectors and persists results
+ */
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { randomUUID } from 'node:crypto';

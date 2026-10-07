@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置虚拟音视频设备规则，预览匹配结果并查看当前设备状态。
+ */
 import { useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 

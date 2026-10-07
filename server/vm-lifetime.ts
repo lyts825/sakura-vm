@@ -1,3 +1,6 @@
+/**
+ * 模块职责：跟踪客户机运行代次、活动和状态切换屏障，旧身份执行在代次变化后失效。
+ */
 import { randomUUID } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { AppError } from '../shared/errors.ts';
@@ -95,7 +98,7 @@ const legacy = new WeakMap<object, VmLifetime>();
 const exclusiveContext = new AsyncLocalStorage<{ lifetime: VmLifetime; active: boolean }>();
 const changed = () => new AppError('客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
 
-/** Process lifetime, restored RAM generation and observed guest boot are independent identities. */
+/** 宿主进程、恢复内存后的执行代次与客户机 boot 是独立身份，不能用其中一个替代全部核对。 */
 export class VmLifetime {
   readonly vmProcessId = randomUUID();
   readonly resources: ResourceScope;
@@ -169,8 +172,7 @@ export class VmLifetime {
     this.execution.abort(changed());
     this.execution = new AbortController();
     this.generation = randomUUID();
-    // Keep the last real observation, but do not stamp an unobserved restored generation with it.
-    // RAM restore may return to an older boot_id; the first actual guest read pins that value.
+    // 保留最后实际读到的 boot，但不把它盖到未观察的新代次上；恢复内存也可能回到旧 boot_id。
     return this.capture();
   }
   async setNetwork(lease: VmNetworkLease) {
@@ -223,7 +225,7 @@ export class VmLifetime {
       },
     };
   }
-  /** Synchronous exclusion prevents an execution admission racing an already-held VM lock. */
+  /** 同步关闭准入，避免新的项目执行与已持有的实例锁竞争；持久会话由对应控制器处理。 */
   async exclusive<T>(work: () => Promise<T>, allowFailed = false): Promise<T> {
     if (
       [...this.activities].some(
@@ -240,7 +242,7 @@ export class VmLifetime {
       this.barriers--;
     }
   }
-  /** Close admission before waiting; callers acquire the exclusive VM lock only after this resolves. */
+  /** 先关闭准入，再等待已有活动退出；调用方在屏障完成后才进入实例排他操作。 */
   async barrier<T>(work: () => Promise<T>, cancel = true, allowFailed = false): Promise<T> {
     if (this.ended || this.abort.signal.aborted) throw changed();
     this.barriers++;

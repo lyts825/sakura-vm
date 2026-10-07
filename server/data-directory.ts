@@ -1,3 +1,6 @@
+/**
+ * 模块职责：解析数据目录切换记录；检测循环、未完成迁移和超深重定向，保留原目录边界。
+ */
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, join, isAbsolute } from 'node:path';
 

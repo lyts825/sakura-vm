@@ -1,3 +1,4 @@
+/** 烟雾验收：验证编译 HTTP 的 X11 原生剪贴板策略、输入和生命周期。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile, realpath, writeFile, rm } from 'node:fs/promises';

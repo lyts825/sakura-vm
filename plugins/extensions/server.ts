@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“工程扩展适配器”插件服务端入口。激活时装配 ExtendedFeatures，并处理声明的服务端操作。
+ */
 import { services as projectsServices } from '../projects/services.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';

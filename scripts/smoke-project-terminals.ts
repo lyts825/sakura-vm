@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目终端只读授权、撤销、暂停守卫及插件禁用回退。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';

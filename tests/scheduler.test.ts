@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - periodic work owns its budget independently of the registering job and actor
+ * - application drain stops new schedules and exposes cancellation until physical work finishes
+ * - overlapping triggers coalesce into one followup while skip never overlaps
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';

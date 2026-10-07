@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - first-checkout repository URLs are credential-free HTTPS or guest loopback HTTP
+ * - only an applied matching Git scope resolves its separate secret
+ * - bundle checkout pins the default branch and object hash in a clean project command
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

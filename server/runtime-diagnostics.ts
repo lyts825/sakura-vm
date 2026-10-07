@@ -1,3 +1,6 @@
+/**
+ * 模块职责：采集事件循环延迟、利用率及运行阶段耗时，关闭时停用当前控制器的直方图。
+ */
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import { runtimeTimings } from './runtime-timings.ts';
 

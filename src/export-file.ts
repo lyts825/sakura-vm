@@ -1,3 +1,6 @@
+/**
+ * 模块职责：通过临时对象 URL 导出 Blob 或文本，完成下载后释放浏览器资源。
+ */
 export function saveBlob(name: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

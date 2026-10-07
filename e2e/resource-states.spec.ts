@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - task center distinguishes queued, cancelling, retained cleanup and interrupted work on mobile
+ */
 import { expect, test } from '@playwright/test';
 import { emptySelection, PLUGINS, PLUGIN_PACKS } from '../shared/plugins.ts';
 

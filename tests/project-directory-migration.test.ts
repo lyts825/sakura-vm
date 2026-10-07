@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - allowlist excludes root, system folders, parent traversals and ambiguous paths
+ * - GET only reads saved host view, with no account reservation, source install or SSH
+ * - unsaved project preview refuses before account reservation and SSH
+ */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import { setVmStorageRoot } from '../server/paths.ts';
 import assert from 'node:assert/strict';

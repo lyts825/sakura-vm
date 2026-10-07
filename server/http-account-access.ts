@@ -1,3 +1,6 @@
+/**
+ * 模块职责：将账户、通行密钥、SSO 与权限操作连接到核心 HTTP 网关处理器。
+ */
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

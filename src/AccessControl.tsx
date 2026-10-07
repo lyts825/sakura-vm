@@ -1,3 +1,6 @@
+/**
+ * 模块职责：账户、通行密钥、单点登录与共享会话界面；同时提供项目权限、临时授权和变更审批的配置入口。
+ */
 import { formatDateTime } from './localization';
 import { socketPath } from '../shared/socket-client.ts';
 import type { SocketServerMessage } from '../shared/contracts/websocket-client.generated.ts';

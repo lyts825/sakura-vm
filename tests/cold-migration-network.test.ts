@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - pinned peer TLS streams a real validated bundle into a distinct machine manager
+ */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';

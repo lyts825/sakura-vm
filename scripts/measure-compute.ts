@@ -1,3 +1,4 @@
+/** 运行可重复的计算预览夹具并测量耗时，供受控计算路径的性能对比使用。 */
 import { gzipSync } from 'node:zlib';
 import { previewFile } from '../server/file-preview.ts';
 import { engineeringInvocation, engineeringSource } from '../server/engineering-runner.ts';

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - slow polling applies completed responses while the next interval is already pending
+ * - out-of-order success and error responses cannot replace a newer result
+ * - disposing a request owner invalidates all in-flight responses and permits a fresh lifecycle
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ResponseOrder } from '../src/request-order.ts';

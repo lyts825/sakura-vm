@@ -1,3 +1,4 @@
+/** 受控 S3 HTTP 夹具，模拟对象、版本和锁定响应供备份验收使用，不作为真实远端存储证据。 */
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 

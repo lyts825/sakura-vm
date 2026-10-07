@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“沙箱工作台”插件的隔离环境创建、资源策略、命令执行和制品页面，使用宿主传入的实例、项目和请求上下文。
+ */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { Clock, Play, Plus, Shield, Square, TerminalSquare, Trash2 } from 'lucide-react';

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - resolved admission and media rejections identify a handler that never executed, while business failures cannot inherit that marker
+ * - all actual declarations resolve exactly and HTTP documentation shares their authority
+ * - diagnostic contracts accept the real runtime resource association shapes
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { IncomingMessage, ServerResponse } from 'node:http';

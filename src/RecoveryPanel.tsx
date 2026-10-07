@@ -1,3 +1,6 @@
+/**
+ * 模块职责：展示领域恢复目录、诊断和恢复记录，发起明确选定的恢复或重建操作。
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   recoveryListSchema,

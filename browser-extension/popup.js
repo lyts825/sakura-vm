@@ -1,3 +1,4 @@
+/** 浏览器扩展弹窗：配对本机只读凭据、刷新实例清单，并在撤销或遗忘时清除本地凭据。 */
 const element = (id) => document.getElementById(id);
 const status = element('status');
 const pairForm = element('pair-form');
@@ -67,6 +68,7 @@ function renderVms(vms) {
 
 async function refresh() {
   if (!connection.token) return;
+  // 配对/遗忘可能在请求期间切换连接；对象身份与刷新序号共同拒绝旧响应覆盖新状态。
   const current = connection;
   const version = ++refreshVersion;
   show(true);

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：探测 QEMU GPU 后端并管理实例 GPU 档案，配置依据实际宿主支持结果。
+ */
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';

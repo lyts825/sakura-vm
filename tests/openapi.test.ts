@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - all HTTP inputs declare a body protocol and expose query/header contracts without unknown bodies
+ * - SDK and typed frontend use the same form, no-body and binary encoding and retain failure identities
+ * - VM project hints are declared and optional query values encode consistently in SDK and typed clients
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目依赖缓存的原子发布、故障拒绝及保留夹具证据。 */
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取有界任务历史和指标，生成任务 SLO、异常基线与能力报告。
+ */
 import type { IdeV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { cpus, freemem, totalmem } from 'node:os';

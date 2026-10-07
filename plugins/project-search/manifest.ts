@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“项目搜索”插件清单：项目文件索引、文件名与内容搜索。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

@@ -1,3 +1,4 @@
+/** 宣传视频共用的纸面、品牌、图标和入场动画组件，以当前帧计算确定性画面。 */
 import type {CSSProperties, ReactNode} from 'react';
 import {AbsoluteFill, CanvasImage, Easing, interpolate, useCurrentFrame, useVideoConfig, staticFile} from 'remotion';
 import {colors, font} from './theme';

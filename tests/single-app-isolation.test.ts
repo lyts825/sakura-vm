@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - single-app transport retains its original native project/run instead of a caller-selected port or project
+ * - active independent native runs guard their own project config and stop preserves account data
+ * - pause and clipboard tightening close bridges, keep original receipts and deny reconnection
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

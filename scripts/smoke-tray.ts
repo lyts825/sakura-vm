@@ -1,3 +1,4 @@
+/** 烟雾验收：验证Windows 隐藏托盘服务启动、真实状态读取及策略恢复。 */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';

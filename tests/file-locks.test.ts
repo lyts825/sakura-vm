@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - file leases exclude overlapping edits, renew and expire without stale-token writes
+ * - file lease acquisition waits for an in-flight mutation and then blocks a second writer
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FileLocks } from '../server/file-locks.ts';

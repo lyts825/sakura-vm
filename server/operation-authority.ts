@@ -1,3 +1,6 @@
+/**
+ * 模块职责：构造操作授权检查，协调账户会话、锁状态及插件权限的持续有效性。
+ */
 import type { ProjectCatalogV1 } from './service-contracts/v1.ts';
 import type { IncomingMessage } from 'node:http';
 import { AppError } from '../shared/errors.ts';
@@ -25,7 +28,7 @@ type AuthorityOptions = {
   projects?: Pick<ProjectCatalogV1, 'list' | 'readCommittedList'>;
 };
 
-/** Core and plugin requests share this policy; protocol-specific handlers keep their own proofs. */
+/** 核心与插件请求共用当前授权策略；具体协议的归属证明仍由对应领域处理器核验。 */
 export function createOperationAuthority(options: AuthorityOptions) {
   const { machines, features, access, session, projectPermissions, browserExtensions,
     equalToken, socketAuthorization } = options;
@@ -72,7 +75,7 @@ export function createOperationAuthority(options: AuthorityOptions) {
       const index = await gatewayProjects.list(vmId);
       projectId = projectIdSchema.parse(projectId || index.active);
       if (!index.projects.some(project => project.id === projectId)) throw new AppError('项目不存在', 404);
-      // Downstream project adapters use the captured project even if the saved active project changes.
+      // 固定本请求项目；之后保存的当前项目变化不能把原操作转到另一个项目。
       url.searchParams.set('project', projectId);
     };
     if (projectScoped) await bindProject();
@@ -120,7 +123,7 @@ export function createOperationAuthority(options: AuthorityOptions) {
           if (policy.approval === 'project-change' && projectPermissions.requiresApproval(vmId, projectId))
             throw new AppError('此项目的配置变更需要第二位账户审批', 409);
         }
-        // Committed metadata reads can yield; authenticate again after they finish.
+        // 已提交元数据读取也会异步等待；读完再次核对账户、锁和实例身份，封住等待期间的撤销。
         if (policy.maintenance === 'block' && features.migration?.blocked)
           throw new AppError('数据目录迁移维护中', 409, 'MAINTENANCE');
         if (vmId && policy.identity === 'fixed-vm' && machines.live.get(vmId) !== initialLive)

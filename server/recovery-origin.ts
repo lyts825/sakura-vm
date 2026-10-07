@@ -1,3 +1,6 @@
+/**
+ * 模块职责：捕获恢复票据的原操作归属并计算修订摘要，供恢复动作匹配原始证据。
+ */
 import { createHash } from 'node:crypto';
 import { recoveryOriginSchema, type RecoveryOrigin } from '../shared/contracts/domain-recovery.ts';
 import { resourceContext } from './host-runtime/context.ts';

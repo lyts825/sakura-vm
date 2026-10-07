@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - npm and pip get distinct writable copies bound to one exact native owner; retirement archives the full proof
+ * - lost preparation ACK keeps run:null intent, then exact native never-issued proof safely retires the partial copy
+ * - orphan recovery first obtains the original full native closure and never repeats prepare or UID execution
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证明确释放的停机 guest-task 夹具中命令字面输入及项目作用域。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

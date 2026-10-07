@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“网络管理”插件的端口、代理、网络配置档案与项目服务网络编辑界面，使用宿主传入的实例、项目和请求上下文。
+ */
 import { ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { VMConfig } from '../../shared/contracts/vm.ts';

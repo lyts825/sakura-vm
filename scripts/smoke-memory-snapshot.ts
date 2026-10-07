@@ -1,3 +1,4 @@
+/** 烟雾验收：验证RAM、进程和磁盘状态的多次恢复及来宾重启后的恢复。 */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

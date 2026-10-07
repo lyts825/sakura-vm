@@ -1,3 +1,4 @@
+# 自有单窗口桌面探针，观察运行域、端点和网络状态，并经私有请求文件驱动受控动作。
 """Ordinary xterm child for the owned current-UID public SingleApp smoke."""
 import errno
 import json

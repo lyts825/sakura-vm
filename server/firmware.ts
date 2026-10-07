@@ -1,3 +1,6 @@
+/**
+ * 模块职责：检测并准备 x86 与 ARM 的 UEFI 固件，缺少对应代码固件时拒绝启用。
+ */
 import { constants, existsSync } from 'node:fs';
 import { copyFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';

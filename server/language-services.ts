@@ -1,3 +1,6 @@
+/**
+ * 模块职责：运行项目语言服务器并应用代码操作，校验文件地址及项目协议流归属。
+ */
 import type { FileLocksV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { posix } from 'node:path';

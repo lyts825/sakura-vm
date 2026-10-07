@@ -1,3 +1,4 @@
+/** 在自有 DLL 的 TLS 和 DllMain 初始化阶段创建后代并保留证据，检查入口前的策略继承。 */
 #define SAKURA_DESCENDANT_INIT_DLL
 #include "fixture-descendant.h"
 static SakuraDescendantInitEvidence evidence{};

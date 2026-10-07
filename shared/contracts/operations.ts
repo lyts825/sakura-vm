@@ -1,7 +1,11 @@
+/**
+ * 模块职责：操作声明、准入策略与运行时诊断契约，集中约束身份、锁定、维护、审批和传输模式。
+ */
 import { z } from 'zod';
 import { socketContractSchema } from './websocket.ts';
 
 /** Security and transport semantics are required input, never inferred from a URL or verb. */
+// 声明需显式区分会话锁与实例锁、宿主身份与项目绑定；读取/写入准入不能仅从 HTTP 方法推断。
 export const operationPolicySchema = z.object({
   access: z.enum(['controller', 'public', 'download-ticket', 'extension', 'guest', 'socket']),
   roles: z.array(z.enum(['owner', 'member', 'viewer'])),

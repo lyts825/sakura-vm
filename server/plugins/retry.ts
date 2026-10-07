@@ -1,3 +1,6 @@
+/**
+ * 模块职责：解析任务重试目标并恢复项目上下文，缺少实例标识时拒绝重试。
+ */
 import type { PluginContext } from '../plugin-api.ts';
 import type { JobView } from '../../shared/contracts/jobs.ts';
 import { AppError } from '../../shared/errors.ts';

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - online migration check selects a paired target but never claims a safe transfer exists
+ * - online migration check reports incompatible or busy targets and source migration activity
+ * - online migration check prefers a compatible target over a higher scored incompatible peer
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

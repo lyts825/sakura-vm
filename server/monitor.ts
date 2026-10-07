@@ -1,8 +1,11 @@
+/**
+ * 模块职责：汇总有限数量的实例与任务状态，监控快照不包含命令、日志、路径和凭证。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import { hostname } from 'node:os';
 import type { VmAccess as Machines } from './vm-access.ts';
 
-/** Deliberately excludes job titles, logs, commands, results, paths and credentials. */
+/** 只发布状态及有限标识；任务标题、命令、结果和原日志可能含敏感信息，因此不进入快照。 */
 export async function monitorSnapshot(machines: Pick<Machines, 'list'>, stores: Pick<JobsV1, 'list'>[]) {
   const vms = await machines.list();
   const jobs = stores

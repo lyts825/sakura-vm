@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - an upload disconnect rejects even when cleanup queues a request on the closed SFTP channel
+ * - cancellation settles SFTP work even while it is awaiting a cleanup callback
+ * - SFTP protocol errors reject the operation without an unhandled error event
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';

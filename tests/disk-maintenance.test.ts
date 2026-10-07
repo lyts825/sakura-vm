@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - compaction holds the lifecycle lock until publication and cancellation preserves the original disk
+ * - failed image comparison cannot replace the source and successful compaction verifies before publishing
+ * - scheduled maintenance persists separate TRIM/compact intervals and respects windows, snapshots and restart
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

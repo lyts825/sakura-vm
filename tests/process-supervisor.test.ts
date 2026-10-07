@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - VM, tools and reserved control admission remain independent and bounded
+ * - cancellation holds the execution slot until the adapter acknowledges completion
+ * - unconfirmed native retirement retains its visible budget
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

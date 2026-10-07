@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - a disconnected desktop reconnects without replacing the guest session
+ * - a connection constructor failure uses the same bounded reconnect path
+ * - silent RFB handshakes time out and retries stop after five attempts
+ */
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { connectDesktop } from '../src/desktop-connection.ts';

@@ -1,3 +1,7 @@
+# Python 回归入口：校验辅助进程的协议、输入和失败路径；平台要求以各用例中的条件检查为准。
+# 覆盖：test_authenticated_real_git_preserves_default_branch_and_bundle_objects
+# 覆盖：test_basic_and_public_downloads_use_only_selected_authorization
+# 覆盖：test_git_environment_never_inherits_project_execution_configuration
 """Real Git smart-HTTP and bundle tests; guest UID/cgroup tests live in the VM smoke."""
 import hashlib
 import importlib.util

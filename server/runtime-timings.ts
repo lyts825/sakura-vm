@@ -1,3 +1,6 @@
+/**
+ * 模块职责：记录固定来源与阶段的运行耗时，提供可组合的测量和诊断快照。
+ */
 export const TIMING_SOURCES = ['http', 'job', 'compute', 'resource'] as const;
 export const TIMING_PHASES = [
   'queue',

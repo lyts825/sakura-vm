@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - ordinary status neither executes project code nor resolves project secrets or issues a task
+ * - explicit version check caches only the original project/config/boot and closes the complete finite task
+ * - first private start observes the namespace created by its own preparation before executing Envoy
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';

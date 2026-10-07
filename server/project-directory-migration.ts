@@ -1,3 +1,6 @@
+/**
+ * 模块职责：规划并应用项目目录账户迁移，按计划摘要及物理边界核对权限更改和恢复。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
 import { createHash } from 'node:crypto';

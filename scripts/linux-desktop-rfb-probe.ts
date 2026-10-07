@@ -1,3 +1,4 @@
+/** 通过真实 WebSocket/RFB 握手验证自有桌面的 VNC 密码接受和拒绝结果，限制协议阶段与超时。 */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';

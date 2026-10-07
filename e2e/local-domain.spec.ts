@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - Chromium opens generated local-domain HTTP and HTTPS service links
+ */
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';

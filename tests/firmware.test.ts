@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - UEFI support requires both regular OVMF files and preserves each instance NVRAM
+ * - VM configuration accepts BIOS or UEFI but rejects unknown firmware
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';

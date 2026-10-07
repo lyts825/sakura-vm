@@ -1,3 +1,4 @@
+/** 烟雾验收：验证编译 HTTP/SDK 的 Wayland 策略、构建身份、严格输入和自有清理。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile, realpath, writeFile, rm } from 'node:fs/promises';

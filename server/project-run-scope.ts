@@ -1,3 +1,6 @@
+/**
+ * 模块职责：维护项目账户运行日志及资源票据，协调任务、终端、SSH 与网络核销的原归属。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -202,9 +205,8 @@ export class ProjectRunScopes {
     const closed = journal.runs.filter(run => run.phase === 'closed' && run.cacheTransfer?.phase !== 'pending').slice(0, 512);
     if (!closed.length)
       throw new AppError('项目账号未确认的运行记录达到上限，请先完成所属运行清理', 409, 'PROJECT_IDENTITY_HOST_LIMIT');
-    // Keep each complete closed receipt as a durable tombstone before removing
-    // it from the bounded current journal. A partial write leaves the original
-    // journal intact, and an archived UUID can never admit a second execution.
+    // 先把完整 closed 回执写成持久墓碑再从有界日志移除；部分归档失败保留原日志。
+    // 已归档的 UUID 仍参与准入检查，不能被再次用于新的执行。
     for (const entry of closed) {
       const prior = await this.archived(vmId, id, entry.runId);
       if (prior && !same(prior, entry))
@@ -226,6 +228,7 @@ export class ProjectRunScopes {
     if (value.runs.some(run => run.phase !== 'closed' || run.cacheTransfer?.phase === 'pending'))
       throw new AppError('项目账号仍有待确认的运行，请先完成所属运行清理', 409, 'PROJECT_IDENTITY_RUNS_MUST_STOP');
   }
+  /** 对同一实例项目串行操作账号日志；回调退出后，交付的锁内访问器也立即失效。 */
   async withLock<T>(vmId: string, id: string, action: (access: Access) => Promise<T>) {
     id = projectIdSchema.parse(id);
     const key = `project-identity:${vmId}:${id}`;
@@ -282,6 +285,7 @@ export class ProjectRunScopes {
     }
     const rebind = Boolean(old && !same(binding(old), target));
     if (rebind) await this.guardUnlocked(vmId, id, true);
+    // 先记录待确认绑定，再修改客户机账户；SSH 回执丢失后仍能按原目标恢复而非重新选择身份。
     journal.pending = { kind: rebind ? 'rebind' : 'ensure', binding: target };
     await this.save(vmId, id, journal);
     let actual: ProjectIdentity;
@@ -319,7 +323,7 @@ export class ProjectRunScopes {
     id = projectIdSchema.parse(id); z.uuid().parse(runId);
     return (await this.read(vmId, id)).runs.some(run => run.runId === runId) || Boolean(await this.archived(vmId, id, runId));
   }
-  /** Read-only resource discovery preserves active owners and never issues execution. */
+  /** 只读发现原缓存转交资源，保留活动所有者，不签发新的项目执行权限。 */
   async taskResources(vmId: string, id: string) {
     const journal = await this.read(vmId, projectIdSchema.parse(id));
     return journal.runs.filter(entry => entry.cacheTransfer?.phase === 'pending').map(entry => ({
@@ -345,7 +349,7 @@ export class ProjectRunScopes {
       entry.cacheTransfer.phase = 'closed'; await this.save(vmId, context.identity.projectId, journal);
     });
   }
-  /** Read the original closed proof; this cannot issue a run or authorize execution. */
+  /** 读取原 closed 证明供资源退休核验，此接口不能签发运行或授权项目代码执行。 */
   async taskResourceReceipt(vmId: string, context: ProjectTaskResourceContext): Promise<ProjectTaskResourceReceipt> {
     const id = projectIdSchema.parse(context.identity.projectId), runId = z.uuid().parse(context.owner.runId);
     const entry = (await this.read(vmId, id)).runs.find(run => run.runId === runId) ||
@@ -361,8 +365,7 @@ export class ProjectRunScopes {
     const entry = (await this.read(vmId, id)).runs.find(run => run.runId === runId) ||
       await this.archived(vmId, id, runId);
     if (entry?.owner.kind === 'task' && entry.phase === 'closed' && entry.run && !entry.retirement) return;
-    // A user can print any JSON and choose any exit status. Only an accurately
-    // closed intent with no issued guest ticket makes this a controller reply.
+    // 项目代码可任意打印 JSON 和退出码；只有已核销且从未签发客户机票据的意图才证明这是控制器拒绝。
     const refusal = z.object({ ok: z.literal(false), code: z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/),
       detail: z.unknown() }).strict().safeParse(parseJson(result.stdout));
     const controlled = entry?.owner.kind === 'task' && entry.phase === 'closed' && !entry.run &&
@@ -379,7 +382,7 @@ export class ProjectRunScopes {
         throw new AppError('项目账号绑定尚未确认，请先恢复原配置核对', 409, 'PROJECT_IDENTITY_BINDING_PENDING');
     });
   }
-  /** Read the complete saved host/guest network proof without issuing a run. */
+  /** 只读核对主机与客户机完整网络证明，不安装辅助程序，也不签发新的运行。 */
   async networkStatus(vmId: string, project: Project, signal?: AbortSignal) {
     const id = projectId(project), target = binding(project);
     return this.withLock(vmId, id, async () => {
@@ -856,7 +859,7 @@ export class ProjectRunScopes {
     vmLifetime(vmId, live).observeBoot(bootId.data);
     return { live, bootId: bootId.data };
   }
-  /** Only this admission creates an in-process owner; disk receipts never do. */
+  /** 只有本次准入能创建进程内任务所有者；磁盘旧回执不能重建执行权或冒充活动任务。 */
   async admitTask(vmId: string, project: Project, execution: ProjectIdentityExecution, signal: AbortSignal,
     options: ProjectTaskAdmissionOptions = {}) {
     const id = projectId(project);

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证Windows 原生后代归属、精确清理、重启、策略代次撤销和禁用。 */
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';

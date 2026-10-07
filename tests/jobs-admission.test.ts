@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - global jobs admission preserves control capacity and cancels queued work without executing it
+ * - nested siblings and grandchildren share one slot and preserve resource identity
+ * - cancelling a queued sibling does not let later siblings overtake active work
+ */
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { mkdtemp, readFile, writeFile, rm, realpath } from 'node:fs/promises';

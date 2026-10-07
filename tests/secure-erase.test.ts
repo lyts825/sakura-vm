@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - logical erase requires a current project file, a separate preview and explicit confirmation
+ * - guest output cannot claim a successful erase without a matching verified record
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkSecureErase, runSecureErase, secureEraseInput } from '../server/secure-erase.ts';

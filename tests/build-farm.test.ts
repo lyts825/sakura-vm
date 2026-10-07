@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - build farm persists a queued build, dispatches to a matching running VM and records the result
+ * - build farm uses two nodes concurrently, keeps excess work queued and cancels a running build
+ * - failed guest exit is retained, retry creates a new build, and shutdown does not replay it
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

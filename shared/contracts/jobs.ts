@@ -1,3 +1,6 @@
+/**
+ * 模块职责：异步任务的公开元数据、执行状态和更新消息，供任务聚合、事件与界面共同使用。
+ */
 import type { SandboxExecution } from '../sandbox.ts';
 
 export type JobMeta = {

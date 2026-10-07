@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - deletion decisions remove exactly the selected peer and default to keeping the survivor
+ * - path policies constrain forced sync, conflict resolution and Linux permissions
+ * - sync rollback restores originals, metadata, conflict copies and the shared baseline
+ */
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

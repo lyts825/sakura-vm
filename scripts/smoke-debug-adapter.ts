@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实项目 UID 下 debugpy DAP 的断点、步进、栈帧、变量和输出。 */
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { withOwnedProtocolSmoke, protocolSmokeObserver, protocolDapProbe, protocolDapBreakpoints } from './project-protocol-smoke-support.ts';

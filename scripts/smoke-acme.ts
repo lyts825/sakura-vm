@@ -1,3 +1,4 @@
+/** 烟雾验收：验证受控 Certbot 工具下的来宾证书签发/续订编排及 dry-run 参数。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

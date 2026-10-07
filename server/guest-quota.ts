@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置客户机用户磁盘配额；执行前要求项目配额及挂载卷已准备就绪。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';

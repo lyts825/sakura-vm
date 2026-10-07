@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目目录迁移预览识别祖先 bind 别名；本入口不应用迁移。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

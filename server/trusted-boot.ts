@@ -1,3 +1,6 @@
+/**
+ * 模块职责：探测宿主可信启动支持并生成客户机检查命令，区分 QEMU 与 swtpm 能力。
+ */
 import { hostProcess } from './host-process.ts';
 import { AppError } from '../shared/errors.ts';
 import { existsSync } from 'node:fs';

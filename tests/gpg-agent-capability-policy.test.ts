@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - the GPG capability publishes a single-command form with required fresh confirmation
+ * - GPG command and confirmation cannot become persisted feature defaults
+ * - legacy GPG confirmation cannot create a job without fresh complete parameters
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：备份文件恢复输入契约，校验选择的备份、路径、目标和覆盖策略。
+ */
 import { z } from 'zod';
 import { rescueRunSchema } from './rescue.ts';
 

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成 USB 与 PCI 设备的只读安全预览；检查声明和宿主能力，不连接实际设备。
+ */
 import { basename, join } from 'node:path';
 import { readlink, readdir, stat } from 'node:fs/promises';
 import { z } from 'zod';

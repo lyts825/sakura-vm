@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理浏览器远程桌面连接的认证、状态通知和取消，隔离已经关闭的客户端事件。
+ */
 type ClientEvent = 'connect' | 'disconnect' | 'credentialsrequired' | 'securityfailure';
 type DesktopClient = {
   addEventListener: (event: ClientEvent, listener: () => void) => void;
@@ -73,6 +76,7 @@ export function connectDesktop(
       for (const [event, listener] of listeners) client.removeEventListener(event, listener);
       release = undefined;
     };
+    // 认证失败结束此连接寿命；后续客户机就绪探测不能自动绕过认证失败，需要用户重新连接。
     const deny = () => {
       if (stopped || ended) return;
       denied = true;

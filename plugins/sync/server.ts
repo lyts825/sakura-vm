@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“目录同步”插件服务端入口。激活时装配 FolderSync，并处理声明的服务端操作。
+ */
 import { services as projectsServices } from '../projects/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';

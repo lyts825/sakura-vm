@@ -1,3 +1,6 @@
+/**
+ * 模块职责：采样 HA 可用状态并推进失效观察，保留停止与探测失败的可诊断结果。
+ */
 import { scheduler } from './scheduler.ts';
 import { pluginAuthority } from './plugin-authority.ts';
 import { EventEmitter } from 'node:events';

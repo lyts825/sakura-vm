@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置本地模型并预览脱敏上下文，执行问答/解释/修复建议和命令计划请求。
+ */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
 import { useEffect, useRef, useState } from 'react';

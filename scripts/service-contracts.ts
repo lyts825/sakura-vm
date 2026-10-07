@@ -1,3 +1,4 @@
+/** 验证版本服务接口的独立性和历史兼容性，从类型检查器提取公开成员并生成服务能力目录。 */
 import { readFile, writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { isBuiltin } from 'node:module';
@@ -135,6 +136,7 @@ for (const node of source.statements) {
   shape(checker.getTypeAtLocation(node), idFor(node.name.text), true);
 }
 const content = '// Generated from independent versioned interfaces by scripts/service-contracts.ts.\n' +
+  '// 公开服务能力目录：仅由独立版本接口生成成员、方法及嵌套返回关系，供服务代理校验能力边界。\n' +
   "import type { ServiceContract } from './service-ref.ts';\n\n" +
   'export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<any>>> = ' +
   JSON.stringify(Object.fromEntries(Object.entries(descriptors).sort(([a], [b]) => a.localeCompare(b))), null, 2) + ';\n';

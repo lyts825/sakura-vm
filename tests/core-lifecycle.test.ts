@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - closing waits for an admitted launch before releasing the runtime
+ * - boot circuit persists failed launches across controller restarts and explicitly resets
+ * - closing waits for existing disk operations and rejects new work
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';

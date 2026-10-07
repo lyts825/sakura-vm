@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - scanner maps installed binaries to distribution source packages and versions
+ * - OSV result is matched to each source package and rejects partial responses
+ * - OSV pagination queries only packages that have another page
+ */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {

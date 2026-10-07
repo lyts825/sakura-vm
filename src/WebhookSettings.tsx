@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置 Webhook 订阅与事件筛选，展示投递记录并提供测试投递入口。
+ */
 import { formatDateTime } from './localization';
 import { useState } from 'react';
 import {

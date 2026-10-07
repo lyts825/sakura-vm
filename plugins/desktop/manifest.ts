@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“Linux 图形桌面”插件清单：按需安装 KDE Plasma、浏览器桌面、单应用窗口、原生 X11/Wayland 剪贴板策略与中文输入法。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http, operation } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

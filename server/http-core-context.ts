@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义核心 HTTP 上下文并合并处理器目录，拒绝重复或无效操作处理器。
+ */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ApplicationServices } from './application-services.ts';
 import type { Principal } from './access-control.ts';

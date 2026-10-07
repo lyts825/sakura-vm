@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - Windows process interop permits only registered, unchanged EXEs from an installed guest
+ * - queued guest host launches recheck their specific grant, program and VM generation
+ */
 import assert from 'node:assert/strict';
 import { appendFile, copyFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

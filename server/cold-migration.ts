@@ -1,3 +1,6 @@
+/**
+ * 模块职责：执行停机复制及维护排空，保存传输票据；重试先查询目标回执，保留来源实例。
+ */
 import type { BundlesV1, HostPeersV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';

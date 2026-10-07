@@ -1,3 +1,4 @@
+# Wayland 消息和 FD 代理：仅暴露已固定的协议，核实会话对端，并在 EOF 与完整内容检查后释放有预算限制的剪贴板数据。
 """Wayland wire/FD proxy for one explicitly owned application session.
 
 Clipboard bytes stay in bounded private memory until EOF and a complete check.
@@ -165,6 +166,7 @@ class Rule:
             return cls(True, True, True, False, MAX_BODY, generation)
         return cls(bool(flags & 1), bool(flags & 2), bool(flags & 4), bool(flags & 8), maximum, generation)
 
+    # 未提交传输仅能收紧，后续放宽策略不能重新授权已经开始收集的受限内容。
     def tightened(self, other):
         return Rule(self.copy and other.copy, self.paste and other.paste, self.files and other.files,
                     self.sensitive or other.sensitive, min(self.maximum, other.maximum), other.generation)
@@ -549,6 +551,7 @@ class Transfer:
                 self.broker.selector.unregister(self.read_fd)
                 close_fd(self.read_fd)
                 self.read_fd = -1
+                # EOF 前不向原接收 FD 写字节，随后以完整缓冲做内容检查再进入释放阶段。
                 self.collecting = False
                 require(self.broker.rule is not None, "Policy is unavailable")
                 self.update(self.broker.rule)
@@ -570,6 +573,7 @@ class Transfer:
                 self.close(True)
                 return
 
+    # 第一笔写入是提交点；持共享锁重读策略后才能提交，后续写入仅完成这份已验证缓冲。
     def release(self):
         if self.closed or self.collecting:
             return

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：实例配置、持久化记录和公开视图契约，同时校验创建、组织和高可用/迁移身份数据。
+ */
 import { z } from 'zod';
 import type { DesktopPreferences } from '../desktop-preferences.ts';
 import type { SandboxPolicy } from '../sandbox.ts';

@@ -1,3 +1,4 @@
+/** syscall profiler 的项目身份夹具；为模拟执行绑定项目配置与原运行票据。 */
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Machines } from '../../server/machines.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：准备受控救援磁盘与文件产物，按明确的访问模式运行客户机救援操作。
+ */
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';

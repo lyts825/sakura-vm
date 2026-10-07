@@ -1,3 +1,6 @@
+/**
+ * 模块职责：以流式节流限制传输速率，等待可取消且不需要将完整文件载入内存。
+ */
 import { Transform } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 

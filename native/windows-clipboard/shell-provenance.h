@@ -1,3 +1,4 @@
+/** Shell 进程属性列表的来源账本，按初始化代次和实际更新结果追踪 Job 列表，防止已删除或重用指针冒充有效来源。 */
 #pragma once
 #include <windows.h>
 #include <algorithm>
@@ -10,6 +11,7 @@
 
 // Only public attribute-list operations are observed. The OS's opaque list,
 // including Shell's private attributes, is never inspected or reconstructed.
+// 属性列表指针会被回收重用，账本需要初始化代次及真实更新/删除结果，不能只按地址放行。
 class ShellAttributeLedger {
 public:
   bool refuseMutation(LPPROC_THREAD_ATTRIBUTE_LIST list,bool reinitialize) {

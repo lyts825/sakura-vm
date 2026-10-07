@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取目录迁移锁定记录，迁移状态不能完整核对时拒绝新的项目运行。
+ */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';

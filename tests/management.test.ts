@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - task history survives restart and interrupted work never resumes implicitly
+ * - cancelling a tracked task waits for cleanup and records a durable cancelled result
+ * - multi-service projects validate dependencies, duplicates, cycles and shell-safe environment names
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';

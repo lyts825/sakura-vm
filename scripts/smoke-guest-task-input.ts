@@ -1,3 +1,4 @@
+/** 烟雾验收：验证无原生 addon 的 guest-task 输入、子进程 cgroup 与取消清理。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

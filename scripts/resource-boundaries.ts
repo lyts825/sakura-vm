@@ -1,3 +1,4 @@
+/** AST 资源访问检查，要求服务源码通过已声明的资源入口操作受约束文件和运行时对象。 */
 import ts from 'typescript';
 import { staticString } from './network-boundaries.ts';
 

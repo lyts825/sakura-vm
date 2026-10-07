@@ -1,3 +1,6 @@
+/**
+ * 模块职责：把插件贡献的页面、标签和开发分区转换为界面导航标签与所属插件信息。
+ */
 import { PLUGINS, pluginSurfaceEnabled, type PluginRuntimeView } from '../shared/plugins';
 
 export const pageLabels: Record<string, string> = {

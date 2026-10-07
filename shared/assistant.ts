@@ -1,3 +1,6 @@
+/**
+ * 模块职责：本地助手请求/结果及命令计划契约，包含向模型发送上下文前的敏感信息脱敏规则。
+ */
 export const assistantModes = ['ask', 'explain', 'tests', 'fix', 'plan'] as const;
 export type AssistantMode = (typeof assistantModes)[number];
 export type AssistantSettings = {

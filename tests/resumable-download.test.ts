@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - downloads resume verified local chunks after interruption and never overwrite an existing output
+ * - a changed remote manifest refuses to reuse a partial download
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';

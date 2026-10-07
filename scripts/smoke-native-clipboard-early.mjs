@@ -1,3 +1,4 @@
+/** 烟雾验收：验证Windows EXE/DLL 入口前初始化阶段的策略注入与拒绝边界。 */
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';

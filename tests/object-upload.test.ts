@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - revoked upload authority still permits exact multipart recovery while normal transfers retain checks
+ * - multipart cancellation waits for both part transports and the remote abort receipt before releasing buffers
+ * - a missing remote multipart cleanup receipt remains charged after cancellation
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';

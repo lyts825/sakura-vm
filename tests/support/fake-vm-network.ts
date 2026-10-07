@@ -1,3 +1,6 @@
+/**
+ * 供模拟 VM 引擎使用的网络租约；仅模拟连接与代次撤销，不启动真实 QEMU 网络进程。
+ */
 import type { NetworkRuntime, VmNetworkLease } from '../../server/network/index.ts';
 
 /** Unit fixtures run fake VM engines and must not start a real QEMU networking process. */

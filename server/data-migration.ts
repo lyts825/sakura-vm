@@ -1,3 +1,6 @@
+/**
+ * 模块职责：规划并复制数据目录，保留可取消的切换意图；拒绝目录重叠与链接等不受控成员。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import { mkdir, readdir, lstat, statfs, copyFile, rename, rm, realpath } from 'node:fs/promises';
 import { constants } from 'node:fs';

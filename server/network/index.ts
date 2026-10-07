@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供按所有者划分的网络作用域，封装请求、代理环境和连接资源生命周期。
+ */
 import * as http from 'node:http';
 import * as https from 'node:https';
 import * as net from 'node:net';

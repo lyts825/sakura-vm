@@ -1,3 +1,4 @@
+/** HA 见证命令入口，加载配置并路由初始化、预检、观察、演练计划、迁移及恢复操作。 */
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { HaWitness } from '../server/ha-witness-core.ts';

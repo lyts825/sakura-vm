@@ -1,3 +1,6 @@
+/**
+ * 模块职责：订阅控制面事件并合并实例/系统刷新，协调请求顺序、连接状态与实例选择。
+ */
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { System } from '../../shared/contracts/controller.ts';
 import type { VMView } from '../../shared/contracts/vm.ts';
@@ -19,6 +22,7 @@ export function useControllerState(setSelectedRaw: Dispatch<SetStateAction<strin
   const refresh = useCallback(
     () =>
       refreshQueue.current.run(async () => {
+        // VM 列表和系统状态成对更新；旧读取若晚于已应用的新快照返回，整组结果均丢弃。
         const version = refreshOrder.current.start();
         const signal = AbortSignal.any([refreshAbort.current.signal, AbortSignal.timeout(15000)]);
         try {
@@ -63,6 +67,7 @@ export function useControllerState(setSelectedRaw: Dispatch<SetStateAction<strin
     };
   }, [refresh]);
   const invalidate = useCallback(() => refreshOrder.current.invalidate(), []);
+  // 直接应用写入返回的实例时先失效已发出的读取，防止旧列表把刚确认的变更覆盖掉。
   const upsertVm = useCallback((vm: VMView) => {
     refreshOrder.current.invalidate();
     setVms((current) => [...current.filter((entry) => entry.id !== vm.id), vm]);

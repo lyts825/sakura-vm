@@ -1,3 +1,4 @@
+/** 后代令牌场景入口，在策略就绪状态下调用共享令牌夹具并输出 JSON 证据。 */
 #include "fixture-descendant-token.h"
 #include <shellapi.h>
 

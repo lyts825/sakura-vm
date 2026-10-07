@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理实例内文件锁与续期；变更检查目录范围冲突并限制锁记录数量。
+ */
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
 import { mutablePath } from './files.ts';

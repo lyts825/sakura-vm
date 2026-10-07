@@ -1,3 +1,6 @@
+/**
+ * 模块职责：WebSocket 通道、帧 Schema、长度限制和关闭原因契约，统一升级准入与消息编解码。
+ */
 import { z } from 'zod';
 import { jsonValueSchema } from './json-values.ts';
 
@@ -28,6 +31,7 @@ export const socketFrameSchemas = {
 
 export type JsonSocketChannel = keyof typeof socketFrameSchemas;
 /** A fragment of the ordered RFB byte stream, never a complete-packet guarantee. */
+// 桌面帧只是有序字节流的一段，消费者必须允许一个 RFB 包跨多个 WebSocket 帧或多个包同帧到达。
 export type RfbStreamFragment = Uint8Array;
 export type SocketClientMessage<C extends SocketChannel> = C extends JsonSocketChannel
   ? z.infer<(typeof socketFrameSchemas)[C]['client']> : RfbStreamFragment;

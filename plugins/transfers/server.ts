@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“传输基础”插件服务端入口。激活时装配 Downloads，并处理声明的服务端操作。
+ */
 import { services as filesServices } from '../files/services.ts';
 import { services as snapshotsServices } from '../snapshots/services.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
@@ -13,6 +16,7 @@ import { retryTarget } from '../../server/plugins/retry.ts';
 export async function activate(host: PluginContext) {
   const m = host.vm;
   host.provide(transfersServices.downloads, new Downloads(m, {
+    // 文件与磁盘包能力按请求时获取；下载基础插件独立启用时不会要求这些可选服务已经运行。
     get files() {
       return host.optional(filesServices.files);
     },

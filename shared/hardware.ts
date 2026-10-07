@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验虚拟硬件配置并生成 QEMU 参数，报告架构、CPU、设备及资源组合的兼容问题。
+ */
 import { z } from 'zod';
 
 // Keep the named x86 model stable across hosts while supporting x86-64-v2.

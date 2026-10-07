@@ -1,3 +1,4 @@
+/** 项目主命令的共享夹具；组合受控 VM、项目存储与身份适配器，供启动和清理回归复用。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

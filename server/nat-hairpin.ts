@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置客户机访问自身宿主转发的 NAT 回流，目标必须属于实例当前 TCP 转发。
+ */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';

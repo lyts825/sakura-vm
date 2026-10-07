@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验仓库 URL 与认证范围，拒绝点路径和重复分隔符以避免路径授权歧义。
+ */
 import { dependencyEndpoint } from './dependency-downloads.ts';
 
 export const repositoryUrl = dependencyEndpoint.refine(value => {

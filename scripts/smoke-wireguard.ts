@@ -1,3 +1,4 @@
+/** 烟雾验收：验证WireGuard 握手、加密来宾通信和停止/重启恢复。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：桌面偏好字段、默认值与校验规则，解析客户机配置文件并仅合并受支持字段。
+ */
 import { z } from 'zod';
 
 const desktopPreferenceFields = {

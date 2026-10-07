@@ -1,3 +1,6 @@
+/**
+ * 模块职责：创建并连接应用领域服务及恢复来源；服务就绪和关闭由共同生命周期约束。
+ */
 import type { BrowserIdeV1, ColdMigrationsV1, HaHostFailoverV1, HaLocalFailoversV1, HostPeersV1, NotebookEnvironmentsV1, RecoveryCatalogV1, ResourceScopeV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import { arch, cpus, freemem, hostname, loadavg, platform, totalmem } from 'node:os';

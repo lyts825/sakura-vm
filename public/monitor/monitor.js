@@ -1,3 +1,4 @@
+/** 只读监控客户端，每次采样获取本机临时凭据，裁剪实例/任务快照，并在用户启用后保存离线副本。 */
 const $ = (id) => document.getElementById(id);
 const preference = 'sakura-monitor-offline-v1';
 const snapshotCache = 'sakura-monitor-snapshots-v1';
@@ -33,6 +34,7 @@ const status = (value) => (Object.hasOwn(statuses, value) ? value : 'unknown');
 const number = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : null);
 const date = (value) =>
   typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
+// 在线响应和离线缓存都经过同一裁剪入口；只保留显示所需字段并限制集合长度。
 function sanitize(raw) {
   if (
     !raw ||
@@ -199,6 +201,7 @@ async function json(path, signal, token) {
   if (!response.ok) throw new Error(`控制服务暂不可用（${response.status}）`);
   return response.json();
 }
+// 页面隐藏时暂停采样；失败时明确显示旧快照时间，避免把缓存数据标成实时状态。
 async function refresh() {
   if (refreshing || document.hidden) return;
   refreshing = true;

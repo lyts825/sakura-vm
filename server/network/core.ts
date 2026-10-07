@@ -1,3 +1,6 @@
+/**
+ * 模块职责：治理网络连接、服务器与原生网络租约，关联身份及资源预算并追踪物理关闭。
+ */
 import { randomUUID } from 'node:crypto';
 import { createConnection, createServer, type Socket, type Server, type NetConnectOpts } from 'node:net';
 import { HostNetworkPool, type Destination } from './host-pool.ts';

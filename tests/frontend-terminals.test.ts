@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - saved layouts restore names, ordering and selection without losing active sessions
+ * - a terminal closed after all views unmount stays removed when restored from storage
+ * - a late close preserves additions, renames and selection made by a remounted view
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTerminalStores } from '../src/terminal-store.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“收藏命令”插件的参数化命令预设、执行表单与任务日志分区，使用宿主传入的实例、项目和请求上下文。
+ */
 import { Play, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成 QEMU 加密磁盘参数并临时提供私密口令文件，作用域退出后清理口令载体。
+ */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

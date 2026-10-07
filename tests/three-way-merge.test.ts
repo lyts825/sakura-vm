@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - three-way merge retains independent edits, insertions, deletions and newline bytes
+ * - overlapping edits and simultaneous insertions need an explicit resolution
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { threeWayMerge, resolvedMerge } from '../shared/three-way-merge.ts';

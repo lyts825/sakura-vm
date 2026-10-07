@@ -1,3 +1,7 @@
+/**
+ * 共享测试夹具：构造可控的身份、生命周期或传输输入，供相邻回归用例复用。
+ * 对接模块：../server/desktop-guest.ts。
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

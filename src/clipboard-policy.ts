@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取并缓存按应用划分的剪贴板策略，通过订阅通知页面，并依据当前工作区上下文判定传输权限。
+ */
 import {
   clipboardApps,
   clipboardPolicyReason,

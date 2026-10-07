@@ -1,3 +1,4 @@
+/** 烟雾验收：验证签名 bundle 的完整性、导入与验证拒绝边界。 */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';

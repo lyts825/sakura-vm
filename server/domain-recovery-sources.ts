@@ -1,3 +1,6 @@
+/**
+ * 模块职责：把备份、冷迁移和同步的持久领域票据接入恢复目录，依据原日志判断恢复状态。
+ */
 import type { DomainRecoveryPort, DomainRecoveryTicket } from '../shared/contracts/domain-recovery.ts';
 import { recoveryBinding, type RecoveryBinding } from '../shared/contracts/recovery.ts';
 import { AppError } from '../shared/errors.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：导出和应用项目配方，变更前要求项目任务已经结束。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { posix } from 'node:path';

@@ -1,3 +1,4 @@
+/** 本机文件关联打开助手，解析路径参数并向本机服务提交打开票据，再启动浏览器展示结果。 */
 import { networkFor } from './network-client.mjs';
 const { fetch } = networkFor('tool:native-open');
 import { spawn } from 'node:child_process';

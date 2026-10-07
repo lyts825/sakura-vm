@@ -1,3 +1,4 @@
+/** Envoy 边车身份夹具；组合模拟引擎与真实业务类，检查项目身份、运行记录及退出流程。 */
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';

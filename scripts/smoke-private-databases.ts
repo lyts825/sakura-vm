@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实数据库服务在私有项目网络中的启动、连接和隔离。 */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';

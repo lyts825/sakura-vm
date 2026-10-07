@@ -1,3 +1,6 @@
+/**
+ * 模块职责：把资源能力请求分派到对应动作入口，校验目标和策略等动作必要输入。
+ */
 import { join } from 'node:path';
 import { z } from 'zod';
 import { DATA } from './paths.ts';

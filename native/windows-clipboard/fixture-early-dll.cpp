@@ -1,3 +1,4 @@
+/** 自有导入 DLL 的 TLS/DllMain 剪贴板探针，先核实私有 window station，再验证原应用初始化前的策略覆盖。 */
 // An owned application import DLL deliberately calls clipboard APIs from its
 // first TLS and DllMain initialization code. All calls require a verified private
 // fixture window station, including when policy initialization failed.

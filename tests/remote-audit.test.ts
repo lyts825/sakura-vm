@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - remote audit requires object lock, anchors verified heads, renews retention and detects tampering
+ * - S3 adapter sends checksum and compliance retention and reads the exact locked version
+ * - S3 audit rejects incomplete environment credentials before metadata or object requests
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

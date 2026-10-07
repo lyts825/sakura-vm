@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理终端共享授权、查看者和撤销，共享连接依据当前有效的运行会话绑定。
+ */
 import type { ProjectTerminalsV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';

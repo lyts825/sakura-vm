@@ -1,3 +1,6 @@
+/**
+ * 模块职责：设置 SSH 身份文件权限，拒绝链接及特殊文件并适配 Windows OpenSSH 权限要求。
+ */
 import { hostExecFile } from './host-process.ts';
 import { chmod, lstat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';

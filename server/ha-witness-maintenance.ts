@@ -1,3 +1,6 @@
+/**
+ * 模块职责：核验并迁移见证状态，来源关闭或目标身份不能确认时保留原隔离和接管记录。
+ */
 import { createHash, X509Certificate } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';

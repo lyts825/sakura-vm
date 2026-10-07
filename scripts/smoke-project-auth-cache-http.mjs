@@ -1,3 +1,4 @@
+/** 烟雾验收：验证编译 HTTP 的项目认证缓存；仅复用已停机自有认证夹具。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';

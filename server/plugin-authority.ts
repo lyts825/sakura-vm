@@ -1,3 +1,6 @@
+/**
+ * 模块职责：传递插件执行、后台及清理授权上下文，防止异步续接失去原插件身份。
+ */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PluginInstance } from './plugin-instance.ts';
 import { withOperationCheck } from './operation-context.ts';

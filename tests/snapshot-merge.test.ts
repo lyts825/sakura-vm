@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - three-way merge applies independent edits and refuses conflicting changes
+ * - three-way merge rejects a symlink parent crossing into another path
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { planSnapshotMerge } from '../server/snapshot-merge.ts';

@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - SSH Agent commands and confirmation cannot become persisted feature defaults
+ * - legacy saved SSH confirmation never starts a job without fresh complete parameters
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理控制面凭证和锁定状态，集中编码 API 请求、会话失效与受限的读取重试。
+ */
 import type { SessionLockView } from '../shared/session-lock';
 import type { AccessPrincipal } from '../shared/access-control';
 import { resourceCache } from './resource-cache';
@@ -99,6 +102,7 @@ export class ControllerSession {
     };
   };
 
+  // 并发读取共用一次 bootstrap；捕获的会话代次阻止锁定或换账户后迟到的凭证重新生效。
   authenticate(staleToken = this.token): Promise<string> {
     if (this.session.locked) return Promise.reject(new Error('控制面已锁定，请先解锁'));
     if (this.accountMode) {
@@ -150,6 +154,7 @@ export class ControllerSession {
     options?: Parameters<OperationTransport>[1],
   ): Promise<unknown> => {
     const encoded = encodeOperationBody(options?.bodyKind || (body === undefined ? 'none' : 'json'), body, options?.headers);
+    // 每次请求同时受调用者取消、插件权限生命周期和当前账户凭证生命周期约束。
     const pluginSignal = pluginGeneration.capture(path, method);
     if (pluginSignal) signal = signal ? AbortSignal.any([signal, pluginSignal]) : pluginSignal;
     signal?.throwIfAborted();
@@ -200,6 +205,7 @@ export class ControllerSession {
       if (authenticated && generation === this.generation && response.status === 423)
         this.updateSession(data.session || { ...this.session, enabled: true, locked: true });
       if (!response.ok) {
+        // 只有服务端明确证明未执行的未授权 GET 才允许刷新凭证后重试一次；写入和未知执行结果不会重放。
         if (authenticated && !this.accountMode && generation === this.generation && attempt === 0 &&
           method === 'GET' && body === undefined && response.status === 401 && data?.code === 'UNAUTHORIZED' &&
           data.operationResult?.outcome === 'failed' && data.operationResult.executed === false &&
@@ -235,6 +241,7 @@ export const api = controllerSession.request;
 controllerSession.subscribe(() => resourceCache.reset());
 
 /** Bursts share one read, with one fresh pass for changes received in flight. */
+// 飞行中的刷新只记录“还需一次”；同一突发事件不会并行启动多份全量快照读取。
 export class RefreshQueue {
   private pending?: Promise<void>;
   private again = false;

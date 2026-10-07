@@ -1,3 +1,6 @@
+/**
+ * 模块职责：声明工程操作目录与参数约束，将归档、项目路径等安全边界交给运行器执行。
+ */
 import { z } from 'zod';
 import { isIP } from 'node:net';
 import { AppError } from '../shared/errors.ts';

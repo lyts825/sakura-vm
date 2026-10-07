@@ -1,3 +1,4 @@
+# 模块职责：执行有界客户机工程操作，统一项目路径、归档成员、输出限制与原子发布约束。
 """Bounded engineering operations. Invoked in the guest with a JSON request on stdin.
 
 No third-party Python modules are needed. Results use one JSON object on stdout;
@@ -41,6 +42,7 @@ class Failure(Exception):
         self.details = details
 
 
+# argv 直接交给子进程；Git 的隐式 hooks 等入口被关闭，输出与超时都受统一预算限制。
 def run(args, cwd=None, timeout=60, input=None, check=True, env=None):
     """Use argv, retain bounded output, and terminate the entire child group on timeout."""
     if args[0] == "git":
@@ -70,7 +72,7 @@ def run(args, cwd=None, timeout=60, input=None, check=True, env=None):
                         timed_out = True
                         break
         finally:
-            # User commands may leave descendants alive after the main process exits.
+            # 主进程退出仍可能留下后代，客户机 POSIX 运行需清理整个原进程组再返回结果。
             if os.name != "nt":
                 try:
                     os.killpg(child.pid, signal.SIGKILL)
@@ -91,6 +93,7 @@ def run(args, cwd=None, timeout=60, input=None, check=True, env=None):
         return result
 
 
+# 即使符号链接仍指向项目内也拒绝，防止成员检查和后续操作解析到不同路径。
 def safe_path(root, value, exists=False):
     """Reject traversal and every symlink component, even links remaining inside root."""
     value = str(value)
@@ -114,6 +117,7 @@ def read_text(root, value, limit=MAX_OUTPUT):
     return target.read_text(encoding="utf-8")
 
 
+# 扫描同时限制节点数和累计字节，不把大目录或特殊文件带入归档与分析操作。
 def files_under(root, value=".", excludes=()):
     source = safe_path(root, value, True)
     found, total = [], 0

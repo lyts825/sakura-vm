@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置动态内存回收策略并展示资源采样和回收结果。
+ */
 import { useEffect, useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
 

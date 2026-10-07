@@ -1,3 +1,6 @@
+/**
+ * 模块职责：协调控制面事件 WebSocket、轮询与页面可见性，合并刷新并在凭证变化时重建连接。
+ */
 import type { ControllerSession } from './controller-session';
 import { resourceCache } from './resource-cache';
 import type { SocketServerMessage } from '../shared/contracts/websocket-client.generated.ts';
@@ -47,6 +50,7 @@ export function watchController(options: Options) {
         socket?.readyState === 1 ? 30000 : 5000,
       );
   };
+  // 断开提高连接代次；此前尚未返回的认证不能在页面隐藏或重连后创建过期 WebSocket。
   const disconnect = () => {
     generation++;
     connecting = false;

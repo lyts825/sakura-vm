@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理磁盘加密事务与恢复，核对配置中的口令引用和实际磁盘格式是否一致。
+ */
 import { existsSync } from 'node:fs';
 import { link, lstat, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

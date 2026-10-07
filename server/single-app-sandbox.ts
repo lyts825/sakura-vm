@@ -1,3 +1,6 @@
+/**
+ * 模块职责：部署单应用控制器并校验账户、目录视图与退休回执，连接必须属于原完整运行域。
+ */
 import { quote } from './shell.ts';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';

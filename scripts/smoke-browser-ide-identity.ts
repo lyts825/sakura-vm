@@ -1,3 +1,4 @@
+/** 烟雾验收：验证已固定源码与明确释放夹具中的 Browser IDE 项目 UID 身份。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';

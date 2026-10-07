@@ -1,3 +1,4 @@
+/** 烟雾验收：验证快照合并的冲突预览、选择和最终磁盘内容。 */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

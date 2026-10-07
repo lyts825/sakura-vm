@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编码并验证 TPM/NVRAM 归档，约束文件名、重复项与总大小以绑定可信启动状态。
+ */
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { z } from 'zod';

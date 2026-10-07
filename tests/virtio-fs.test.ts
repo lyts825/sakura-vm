@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - Virtio-FS check distinguishes actual guest mounts from available host prerequisites
+ * - Virtio-FS launch arguments bind shared memory and the daemon socket to one guest tag
+ * - Virtio-FS check recognizes the managed guest mount instead of unrelated mounts
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { inspectVirtioFs, virtioFsArguments, VIRTIOFS_GUEST_PATH,

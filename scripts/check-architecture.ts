@@ -1,3 +1,4 @@
+/** 沿 TypeScript 导入图检查浏览器、服务、插件及网络边界，并核对打包脚本入口与受约束资源访问。 */
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
 import { isBuiltin } from 'node:module';

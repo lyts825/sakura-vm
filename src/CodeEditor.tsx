@@ -1,3 +1,6 @@
+/**
+ * 模块职责：装配 CodeMirror 文本编辑器、语言扩展及快捷操作，并把内容与光标变化交给文件工作台。
+ */
 import { useEffect, useRef } from 'react';
 import { basicSetup, EditorView } from 'codemirror';
 import { EditorState, Compartment, type Extension } from '@codemirror/state';
@@ -45,6 +48,7 @@ export function CodeEditor({
     view = useRef<EditorView | null>(null),
     callbacks = useRef({ change, save, positionChange }),
     configuring = useRef(false);
+  // 编辑器实例只创建一次，事件处理通过 ref 读取最新回调，避免每次 React 渲染重建编辑器和撤销历史。
   callbacks.current = { change, save, positionChange };
   const mode = useRef(new Compartment());
   useEffect(() => {
@@ -87,6 +91,7 @@ export function CodeEditor({
   useEffect(() => {
     const editor = view.current;
     if (editor && editor.state.doc.toString() !== value) {
+      // 外部 value 同步不应再次触发用户编辑回调，否则会把程序性更新当成新的未保存修改。
       configuring.current = true;
       editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value } });
       configuring.current = false;
@@ -94,6 +99,7 @@ export function CodeEditor({
   }, [value]);
   useEffect(() => {
     let alive = true;
+    // 语言扩展异步按路径加载；路径切换后旧扩展返回也不能覆盖当前文件的语言模式。
     void language(path)
       .then((extension) => {
         if (alive) view.current?.dispatch({ effects: mode.current.reconfigure(extension) });

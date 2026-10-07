@@ -1,3 +1,6 @@
+/**
+ * 模块职责：将核心 operation ID 绑定到响应 Schema、状态码和传输模式，统一响应发布与校验。
+ */
 import { z } from 'zod';
 import * as dto from './core-dtos.ts';
 import { controllerResponses, sessionViewSchema } from './controller-api.ts';

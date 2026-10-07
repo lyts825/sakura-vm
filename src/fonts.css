@@ -1,3 +1,6 @@
+/**
+ * 模块职责：注册随项目分发的 OFL 字体子集，并提供界面、正文及等宽文本的字体变量。
+ */
 /* Local OFL font subsets. Rebuild with scripts/build-fonts.py when UI copy changes. */
 @font-face {
   font-family: 'Sakura Sans';

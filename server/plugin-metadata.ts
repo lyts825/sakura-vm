@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存插件元数据回执，校验回执结构后供插件管理及恢复流程使用。
+ */
 import type { MetadataSnapshot, MetadataWriteOptions } from './metadata-store.ts';
 import { MetadataStore } from './metadata-store.ts';
 import { pluginDataFile } from './plugin-data.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：装配 noVNC 远程桌面、连接设置、分辨率与剪贴板/录制控制。
+ */
 import type RFB from '@novnc/novnc';
 import { socketPath } from '../shared/socket-client.ts';
 import {
@@ -164,6 +167,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   }, []);
 
   useEffect(() => {
+    // 桌面绑定或实例运行代次变化时失效已有轮询；alive 和请求顺序共同阻止旧状态恢复新界面的连接。
     statusOrder.current.invalidate();
     setSubmitting(false);
     if (!running) {

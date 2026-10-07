@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - queued IME work keeps its original project after the user selects another project
+ * - a replacement live is refused before a queued IME operation can start
+ * - a replacement live during IME installation cannot report success for the new guest
+ */
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';

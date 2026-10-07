@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - directory aliases share one host reservation and graceful close permits a new owner
+ * - a second process cannot acquire the directory and an abrupt owner exit releases it
+ * - a future migration destination stays exclusively reserved across atomic directory publication
+ */
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：在通用 Linux 剪贴板服务上选择 Wayland 资源和协议入口，复用统一生命周期。
+ */
 import type { VmAccess as Machines } from './vm-access.ts';
 import { X11Clipboard, type X11ApplicationContext, type LinuxClipboardOptions } from './x11-clipboard.ts';
 

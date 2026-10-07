@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - strict policy signs exports, trusts local signer, rejects unsigned and tampered external packages before adoption
+ * - foreign signer requires explicit trust; policy survives restart and rejects stale edits or corrupt trust records
+ * - encrypted external upload enforces signed policy after authenticated decryption
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';

@@ -1,3 +1,4 @@
+/** 宣传视频配色、字体和本地字体加载声明，供所有场景与封面复用品牌视觉。 */
 import {loadFont} from '@remotion/fonts';
 import {staticFile} from 'remotion';
 

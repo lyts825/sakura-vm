@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - source heartbeat arms only a verified compatible standby and start checks witness even after policy removal
+ * - pending return heartbeats resume after source restart even with the HA policy revoked
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

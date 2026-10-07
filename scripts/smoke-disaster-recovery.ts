@@ -1,3 +1,4 @@
+/** 烟雾验收：验证已校验备份恢复到新实例、真实启动及演练清理。 */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';

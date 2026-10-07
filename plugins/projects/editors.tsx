@@ -1,3 +1,6 @@
+/**
+ * 模块职责：项目服务、环境变量和外部连接的可编辑组件，按可选插件加载健康检查、秘密与 IDE/配方入口。
+ */
 import { embeddedPluginComponent } from '../../src/plugin-client';
 import { Plus, Trash2 } from 'lucide-react';
 import { Suspense, useEffect, useState } from 'react';

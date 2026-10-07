@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实来宾文件预览、覆盖、核实、移除及操作记录。 */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';

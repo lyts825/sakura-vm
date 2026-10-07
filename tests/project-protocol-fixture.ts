@@ -1,3 +1,4 @@
+/** 语言服务与调试协议夹具；构造双向流、项目身份和运行记录，供撤权与结束情景复用。 */
 import { randomUUID } from 'node:crypto';
 import { Duplex, PassThrough } from 'node:stream';
 import { projectVersion, type Project } from '../server/workspaces.ts';

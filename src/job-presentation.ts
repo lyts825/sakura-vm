@@ -1,3 +1,6 @@
+/**
+ * 模块职责：把任务状态、取消及执行结果映射为统一标签和说明，供任务列表与日志面板使用。
+ */
 import type { JobView } from '../shared/contracts/jobs.ts';
 
 export const taskLabels = { running: '执行中', done: '已完成', error: '失败', cancelled: '已取消', interrupted: '已中断' };

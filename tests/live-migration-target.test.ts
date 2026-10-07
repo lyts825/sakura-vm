@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - a QEMU launch failure removes the unpublished incoming target
+ * - incoming target atomically adopts source identity and persists a non-bootable prepared record
+ * - target preparation replays its original receipt and reconstructs the same transfer after host restart
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

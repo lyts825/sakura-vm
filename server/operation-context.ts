@@ -1,3 +1,6 @@
+/**
+ * 模块职责：传递当前操作检查和审计失败观察者，允许清理路径脱离已失效的用户操作上下文。
+ */
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 type OperationCheck = () => Promise<void>;

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：声明核心操作的请求契约、权限及响应元数据，为网关和公开操作目录提供依据。
+ */
 import { z } from 'zod';
 import type { OperationPolicy } from '../shared/contracts/operations.ts';
 import { recoveryViewSchema } from '../shared/contracts/controller-api.ts';

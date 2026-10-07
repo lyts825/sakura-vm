@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“文件工作台”插件清单：文件浏览、上传下载、文本编辑、历史版本与回收站。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：根据能力动作的 Schema 生成输入表单，执行选定动作并呈现结果与就绪状态。
+ */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
 import { useCallback, useEffect, useMemo, useState } from 'react';

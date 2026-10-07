@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - network guard rejects module loaders, reexports and aliased socket constructors
+ * - network guard follows lexical fetch references without file-wide exemptions
+ * - network guard requires managed S3 transports and explicit credentials under aliases
+ */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';

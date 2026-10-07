@@ -1,3 +1,4 @@
+/** 后代初始化夹具的共同数据与创建逻辑，供 EXE、DLL 和令牌场景复用。 */
 #pragma once
 #include "fixture-early.h"
 #include <string>

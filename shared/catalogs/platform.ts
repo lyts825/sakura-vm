@@ -1,3 +1,6 @@
+/**
+ * 模块职责：平台进阶功能目录，记录远程、安全、灾备与协作能力的标识和当前状态。
+ */
 export const nextFeatureCatalog = [
   [
     'host-pairing',

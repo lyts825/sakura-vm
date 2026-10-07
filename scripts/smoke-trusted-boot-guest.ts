@@ -1,3 +1,4 @@
+/** 烟雾验收：验证Linux TPM/Secure Boot 来宾、重启停止、可信快照回滚与历史导出启动。 */
 import assert from 'node:assert/strict';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdtemp, rm, stat } from 'node:fs/promises';

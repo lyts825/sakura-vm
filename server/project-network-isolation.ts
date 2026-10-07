@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成项目网络命名空间命令及准备检查，限制命名并区分宿主与私有网络执行。
+ */
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
 import { AppError } from '../shared/errors.ts';

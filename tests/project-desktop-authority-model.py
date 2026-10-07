@@ -1,3 +1,7 @@
+# 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
+# 覆盖：test_fixed_adapter_reports_actual_check_lines_without_changing_full_authority
+# 覆盖：test_fixed_adapter_classifies_unknown_exceptions_and_keeps_stream_stdout_binary
+# 覆盖：test_fixed_adapter_oserror_uses_only_bounded_trusted_source_frames
 """Source-level authority model; Linux kernel paths are explicitly simulated.
 
 No guest is started. Actual controller functions execute against a protected

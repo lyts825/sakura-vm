@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - a durable witness enrollment blocks ordinary starts even without the HA plugin
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';

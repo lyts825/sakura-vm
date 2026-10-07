@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置可信启动和 vTPM 密钥，查看启动检查及注册结果。
+ */
 import { useEffect, useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
 

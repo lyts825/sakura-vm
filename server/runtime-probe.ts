@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成有期限、有限输出的运行时版本探测命令，拒绝不完整或无效的回执。
+ */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 

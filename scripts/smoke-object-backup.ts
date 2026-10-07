@@ -1,3 +1,4 @@
+/** 烟雾验收：验证对象存储备份上传、完整性核实及恢复启动。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

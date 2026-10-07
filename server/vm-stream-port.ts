@@ -1,3 +1,6 @@
+/**
+ * 模块职责：为传输流提供受限接口视图，隐藏内部实现并校验流操作的原身份。
+ */
 import { AppError } from '../shared/errors.ts';
 
 const methods = new Set([

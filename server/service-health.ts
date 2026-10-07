@@ -1,3 +1,6 @@
+/**
+ * 模块职责：采样项目服务健康状态并维护期望值，后台检查遵循当前实例与项目运行状态。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectPrivateValues } from './workspaces.ts';

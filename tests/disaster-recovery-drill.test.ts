@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - drill verifies a backup, boots a temporary VM, checks a file hash and removes it
+ * - a mismatched file hash fails the drill but still removes its temporary VM
+ * - invalid backup and unsafe probe paths fail before creating a temporary VM
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';

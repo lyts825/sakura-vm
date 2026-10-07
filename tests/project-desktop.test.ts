@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - KDE public start captures its named project, exports secrets in UID frame and protects display identity
+ * - public running KDE requires exact stop before rebinding or directory/network edits
+ * - lost preparation ACK and endpoint/network drift cannot authorize discovery or recovery
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';

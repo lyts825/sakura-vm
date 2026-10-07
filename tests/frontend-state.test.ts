@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - closing a terminal keeps the session selected while its close request was pending
+ * - closing an inactive terminal selected during the request selects a surviving session
+ * - delayed close responses preserve newly created terminals and never remove the last pane
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { restoreTerminals, terminalReducer } from '../src/terminal-state.ts';

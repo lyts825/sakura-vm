@@ -1,3 +1,4 @@
+/** 烟雾验收：验证编译版 HTTP/网络入口及独立 worker 在安装布局中的行为。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { copyFile, mkdtemp, mkdir, readFile, writeFile, symlink, unlink, rm } from 'node:fs/promises';

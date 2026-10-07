@@ -1,3 +1,6 @@
+/**
+ * 模块职责：Webhook 事件类型、过滤、订阅与投递状态的公共契约，供自动化与投递界面共享。
+ */
 export const webhookTypes = ['job.finished', 'alert.raised'] as const;
 export const webhookJobStatuses = ['done', 'error', 'cancelled', 'interrupted'] as const;
 export const webhookAlertKinds = ['cpu', 'memory', 'disk', 'service', 'backup', 'task', 'secret'] as const;

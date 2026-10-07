@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - encrypted backups round-trip bytes and reject a wrong password, altered header, payload and truncation
+ * - cancelled encryption and decryption never overwrite an existing destination
+ * - encrypted backup jobs never retry as plaintext and wrong passwords do not import any data
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

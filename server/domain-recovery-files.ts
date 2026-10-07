@@ -1,3 +1,6 @@
+/**
+ * 模块职责：有界读取恢复票据文件和目录，拒绝无效类型、尺寸及超量发现结果。
+ */
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';

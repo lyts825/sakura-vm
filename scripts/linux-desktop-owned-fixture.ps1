@@ -1,3 +1,4 @@
+# Windows 侧自有 Linux 桌面夹具协调器，核对源目录和 QEMU 身份，记录本次复制、运行及退出证据。
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 $r=[Console]::In.ReadLine()|ConvertFrom-Json

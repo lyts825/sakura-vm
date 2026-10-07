@@ -1,3 +1,4 @@
+/** 自动化章节的 UI 示意，按旁白 cue 展示命令预设、任务执行和维护状态。 */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Status, Tag, useScene, Window} from '../stage';

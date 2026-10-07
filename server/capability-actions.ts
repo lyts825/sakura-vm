@@ -1,3 +1,6 @@
+/**
+ * 模块职责：检查并执行能力动作，协调依赖顺序、实例运行状态与各领域执行入口。
+ */
 import type { IdeV1, ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';

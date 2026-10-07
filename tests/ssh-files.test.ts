@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - SSH permissions protect actual files with quoted Unicode paths and reject links
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：远程桌面工具栏、画布、连接状态和录制面板布局，适配不同窗口尺寸。
+ */
 .desktop-panel {
   min-width: 0;
   overflow: hidden;

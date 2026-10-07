@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供本地 JSON 存储与目录检查，原子写入及串行化由元数据层处理。
+ */
 import { readFile, lstat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { finished } from 'node:stream/promises';
@@ -7,9 +10,8 @@ import { serializedMetadata } from './metadata-queue.ts';
 import { atomicMetadataWrite } from './metadata-io.ts';
 import { AppError } from '../shared/errors.ts';
 
-/** Observe only the last atomically published JSON without waiting for an
- * admitted mutation. Use for authorization rechecks while holding another
- * runtime/domain lease; never use this as an unguarded read-modify-write. */
+/** 不等待已准入变更，直接读取最后一次原子发布的 JSON，便于持有其他领域租约时重查授权。
+ * 该读取不能用于无锁的读改写，变更仍需同文件串行化和对应领域校验。 */
 export async function readCommittedStore<T>(file: string, fallback: () => T): Promise<T> {
   try {
     return JSON.parse(await readFile(file, 'utf8'));
@@ -23,8 +25,7 @@ export async function readStore<T>(file: string, fallback: () => T): Promise<T> 
   return serializedMetadata(target, false, () => readCommittedStore(target, fallback));
 }
 export async function writeStore(file: string, value: unknown) {
-  // Capture before the first asynchronous step; callers may mutate their state
-  // after handing this publication to a queue.
+  // 入队前同步序列化，避免调用方后续改变同一对象而使已提交队列的内容随之变化。
   const contents = JSON.stringify(value, null, 2);
   if (contents === undefined) throw new TypeError('Metadata must be JSON serializable');
   const target = resolve(file);

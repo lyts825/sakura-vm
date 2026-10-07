@@ -1,3 +1,6 @@
+/**
+ * 模块职责：封装 SSH 连接与通道的受限方法，关联申请生命周期及实际传输资源。
+ */
 import { AppError } from '../shared/errors.ts';
 import { vmStreamPort } from './vm-stream-port.ts';
 

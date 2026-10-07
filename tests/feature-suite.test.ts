@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - feature suite exposes the complete six-category roadmap
+ * - resource presets stay within the VM configuration limits
+ * - private finite developer tasks use captured UID contracts and reject shared-network containers
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';

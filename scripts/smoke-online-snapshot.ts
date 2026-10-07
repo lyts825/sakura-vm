@@ -1,3 +1,4 @@
+/** 烟雾验收：验证来宾文件系统冻结、QMP 在线快照、解冻及停机恢复。 */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

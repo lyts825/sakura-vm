@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - project exec resolves the captured non-enumerable config once and pins its original Live for native admission
+ * - malformed captured lease scope/hash/Live is refused before environment resolution or execution
+ * - changing Live during preparation cannot redirect a request to the replacement guest
+ */
 import type { ProjectPreparationV1 } from '../server/service-contracts/v1.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';

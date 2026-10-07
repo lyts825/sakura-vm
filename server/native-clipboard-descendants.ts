@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理原生剪贴板后代策略通道，在通道退出后保留已加载规则并报告失效状态。
+ */
 import { processSupervisor, spawnObserved as spawn } from './process-supervisor.ts';
 import { z } from 'zod';
 import type { NativeClipboardProcess } from '../shared/native-clipboard.ts';

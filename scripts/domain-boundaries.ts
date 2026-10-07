@@ -1,3 +1,4 @@
+/** 声明服务领域依赖图，并通过 AST 识别跨领域导入和访问，供架构检查统一报告违规边界。 */
 import { posix } from 'node:path';
 import ts from 'typescript';
 import { staticString } from './network-boundaries.ts';

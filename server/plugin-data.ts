@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理插件数据路径及版本化存储迁移，校验插件数据标识和版本边界。
+ */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { z } from 'zod';

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证外部存储池分配、分层迁移及三次真实来宾启动。 */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

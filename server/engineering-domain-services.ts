@@ -1,3 +1,6 @@
+/**
+ * 模块职责：创建工程领域的临时隧道服务，通过解析器读取可选可信启动和项目终端服务。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { ReverseTunnels } from './reverse-tunnels.ts';
 import type { VmAccess } from './vm-access.ts';

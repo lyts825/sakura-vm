@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - migration refuses legacy CPU models and changed topology before changing either VM
+ * - matching CPU layouts allow different QOM paths, property order and slot order
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { migrateQemuWithMirroredDisk, type MigrationQmp } from '../server/live-migration-transport.ts';

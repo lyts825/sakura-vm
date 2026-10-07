@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“平台扩展适配器”插件服务端入口。激活时装配 NextFeatures、ObjectBackup、WireGuardOverlay，并处理声明的服务端操作。
+ */
 import { services as projectsServices } from '../projects/services.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -36,6 +39,7 @@ export const operations: Record<string, PluginOperation> = {
 export async function activate(host: PluginContext) {
   const m = host.vm;
   const service = host.provide(platformServices.next, new NextFeatures(m, host.use(projectsServices.workspaces), host.system, {
+    // 备份、签名包和秘密服务在操作时查询；可选插件启停后适配器读取当前服务而非旧对象。
     objectBackup: new ObjectBackup(m, () => ({
       backups: host.optional(backupsServices.backups),
       bundles: host.optional(snapshotsServices.bundles),

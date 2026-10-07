@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - runtime reads exact identity ticket without installing or advancing the host journal
+ * - stopped scope with unclosed identity ticket rejects binding edits and reports unconfirmed
+ * - main runtime exposes exited at the top level, explicit main metadata and redacted application logs
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';

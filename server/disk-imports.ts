@@ -1,3 +1,6 @@
+/**
+ * 模块职责：解析并导入外部磁盘及 OVA；限制 TAR 成员、路径和磁盘依赖，防止导入越界。
+ */
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, open, rm, stat } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';

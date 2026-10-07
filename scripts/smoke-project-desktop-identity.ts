@@ -1,3 +1,4 @@
+/** 烟雾验收：验证桌面自有 COW 夹具中的项目 UID、网络、目录视图和精确清理。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

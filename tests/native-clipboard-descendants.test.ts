@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - CreateProcess descendant inherits cross-EXE rules and exact ancestry before matching x86 helper attachment
+ * - concurrent child journals and nested initializer descendants do not deadlock an ancestor controlled launch
+ * - simultaneous child requests preserve both journals and caller CREATE_SUSPENDED argument
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - pool assignment, verified moves and cleanup survive a controller restart
+ * - a tampered ownership marker disables the external pool
+ * - a failed cleanup receipt keeps its original admission until the existing pool recovery confirms deletion
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

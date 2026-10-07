@@ -1,3 +1,4 @@
+/** 读取已发布服务接口基线，构建独立 TypeScript 比较程序并检查双向形状与方法兼容性。 */
 import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve, relative, basename } from 'node:path';

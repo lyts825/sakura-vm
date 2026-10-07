@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置原生 X11/Wayland 剪贴板桥接，查看会话与应用策略及安装状态。
+ */
 import { useEffect, useState } from 'react';
 import { defaultClipboardRule, type ClipboardRule } from '../shared/clipboard-policy';
 import type { X11ClipboardApplication, X11ClipboardView } from '../shared/x11-clipboard';

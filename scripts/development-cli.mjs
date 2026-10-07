@@ -1,3 +1,4 @@
+/** CLI 开发子命令实现，包含命令预设、网络与迁移审阅操作，以及通过 API 下载已验证备份。 */
 import { networkFor } from './network-client.mjs';
 const { fetch } = networkFor('tool:development-cli');
 import { readFile, open, lstat, unlink } from 'node:fs/promises';

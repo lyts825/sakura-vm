@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 X11 应用及工具包剪贴板策略、身份和受控清理。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

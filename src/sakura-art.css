@@ -1,3 +1,6 @@
+/**
+ * 模块职责：欢迎区域的樱花、光点与枝条装饰样式，包含主题适配和减少动态效果的处理。
+ */
 /* Translucent petals, painted branches, and a quiet spring breeze. */
 .welcome-banner {
   --hero-start: #fcf0f2;

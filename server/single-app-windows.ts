@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理单应用窗口、剪贴板策略和持久运行记录，原会话停止按完整票据核验。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { ProjectSessionLifetime } from './project-session-lifetime.ts';

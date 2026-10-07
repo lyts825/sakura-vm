@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理系统状态、恢复及操作结果管理请求，结果归档仅允许管理员执行。
+ */
 import { AppError } from '../shared/errors.ts';
 import { graphqlInfo, graphqlLimits } from './graphql-api.ts';
 import { hostRuntime } from './host-runtime/index.ts';

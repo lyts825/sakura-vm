@@ -1,3 +1,6 @@
+/**
+ * 模块职责：运行宿主网络池的独立工作进程，处理连接和查询请求并通过控制通道返回状态。
+ */
 // Deliberately standalone: production and setup use the same worker without a TS loader.
 // IPC carries capabilities/control only. Socket payloads use bounded, backpressured pipes.
 import { createServer, createConnection } from 'node:net';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理常驻项目会话的捕获身份与退休回执，旧会话关闭不能影响新的客户机运行。
+ */
 import { AppError } from '../shared/errors.ts';
 import {
   hostRuntime,
@@ -104,7 +107,7 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
       ],
       signal: AbortSignal.any([owned.signal, ...(options.signal ? [options.signal] : [])]),
     });
-    // Session start may hold the domain lock needed by an old session's stop. Never queue here.
+    // 启动可能持有旧会话停止所需的领域锁；这里即时准入，不能持锁排队等待旧会话释放额度。
     if (!lease) throw new AppError('常驻会话已达到当前资源额度', 429, 'RESOURCE_CAPACITY');
     owned.lease = lease;
     try {
@@ -173,8 +176,7 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
       this.closeTask = Promise.resolve()
         .then(async () => {
           await Promise.allSettled([...this.active]);
-          // Only this original domain capability can discharge the captured receipt.
-          // Revoking the originating request must not revoke its cleanup authority.
+          // 原领域能力按捕获的完整回执核销；请求授权已撤销也不能阻止它清理已取得的资源。
           const cleanup = () =>
             withoutOperationContext(() =>
               withResourceContext(
@@ -216,7 +218,7 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
     }
     return this.closeTask;
   }
-  /** Domain code supplies a freshly verified full receipt and its native stop protocol, never an ID-only release. */
+  /** 领域提供刚核验的完整回执与原生停止协议，不能仅凭会话 ID 释放原运行。 */
   static async retire<R extends SessionReceipt>(
     machines: Machines,
     vmId: string,
@@ -225,13 +227,12 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
   ): Promise<void> {
     const owned = sessions.get(machines)?.get(key(vmId, receipt)) as ProjectSessionLifetime<R> | undefined;
     if (!owned) return cleanup(receipt);
-    // Startup rollback can still hold the original intent after a lost acknowledgement. It may
-    // request cleanup, but the native handler receives our fuller pinned receipt, never that intent.
+    // 启动回执丢失时调用方可能只有旧意图；核对后交给原生清理的是本作用域已固定的完整回执。
     owned.assertReceipt(receipt, true);
     owned.cleanup = cleanup;
     await owned.close();
   }
-  /** Reloaded domain handlers may request the original owner, including its preparation children. */
+  /** 领域重新装载后可以请求原所有者完成清理，连同它仍持有的准备子资源一起核销。 */
   static async retireOriginal<R extends SessionReceipt>(
     machines: Machines,
     vmId: string,

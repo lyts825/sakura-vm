@@ -1,3 +1,6 @@
+/**
+ * 模块职责：展示服务端识别的二进制文件预览，按媒体类型呈现内容并处理无法预览的结果。
+ */
 import { useEffect, useRef, useState } from 'react';
 import type { Preview } from '../server/file-preview';
 import { useRemote, type Request } from './feature-shared';

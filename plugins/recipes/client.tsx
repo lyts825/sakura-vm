@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“环境配方”插件的项目环境配方连接、导入和导出界面，使用宿主传入的实例、项目和请求上下文。
+ */
 import { Download } from 'lucide-react';
 import { useState } from 'react';
 import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';

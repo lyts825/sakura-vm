@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - concurrent boot failures fill the circuit exactly once and survive reopening without lost attempts
+ */
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';

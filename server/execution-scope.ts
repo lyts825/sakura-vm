@@ -1,3 +1,6 @@
+/**
+ * 模块职责：绑定一次项目执行的身份、取消信号与资源预算；清理回执未确认时保留原额度。
+ */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
@@ -44,7 +47,7 @@ type Cleanup = {
   task?: Promise<void>;
 };
 
-/** One actual operation owns a budget; a delegated native runner borrows only within its call chain. */
+/** 一次实际操作持有一个预算；显式委派的运行器仅在同一项目调用链内借用该预算。 */
 export class ExecutionScope {
   readonly identity: ExecutionIdentity;
   readonly signal: AbortSignal;
@@ -104,7 +107,7 @@ export class ExecutionScope {
   static current() {
     return context.getStore()?.scope;
   }
-  /** Only the original domain owner receives this closure. Cancellation never confirms it. */
+  /** 只向原领域所有者交付清理闭包；取消信号不能代替原资源清理成功的确认。 */
   deferCleanup(work: () => Promise<void>): () => Promise<void> {
     if (this.finished) throw new AppError('执行作用域已经结束', 409, 'EXECUTION_SCOPE_CLOSED');
     const entry: Cleanup = { owner: this, work, complete: false, attempted: false, instance: pluginAuthority() };
@@ -141,7 +144,7 @@ export class ExecutionScope {
     }
     return entry.task;
   }
-  /** A domain handler stores this capability beside its exact immutable ticket, not a resource ID. */
+  /** 领域处理器把恢复能力与完整不可变票据一起保存，防止只凭资源 ID 核销新的运行。 */
   recovery(): () => Promise<void> {
     const owner = this;
     return async () => {
@@ -166,6 +169,7 @@ export class ExecutionScope {
       return Array.isArray(errors) && errors.length > 0 && errors.every(confirmed);
     };
     if (![...this.failures].every(confirmed)) return;
+    // 执行退出、所有清理回执以及历史清理错误都已确认后，才交还执行和宿主额度。
     this.retired = true;
     this.activity?.release();
     this.lease.release();
@@ -197,7 +201,7 @@ export class ExecutionScope {
       .then(async () => {
         try {
           child.assert();
-          // Borrowers bypass HostRuntime admission, so recheck their original authority here.
+          // 子操作借用已有额度，没有再次经过宿主准入，所以进入前重查原授权。
           await check();
           child.assert();
           return await child.invoke(work, !!options.delegate);
@@ -225,8 +229,7 @@ export class ExecutionScope {
   }
   static async run<T>(options: ExecutionOptions, work: (scope: ExecutionScope) => Promise<T>): Promise<T> {
     const parent = context.getStore();
-    // Children of an explicit orchestration scope run serially in its slot. Acquiring another
-    // slot while holding the parent's would deadlock when all global slots have parent owners.
+    // 委派子操作在父额度内串行执行；若占着父额度再申请子额度，全部父操作都可能互相等待。
     if (parent) {
       if (parent.delegate && parent.scope.matches(options)) return parent.scope.borrow(options, work);
       throw new AppError('嵌套执行必须由同一项目操作显式委派', 409, 'EXECUTION_NESTING_INVALID');
@@ -250,7 +253,7 @@ export class ExecutionScope {
       if (options.machines.closing) throw new AppError('服务正在关闭', 503, 'RESOURCE_DRAINING');
       scope.assert();
       scope.activity = scope.lifetime.enter(scope.identity);
-      // The activity cancellation belongs to the VM transition, independently of caller cancellation.
+      // 实例状态切换也能取消此活动，这一信号独立于用户请求本身的取消。
       const cancel = () => scope.controller.abort(scope.activity.signal.reason);
       scope.activity.signal.addEventListener('abort', cancel, { once: true });
       detach = () => scope.activity.signal.removeEventListener('abort', cancel);

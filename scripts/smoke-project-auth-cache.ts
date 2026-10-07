@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实依赖工具的项目认证缓存、凭据边界和记录。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';

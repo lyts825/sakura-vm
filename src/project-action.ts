@@ -1,3 +1,6 @@
+/**
+ * 模块职责：启动客户机并等待已有安装任务结束，再保存项目配置和提交所选操作；等待期间支持取消与超时。
+ */
 import type { JobView } from '../shared/contracts/jobs.ts';
 import type { VMView } from '../shared/contracts/vm.ts';
 import type { Project } from '../server/project-config.ts';

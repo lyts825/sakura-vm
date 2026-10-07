@@ -1,3 +1,6 @@
+/**
+ * 模块职责：原生剪贴板应用、进程及桥接状态的公共类型，描述策略与安装/连接状态。
+ */
 import type { ClipboardRule } from './clipboard-policy.ts';
 
 export type NativeClipboardApplication = {

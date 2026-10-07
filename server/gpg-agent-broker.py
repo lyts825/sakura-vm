@@ -1,3 +1,4 @@
+# 模块职责：在客户机内核对 GPG 转发的账户、目录及原运行票据，受限代理与清理只作用于原资源。
 """Fixed root controller; project command bytes never enter this process.
 
 SO_PEERCRED authenticates the connector, not a later recipient of a passed FD.
@@ -52,6 +53,7 @@ def identifier(value):
     require(isinstance(value, str) and str(uuid.UUID(value)) == value, 'CONTEXT_INVALID')
 
 
+# GPG 票据额外绑定宿主来源和辅助程序摘要，拒绝把其他宿主连接混入同一项目任务。
 def context_checked(value):
     require(set(value) == {'resource', 'identity', 'owner', 'sha256'}, 'CONTEXT_INVALID')
     resource, identity, owner = value['resource'], value['identity'], value['owner']
@@ -90,6 +92,7 @@ def info(value):
             'gid': value.st_gid, 'mode': stat.S_IMODE(value.st_mode), 'type': stat.S_IFMT(value.st_mode)}
 
 
+# 通过逐级目录 FD 固定控制路径；临时来源父目录仅按明确的 sticky 权限例外核验。
 def directory(path, mode=None, gid=0, create=False, source=False):
     require(path.startswith('/') and all(part not in ['', '.', '..'] for part in path.split('/')[1:]), 'PATH_INVALID')
     current = os.open('/', os.O_RDONLY | os.O_DIRECTORY | FLAGS)

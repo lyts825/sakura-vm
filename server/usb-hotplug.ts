@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理 USB 转发与热插拔记录，校准实例设备状态并限制重复规则。
+ */
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';

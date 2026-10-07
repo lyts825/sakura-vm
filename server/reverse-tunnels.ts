@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理临时隧道会话与停止，原运行归属不足时保留旧票据而不接管未知进程。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';

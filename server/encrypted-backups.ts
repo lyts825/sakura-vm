@@ -1,3 +1,6 @@
+/**
+ * 模块职责：流式加解密备份并提供临时明文作用域，验证文件边界与认证结果后才导入。
+ */
 import type { BundlesV1 } from './service-contracts/v1.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { appendFile, open, stat, mkdtemp, rm, rmdir } from 'node:fs/promises';

@@ -1,3 +1,4 @@
+# 生成宣传视频专用字体子集，验证固定字体和许可来源，并根据视频文案检查所需字符覆盖。
 """Build video-specific Sakura WOFF2 subsets from pinned, licensed sources.
 
 From sakura-promo-video:

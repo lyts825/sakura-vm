@@ -1,3 +1,6 @@
+/**
+ * 模块职责：部署固定仓库下载代理并准备项目检出，核对对象回执和受控下载目录后交付。
+ */
 import { createHash, randomUUID, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

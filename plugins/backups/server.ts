@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“备份策略”插件服务端入口。激活时装配 Backups、BackupRecovery，并处理声明的服务端操作。
+ */
 import { services as snapshotsServices } from '../snapshots/services.ts';
 import { services as secretsServices } from '../secrets/services.ts';
 import { services as transfersServices } from '../transfers/services.ts';
@@ -22,6 +25,7 @@ export async function activate(host: PluginContext) {
   const m = host.vm;
   host.provide(backupsServices.backups, new Backups(m, host.use(snapshotsServices.bundles), host.use(secretsServices.secrets)));
   host.registerJobs(host.use(backupsServices.backups).jobs, (job) => {
+    // 只复用可重建输入的备份运行任务；文件恢复必须重新选择备份和目标，不能从任务日志猜测输入。
     if (job.action !== 'run') throw new AppError('请回到原功能页面重新执行');
     return host.use(backupsServices.backups).run(retryTarget(job));
   });

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - release hash validation, isolated canary, activation, rollback and failed-start recovery
+ * - witness launcher follows activation and rollback, preserves CLI arguments and refuses tampering
+ * - witness changes, missing entry and additional files fail release verification and staging
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';

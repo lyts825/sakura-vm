@@ -1,3 +1,6 @@
+/**
+ * 模块职责：采样客户机内存压力并计算回收决策，目标内存受策略和发行版最低要求限制。
+ */
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

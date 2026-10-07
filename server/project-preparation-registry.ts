@@ -1,3 +1,6 @@
+/**
+ * 模块职责：登记项目准备租约，终端或命令资源未释放时阻止改变目录与网络配置。
+ */
 import { AppError } from '../shared/errors.ts';
 import { vmHostIdentity } from './vm-reference.ts';
 

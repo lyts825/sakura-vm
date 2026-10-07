@@ -1,3 +1,6 @@
+/**
+ * 模块职责：恢复浏览器保存的实例、页面和标签选择；页面/标签必须属于内置或插件声明的导航集合。
+ */
 import { PLUGINS } from '../../shared/plugins';
 
 type SessionState = { selected: string; page: string; tab: string };

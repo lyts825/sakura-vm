@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按设备容量和存储操作申请预算，管理增长预留、临时文件及释放租约。
+ */
 import type { StorageRuntimeV1 } from './service-contracts/v1.ts';
 import { realpath, stat, statfs, rm } from 'node:fs/promises';
 import { dirname, parse, resolve } from 'node:path';

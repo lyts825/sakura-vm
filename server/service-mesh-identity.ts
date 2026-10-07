@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义网格二进制、配置与进程身份回执，为边车配置发布和退休提供核验边界。
+ */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { quote } from './shell.ts';

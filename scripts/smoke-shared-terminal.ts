@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 tmux 只读连接、输出、输入阻断和授权撤销。 */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

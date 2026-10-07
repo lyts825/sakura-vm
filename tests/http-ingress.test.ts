@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - HTTP ingress routes requests, checks health, rejects port collisions and restores saved routes
+ * - HTTP ingress forwards WebSocket upgrades and releases the listener on delete
+ * - HTTPS ingress routes verified TLS and WebSocket connections through live certificate rotation
+ */
 type GatewayFixtureHost = import('../server/features.ts').Features;
 type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
 const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {

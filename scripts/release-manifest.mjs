@@ -1,3 +1,4 @@
+/** 发行清单读写与核实：拒绝链接和特殊文件，以有序逐文件摘要绑定允许的安装入口及包版本。 */
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -61,6 +62,7 @@ export async function writeReleaseManifest(root) {
 }
 
 export async function verifyReleaseManifest(root) {
+  // 重新枚举允许的发行入口，整份有序清单逐字比较，同时发现增删文件和字节篡改。
   const raw = await readFile(join(root, 'sakura-release.json'), 'utf8');
   const manifest = JSON.parse(raw);
   if (![1, 2].includes(manifest.schemaVersion) || manifest.name !== 'sakura-vm' ||

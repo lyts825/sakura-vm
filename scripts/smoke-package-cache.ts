@@ -1,3 +1,4 @@
+/** 烟雾验收：验证依赖预取、离线安装、缓存清单、篡改拒绝和清除。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

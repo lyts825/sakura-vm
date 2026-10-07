@@ -1,3 +1,4 @@
+/** 检查插件源码的 manifest、服务与路由契约使用，核对声明能力与实际实现的对应关系。 */
 import { isBuiltin } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 import ts from 'typescript';

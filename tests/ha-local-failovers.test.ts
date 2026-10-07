@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - process-only takeover fences source before promotion and retires target before rejoin
+ * - a witness-enrolled source needs serialized disarm before local fencing and every pending retry
+ */
 const witnessGuards: { disarmWitness?: (id: string, failureThreshold: number) => Promise<void> } = {};
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';

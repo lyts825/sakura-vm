@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - HA counter arms only after running and ignores planned stops
+ * - HA counter detects consecutive failed samples and resets on recovery
+ * - HA counter never carries failure evidence into a new policy revision
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

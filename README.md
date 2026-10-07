@@ -2,6 +2,8 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
+应用与内置包版本：**2.3.6**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+
 **真正运行 Linux 内核。** [PosixLoom](https://github.com/lyts825/posixloom) 负责命令编排、会话与 Windows 进程树管理，[QEMU](https://www.qemu.org/) 负责虚拟化。当前不是 WSL 的替代实现，也不依赖现有的 WSL 发行版。
 
 ## 基础版与插件
@@ -129,7 +131,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 [工具探测与受限命令](docs/project-tool-tasks.md) 也已接通项目账号；共享软件包安装和系统策略准备保留实例管理入口。
 
-本轮新增了分块续传、文件预览与剪贴板上传、文本三方合并、Git 工作树与目录版本、可执行能力表单、跨实例搜索/复制/测试、签名补丁、指标与任务结果导出，以及维护窗口、同步队列、备份限速、保留锁和快照差异比较。使用方法及具体边界见 [功能实现记录](docs/capability-completion.md)；完整剩余范围见 [未完成功能清单](docs/unfinished-features.md)，可用 `npm run features:audit` 重新生成。
+已支持分块续传、文件预览与剪贴板上传、文本三方合并、Git 工作树与目录版本、可执行能力表单、跨实例搜索/复制/测试、签名补丁、指标与任务结果导出，以及维护窗口、同步队列、备份限速、保留锁和快照差异比较。使用方法及具体边界见 [功能实现记录](docs/capability-completion.md)；完整剩余范围见 [未完成功能清单](docs/unfinished-features.md)，可用 `npm run features:audit` 重新生成。
 
 ## Linux 图形桌面（实验性）
 
@@ -143,7 +145,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 提供 Alpine / Debian / Ubuntu 的 KDE Plasma 软件渲染桌面；Alpine 在 TigerVNC 的 X11 画布中运行嵌套 KWin/Wayland，Debian / Ubuntu 使用发行版可用的 Plasma 会话入口。桌面支持文本剪贴板互通和可选中文输入法；「外观与布局」支持分辨率、缩放、主题、壁纸、强调色、面板位置、自动隐藏和动画偏好，配置写入实例并在重启后恢复。仍不包含 GPU/3D 加速、声音转发和 WSLg 的单应用窗口集成。TCG 下桌面响应较慢，建议使用可用的硬件加速。Alpine 客户机诊断命令：`rc-service sakura-desktop status`；Debian / Ubuntu 使用 `systemctl status sakura-desktop`，日志：`/var/log/sakura-desktop.log`。安装中断后如提示锁仍被占用，请等待原安装结束或重启实例后重试。
 
-已修复并发连接时短暂拒绝连接导致的直接失败，并加入桌面自动重连、显式网卡 MSI-X 配置。此前本机 WHPX 曾出现 SSH 与桌面同时长时间失联，本轮未复现该现象，仍不能认定其根因已解决；详细验证与限制见 [图形桌面验证记录](docs/linux-desktop.md)。
+已修复并发连接时短暂拒绝连接导致的直接失败，并加入桌面自动重连、显式网卡 MSI-X 配置。此前本机 WHPX 曾出现 SSH 与桌面同时长时间失联，此前验证未复现该现象，仍不能认定其根因已解决；详细验证与限制见 [图形桌面验证记录](docs/linux-desktop.md)。
 
 ## 界面与快捷操作
 
@@ -281,19 +283,20 @@ npm run test:native-clipboard # 独立窗口站中的真实 Windows Win32/OLE �
 
 ## 版本管理
 
-项目使用 Git 管理，`main` 保存可运行版本。新功能建议在独立分支开发：
+项目使用 Git 管理，按 `MAJOR.MINOR.PATCH` 维护应用版本，以完成验收的提交和本地 `v<版本>` 标签定位交付。新工作建议使用独立分支：
 
 ```powershell
-git switch -c feat/my-feature
-# 修改源码后验证
-npm test
-npm run build
+git switch -c codex/my-feature
+# 按改动范围运行必要验证（相关测试或完整发布门禁）
+npx tsc --noEmit
+npm run architecture:check
+npm run plugins:check
 git add <修改的源码路径>
 git diff --cached
 git commit -m "feat: describe the change"
 ```
 
-涉及虚拟机生命周期、磁盘或 SSH 的修改，还应运行 `npm run test:vm`。提交包含源码、文档与 `package-lock.json`；依赖、运行时、虚拟磁盘、实例密钥及本地配置由 `.gitignore` 排除。克隆后按快速启动步骤恢复运行环境；实例数据需要单独备份，不随 Git 保存。
+具体生成命令、验证分层与服务基线冻结流程见 [源码阅读与维护指南](docs/development-guide.md)。涉及虚拟机生命周期、磁盘或 SSH 的修改，还应运行相关真实 VM 验证；发布候选执行 `npm run verify`，VM 门禁为 `npm run verify:vm`。提交包含源码、文档与 `package-lock.json`；依赖、运行时、虚拟磁盘、实例密钥及本地配置由 `.gitignore` 排除。克隆后按快速启动步骤恢复运行环境；实例数据需要单独备份，不随 Git 保存。
 
 ## 上游与许可
 

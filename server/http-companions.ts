@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理浏览器扩展和移动伴侣请求，管理动作受管理员权限限制。
+ */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { sendJson as send } from './http-response.ts';

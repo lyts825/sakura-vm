@@ -1,3 +1,6 @@
+/**
+ * 模块职责：显示敏感剪贴板保护开关及其生效说明，同步浏览器内的策略变更。
+ */
 import { useState, useSyncExternalStore } from 'react';
 import {
   clipboardAppNames,

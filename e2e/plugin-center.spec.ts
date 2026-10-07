@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - plugin catalog searches, combines filters, and keeps the base configuration empty
+ * - community catalog requires a trusted publisher before installation and can run then unload
+ * - pack selection, independent retention and removal preserve shared dependencies without activating navigation
+ */
 import { expect, test, type Page } from '@playwright/test';
 import {
   PLUGINS,

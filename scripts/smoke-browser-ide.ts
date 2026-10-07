@@ -1,3 +1,4 @@
+/** 烟雾验收：验证独立新 VM 中 Browser IDE 会话、项目账户和受控请求边界。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';

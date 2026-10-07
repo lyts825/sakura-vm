@@ -1,3 +1,6 @@
+/**
+ * 模块职责：开发工具、环境与项目编辑表单的布局及窄屏适配样式。
+ */
 .development-row {
   display: flex;
   align-items: center;

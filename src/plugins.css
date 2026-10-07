@@ -1,3 +1,6 @@
+/**
+ * 模块职责：内置与社区插件管理页的卡片、筛选、授权状态及恢复信息样式。
+ */
 .plugins-page {
   max-width: 1240px;
   margin: 0 auto;

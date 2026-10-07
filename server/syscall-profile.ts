@@ -1,3 +1,6 @@
+/**
+ * 模块职责：检查并执行受限客户机命令，核对原启动身份并收集系统调用限制结果。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

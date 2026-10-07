@@ -1,3 +1,6 @@
+/**
+ * 模块职责：探测 QEMU 音频后端并配置实例媒体设备，校验架构对所选设备的支持。
+ */
 import type { UsbHotplugV1 } from './service-contracts/v1.ts';
 import { createHmac, randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';

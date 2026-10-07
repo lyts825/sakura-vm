@@ -1,3 +1,6 @@
+/**
+ * 模块职责：准备并核验项目终端绑定，停止时关联原账户和运行票据而非仅凭会话名称。
+ */
 import type { ProjectPreparationV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';

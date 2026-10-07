@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“收藏命令”插件服务端入口。激活时装配 CommandPresets，并处理声明的服务端操作。
+ */
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { services as commandsServices } from './services.ts';
 import { services as projectsServices } from '../projects/services.ts';

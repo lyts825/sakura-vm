@@ -1,3 +1,4 @@
+# 模块职责：在核定仓库与认证范围内下载 Git 对象，禁止重定向并提供受限本地对象镜像。
 """Fetch object data from one smart-HTTP repository; never enter a worktree.
 
 The system Git process sees only a nonce loopback URL. Authorization stays in
@@ -30,6 +31,7 @@ MAX_REQUESTS = 64
 TIMEOUT = 480
 
 
+# 下载和认证范围共用同一 URL 规范，编码分隔符或点路径不能绕过目录前缀核对。
 def checked_repository(value):
     if not isinstance(value, str) or not 1 <= len(value) <= 2048 or re.search(r"[\s\x00-\x1f\x7f\\]", value):
         raise ValueError("invalid repository URL")
@@ -49,8 +51,7 @@ def checked_repository(value):
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, newurl):
-        # A repository move needs an explicit saved URL; never send its credential
-        # or an upload-pack request to a server-selected repository.
+        # 仓库迁移需显式保存新地址；不把凭证或 upload-pack 正文发送到服务端指定的新仓库。
         raise ValueError("repository endpoint redirected")
 
 
@@ -81,6 +82,7 @@ class RepositoryMirror:
         # Only the already validated instance proxy environment is available.
         self.opener = urllib.request.build_opener(NoRedirect())
 
+    # 本地随机入口仅映射两种 Git 对象协议请求，不能把客户端路径直接拼接到上游仓库。
     def target(self, method, path):
         allowed = {
             ("GET", "/" + self.nonce + "/info/refs?service=git-upload-pack"): "/info/refs?service=git-upload-pack",

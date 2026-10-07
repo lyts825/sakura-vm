@@ -1,3 +1,7 @@
+# Python 回归入口：校验辅助进程的协议、输入和失败路径；平台要求以各用例中的条件检查为准。
+# 覆盖：test_manifest_size_hash_mtime_output_and_limits
+# 覆盖：test_packet_capture_returns_only_anonymous_metadata_and_bounds_its_command
+# 覆盖：test_windows_conflicts_and_symlinks_are_reported_or_rejected
 import importlib.util
 import io
 import json

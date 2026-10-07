@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理分块上传、校验与最终提交，限制分块数量并串行处理同一上传的变更。
+ */
 import type { FilesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';

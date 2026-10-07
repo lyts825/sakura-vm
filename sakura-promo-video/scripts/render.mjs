@@ -1,3 +1,4 @@
+/** 最终视频与封面渲染入口，预检音频/Manim 资源并核对场景连续帧时间线，将渲染日志保存在本地缓存。 */
 import {spawn} from 'node:child_process';
 import {access, mkdir, readFile} from 'node:fs/promises';
 import {createWriteStream} from 'node:fs';
@@ -34,6 +35,7 @@ if (!coverOnly) {
   const transcript = JSON.parse(await readFile(join(root, 'public', 'audio', 'transcript.json'), 'utf8'));
   const storyboard = JSON.parse(await readFile(join(root, 'STORYBOARD.json'), 'utf8'));
   let expectedFrom = 0;
+  // 最终导出只接受从零连续拼接的实际旁白帧，预览用的目标时长不能充当交付时间线。
   for (const scene of storyboard.scenes) {
     const timing = transcript.scenes.find(({id}) => id === scene.id);
     if (!timing || timing.from !== expectedFrom || !Number.isInteger(timing.durationInFrames) || timing.durationInFrames <= 0) {

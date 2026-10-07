@@ -1,3 +1,4 @@
+/** ShellExecute 父进程夹具，通过私有控制通道发起普通 Shell 创建并报告后代句柄和结果。 */
 #include "fixture-shell.h"
 #include <shellapi.h>
 #include "fixture-shell-call.h"

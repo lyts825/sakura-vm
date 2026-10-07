@@ -1,3 +1,6 @@
+/**
+ * 模块职责：把自动化功能的周期执行接入统一调度器，在关闭时注销自身调度任务。
+ */
 import type { FeatureSuiteV1 } from './service-contracts/v1.ts';
 import { scheduler, type Scheduler, type ScheduleHandle } from './scheduler.ts';
 

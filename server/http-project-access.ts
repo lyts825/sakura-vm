@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理项目授权与项目执行请求，依据成员身份限制可见项目与动作。
+ */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { sendJson as send } from './http-response.ts';

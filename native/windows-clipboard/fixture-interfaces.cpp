@@ -1,3 +1,4 @@
+/** 复用私有 window station 的常规 API 探针，覆盖 Win32 控件、OLE 及 WinRT 剪贴板接口。 */
 // Owned ordinary API probe. Reuse the existing fixture's proven private-station
 // launcher, JSON/UTF-8 helpers, Win32/OLE peer operations and clipboard owner.
 // No syscall, user desktop, clipboard history or cloud API is used here.

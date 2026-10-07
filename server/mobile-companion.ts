@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理移动伴侣配对和状态页面，统一处理设备授权、请求与撤销生命周期。
+ */
 import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { stat } from 'node:fs/promises';

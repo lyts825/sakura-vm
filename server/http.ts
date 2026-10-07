@@ -1,3 +1,6 @@
+/**
+ * 模块职责：解析请求 URL、媒体类型及有界 JSON/表单请求体，超限或类型不符时拒绝读取。
+ */
 import type { IncomingMessage } from 'node:http';
 import { AppError } from '../shared/errors.ts';
 import { MAX_TEXT_BYTES } from './files.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：根据生成的 WebSocket 通道契约构造路径和查询，统一编码参数并校验查询输入。
+ */
 import { socketRoutes, type SocketChannel, type SocketPath, type SocketQuery } from './contracts/websocket-client.generated.ts';
 
 /** Build a relative upgrade URL without opening a connection or replaying any input. */

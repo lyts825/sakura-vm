@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“私密配置”插件的秘密引用、私密配置和轮换策略编辑分区，使用宿主传入的实例、项目和请求上下文。
+ */
 import { formatDateTime } from '../../src/localization';
 import { Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';

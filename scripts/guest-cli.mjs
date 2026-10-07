@@ -1,3 +1,4 @@
+/** 将 CLI 参数转为结构化 guest 执行请求，保留字面参数与项目作用域，避免把参数拼成 root shell 文本。 */
 const projectId = /^(default|[a-f0-9]{16})$/;
 const usage = 'exec <name> [--project <id> | --instance] [--timeout <seconds>] -- <command> [args...]';
 export function guestArguments(action, args) {

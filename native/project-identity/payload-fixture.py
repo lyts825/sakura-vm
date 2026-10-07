@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# 项目启动器的临时来宾夹具：传入已有负载，验证自有 UID 执行、继承描述符泄露、环境可见性及 EOF/超量输入拒绝。
 """Disposable-root guest fixture; not one of the three production assets."""
 import base64
 import fcntl

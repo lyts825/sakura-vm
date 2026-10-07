@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - bpftrace stack counts become a ranked kernel profile
+ * - eBPF profiler probes the guest and runs a bounded profile program
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkEbpfProfiler, parseKernelProfile, runEbpfProfiler } from '../server/ebpf-profiler.ts';

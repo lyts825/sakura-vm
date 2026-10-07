@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/** 解析活动安装版本并校验见证运行包，启动已编译见证入口并转发信号和退出码。 */
 import { spawn } from 'node:child_process';
 import { lstat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';

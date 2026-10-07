@@ -1,3 +1,4 @@
+/** 烟雾验收：验证编译 HTTP 项目身份接口、严格输入和真实执行/关闭结果。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';

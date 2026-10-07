@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理有期限的计算工作线程与宿主资源额度；退出未确认的线程保留清理状态。
+ */
 import { Worker, type WorkerOptions } from 'node:worker_threads';
 import { AppError } from '../shared/errors.ts';
 import { pluginAuthority, withPluginAuthority } from './plugin-authority.ts';

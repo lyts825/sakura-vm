@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置主机文件/命令映射与原生集成，并提供打开文件、目录和终端的入口。
+ */
 import { useEffect, useState } from 'react';
 import type { NativeSettings, NativeView } from '../shared/native-integration';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';

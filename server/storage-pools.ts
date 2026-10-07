@@ -1,3 +1,6 @@
+/**
+ * 模块职责：登记并绑定宿主存储池，拒绝路径重叠并维护失败清理的原池资源记录。
+ */
 import { randomBytes } from 'node:crypto';
 import { lstat, mkdir, readdir, rm, rmdir, stat, statfs, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';

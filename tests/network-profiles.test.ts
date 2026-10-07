@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - network archives persist reusable DNS and NAT settings and validate names and addresses
+ * - interrupted DNS and NAT apply survives restart and restores only unchanged files and port rules
+ * - resolved profiles reload and verify DNS, and failed reloads remain recoverable
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

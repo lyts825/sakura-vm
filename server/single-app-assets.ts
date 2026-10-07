@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取单应用固定资源清单并校验逐文件和聚合摘要，拒绝使用未经验证的源码。
+ */
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

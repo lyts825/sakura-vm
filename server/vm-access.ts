@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供受身份与权限限制的虚拟机访问视图，清理调用必须匹配原客户机资源回执。
+ */
 import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import type { PluginInstance } from './plugin-instance.ts';

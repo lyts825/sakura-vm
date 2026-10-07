@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取历史资源采样，将累计计数转换为速率并绘制可选择的指标序列。
+ */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
 import { useState } from 'react';

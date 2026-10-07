@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - mobile companion pairs through a bounded code and filters durable read-only feeds
+ * - mobile disconnect revokes its server credential
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

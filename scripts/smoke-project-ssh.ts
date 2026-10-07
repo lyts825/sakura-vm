@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目 SSH 配置、连接、授权与真实来宾操作。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';

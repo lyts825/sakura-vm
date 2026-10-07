@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供插件终端后端及子句柄，子句柄只能释放自身持有的连接资源。
+ */
 import type { ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import type { Machines } from './machines.ts';
 import { ProjectTerminals } from './project-terminals.ts';

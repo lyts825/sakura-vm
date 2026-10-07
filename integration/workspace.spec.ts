@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - compiled controller: VM lifecycle, plugin panels, restart recovery and retained sandbox artifacts
+ */
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { startTestController } from '../scripts/test-controller';

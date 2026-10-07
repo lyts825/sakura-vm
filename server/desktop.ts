@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理桌面服务及 RFB 通道，协调项目桌面、单应用和剪贴板资源的关闭。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createWebSocketStream, WebSocket } from 'ws';
 import { Transform } from 'node:stream';

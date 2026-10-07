@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - failed CLI exports remove the partial output so the same filename can be retried
+ * - CLI export rejects an existing destination before starting disk preparation
+ * - successful CLI exports keep the complete original binary bytes
+ */
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：插件界面共用的请求类型、远程资源订阅、动作状态与任务反馈组件。
+ */
 import { formatDateTime, formatNumber } from './localization';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VMView } from '../shared/contracts/vm.ts';
@@ -26,12 +29,14 @@ export const distroName = (distro?: string, architecture?: string) => {
 export const formatBytes = (value: number) =>
   value >= 1024 ** 3 ? `${formatNumber(value / 1024 ** 3, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} GiB`
     : `${formatNumber(value / 1024 ** 2, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MiB`;
+// 订阅取消只移除此组件的观察者；同一能力/路径的其他组件继续共享读取。
 export function useRemote<T>(request: Request, path: string, enabled = true, interval = 5000) {
   const [state, setState] = useState<{ request: Request; path: string; generation: string; snapshot: ResourceSnapshot<T> }>();
   useEffect(() => {
     if (!enabled) return;
     return resourceCache.watch<T>(request, path, snapshot => setState({ request, path, generation: resourceCache.generationFor(request, path), snapshot }), interval);
   }, [request, path, enabled, interval]);
+  // 渲染时核对请求函数、路径和作用域代次，切换工作区后不能短暂展示上一订阅的数据。
   const current = enabled && state?.request === request && state.path === path && state.generation === resourceCache.generationFor(request, path) ? state.snapshot : undefined;
   return { data: current?.data ?? null, error: current?.error || '',
     reload: useCallback(() => resourceCache.invalidate(request, path), [request, path]) };
@@ -42,6 +47,7 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', visibility);
   visibility();
 }
+// 用 ref 同步拦住重复提交；卸载时取消请求，完成/失败回调只有在界面仍存活时更新状态。
 export function useAction() {
   const pending = useRef(false),
     alive = useRef(true),
@@ -128,6 +134,7 @@ export async function download(
   target: { type: 'file'; path: string } | { type: 'export' },
 ) {
   const { url } = await request<{ url: string }>(`/vms/${id}/download`, 'POST', target);
+  // 下载票据只能指向本站固定下载路由，避免把服务端回复直接当成任意导航地址。
   if (!/^\/api\/downloads\/[a-f0-9]{64}$/.test(url)) throw new Error('无效的下载地址');
   const a = document.createElement('a');
   a.href = url;

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存集群策略分批发布计划，限制存储记录并校验批次身份唯一性。
+ */
 import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';

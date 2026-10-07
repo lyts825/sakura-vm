@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - a complete named-project view resolves once, holds one lease and preserves NUL-parsed Git status/history
+ * - project selection during the first read cannot reinterpret the original named scope, task payload or job key
+ * - host and private operations use only bounded UID frames; secrets, author and message never enter root launch argv
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';

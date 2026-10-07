@@ -1,3 +1,6 @@
+/**
+ * 模块职责：核心 API 响应 DTO 的运行时 Schema，供响应契约、文档和客户端类型生成复用。
+ */
 import { z } from 'zod';
 import { haPromotionSchema, haRetirementSchema, haWitnessEnrollmentSchema, liveMigrationFenceSchema, liveMigrationOriginSchema } from './vm.ts';
 

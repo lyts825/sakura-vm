@@ -1,3 +1,6 @@
+/**
+ * 模块职责：创建自动化领域的软件包工作台，并通过解析器读取可选宿主服务。
+ */
 import { PackageWorkbench } from './package-workbench.ts';
 import type { VmAccess } from './vm-access.ts';
 import type { HostServiceResolver } from './host-service-contracts.ts';

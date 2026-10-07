@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - worker result is returned only after physical retirement and all dimensions are released
+ * - queued cancellation never reads input, and close joins active workers before returning
+ * - time limits, invalid entry points and preparation errors cannot leak compute capacity
+ */
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';

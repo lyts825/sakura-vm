@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“网络管理”插件服务端入口。激活时装配 NetworkProfiles、IngressCertificates、HttpIngress、LocalAliases、Set，并处理声明的服务端操作。
+ */
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -21,6 +24,7 @@ export async function activate(host: PluginContext) {
   host.provide(networkServices.network, new NetworkProfiles(m));
   const certificates = host.provide(networkServices.certificates, new IngressCertificates(host.capabilities.metadata.reference('certificates')));
   await host.capabilities.metadata.run('certificates', async () => certificates.init());
+  // 证书初始化先完成，再恢复入口和本地别名；入口加载依赖可用的证书及其元数据能力。
   const ingress = host.provide(networkServices.ingress, new HttpIngress(m, host.capabilities.metadata.reference('ingress'), certificates, host.networking));
   await ingress.init();
   await host.provide(networkServices.localAliases, new LocalAliases(() => host.use(networkServices.ingress).aliasNames(),

@@ -1,3 +1,4 @@
+# 模块职责：对经核验的项目普通文件执行覆写与删除，检测读取长度变化和路径越界。
 """Guest-side logical overwrite. It does not prove physical media erasure."""
 
 import base64
@@ -19,6 +20,7 @@ def fail(message):
     raise SystemExit(2)
 
 
+# 逐级使用目录 FD 和 O_NOFOLLOW 打开，后续操作保留同一父目录与文件句柄，不重新解析链接路径。
 def open_file(path, write):
     parts = path.split("/")
     if not path.startswith("/") or any(part in ("", ".", "..") for part in parts[1:]):
@@ -91,6 +93,7 @@ def main():
             print(json.dumps({"previewToken": token, "bytes": info.st_size,
                               "sha256Before": before, "path": path}))
             return
+        # 删除必须匹配预览时的物理身份及内容摘要；路径相同也不能替代旧预览证明。
         if request.get("previewToken") != token:
             fail("预览已过期：文件内容或身份发生变化")
         for randomize in (True, True, False):
@@ -109,6 +112,7 @@ def main():
         if (current.st_dev, current.st_ino, current.st_size, current.st_nlink) != (
                 info.st_dev, info.st_ino, info.st_size, 1) or last.st_nlink != 1:
             fail("文件身份发生变化，未执行删除")
+        # 覆写校验及最终路径身份都通过后才解除目录项；结果仅确认逻辑内容，不证明介质擦除。
         os.unlink(name, dir_fd=directory)
         os.fsync(directory)
         try:

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置原生剪贴板桥接和应用策略，查看桥接进程状态及安装任务结果。
+ */
 import { useEffect, useState } from 'react';
 import { defaultClipboardRule, type ClipboardRule } from '../shared/clipboard-policy';
 import type {

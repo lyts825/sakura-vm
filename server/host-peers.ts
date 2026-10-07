@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理同伴配对、传输、迁移和策略发布，核对证书指纹及远端发布或激活回执。
+ */
 import { PeerReplicaOperations } from './domains/peer-replica-operations.ts';
 import { peerActivationInput as activateInput, peerReplicaActivationInput as replicaActivateInput,
   peerActivationResult as activateResult, peerActivationCheckResult as activateCheckResult,

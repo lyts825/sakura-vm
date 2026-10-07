@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - bundle import requires a private controller identity before publishing a VM
+ * - bundle import accepts both PEM and modern OpenSSH private controller identities
+ * - import cancellation after disk inspection does not publish a VM
+ */
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';

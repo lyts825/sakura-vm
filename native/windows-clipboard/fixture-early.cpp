@@ -1,3 +1,4 @@
+/** 原生 EXE 早期初始化探针，记录 TLS 和入口处的剪贴板策略结果及映像身份。 */
 #include "fixture-early.h"
 #include <cstdio>
 #include <cstring>

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按规范化文件路径串行元数据操作；保留物理写入失败供 flush 核验且允许后续重试。
+ */
 import { createHash } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
 import { resolve } from 'node:path';
@@ -9,7 +12,7 @@ type Queue = { tail: Promise<unknown>; pending: number; failure?: unknown };
 const queues = new Map<string, Queue>();
 let pending = 0;
 export const metadataQueueLimits = Object.freeze({ perFile: 128, pending: 1024, files: 1024 });
-/** Counts and opaque file identities only; never expose stored values or error messages. */
+/** 诊断只暴露计数及不透明文件标识，不发布存储值或原始错误消息。 */
 export function metadataQueueSnapshot() {
   return {
     limits: metadataQueueLimits,
@@ -22,8 +25,7 @@ export function metadataQueueSnapshot() {
   };
 }
 
-/** Lexical path aliases and Windows case aliases share a writer. This is an
- * in-process coordinator, not a cross-process or symlink/hardlink lock. */
+/** 规范化路径别名及 Windows 大小写共用写入队列；此协调仅覆盖本进程，不能充当物理文件锁。 */
 export function metadataKey(file: string) {
   const path = resolve(file);
   return process.platform === 'win32' ? path.toLowerCase() : path;
@@ -77,8 +79,7 @@ export function serializedMetadata<T>(
       });
     });
   instance?.scope.observe(operation);
-  // Keep physical publication failures for flush(), but not refused edits, CAS
-  // conflicts or cancellation before disk I/O. Rejections never poison retries.
+  // flush 保留已开始物理发布后的失败；授权拒绝、条件冲突和 I/O 前取消不污染后续重试。
   state.tail = operation
     .then(
       () => {

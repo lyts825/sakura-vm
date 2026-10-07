@@ -1,3 +1,6 @@
+/**
+ * 模块职责：签名并验证实例包清单，管理受信任密钥及外部导入的显式授权范围。
+ */
 import {
   createHash,
   createPrivateKey,

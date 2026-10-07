@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - connection pool scales to its cap, refuses excess work and shrinks without moving a live stream
+ * - simultaneous admissions respect the process cap and keep each stream independent
+ * - large bidirectional streams preserve bytes and half-close with backpressure
+ */
 import assert from 'node:assert/strict';
 import { randomBytes, createHash } from 'node:crypto';
 import { once } from 'node:events';

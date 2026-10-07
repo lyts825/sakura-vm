@@ -1,3 +1,4 @@
+/** 烟雾验收：验证实例管理操作及真实来宾任务的集成结果。 */
 import { PLUGINS } from '../shared/plugins.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';

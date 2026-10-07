@@ -1,3 +1,6 @@
+/**
+ * 模块职责：无障碍审计浮层的尺寸、结果列表与可操作控件样式，保持报告在小屏幕内可滚动。
+ */
 .accessibility-audit {
   position: fixed;
   z-index: 50;

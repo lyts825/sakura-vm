@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“项目工作区”插件服务端入口。激活时装配 Workspaces、ProjectDirectoryMigrations，并处理声明的服务端操作。
+ */
 import { services as secretsServices } from '../secrets/services.ts';
 import { services as networkServices } from '../network/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
@@ -20,6 +23,7 @@ const directoryMigrations = new WeakMap<PluginContext, ProjectDirectoryMigration
 export async function activate(host: PluginContext) {
   const m = host.vm;
   host.provide(projectsServices.workspaces, new Workspaces(m, {
+    // 可选服务通过 getter 按使用时查询，启停 secrets/network 后不会继续持有旧实例。
     get secrets() {
       return host.optional(secretsServices.secrets);
     },
@@ -27,6 +31,7 @@ export async function activate(host: PluginContext) {
       return host.optional(networkServices.network);
     },
   }));
+  // 目录迁移器按宿主上下文隔离；关闭删除映射，新一次激活不能沿用旧的迁移操作上下文。
   directoryMigrations.set(host, new ProjectDirectoryMigrations(m, host.use(projectsServices.workspaces)));
   host.onDispose(() => {
     directoryMigrations.delete(host);

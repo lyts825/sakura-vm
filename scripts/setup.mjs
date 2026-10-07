@@ -1,3 +1,4 @@
+/** 准备固定版本 PosixLoom、QEMU 与基础镜像，核对下载摘要并构建本机运行依赖。 */
 import { networkFor } from './network-client.mjs';
 const setupNetwork = networkFor('tool:setup');
 const { fetch } = setupNetwork;

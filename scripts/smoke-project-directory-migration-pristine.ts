@@ -1,3 +1,4 @@
+/** 烟雾验收：验证新建未污染夹具中的项目目录迁移和初始绑定边界。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';

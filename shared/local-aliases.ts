@@ -1,3 +1,6 @@
+/**
+ * 模块职责：本地主机别名动作与状态契约，供入口路由和主机别名配置复用。
+ */
 import { z } from 'zod';
 
 export const localAliasActionSchema = z.discriminatedUnion('action', [

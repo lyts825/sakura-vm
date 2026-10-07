@@ -1,3 +1,6 @@
+/**
+ * 模块职责：硬件能力检查条目与主机报告的公共视图，统一可用性和失败原因的呈现。
+ */
 import type { Hardware } from '../hardware.ts';
 
 export type HardwareCapabilityRow = {

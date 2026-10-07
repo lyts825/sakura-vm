@@ -1,3 +1,4 @@
+/** 对固定 PosixLoom 进程实现应用已声明补丁，核对原始与目标摘要并支持发行构建检查。 */
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';

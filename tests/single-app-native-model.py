@@ -1,3 +1,7 @@
+# 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
+# 覆盖：test_directory_copy_has_identical_production_ast_and_provenance
+# 覆盖：test_unknown_uid_run_and_receipt_fields_are_rejected
+# 覆盖：test_application_members_require_all_ids_nnp_caps_groups_and_original_namespace
 """Execute fixed SingleApp guards against explicit process/receipt/FD models."""
 import ast
 import copy

@@ -1,3 +1,4 @@
+/** ShellExecute 与进程属性入口的策略拦截，核实直接 EXE 关联和系统调用来源后转入受控后代创建。 */
 #pragma once
 #include "shell-provenance.h"
 #include <shellapi.h>

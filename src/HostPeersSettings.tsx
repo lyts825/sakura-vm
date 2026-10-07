@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置主机配对与监听，查看远端资源、健康评分、冷迁移及快照复制状态。
+ */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
 import { useState } from 'react';

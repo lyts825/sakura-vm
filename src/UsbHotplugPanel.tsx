@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置 USB 热插拔匹配规则，查看设备、连接事件并提交挂载/移除操作。
+ */
 import { useState } from 'react';
 import { formatDateTime } from './localization';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';

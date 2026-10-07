@@ -1,3 +1,4 @@
+/** 烟雾验收：验证生产接收器和编译见证的故障转移、持久 fencing 与目标恢复；BMC 在本机模拟。 */
 import assert from 'node:assert/strict';
 import { fork, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';

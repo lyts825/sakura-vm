@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - desktop shutdown reports application cleanup failure, closes other bridges and retries the original service
+ * - desktop discovery reads the guest disk and does not connect before boot completes
+ * - desktop discovery restores persisted preferences and tolerates one bad field
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';

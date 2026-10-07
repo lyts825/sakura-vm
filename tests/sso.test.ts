@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - OIDC login binds an existing account, validates PKCE and ID Token, and revokes on unlink
+ * - SAML metadata requires a valid signing certificate and callback page escapes identity data
+ * - SAML accepts a signed solicited assertion and rejects an incorrect ACS recipient
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：封装实例 API 请求上下文，将实例操作绑定到统一操作网关。
+ */
 import type { UsbHotplugV1 } from './service-contracts/v1.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';

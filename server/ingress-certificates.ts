@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理本地入口证书的生成、校验与轮换，确保包含 localhost 和回环地址。
+ */
 import { X509Certificate } from 'node:crypto';
 import { join } from 'node:path';
 import { createSecureContext } from 'node:tls';

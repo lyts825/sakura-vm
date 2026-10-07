@@ -1,3 +1,4 @@
+/** X11 fork 夹具，在已有连接和中继状态下创建子进程，验证继承传输被隔离且父进程仍可使用。 */
 // Test-only: reuse the actual Xlib/XCB/mixed protocol helpers, without exec in
 // any child. Returning from main exercises ordinary C++ local/static cleanup.
 #define main sakura_protocol_fixture_main

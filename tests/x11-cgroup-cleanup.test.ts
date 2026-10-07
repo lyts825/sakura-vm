@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - X11 controller waits for kernel cgroup cleanup and preserves ownership checks
+ */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：LSP 文本位置和编辑契约，把行列位置转换为偏移并应用非重叠文本编辑。
+ */
 export type LspPosition = { line: number; character: number };
 export type LspRange = { start: LspPosition; end: LspPosition };
 export type LspTextEdit = { range: LspRange; newText: string };
@@ -19,6 +22,7 @@ export function positionOffset(content: string, position: LspPosition) {
 }
 
 export function applyTextEdits(content: string, edits: LspTextEdit[]) {
+  // 全部范围先基于原始文本换算，再从后向前替换，防止较早编辑改变后续编辑的偏移。
   const spans = edits.map((edit) => {
     const from = positionOffset(content, edit.range.start);
     const to = positionOffset(content, edit.range.end);

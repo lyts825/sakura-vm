@@ -1,3 +1,4 @@
+/** 后代创建失败时清理已持有的精确进程句柄，兼顾尚未进入 Job 的子进程，避免按猜测 PID 结束进程。 */
 #pragma once
 #include <windows.h>
 

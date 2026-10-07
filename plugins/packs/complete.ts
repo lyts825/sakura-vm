@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“完整兼容”插件包成员声明：全部内置可选插件，包括实验能力和后台任务。 包成员使用精确版本依赖，由选择解析器展开。
+ */
 import { definePack, member } from '../../shared/plugin-protocol.ts';
 
 export const pack = definePack({

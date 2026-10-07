@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - Certbot renewal checks existing lineages, schedules due runs, and persists results
+ * - failed renewal records failure and exact guest command is not replayed while active
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';

@@ -1,4 +1,5 @@
 // Generated from independent versioned interfaces by scripts/service-contracts.ts.
+// 公开服务能力目录：仅由独立版本接口生成成员、方法及嵌套返回关系，供服务代理校验能力边界。
 import type { ServiceContract } from './service-ref.ts';
 
 export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<any>>> = {

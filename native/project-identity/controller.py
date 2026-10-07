@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# 项目身份的 root 控制面：持久化 UID 预留、绑定和运行票据，核实目录、网络与 cgroup，并协调 SSH、终端和撤销。
 """Root control plane for persistent project accounts; commands never run here.
 
 The C entry point consumes only fixed-size records under the same flock. A
@@ -152,6 +153,7 @@ def read(path, limit=262144, missing=False):
         return data
 
 
+# 权限记录先写完并 fsync，再同目录替换并同步父目录，崩溃后不会授权半份记录。
 def atomic(path, data):
     parent_path = os.path.dirname(path)
     parent = directory_fd(parent_path)
@@ -526,6 +528,7 @@ def expected(value, request):
         refuse('IDENTITY_STALE')
 
 
+# UID 先进入永久预留表再创建账户；中断重试复用同一身份，不能把旧 UID 分配给另一个项目。
 def ensure(request, store):
     project = request['projectId']
     directory = request['directory']
@@ -2391,6 +2394,7 @@ def network_tool_clear(project, owned_tool):
         os.close(parent)
 
 
+# 删除工具继承已持有的注册排他锁，并进入独立登记 cgroup，避免撤销途中出现新授权启动。
 def network_delete(project, network, release_id, control_lock):
     # This is the controller's already-held EX descriptor, never a caller path.
     info = os.fstat(control_lock)
@@ -2596,6 +2600,7 @@ def runs_for(value, records=None):
     return result
 
 
+# 闭合票据是不可覆盖的墓碑；必须原子 no-replace，不能用先检查后 rename 的竞态替代。
 def run_archive_publish(parent, temporary, destination):
     # Publish a complete, fsynced file without replacing an existing tombstone.
     # Linux guests already require pidfd/cgroup v2. An unavailable atomic
@@ -2872,6 +2877,7 @@ def migration_retire_applied(value):
     durable_unlink(MIGRATIONS + '/' + value['projectId'] + '/latch.json')
 
 
+# 票据绑定 boot、构建、修订、网络和 cgroup；旧构建仍有活动运行时，先拒绝新票据而非复用旧权限。
 def prepare(value, request, boot, build, inherit=False, inherited_name=None, inherited_info=None, before_publish=None):
     # Only ssh-prepare supplies this internal extension after proving the root
     # daemon. exec-current still requires its own exact UUID owner domain.
@@ -3675,6 +3681,7 @@ def local_transport(descriptor, code):
     return info
 
 
+# 原 SSH 输入固定为 fd 3，负载另走 stdin 管道；不得把已有网络 socket 带入项目命名空间。
 def ssh_launch(value, run, build, payload):
     info = local_transport(0, 'SSH_SESSION_NETWORK_CHANNEL')
     flags = fcntl.fcntl(0, fcntl.F_GETFL)

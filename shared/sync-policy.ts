@@ -1,3 +1,6 @@
+/**
+ * 模块职责：同步路径策略、合并驱动和重命名识别规则，按匹配顺序决定路径的传输行为。
+ */
 import { z } from 'zod';
 
 export const syncPattern = z
@@ -27,6 +30,7 @@ export const syncMergeDriverSchema = z.object({
 }).strict();
 export type SyncMergeDriver = z.infer<typeof syncMergeDriverSchema>;
 
+// 这是同步专用模式：单星不跨目录、双星可跨目录；无斜杠的模式可匹配任意层级的名称。
 export function matchesSyncPattern(path: string, patterns: string[] = []) {
   return patterns.some((pattern) => {
     const value = pattern.replace(/\/$/, '');

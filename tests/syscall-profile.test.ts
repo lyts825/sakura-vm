@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - seccomp requires confirmation, keeps the selected project result and redacts secrets
+ * - a pre-cancelled seccomp request does not prepare or issue any command
+ * - seccomp install publishes only the fixed system helper and verifies both policies without project config
+ */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runSyscallProfile, syscallProfileInput } from '../server/syscall-profile.ts';

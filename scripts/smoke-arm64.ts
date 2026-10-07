@@ -1,3 +1,4 @@
+/** 烟雾验收：验证QEMU virt 上 Debian ARM64 启动、架构记录和再次启动。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

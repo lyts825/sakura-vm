@@ -1,3 +1,6 @@
+/**
+ * 模块职责：选择基础/目标快照并发起差异比较，展示变更统计和文件条目。
+ */
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
 import type { SnapshotDiffResult } from '../../shared/snapshot-diff';

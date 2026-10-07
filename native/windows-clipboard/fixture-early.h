@@ -1,3 +1,4 @@
+/** 早期初始化夹具的公共探针与证据结构，统一核对私有桌面和 Win32/OLE 剪贴板结果。 */
 #pragma once
 #include "protocol.h"
 #include <ole2.h>

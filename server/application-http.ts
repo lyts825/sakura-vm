@@ -1,3 +1,6 @@
+/**
+ * 模块职责：装配 HTTP、插件路由与升级请求入口；统一执行授权、审计和响应契约检查。
+ */
 import type { ResourceScopeV1 } from './service-contracts/v1.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';

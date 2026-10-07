@@ -1,3 +1,4 @@
+/** 分布式在线迁移验证的目标进程，运行生产接收器并支持服务重启与目标实例/项目配置观测。 */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

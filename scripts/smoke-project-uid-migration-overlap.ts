@@ -1,3 +1,4 @@
+/** 烟雾验收：验证迁移前后的项目 UID 与挂载目录重叠拒绝。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';

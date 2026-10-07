@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - DPAPI transports input through the owned stdin pipe and confirms both finite invocations
+ * - finite Windows tools normalize restricted environments and resolve fixed PATH executables
+ * - a missing executable or invalid arguments fail before Native Host gets an execution request
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

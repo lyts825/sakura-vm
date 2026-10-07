@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - inherited SESSION2 SDK transport chooses fixed stderr-only entry while ordinary payload remains flags0
+ * - explicit asset directory is verified and substitution fails before guest installation
+ * - terminal readonly probes and attach plans use exact identity metadata without installation or shell bodies
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按请求能力和完整路径共享资源读取、轮询及订阅，并按会话/插件代次隔离缓存结果。
+ */
 import { pluginGeneration } from './plugin-generation';
 
 export type ResourceRequest = <T = unknown>(path: string, method?: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
@@ -53,6 +56,7 @@ export class ResourceCache {
   generationFor(request: ResourceRequest, path: string) {
     return `${this.resetGeneration}:${this.scopes(request, path).map(identity => `${identity}:${this.scopeGenerations.get(identity) || 0}`).join('|')}`;
   }
+  // 请求函数本身代表访问能力；相同 URL 但不同能力不能复用缓存或正在进行的读取。
   private key(request: ResourceRequest, path: string) {
     let id = this.identities.get(request);
     if (id === undefined) { id = ++this.sequence; this.identities.set(request, id); }
@@ -80,6 +84,7 @@ export class ResourceCache {
     const interval = this.interval(entry);
     if (entry.dirty || interval) entry.timer = setTimeout(() => { void this.load(entry); }, entry.dirty ? 0 : interval);
   }
+  // 每个条目同时只有一次读取。失效可以让正在进行的请求自然结束，代次检查负责拒绝其结果，随后重读。
   private load(entry: Entry) {
     if (entry.pending || !entry.listeners.size || !this.visible) return entry.pending || Promise.resolve();
     const generation = entry.generation;
@@ -103,6 +108,7 @@ export class ResourceCache {
     entry.pending = pending;
     return pending;
   }
+  // 活跃订阅不参与容量淘汰；离开最后一个观察者时取消读取，并短暂保留旧数据供重新挂载。
   watch<T>(request: ResourceRequest, path: string, listener: (snapshot: ResourceSnapshot<T>) => void, interval = 5000) {
     if (!Number.isFinite(interval) || interval < 0) throw new RangeError('Invalid resource refresh interval');
     const key = this.key(request, path);
@@ -140,6 +146,7 @@ export class ResourceCache {
       entry.generation++; entry.dirty = true; this.arm(entry);
     }
   }
+  // 事件资源路径匹配整段前缀，避免 /vms/a 的变化误失效 /vms/ab；查询字符串仍属于缓存键。
   invalidateResources(paths: string[]) {
     for (const entry of this.entries.values()) {
       const path = entry.path.split('?')[0];
@@ -164,6 +171,7 @@ export class ResourceCache {
       this.arm(entry);
     }
   }
+  // 插件撤权仅清空所属作用域；请求级能力身份和路由归属均可触发失效。
   resetScopes(identities: readonly string[]) {
     const scopes = new Set(identities);
     for (const identity of scopes) this.scopeGenerations.set(identity, (this.scopeGenerations.get(identity) || 0) + 1);
@@ -174,6 +182,7 @@ export class ResourceCache {
       this.arm(entry);
     }
   }
+  // 隐藏页面停止安排轮询；重新可见时提高代次并标记脏数据，确保返回页面后重新核对。
   setVisible(visible: boolean) {
     if (this.visible === visible) return;
     this.visible = visible;

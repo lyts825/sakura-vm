@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - monitor snapshots expose bounded instance state and task metadata without secrets or logs
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { monitorSnapshot } from '../server/monitor.ts';

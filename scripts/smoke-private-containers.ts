@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实私有容器的项目网络、目录、运行及生命周期边界。 */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';

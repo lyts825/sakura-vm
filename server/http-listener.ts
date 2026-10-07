@@ -1,3 +1,6 @@
+/**
+ * 模块职责：启动 HTTP 监听并管理监听阶段的错误与取消，避免未就绪服务遗留监听句柄。
+ */
 import type { Server } from 'node:http';
 
 /** Make binding failures part of application startup and its cleanup path. */

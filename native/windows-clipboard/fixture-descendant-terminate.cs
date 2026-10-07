@@ -1,3 +1,4 @@
+/** 托管后代清理夹具，使用指定的进程身份和 Windows 句柄接口验证结束及等待流程。 */
 using System;
 using System.Globalization;
 using System.Runtime.InteropServices;

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - drill success needs authenticated source refusal, exact target, health and confirmed routing together
+ * - unavailable or transitioning reads cannot prove a fence or a split-brain violation
+ * - stable unsafe authority, early target starts, a revived source and changed plans fail the drill
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

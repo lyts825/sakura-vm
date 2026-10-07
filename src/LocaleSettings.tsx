@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑语言、时区与数字格式偏好，并提供语言包安装入口。
+ */
 import { useState } from 'react';
 import {
   formatDateTime, formatNumber, readLocalePreferences, saveLocalePreferences,

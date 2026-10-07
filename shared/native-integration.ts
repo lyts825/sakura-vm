@@ -1,3 +1,6 @@
+/**
+ * 模块职责：主机原生集成映射、配置、状态和交接记录的公共类型。
+ */
 export type NativeMapping = {
   vmId: string;
   projectId: string;

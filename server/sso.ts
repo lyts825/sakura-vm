@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理 OIDC/SAML 身份提供者与登录流程，核对回调来源、接收者和待处理状态。
+ */
 import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { createHash, randomBytes, randomUUID, X509Certificate } from 'node:crypto';
 import { join } from 'node:path';

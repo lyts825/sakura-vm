@@ -1,3 +1,6 @@
+/**
+ * 模块职责：解析客户机 DNS 配置和诊断结果，区分实例未运行与配置不可读情况。
+ */
 import type { VmAccess as Machines } from './vm-access.ts';
 
 const probeCommand = `set -eu

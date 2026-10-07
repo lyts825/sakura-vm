@@ -1,3 +1,6 @@
+/**
+ * 模块职责：构造项目隧道监听器与适配器，传输连接核对完整账户票据及受限 socket 元数据。
+ */
 import { createHash } from 'node:crypto';
 import type { Duplex } from 'node:stream';
 import type { ClientChannel } from 'ssh2';

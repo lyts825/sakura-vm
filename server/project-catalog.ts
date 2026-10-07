@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理实例项目索引与当前项目上下文，通过已提交目录读取和更新项目元数据。
+ */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';

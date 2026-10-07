@@ -1,3 +1,6 @@
+/**
+ * 模块职责：使用 Windows 用户保护保存私密配置，解析引用并为日志提供值级脱敏。
+ */
 import { hostExecFile } from './host-process.ts';
 import { join } from 'node:path';
 import { z } from 'zod';

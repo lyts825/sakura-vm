@@ -1,3 +1,6 @@
+/**
+ * 模块职责：扫描项目文件与搜索结果，限制搜索输入并观察取消信号。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { posix } from 'node:path';
 import { isUtf8 } from 'node:buffer';

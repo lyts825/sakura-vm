@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目依赖缓存的离线复用、root 文件身份和完整性。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

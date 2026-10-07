@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - namespaces and generations retain ownership until cleanup is confirmed
+ * - manager reads live unload and cleanup state without an activation snapshot
+ * - activation publishes once while live contribution and permission changes advance the directory
+ */
 import { services as metricsContract } from '../plugins/metrics/services.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

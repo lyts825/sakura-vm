@@ -1,3 +1,6 @@
+/**
+ * 模块职责：调度受管周期任务，限制重复注册并在排空时停止新的调度执行。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';

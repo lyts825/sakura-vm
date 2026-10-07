@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - command palette selection wraps and supports Home/End without a DOM
+ * - workspace commands expose create, manage, switch, and running workspace actions
+ * - workspace commands follow lifecycle state and retain a discoverable disabled create command
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { nextSelection } from '../src/keyboard-navigation.ts';

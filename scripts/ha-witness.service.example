@@ -1,3 +1,4 @@
+# 独立 HA 见证节点的 systemd 部署示例；路径、账户和配置需按部署环境填写，启动入口跟随当前活动版本。
 [Unit]
 Description=Sakura independent HA witness
 Wants=network-online.target

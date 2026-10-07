@@ -1,3 +1,6 @@
+/**
+ * 模块职责：以受限分块缓冲上传对象文件，核对文件长度并处理 multipart 上传回执。
+ */
 import { open } from 'node:fs/promises';
 import {
   AbortMultipartUploadCommand,

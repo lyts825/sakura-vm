@@ -1,3 +1,6 @@
+/**
+ * 模块职责：在只读快照中生成文件清单并比较差异，限制挂载范围与路径编码。
+ */
 import { isUtf8 } from 'node:buffer';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';

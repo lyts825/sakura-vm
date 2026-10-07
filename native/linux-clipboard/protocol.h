@@ -1,3 +1,4 @@
+/** X11 策略、状态及缓冲预算的共享 ABI；固定布局与限制由控制器和注入库共同使用。 */
 #pragma once
 #include <cstdint>
 

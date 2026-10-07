@@ -1,3 +1,6 @@
+/**
+ * 模块职责：黄金镜像条目、操作输入与结果契约，限制镜像元数据和资源规模。
+ */
 import { z } from 'zod';
 
 export const goldenLimits = { count: 16, bytes: 128 * 1024 ** 3, imageBytes: 32 * 1024 ** 3 };

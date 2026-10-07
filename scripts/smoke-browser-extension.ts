@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 Chromium 扩展配对、只读清单和撤销后的拒绝。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';

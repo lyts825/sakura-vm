@@ -1,3 +1,4 @@
+/** 实验性桌面章节示意，展示桌面会话与应用入口并保留环境条件提示。 */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Tag, Terminal, Typed, useScene, Window} from '../stage';

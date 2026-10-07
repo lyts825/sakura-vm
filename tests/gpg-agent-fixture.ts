@@ -1,3 +1,4 @@
+/** 生成合成的 GPG 宿主快照及其摘要，供项目转发身份用例构造受控输入。 */
 import { gpgHostSnapshotSha256, type GpgHostSnapshot } from '../server/gpg-agent-host.ts';
 
 /** Synthetic metadata for task ownership tests; this does not attest a host Agent. */

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：声明受支持的 Dev Container 模板及版本规则，应用前核对模板元数据。
+ */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 

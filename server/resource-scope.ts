@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按依赖顺序关闭已登记资源，失败者及其依赖继续保留，重试不重复已成功清理。
+ */
 import { hostRuntime, type ResourceLease } from './host-runtime/index.ts';
 
 export const ClosePhase = {
@@ -9,7 +12,7 @@ type ScopeOptions = { owner?: string; registry?: Registry; signal?: AbortSignal 
 type Resource = { name: string; order: number; sequence: number; requires: readonly string[];
   dispose: () => unknown; lease: ResourceLease };
 
-/** Own resources as soon as they exist, including before asynchronous init. */
+/** 资源创建即登记归属，异步初始化失败也能按依赖关系清理已创建部分。 */
 export class ResourceScope {
   private resources: Resource[] = [];
   private sequence = 0;
@@ -34,7 +37,7 @@ export class ResourceScope {
     const resource = { name, dispose, order, requires: [...requires], sequence: this.sequence++, lease };
     this.resources.push(resource);
     return () => {
-      // Ownership can be handed to another scope only before disposal starts.
+      // 清理开始前才允许交出归属，避免一个资源同时被移交和销毁。
       if (!this.closing && this.resources.includes(resource)) {
         this.resources = this.resources.filter((item) => item !== resource);
         lease.release();
@@ -51,7 +54,7 @@ export class ResourceScope {
     this.defer(name, () => child.retryCleanup(), order);
     return child;
   }
-  /** Explicit retry preserves failed owners and never repeats successful disposers. */
+  /** 显式重试仅处理保留的失败资源；已成功销毁的资源不会再次调用清理。 */
   retryCleanup(): Promise<void> {
     if (!this.settled || !this.resources.length) return this.close();
     this.closing = undefined;
@@ -61,12 +64,13 @@ export class ResourceScope {
   close(): Promise<void> {
     if (!this.closing) {
       const resources = this.resources.splice(0).sort((a, b) => a.order - b.order || b.sequence - a.sequence);
-      // Assign the promise before disposal so concurrent close calls are idempotent.
+      // 先发布关闭 Promise，再开始销毁，让并发 close 调用等待同一次清理。
       this.closing = Promise.resolve().then(async () => {
         this.controller.abort();
         const failures: Error[] = [];
         const remaining = new Set(resources), failed = new Set<Resource>();
         while (remaining.size) {
+          // 消费者先于依赖关闭；消费者失败时保留它依赖的资源，便于下一次原位重试。
           const resource = [...remaining].find(candidate => !failed.has(candidate) &&
             ![...remaining].some(consumer => consumer.requires.includes(candidate.name)));
           if (!resource) break;

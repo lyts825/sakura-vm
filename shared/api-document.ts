@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义 API 文档与操作参数的公共形状，并规范化操作路径。
+ */
 import type { OperationDeclaration } from './contracts/operations.ts';
 
 export type ApiParameter = {
@@ -42,6 +45,7 @@ export type ApiDocument = {
     enabled: boolean;
   }[];
 };
+// 路径模板只替换单个安全路径段；查询参数交给 URLSearchParams 编码，不能通过参数注入额外路由层级。
 export function apiPath(
   template: string,
   path: Record<string, string> = {},

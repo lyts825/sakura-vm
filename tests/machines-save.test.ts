@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - machine saves publish admission-time nested snapshots in order and close drains the pending publication
+ * - a sustained own Windows read handle preserves the complete machine list, reports failure and permits a later queued save after close
+ * - a non-retry machine publication error is preserved and does not poison a later save or modify another temporary file
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

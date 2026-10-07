@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - lifecycle resolvers enforce declarations, readiness and drain dependency retention
+ * - typed service handles enforce ownership, dependencies and versions on every call
+ * - revocation rechecks queued work and keeps provider ownership and caller identity
+ */
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';

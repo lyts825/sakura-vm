@@ -1,3 +1,6 @@
+/**
+ * 模块职责：构造固定 LSP/DAP 工具安装与探测命令，限制协议工具种类和安装位置。
+ */
 import { quote } from './shell.ts';
 import { AppError } from '../shared/errors.ts';
 

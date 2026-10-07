@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“IDE 接入”插件的VS Code Remote-SSH 连接配置与项目接入面板，使用宿主传入的实例、项目和请求上下文。
+ */
 import { ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';

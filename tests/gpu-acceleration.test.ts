@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - GPU readiness rejects a software renderer even when EGL exits successfully
+ * - GPU readiness accepts GBM virtio_gpu with VirGL negotiation when renderer is absent
+ * - GPU readiness does not accept software renderer from a VirGL capable device
+ */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkGpuAcceleration, runGpuAcceleration } from '../server/gpu-acceleration.ts';

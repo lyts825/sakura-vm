@@ -1,3 +1,6 @@
+/**
+ * 模块职责：聚合领域恢复来源和持久索引，重试或重建前核对原记录摘要与当前领域证据。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { copyFile, lstat, open, readFile } from 'node:fs/promises';

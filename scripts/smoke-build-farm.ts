@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实构建任务的项目目录、环境、并发槽、取消和重启绑定。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

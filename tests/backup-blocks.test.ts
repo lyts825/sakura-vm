@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - content blocks deduplicate across machines, survive restart and reconstruct an identical portable file
+ * - corrupted chunks, mismatched manifests and cancellation cannot publish or restore an unverified backup
+ * - deletion and garbage collection wait until an active reconstruction releases its blocks
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

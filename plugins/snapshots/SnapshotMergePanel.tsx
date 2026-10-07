@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置快照分支合并与冲突决策，预览合并结果并跟踪合并任务。
+ */
 import { useState } from 'react';
 import type { SnapshotMergeView } from './view-types';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';

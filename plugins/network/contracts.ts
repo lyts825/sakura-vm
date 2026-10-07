@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“网络管理”插件的界面视图类型（NetworkView、NetworkProfile、NetworkPreview、ServicesView、SavedNetworkProfile、DependencyAuthentication），从公开 operation 响应契约派生字段以保持接口一致。
+ */
 import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 
 export type NetworkView = OperationResponse<'network.legacy.get.vms.vmId.network'>;

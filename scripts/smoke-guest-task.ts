@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 guest-task 的结构化执行、身份边界及本轮自有 VM 证据。 */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';

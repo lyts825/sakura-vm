@@ -1,3 +1,6 @@
+/**
+ * 模块职责：从实例备份中提取选定文件并保存产物；磁盘读取与输出共用同一 I/O 操作预算。
+ */
 import type { BackupsV1, BundlesV1 } from './service-contracts/v1.ts';
 import { createReadStream } from 'node:fs';
 import { join } from 'node:path';

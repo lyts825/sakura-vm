@@ -1,3 +1,4 @@
+/** 烟雾验收：验证硬件/加速器能力矩阵与实际引擎检测结果的一致性。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

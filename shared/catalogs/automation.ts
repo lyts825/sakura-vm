@@ -1,4 +1,7 @@
 /**
+ * 模块职责：基础功能与资源预设目录，区分可用、部分实现和规划功能并提供界面投影视图。
+ */
+/**
  * The feature suite is intentionally kept separate from the VM record.  The
  * VM record is part of the portable bundle format, while these preferences are
  * host-local automation and observability state.

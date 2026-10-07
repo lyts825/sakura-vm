@@ -1,3 +1,6 @@
+/**
+ * 模块职责：签发并消费短期下载票据，统一文件与流式下载生命周期和待下载容量限制。
+ */
 import type { BundlesV1, FilesV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';

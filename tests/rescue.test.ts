@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - rescue inputs restrict disk selection, deadlines and guest artifact paths
+ * - rescue locks the source until QEMU exit and attaches only a verified read-only disk after boot
+ * - unconfirmed read-only status refuses commands and still destroys the temporary guest
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import assert from 'node:assert/strict';
 import test, { after, type TestContext } from 'node:test';

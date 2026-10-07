@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“项目流水线”插件服务端入口。激活时装配 Pipelines，并处理声明的服务端操作。
+ */
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -16,6 +19,7 @@ export async function activate(host: PluginContext) {
     new Pipelines(host.vm, host.use(projectsServices.workspaces), host.use(filesServices.files)));
   host.registerJobs(pipelines.jobs, (job) => {
     if (!job.action?.startsWith('run:')) throw new AppError('请回到原功能页面重新执行');
+    // 历史任务重试先恢复其项目身份，再运行记录中的流水线，避免当前活动项目变化后执行到另一工作区。
     return retryInProject(host, job, () => host.use(pipelinesServices.pipelines).run(retryTarget(job), job.action!.slice(4)));
   });
 }

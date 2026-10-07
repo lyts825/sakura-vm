@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按声明依赖装配和关闭服务，验证就绪状态并支持可降级服务启动及清理确认。
+ */
 import { AppError } from '../shared/errors.ts';
 
 export type ServiceDependencyResolver = Readonly<{

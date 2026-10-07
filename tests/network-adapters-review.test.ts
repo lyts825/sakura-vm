@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - management connections cannot replace loopback DNS or use remote named pipes and count once
+ * - a revoked scope cannot resolve DNS or reopen its listeners and removes its parent subscription
+ * - manual HTTP destruction cancels pending worker dials before a socket exists
+ */
 import assert from 'node:assert/strict';
 import { getEventListeners, once } from 'node:events';
 import * as http from 'node:http';

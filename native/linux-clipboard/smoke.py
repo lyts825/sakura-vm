@@ -1,3 +1,4 @@
+# 在自有 VM 的独立认证 Xvfb 上验证 Xlib、XCB、Qt、增量传输及 fork 边界，避免触及用户桌面的剪贴板。
 """Run only in the smoke script's owned VM on a separate, authenticated Xvfb."""
 import os
 import pwd

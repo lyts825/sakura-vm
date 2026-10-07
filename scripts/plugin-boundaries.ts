@@ -1,3 +1,4 @@
+/** 插件源码的 AST 边界检查，约束服务访问、跨插件依赖及只允许的公开能力入口。 */
 import ts from 'typescript';
 import { posix } from 'node:path';
 import { staticString } from './network-boundaries.ts';

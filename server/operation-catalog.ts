@@ -1,3 +1,6 @@
+/**
+ * 模块职责：组合并校验核心与插件操作目录，发布前要求明确的请求及响应契约。
+ */
 import { z } from 'zod';
 import { isDeepStrictEqual } from 'node:util';
 import type { HttpResponseContract } from '../shared/contracts/http-response.ts';

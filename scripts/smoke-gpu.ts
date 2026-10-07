@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实来宾 Mesa GPU 工具与驱动状态。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

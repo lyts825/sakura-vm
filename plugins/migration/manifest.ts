@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“数据目录迁移”插件清单：停机复制、校验并切换主机数据目录。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, http } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

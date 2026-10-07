@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成实例硬件兼容性检查结果，覆盖网卡、架构及所选虚拟设备组合。
+ */
 import { deviceProfileSchema, hardwareIssues } from '../shared/hardware.ts';
 import type { HardwareCapabilityRow as Row, HostHardwareReport } from '../shared/contracts/hardware-compatibility.ts';
 import type { VmAccess as Machines } from './vm-access.ts';

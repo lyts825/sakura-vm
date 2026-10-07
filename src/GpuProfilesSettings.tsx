@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑 GPU/vGPU 配置档案，预览设备分配并向实例应用所选配置。
+ */
 import { useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 

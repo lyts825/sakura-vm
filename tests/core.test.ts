@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - configuration rejects traversal, command injection, invalid limits and duplicate ports
+ * - host, origin, fetch-site and token gate reject rebinding and cross-origin requests
+ * - managed disk paths accept only UUIDs and guest paths cannot contain protocol control bytes
+ */
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Socket } from 'node:net';

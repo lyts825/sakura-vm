@@ -1,3 +1,4 @@
+# 烟雾验收：验证目录 IDMAP 视图的描述符封闭、映射账户和源所有权拒绝。
 """Actual production idmapped-view helpers in owned Linux namespaces only.
 
 Run as Root against a source folder. No account, VM, existing project, global

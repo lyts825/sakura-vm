@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义私密配置轮换策略并计算提醒状态，确保提醒提前量小于轮换周期。
+ */
 import { z } from 'zod';
 
 export const rotationPolicySchema = z

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验在线迁移输入并生成步骤计划，明确源目标硬件和磁盘一致性要求。
+ */
 import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';

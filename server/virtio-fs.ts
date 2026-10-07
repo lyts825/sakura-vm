@@ -1,3 +1,6 @@
+/**
+ * 模块职责：探测并管理 Virtio-FS 宿主共享与客户机挂载，核对后端支持及辅助进程资源。
+ */
 import { hostProcess } from './host-process.ts';
 import { existsSync } from 'node:fs';
 import { lstat, mkdtemp, rm } from 'node:fs/promises';

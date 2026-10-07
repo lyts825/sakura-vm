@@ -1,3 +1,4 @@
+/** 烟雾验收：验证镜像格式导入、实例记录及受约束临时目录清理。 */
 import assert from 'node:assert/strict';
 import { createReadStream } from 'node:fs';
 import { mkdtemp, readFile, rm, stat, writeFile, mkdir } from 'node:fs/promises';

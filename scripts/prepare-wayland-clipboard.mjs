@@ -1,3 +1,4 @@
+/** 打包 Wayland 控制器、代理及固定协议 XML，核对来源元数据并生成资源摘要清单。 */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

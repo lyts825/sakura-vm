@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理项目容器、模板及私有数据库操作，将客户机任务与项目服务运行归属关联。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { posix } from 'node:path';
 import { randomUUID } from 'node:crypto';

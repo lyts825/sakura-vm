@@ -1,3 +1,6 @@
+/**
+ * 模块职责：装配独立见证 HTTPS 服务及宿主动作，约束目标地址和电源状态响应。
+ */
 import { networkFor } from './network/index.ts';
 import { type Server } from 'node:https';
 import { createHash, timingSafeEqual } from 'node:crypto';

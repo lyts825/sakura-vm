@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - clipboard detection reports categories without exposing any matching secret
+ * - clipboard detection preserves ordinary text and references, and bounds multibyte payloads
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sensitiveClipboardReason, assertClipboardSafe } from '../src/clipboard-protection';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置构建节点和标签，选择项目任务并查看构建分派及执行状态。
+ */
 import { useState } from 'react';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-shared';
 import type { JobView } from '../shared/contracts/jobs.ts';

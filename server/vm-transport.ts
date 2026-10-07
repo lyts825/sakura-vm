@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理实例 SSH 连接、命令、输入和文件传输，操作受实例状态及原运行身份限制。
+ */
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

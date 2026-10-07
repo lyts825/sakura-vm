@@ -1,3 +1,6 @@
+/**
+ * 模块职责：以分块校验和上传会话续传浏览器文件，在所有块确认后提交最终文件。
+ */
 const CHUNK_BYTES = 1024 ** 2;
 const hex = (value: ArrayBuffer) =>
   Array.from(new Uint8Array(value), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -35,6 +38,7 @@ export async function resumableUpload(
     }
     return response.json();
   };
+  // 先计算完整分块清单，使服务端以内容确认已有块；续传跳过的块仍计入用户看到的完成进度。
   const chunks: string[] = [];
   for (let start = 0; start < file.size; start += CHUNK_BYTES) {
     signal.throwIfAborted();
@@ -72,6 +76,7 @@ export async function resumableUpload(
     sent += chunk.size;
     progress(sent, '上传');
   }
+  // 块上传完成仅表示暂存完整；最终提交仍需服务端确认，文件锁令牌贯穿分块与提交请求。
   progress(file.size, '正在保存');
   return request<{ bytes: number; sha256: string }>(
     `${endpoint}?id=${encodeURIComponent(session.id)}`,

@@ -1,3 +1,4 @@
+# 烟雾验收：验证单窗口原生 Linux 控制器的真实运行、源摘要和父夹具不变性。
 """Exercise fixed SingleApp launch primitives in new owned Linux namespaces.
 
 No VM, account, service, shared mount, project or original image is modified.

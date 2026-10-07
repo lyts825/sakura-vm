@@ -1,3 +1,4 @@
+/** GTK 原生 Wayland 剪贴板夹具，用真实工具包读写文本并报告会话身份与操作结果。 */
 #include <gtk/gtk.h>
 #include <gdk/gdkwayland.h>
 #include <string.h>

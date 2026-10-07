@@ -1,3 +1,6 @@
+/**
+ * 模块职责：声明项目语言运行时版本和安装目录，提供环境选择及精确版本匹配规则。
+ */
 import { z } from 'zod';
 
 export const exactVersion = z.string().regex(/^\d{1,2}\.\d{1,3}\.\d{1,3}$/);

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - CPU topology validates complete NUMA allocation and builds explicit QEMU resources
+ * - Virtio GPU and VirGL select distinct devices and reject the unsupported ARM64 PCI profile
+ * - resource admission reserves physical memory and serializes CPU budgets without double counting current VM
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

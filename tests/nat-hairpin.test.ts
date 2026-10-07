@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - hairpin verification only uses a current VM forward and checks the guest route
+ * - hairpin reports a failed guest connection without claiming readiness
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Machines } from '../server/machines.ts';

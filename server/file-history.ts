@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存文件历史与回收站内容，支持查看、恢复和清理受限制的历史版本。
+ */
 import type { FilesV1 } from './service-contracts/v1.ts';
 import { randomUUID, createHash } from 'node:crypto';
 import { join, posix } from 'node:path';

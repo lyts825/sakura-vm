@@ -1,3 +1,6 @@
+/**
+ * 模块职责：维护见证节点的来源、目标与副本状态，依据隔离及退役证明协调接管。
+ */
 import { z } from 'zod';
 import { mkdir, open, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';

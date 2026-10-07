@@ -1,3 +1,6 @@
+/**
+ * 模块职责：跟踪安装身份对应的权限与运行代次，权限、产物或阶段变化时取消旧生命周期的请求。
+ */
 import { PLUGINS } from '../shared/plugins';
 import type { PluginInstanceView } from '../shared/contracts/plugin-runtime';
 
@@ -32,6 +35,7 @@ export class PluginGeneration {
     const changed: string[] = [];
     for (const identity of new Set([...this.lifetimes.keys(), ...incoming.keys()])) {
       const instance = incoming.get(identity);
+      // 运行代次、阶段、权限集合和产物摘要共同决定访问能力；仅插件 ID 相同不能沿用旧请求权限。
       const fingerprint = instance ? JSON.stringify([instance.generation, instance.phase,
         [...instance.permissions].sort(), instance.artifactDigest]) : 'absent';
       const previous = this.lifetimes.get(identity);
@@ -53,6 +57,7 @@ export class PluginGeneration {
   available(identity: string) { return this.lifetime(identity).running; }
   captureIdentity(identity: string) { return this.lifetime(identity).controller.signal; }
 
+  // 路由归属按最长匹配前缀确定，社区扩展路径则使用其安装身份，避免落入插件管理器的权限作用域。
   identityFor(path: string, method = 'GET') {
     const pathname = path.split('?')[0].replace(/^\/api(?=\/)/, '');
     // Community routes carry their installed identity, rather than the manager's identity.

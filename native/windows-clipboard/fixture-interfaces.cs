@@ -1,3 +1,4 @@
+/** 离线 WinForms/WPF 剪贴板夹具，由原生启动器在 CLR 启动前配置私有 window station。 */
 // Offline .NET Framework/modern .NET WinForms/WPF ordinary clipboard probe. The native
 // owned launcher assigns the private window station before the CLR starts.
 using System;

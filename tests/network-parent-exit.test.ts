@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - Windows host death reaps original CPU-less backend and worker handles before and after QMP readiness
+ * - Linux parent-death exec handoff reaps original CPU-less backend and worker handles
+ * - Linux parent-death helper refuses a stale parent before executing the program
+ */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按用户触发运行 axe 页面审计，展示违规元素、规则说明和定位入口。
+ */
 import { useEffect, useRef, useState } from 'react';
 import type { Result } from 'axe-core';
 import { saveBlob } from './export-file';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义桌面适配器票据与控制命令，按原 UID、运行目录及 inode 核对和退休资源。
+ */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';

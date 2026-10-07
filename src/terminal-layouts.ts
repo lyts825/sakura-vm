@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验并恢复终端分屏布局，把保存布局应用到当前终端集合。
+ */
 import { restoreTerminals, type TerminalState } from './terminal-state';
 
 export type TerminalLayout = TerminalState & { id: string; name: string; split: boolean; secondary?: string };

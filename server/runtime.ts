@@ -1,3 +1,6 @@
+/**
+ * 模块职责：创建 QEMU/PosixLoom 引擎与运行后端，启动前检查所需宿主二进制及构建资源。
+ */
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { writeStore } from './local-store.ts';

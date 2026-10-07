@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目存储配额预检、超限与配置状态。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

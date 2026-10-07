@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“服务健康检查”插件服务端入口。激活时装配 ServiceHealth，并处理声明的服务端操作。
+ */
 import { services as projectsServices } from '../projects/services.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -10,6 +13,7 @@ import { ServiceHealth } from '../../server/service-health.ts';
 export async function activate(host: PluginContext) {
   const health = host.provide(serviceHealthServices.health,
     new ServiceHealth(host.vm, host.use(projectsServices.workspaces), { deferInitialization: true }));
+  // 先发布健康检查服务再初始化定时工作，让宿主在激活失败或插件关闭时仍能管理服务资源。
   health.init();
 }
 export async function route(

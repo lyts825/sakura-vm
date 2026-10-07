@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成 SSH 身份与 cloud-init 种子配置，准备客户机网络、用户和启动初始化数据。
+ */
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 
 const field = (b: Buffer) => {

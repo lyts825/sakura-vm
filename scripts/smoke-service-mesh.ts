@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实项目服务网格的 UID、启动依赖、网络及失败清理。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';

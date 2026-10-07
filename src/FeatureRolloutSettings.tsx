@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑功能灰度规则，预览目标匹配结果并查看当前发布策略。
+ */
 import { useState } from 'react';
 import type { RolloutPolicy } from '../server/feature-rollouts';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';

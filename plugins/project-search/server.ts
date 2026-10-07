@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“项目搜索”插件服务端入口。激活时装配 ProjectFiles，并处理声明的服务端操作。
+ */
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as projectSearchServices } from './services.ts';

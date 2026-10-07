@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“服务健康检查”插件的项目服务健康策略编辑与持续检查状态面板，使用宿主传入的实例、项目和请求上下文。
+ */
 import type { HealthView, ServiceHealthPolicy } from './contracts.ts';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';

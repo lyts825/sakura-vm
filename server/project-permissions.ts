@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存项目角色和成员授权，执行时重查当前权限并处理成员及实例撤销。
+ */
 import type { AccessControlV1, ProjectCatalogV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { join, posix } from 'node:path';

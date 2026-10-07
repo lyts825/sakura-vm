@@ -1,3 +1,6 @@
+/**
+ * 模块职责：采集客户机性能栈并生成火焰图，将采样结果转为可检查的性能产物。
+ */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';

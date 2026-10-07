@@ -1,3 +1,6 @@
+/**
+ * 模块职责：设置并查询客户机网络配额，执行结果依赖实际客户机规则与状态回执。
+ */
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';

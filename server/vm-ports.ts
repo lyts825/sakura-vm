@@ -1,3 +1,6 @@
+/**
+ * 模块职责：声明虚拟机目录、锁、执行和文件等领域端口，限制领域对核心管理实现的依赖。
+ */
 import type { BaseAgent, Client, SFTPWrapper } from 'ssh2';
 import type {
   HaPromotion, HaRetirement, HaWitnessEnrollment, LiveMigrationFence,

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：跨界面的剪贴板策略契约与判定规则，合并全局/应用设置并给出禁止传输的原因。
+ */
 export const clipboardApps = ['workbench', 'terminal', 'files', 'desktop'] as const;
 export type ClipboardApp = (typeof clipboardApps)[number];
 export type ClipboardContext = { app: ClipboardApp; vmId?: string };

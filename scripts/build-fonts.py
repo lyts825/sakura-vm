@@ -1,3 +1,4 @@
+# 从固定且许可明确的字体源生成应用 WOFF2 子集，校验 Git blob 并维护字体清单。
 """Rebuild the checked-in, local web fonts. Not required by npm build/start.
 
 python -m pip install --target .tools/font-python -r scripts/font-requirements.txt

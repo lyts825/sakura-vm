@@ -1,3 +1,4 @@
+/** 从简体中文资源及静态词条生成繁体整包和片段包，使用 OpenCC 转换并支持只读同步检查。 */
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import ts from 'typescript';

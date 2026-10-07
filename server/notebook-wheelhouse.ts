@@ -1,3 +1,6 @@
+/**
+ * 模块职责：声明固定 Notebook 包来源并构造离线安装命令，校验 wheelhouse 租约与路径一致性。
+ */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { quote } from './shell.ts';

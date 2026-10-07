@@ -1,3 +1,6 @@
+/**
+ * 模块职责：通过 QMP 镜像磁盘并传输 QEMU 运行状态，跟踪迁移阶段与取消收尾。
+ */
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 

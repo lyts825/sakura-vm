@@ -1,3 +1,4 @@
+/** 烟雾验收：验证平台 passkey 注册、锁屏解锁、重放拒绝和密码回退。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';

@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# 烟雾验收：验证Linux nft 出站规则的精确句柄拒绝，保证变化后不删除替代规则。
 """Real nft/UID checks inside a caller-owned PID, mount and network namespace.
 
 This is a Linux kernel/egress test, not proof of a VM boot or SSH/cron daemon.

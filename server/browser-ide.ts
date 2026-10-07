@@ -1,3 +1,6 @@
+/**
+ * 模块职责：安装并运行绑定项目账户的浏览器 IDE；连接与停止都核对原会话的完整运行归属。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
 import { createHash, randomBytes } from 'node:crypto';

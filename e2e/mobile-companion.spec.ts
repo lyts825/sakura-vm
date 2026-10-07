@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - paired phone sees only authorized status and alerts over the HTTPS listener
+ */
 import { test, expect } from '@playwright/test';
 import { createServer } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';

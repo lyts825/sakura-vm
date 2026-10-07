@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按实例保存当前项目选择，重新读取项目列表时保留仍有效的选择并回退到服务端活动项目。
+ */
 import { useCallback, useEffect, useState } from 'react';
 import type { ProjectIndex } from '../../shared/contracts/controller.ts';
 import { api } from '../controller-session';
@@ -18,6 +21,7 @@ export function useProjectSelection(selected: string, hasProjects: boolean, toke
   useEffect(() => {
     if (!selected || !hasProjects) return;
     setProjectLoadError('');
+    // 实例、凭证或列表修订变化后取消旧请求，同时用 alive 防止已完成但尚未派发的旧回调写入状态。
     const abort = new AbortController();
     let alive = true;
     void api<ProjectIndex>(`/vms/${selected}/projects`, 'GET', undefined, abort.signal)

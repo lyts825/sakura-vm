@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“发行版镜像”插件清单：下载官方 Linux 云镜像，或校验并导入 RAW、VMDK、VHDX、OVA 镜像。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

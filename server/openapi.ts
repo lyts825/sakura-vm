@@ -1,3 +1,6 @@
+/**
+ * 模块职责：从操作目录生成公开 OpenAPI 文档，保持请求和响应说明与服务声明一致。
+ */
 import { PLUGINS } from '../shared/plugins.ts';
 import type { ApiDocument, ApiParameter } from '../shared/api-document.ts';
 import { operationDirectory, operationEntries } from './operation-catalog.ts';

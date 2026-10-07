@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - VM ports expose immutable records and opaque live identities, and cached calls revoke
+ * - domain hooks unregister the exact generation while unrelated hooks remain
+ * - terminal children release only their own leases on plugin exit
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

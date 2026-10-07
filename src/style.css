@@ -1,3 +1,6 @@
+/**
+ * 模块职责：应用全局主题变量、外壳、导航与基本控件样式，提供暗色主题和响应式布局。
+ */
 /* Sakura — warm paper, cherry blossoms, and a quiet plum terminal. */
 :root {
   color-scheme: light;

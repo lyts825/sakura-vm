@@ -1,3 +1,6 @@
+/**
+ * 模块职责：插件协议的运行时校验 Schema，约束依赖、服务、贡献、生命周期预算和启用选择版本。
+ */
 import { z } from 'zod';
 import { operationPolicySchema } from './contracts/operations.ts';
 

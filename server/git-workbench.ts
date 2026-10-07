@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供仓库状态、差异、冲突处理和 Git 动作；仓库相对路径与分支输入先校验。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';

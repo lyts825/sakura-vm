@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - WireGuard config rejects route takeover, duplicate peers and injected endpoints
+ * - WireGuard public key derives from a private key without exposing the private bytes
+ */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { wireGuardConfigSchema, wireGuardInput, wireGuardPublicKey } from '../server/wireguard-overlay.ts';

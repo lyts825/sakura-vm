@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成客户机网格边车的配置和运行命令，核对项目策略及原会话绑定后才能停止。
+ */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Project } from './project-config.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：在固定项目配置与客户机身份下执行 Git 任务，封装作用域检查和输出脱敏。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { VmAccess as Machines } from './vm-access.ts';

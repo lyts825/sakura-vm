@@ -1,3 +1,6 @@
+/**
+ * 模块职责：检查宿主 SSH Agent 并建立项目转发，转发执行关联客户机运行及任务资源。
+ */
 import type { ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
 

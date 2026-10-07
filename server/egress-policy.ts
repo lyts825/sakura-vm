@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验并应用客户机 IPv4 出站策略，限制白名单格式、重复项及空策略。
+ */
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { z } from 'zod';

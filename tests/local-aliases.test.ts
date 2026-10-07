@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - managed hosts block preserves unrelated records and rejects takeover or malformed markers
+ * - local aliases persist opt-in, reconcile renamed entries and remove only their own block
+ * - failed hosts update retains the requested state and can be retried after repair
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

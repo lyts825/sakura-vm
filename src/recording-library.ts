@@ -1,3 +1,6 @@
+/**
+ * 模块职责：以 IndexedDB 保存桌面录制元数据和 Blob，校验记录并执行录制库容量约束。
+ */
 export type RecordingEntry = {
   id: string;
   vmId: string;
@@ -100,6 +103,7 @@ export async function saveRecording(entry: RecordingEntry, blob: Blob): Promise<
   const db = await open();
   try {
     await new Promise<void>((resolve, reject) => {
+      // 元数据与 Blob 在同一读写事务内提交，容量检查失败同时回滚，避免出现只有索引或只有视频的半条记录。
       const tx = db.transaction(['index', 'content'], 'readwrite');
       let error = '保存失败，浏览器空间可能不足；仍可下载此次录制';
       const index = tx.objectStore('index');

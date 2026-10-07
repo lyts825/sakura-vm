@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“代码与调试工具”插件的DAP 调试连接、断点、调用栈和变量面板，使用宿主传入的实例、项目和请求上下文。
+ */
 import { useEffect, useState } from 'react';
 import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';

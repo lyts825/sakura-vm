@@ -1,3 +1,4 @@
+# Windows 托盘界面，读取本机实例状态、保存偏好并按既定策略启动隐藏 Sakura 服务。
 param(
   [ValidateRange(1, 65535)][int]$Port = 7337,
   [string]$ConfigPath = '',

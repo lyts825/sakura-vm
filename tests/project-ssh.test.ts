@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - OpenRC receipts require their own launcher and service while legacy systemd receipts remain strict
+ * - SSH stop preserves the bridge and service when recovering an issued ticket fails or its build disagrees with the saved endpoint
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

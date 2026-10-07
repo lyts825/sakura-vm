@@ -1,3 +1,6 @@
+/**
+ * 模块职责：发布受契约限制的系统及插件服务，跟踪借用关系并限制可访问的公共成员。
+ */
 import { AppError } from '../shared/errors.ts';
 import type { PluginManifest } from '../shared/plugin-protocol.ts';
 import type { ServiceContract, ServiceRef } from './service-ref.ts';

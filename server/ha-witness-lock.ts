@@ -1,3 +1,6 @@
+/**
+ * 模块职责：独占保护见证持久状态文件，拒绝硬链接以避免多个名称共享不可核对的状态。
+ */
 import { networkFor } from './network/index.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, readFile, realpath, unlink, writeFile } from 'node:fs/promises';

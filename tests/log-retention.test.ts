@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - log retention enforces age and global UTF-8 bytes while protecting active and invalid-time evidence
+ * - saved policy resumes after restart, pauses for migration, and clears no results or task metadata
+ * - stale previews, changed policies and changed log bodies cannot authorize a different cleanup
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

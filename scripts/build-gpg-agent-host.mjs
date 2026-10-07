@@ -1,3 +1,4 @@
+/** 构建 Windows x64 GnuPG 中继并封装摘要清单；核实 ACL、目录和 PE 身份后发布工具及服务资源。 */
 import {spawn} from 'node:child_process';
 import {createHash,randomUUID} from 'node:crypto';
 import {mkdir,readFile,writeFile,lstat,realpath,rename,readdir} from 'node:fs/promises';
@@ -80,6 +81,7 @@ async function existing(directory){
  const manifest=JSON.parse(await readFile(join(directory,'manifest.json'),'utf8')),bytes=await readFile(join(directory,'relay.exe'));manifestCheck(manifest,bytes);return{manifest,bytes,identity:await lstat(directory)};
 }
 async function publish(stage,target){
+ // 发布前重新核对原目录身份；保留已校验旧目录，失败时恢复它，不递归清理来源不明的内容。
  let previous;try{await lstat(target);previous=await existing(target);}catch(error){if(error.code!=='ENOENT')throw error;}
  if(previous){
   const now=await lstat(target);if(now.dev!==previous.identity.dev||now.ino!==previous.identity.ino||now.isSymbolicLink())throw new Error('GPG asset directory replaced before publication');

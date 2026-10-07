@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - opt-in account mode replaces the shared token with expiring scoped identities
+ * - account login locks out repeated guessing and does not persist sessions
+ * - passkey challenges are single-use and stored credentials survive restart and revoke their sessions
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';

@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - migration streams use pinned peer TLS, session authority and revocable local forwards
+ */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import test from 'node:test';
 import assert from 'node:assert/strict';

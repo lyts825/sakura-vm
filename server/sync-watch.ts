@@ -1,3 +1,6 @@
+/**
+ * 模块职责：维护客户机目录事件监听，inotify 不可用时保留轮询路径并管理监听资源。
+ */
 import { watch, type FSWatcher } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { quote } from './shell.ts';

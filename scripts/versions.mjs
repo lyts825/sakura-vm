@@ -1,3 +1,4 @@
+/** 安装与发行脚本共用的固定上游版本、下载 URL 和完整性摘要，避免各入口准备不同运行时。 */
 export const POSIXLOOM_COMMIT = '92688083ff25d98f44194356f9ec93df0f1f0027';
 export const QEMU_URL = 'https://qemu.weilnetz.de/w64/2026/qemu-w64-setup-20260811.exe';
 export const QEMU_SHA512 =

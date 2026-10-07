@@ -1,3 +1,6 @@
+/**
+ * 模块职责：在线迁移目标准备回执和状态契约，校验迁移身份、资源及完成状态。
+ */
 import { z } from 'zod';
 
 export const liveMigrationPrepareReceiptSchema = z.object({

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：加载固定工程运行器并组织客户机调用，限制命令输入和结果边界并核对退出状态。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';

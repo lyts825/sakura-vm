@@ -1,3 +1,4 @@
+/** 烟雾验收：验证编译运行时 HTTP 的项目身份与精确进程清理；保留历史证据归属。 */
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';

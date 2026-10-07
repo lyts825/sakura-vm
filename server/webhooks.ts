@@ -1,3 +1,6 @@
+/**
+ * 模块职责：收集并发送匹配事件的 Webhook，校验目标 URL 与配置并管理后台投递状态。
+ */
 import { networkFor } from './network/index.ts';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { join } from 'node:path';

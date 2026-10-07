@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - memory pressure parser rejects incomplete data and decision has hysteresis
+ * - persisted policy shrinks only after three samples and restores on guest pressure
+ */
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';

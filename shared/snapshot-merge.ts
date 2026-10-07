@@ -1,3 +1,6 @@
+/**
+ * 模块职责：快照分支合并的输入与任务视图契约，校验基础/分支/目标及冲突决策。
+ */
 import { z } from 'zod';
 import { snapshotDiffInputSchema } from './snapshot-diff.ts';
 

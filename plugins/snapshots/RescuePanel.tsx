@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑并发起只读快照救援命令，展示救援任务和输出制品。
+ */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';

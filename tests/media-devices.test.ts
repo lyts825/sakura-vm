@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - HDA audio uses the selected host backend and rejects unsupported ARM64 PCI profiles
+ * - media settings preview reviewed audio changes and forward typed USB media rules
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

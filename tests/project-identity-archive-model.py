@@ -1,3 +1,4 @@
+# 项目身份归档事务的可移植模型；生产定义使用内存适配器，不能据此证明真实 Linux 权限或系统调用。
 """Portable transaction models; filesystem/process authority is simulated.
 
 The production Python definitions run unchanged against an in-memory adapter.

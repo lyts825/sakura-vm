@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理磁盘包签名密钥和信任状态，查看签名配置并执行密钥操作。
+ */
 import { useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
 

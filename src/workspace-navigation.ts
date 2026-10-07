@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义工作区导航目标和命令元数据，供菜单与命令面板共享状态判断。
+ */
 import type { VMStatus, VMView } from '../shared/contracts/vm.ts';
 
 export type WorkspaceTarget = { id?: string; page?: string; tab?: string };

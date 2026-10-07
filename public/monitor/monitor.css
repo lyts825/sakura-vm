@@ -1,3 +1,4 @@
+/** 只读监控页的响应式样式，定义连接/缓存提示、摘要卡片及实例与任务列表。 */
 :root {
   font-family: system-ui, 'Microsoft YaHei', sans-serif;
   color: #3b303f;

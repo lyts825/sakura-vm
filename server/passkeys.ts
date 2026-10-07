@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理 WebAuthn 注册、认证及解锁挑战，限制待处理请求并核对挑战有效期。
+ */
 import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import {

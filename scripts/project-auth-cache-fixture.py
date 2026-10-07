@@ -1,3 +1,4 @@
+# 自有认证包源 HTTP 夹具，为 npm/pip 等依赖请求提供固定包与凭据检查，并记录请求证据。
 """Owned smoke-test registry; no external service or user credential is used."""
 import base64
 import hashlib

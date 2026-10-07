@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - CLI scopes commands and shells without interpreting guest arguments as controller options
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-expect-error CLI JavaScript modules intentionally have no declaration file.

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：捕获并核验宿主 GPG 来源与转发租约，物理连接关闭未确认时保留原归属。
+ */
 import {
   type ChildProcessWithoutNullStreams,
   type SpawnOptionsWithoutStdio,

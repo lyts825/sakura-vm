@@ -1,3 +1,4 @@
+/** OLE 文本媒介检查与 IStream 快照：复制已验证字节为独立输出，避免共享后端在检查后改变数据。 */
 #pragma once
 
 // IDataObject::GetData returns the bytes from offset zero to the stream's

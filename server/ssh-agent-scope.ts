@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义 SSH Agent 任务票据与专属转发流，物理关闭未确认时保留原资源租约。
+ */
 import { networkFor } from './network/index.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';

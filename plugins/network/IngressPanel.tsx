@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑 HTTP 入口规则和证书策略，展示入口健康检查与证书轮换状态。
+ */
 import { formatDateTime } from '../../src/localization';
 import { ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';

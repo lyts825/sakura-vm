@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义工作区快捷键、上下文和保留键校验，保存用户映射并规范化键盘事件。
+ */
 export const shortcutCommands = [
   { id: 'palette', name: '命令面板', defaultKey: 'Mod+K' },
   { id: 'search', name: '筛选实例', defaultKey: '/' },

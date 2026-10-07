@@ -1,3 +1,4 @@
+/** Shell 属性来源账本验证夹具，覆盖初始化、更新失败、删除及重用时的生命周期边界。 */
 #define _WIN32_WINNT 0x0A00
 #include "fixture-shell.h"
 #include "shell-provenance.h"

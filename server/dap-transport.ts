@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理 DAP 分帧、请求关联及事件等待，限制消息大小并在断开时结束未完成请求。
+ */
 import type { Duplex } from 'node:stream';
 
 type Waiter = { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };

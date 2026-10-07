@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - shutdown waits for cleanup and preserves its failure instead of a cancelled result
+ * - ordinary cancellation still records a cancelled result after successful cleanup
+ * - tracked application failures retain their actual status and code without cancellation
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';

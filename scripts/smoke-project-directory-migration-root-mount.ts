@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目目录迁移的根挂载、边界预检和日志容量拒绝。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

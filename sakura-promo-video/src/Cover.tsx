@@ -1,3 +1,4 @@
+/** 宣传视频静态封面构图，复用品牌色、字体和绘画资源输出 1080p 封面。 */
 import {CanvasImage, staticFile, useVideoConfig} from 'remotion';
 import {Paper} from './components';
 import {colors, font} from './theme';

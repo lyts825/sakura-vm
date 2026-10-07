@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“目录同步”插件的双向目录同步、变更预览、冲突解决和运行记录标签，使用宿主传入的实例、项目和请求上下文。
+ */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { Save, FolderSync as SyncIcon } from 'lucide-react';

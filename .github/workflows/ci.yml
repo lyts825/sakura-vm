@@ -1,3 +1,4 @@
+# 双平台发布门禁：先验证源码与运行包，再运行依赖真实 VM 的集成情景。
 name: Verify
 on:
   push:
@@ -27,6 +28,7 @@ jobs:
       - run: npm run setup
       - run: npx playwright install --with-deps chromium
       - run: npm run verify
+  # 真实 VM 阶段沿用构建与受控 TCG 后端，验证结果作为 CI 材料留存。
   virtual-machines:
     needs: verify
     strategy:

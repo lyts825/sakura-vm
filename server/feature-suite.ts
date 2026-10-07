@@ -1,3 +1,6 @@
+/**
+ * 模块职责：汇集自动化功能、指标告警和实例动作，并将后台采样与策略执行交给统一调度。
+ */
 import { jsonValueSchema } from '../shared/contracts/json-values.ts';
 import type { HostMountsV1, IdeV1, MediaDevicesV1, ProcessInteropV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { AutomationDomainServices } from './automation-domain-services.ts';

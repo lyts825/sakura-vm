@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取并校验 X11 剪贴板固定资源，固定源码内容必须与发布摘要一致。
+ */
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

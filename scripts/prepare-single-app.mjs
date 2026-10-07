@@ -1,3 +1,4 @@
+/** 打包单窗口控制器和目录视图，核对来源清单并记录资源摘要及构建身份。 */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

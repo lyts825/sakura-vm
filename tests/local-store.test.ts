@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - Windows replacement retries a real short file lock without exposing a missing or partial destination
+ * - Windows own sustained Node read handle preserves the old document and cleans only its own temporary file, then a closed handle permits saving
+ * - Windows sustained native lock preserves the old document, returns the rename error, and cleans its only temporary file
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

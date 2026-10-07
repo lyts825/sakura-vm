@@ -1,3 +1,4 @@
+/** 通过独立 Neovim 配置连接项目 SSH，运行远程探针并记录项目身份、环境和作用域证据。 */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';

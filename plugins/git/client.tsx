@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“Git 工作台”插件的Git 状态、差异、分支、远程与三方冲突解决工作台，使用宿主传入的实例、项目和请求上下文。
+ */
 import { formatDateTime } from '../../src/localization';
 import { GitBranch, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -17,6 +20,7 @@ type GitDiff = Extract<GitResponse, { diff: string }>;
 type GitMerge = Extract<GitResponse, { base: string }>;
 type GitChoices = Extract<GitResponse, { expectedWorktree: string }>;
 
+// 实例/项目变更通过 key 重挂载工作台，避免上一仓库的选择、冲突上下文或表单草稿进入新仓库。
 export function GitPanel(props: FeatureProps) {
   return <GitWorkspacePanel key={`${props.vm.id}:${props.projectId || 'default'}`} {...props} />;
 }
@@ -80,6 +84,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
     repository?.upstream?.remote,
     repository?.upstream?.branch,
   ]);
+  // 保留刚提交的任务直至轮询追上，不能让稍旧的服务端任务快照把新的执行状态隐藏掉。
   const job =
     submittedJob &&
     submittedJob.id !== remote.data?.job?.id &&

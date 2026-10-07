@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - workspace runtime displays an exited scope and keeps redacted application logs
+ * - unconfirmed scope status remains visible and does not discard available application logs
+ * - service runtime rejects unverified root logs while an exactly stopped scope remains editable
+ */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

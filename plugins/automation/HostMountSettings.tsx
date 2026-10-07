@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置实例的主机目录挂载，展示挂载状态与主机访问策略。
+ */
 import { useEffect, useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
 

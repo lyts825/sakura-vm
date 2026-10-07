@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验并保存维护时间窗口，按策略指定的 IANA 时区判断是否允许维护。
+ */
 import { z } from 'zod';
 import { join } from 'node:path';
 import { vmDir } from './paths.ts';

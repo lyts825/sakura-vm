@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - terminal directory migration refusal exposes only its explicit safe code and instruction
+ * - all six socket protocols declare actual directions, JSON message shapes and binary RFB framing
+ * - shared terminal grants require an exact running tmux session, persist and expire
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';

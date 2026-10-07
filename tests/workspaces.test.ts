@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - metrics deduplicate concurrent reads and a failed old boot cannot evict the new boot sample
+ * - workspace shutdown detaches lifecycle observers before later machine events
+ * - saving project configuration cannot race a start that is still loading its configuration
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按 JSON Schema 生成常见类型的输入控件，保留嵌套或复杂字段的 JSON 编辑能力。
+ */
 import { useEffect, useState } from 'react';
 
 type Schema = Record<string, any>;

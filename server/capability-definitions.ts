@@ -1,3 +1,6 @@
+/**
+ * 模块职责：集中声明能力目录与参数校验规则，供界面展示及服务端执行前验证共同使用。
+ */
 import { z } from 'zod';
 import type { CapabilityActionView } from '../shared/capability-actions.ts';
 import { timeWindowSchema } from './automation-policy.ts';

@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - concurrent version writers cannot downgrade and preserve each exact recovery generation
+ * - plugin data migrates only in memory until a write, retaining a recovery copy
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

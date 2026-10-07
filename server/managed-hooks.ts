@@ -1,8 +1,11 @@
+/**
+ * 模块职责：登记并分派受管生命周期钩子，让不同领域参与同一事件边界。
+ */
 import { randomUUID } from 'node:crypto';
 import { pluginAuthority, withPluginAuthority } from './plugin-authority.ts';
 import { cleanupReceipt } from './cleanup-receipt.ts';
 
-/** A registration receipt can only remove the callback it originally installed. */
+/** 每份注销回执只删除自己登记的回调，插件撤销不能误删后来注册的钩子。 */
 export class ManagedHooks<A extends unknown[]> {
   private callbacks = new Map<string, { run: (...args: A) => Promise<void> | void; active: () => boolean }>();
   register(run: (...args: A) => Promise<void> | void): () => void {

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：把当前项目显式绑定到适用的工作区 URL，并保留请求能力的缓存作用域身份。
+ */
 import { resourceRequestScope, setResourceRequestScope } from './resource-cache';
 
 export type WorkspaceRequest = <T = unknown>(

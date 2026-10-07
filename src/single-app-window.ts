@@ -1,3 +1,6 @@
+/**
+ * 模块职责：创建并连接单应用弹窗，校验来源/nonce 握手后传递会话初始化信息。
+ */
 type Session = { id: string; program: string; resolution: string;
   password: string; clipboard?: { copy: boolean; paste: boolean } };
 
@@ -20,6 +23,7 @@ export async function connectSingleAppPopup(popup: Window, vmId: string,
       clearTimeout(timer);
       window.removeEventListener('message', receive);
     };
+    // 源窗口、同源地址和随机 nonce 必须全部匹配后才交付凭证，避免其他窗口伪造就绪握手。
     const receive = (event: MessageEvent<PopupReady>) => {
       if (event.source !== popup || event.origin !== location.origin ||
           event.data?.type !== 'sakura-single-app-ready' || event.data.nonce !== nonce) return;

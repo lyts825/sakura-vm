@@ -1,3 +1,6 @@
+/**
+ * 模块职责：组织宿主资源、领域服务及 HTTP 的启动与关闭；清理未确认时保留数据目录归属。
+ */
 import { AppError } from '../shared/errors.ts';
 import { startApplicationHttp } from './application-http.ts';
 import { createApplicationServices } from './application-services.ts';
@@ -11,6 +14,7 @@ import { PluginManager } from './plugin-manager.ts';
 import { ClosePhase, ResourceScope } from './resource-scope.ts';
 import { scheduler } from './scheduler.ts';
 
+/** 先取得数据目录归属再开放请求；启动失败也沿用正常关闭流程核对所有资源。 */
 export async function startApplication() {
   const resources = new ResourceScope({ owner: 'core:application' });
   const plugins = new PluginManager();
@@ -29,7 +33,7 @@ export async function startApplication() {
     } catch (error) {
       failures.push(error);
     }
-    // Keep the OS ownership guard if any domain still has unconfirmed cleanup.
+    // 资源清理或元数据落盘未确认时，不交还目录归属，避免另一个宿主接管未收尾状态。
     if (!failures.length) {
       const pending = hostRuntime
         .snapshot()

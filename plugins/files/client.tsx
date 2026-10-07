@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“文件工作台”插件的文件浏览、编辑草稿、上传、历史恢复与代码检查工作台，使用宿主传入的实例、项目和请求上下文。
+ */
 import { embeddedPluginComponent } from '../../src/plugin-client';
 import { formatDateTime } from '../../src/localization';
 import { ArrowUp, Download, FileText, Folder, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
@@ -99,6 +102,7 @@ export function FileBrowser({
   });
   const edit = workspace.drafts.find((draft) => draft.id === workspace.active) || null;
   const workspaceRef = useRef(workspace);
+  // 选择代次与文件读取分离：旧文件可以进入草稿列表，但不能抢回用户在请求期间切换的活动标签。
   const selectionVersion = useRef(0);
   workspaceRef.current = workspace;
   const setEdit = (value: FileEdit | null) => {
@@ -365,6 +369,7 @@ export function FileBrowser({
       else void openPath(openFile.path, openFile.line);
     }
   }, [openFile?.revision, vm.status]);
+  // 保存捕获提交草稿与预期文件版本；确认响应后仅更新该草稿基线，版本冲突再读取服务端内容供合并。
   const save = () => {
     const submitted = editRef.current;
     if (!submitted) return;
@@ -416,6 +421,7 @@ export function FileBrowser({
         position: cursor.current,
         ...(kind === 'rename' ? { newName: renameName, version: submitted.version } : {}),
       }, signal).catch(error => { setLanguageRefresh(value => value + 1); throw error; });
+      // 语言结果必须对应同一个活动标签和文本快照；继续编辑或切换文件后丢弃旧补全/诊断。
       if (workspaceRef.current.active !== submitted.id || editRef.current?.path !== submitted.path ||
           (kind !== 'rename' && editRef.current?.content !== submitted.content)) return;
       if (kind === 'completion') {

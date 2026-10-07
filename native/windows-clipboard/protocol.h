@@ -1,3 +1,4 @@
+/** Windows 剪贴板共享策略 ABI、方向标志及进程创建时间工具，连接控制器、注入库和验证夹具。 */
 #pragma once
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

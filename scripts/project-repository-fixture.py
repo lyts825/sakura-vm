@@ -1,3 +1,4 @@
+# 自有 Git HTTP 源夹具，以固定凭据提供仓库请求并保存认证和传输记录。
 """Disposable VM-only smart-HTTP Git server with separately supplied fixture token."""
 import json
 import os

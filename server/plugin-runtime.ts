@@ -1,3 +1,6 @@
+/**
+ * 模块职责：装配插件服务、任务与终端能力，执行配置校验并协调卸载及原实例恢复。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import { APP_VERSION } from '../shared/version.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';

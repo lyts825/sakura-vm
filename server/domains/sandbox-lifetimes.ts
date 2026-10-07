@@ -1,3 +1,6 @@
+/**
+ * 模块职责：追踪沙箱到期与终止，拒绝对已过期沙箱继续变更，并保留失败清理结果。
+ */
 import type { VMRecord } from '../../shared/contracts/vm.ts';
 import { sandboxExpired } from '../../shared/sandbox.ts';
 import { AppError } from '../../shared/errors.ts';

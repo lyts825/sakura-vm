@@ -1,3 +1,4 @@
+/** 后代令牌场景的共享验证代码，覆盖不同创建 API、受限令牌及身份拒绝情况。 */
 #pragma once
 #include "fixture-descendant.h"
 #include "descendant-token.h"

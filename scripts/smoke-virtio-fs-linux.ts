@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 QEMU/virtiofsd 后端与 Virtio-FS 设备的 QMP prelaunch。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';

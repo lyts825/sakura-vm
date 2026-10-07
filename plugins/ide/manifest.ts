@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“IDE 接入”插件清单：VS Code Remote-SSH 配置与项目连接。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

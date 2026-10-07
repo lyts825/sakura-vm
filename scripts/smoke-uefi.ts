@@ -1,3 +1,4 @@
+/** 烟雾验收：验证UEFI 来宾启动、状态和相关引导操作。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

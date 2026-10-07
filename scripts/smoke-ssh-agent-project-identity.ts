@@ -1,3 +1,4 @@
+/** 烟雾验收：验证固定夹具中的 SSH agent 源身份、项目作用域和 nonce/通信边界。 */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, generateKeyPairSync, randomUUID, sign, verify, type KeyObject } from 'node:crypto';

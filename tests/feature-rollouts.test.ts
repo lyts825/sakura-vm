@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - versioned host rollout survives restart and gates selected plugin activation
+ * - rollout percentage uses a stable versioned cohort and cannot bypass a disabled flag
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

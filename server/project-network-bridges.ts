@@ -1,3 +1,6 @@
+/**
+ * 模块职责：为私有项目网络建立本机桥接，管理端口、连接和原桥接资源的停止。
+ */
 import { networkFor } from './network/index.ts';
 import { randomUUID } from 'node:crypto';
 import { type Server, type Socket } from 'node:net';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑项目依赖下载认证配置，按依赖管理器维护凭证引用与下载参数。
+ */
 import type { DependencyAuthentication, NetworkProfile } from './contracts.ts';
 
 export function DependencyDownloadsEditor({

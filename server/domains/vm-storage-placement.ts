@@ -1,3 +1,6 @@
+/**
+ * 模块职责：迁移实例存储池并校验受控路径；旧副本未清理时阻止再次迁移。
+ */
 import { randomUUID } from 'node:crypto';
 import { lstat, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';

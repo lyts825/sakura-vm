@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实沙箱工作台的执行、日志、产物和停止行为。 */
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';

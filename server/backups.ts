@@ -1,3 +1,6 @@
+/**
+ * 模块职责：执行备份、下载、保留策略及发布恢复；先确认新备份发布，再清理此前有效副本。
+ */
 import type { BundlesV1, SecretsV1, StorageRuntimeV1 } from './service-contracts/v1.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rename, rm, stat, open } from 'node:fs/promises';

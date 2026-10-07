@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取并校验 Wayland 剪贴板固定资源，逐文件及聚合摘要必须匹配发布清单。
+ */
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

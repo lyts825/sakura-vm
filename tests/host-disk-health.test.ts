@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - disk reports distinguish explicit zero counters from missing, partial and unmapped evidence
+ * - disk reports flag actual capacity, wear, temperature and lifetime errors without inventing current failures
+ * - Windows probe keeps shell syntax in stdin data and aborts a running query
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateDiskHealth } from '../server/host-disk-health';

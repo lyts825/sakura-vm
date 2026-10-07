@@ -1,3 +1,6 @@
+/**
+ * 模块职责：主机资源通道、身份与生命周期视图，供运行时诊断和控制面状态共享。
+ */
 /** Public diagnostics contain resource identities, never argv, payloads or credentials. */
 export type ResourceLane = 'interactive' | 'background' | 'control';
 export type ResourceIdentity = {

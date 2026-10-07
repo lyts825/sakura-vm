@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - X11 settings reject traversal, shell bodies, privilege bypass options and extra rule fields
+ * - X11 launch journals its owner, preserves project scope and sends environment hashes without private values
+ * - X11 live tightening survives service reload and removal explicitly disables existing agents
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';

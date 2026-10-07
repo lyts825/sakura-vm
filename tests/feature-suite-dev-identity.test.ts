@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - all nine finite dev operations use captured UID commands and protected project environment
+ * - realistic non-enumerable named scope stays attached without changing the config fingerprint
+ * - a wrong prepared named scope is rejected even when its serialized config fingerprint matches
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';

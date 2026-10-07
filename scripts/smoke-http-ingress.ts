@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 QEMU NAT 的 HTTP/HTTPS 入口、证书轮换、mTLS 和停止实例拒绝。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

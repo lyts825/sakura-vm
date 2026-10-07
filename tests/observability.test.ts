@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - network metrics exclude loopback, calculate observed rates and leave resets or gaps unknown
+ * - rotation notices persist once per stage, survive plugin absence and refresh only for a new value
+ * - concurrent first samples persist both VMs, cached samples are unique and network history survives restart
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';

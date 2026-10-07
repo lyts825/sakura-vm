@@ -1,3 +1,6 @@
+/**
+ * 模块职责：快照差异比较输入、文件条目和任务结果的公共 Schema，约束比较范围和输出。
+ */
 import { z } from 'zod';
 
 export const snapshotDiffInputSchema = z

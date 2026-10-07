@@ -1,3 +1,6 @@
+/**
+ * 模块职责：声明受支持的发行版镜像并下载校验，按客户机架构选择对应镜像来源。
+ */
 import { networkFor } from './network/index.ts';
 import { existsSync, createWriteStream } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - sync accepts manual text through the authorized body callback with its larger limit
+ * - scoped feature endpoints hand the selected project through to views and jobs
+ * - disconnect cancels an active import and permits a new import after cleanup
+ */
 type GatewayFixtureHost = import('../server/features.ts').Features;
 type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
 const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {

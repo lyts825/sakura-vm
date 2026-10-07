@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目执行 UID/GID、补充组、目录、HOME 与私有网络。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：登记项目缓存转交票据并分配受控暂存区，归属或退休未确认时保留原任务证明。
+ */
 import { randomUUID } from 'node:crypto';
 import { readdir, readFile, rm, lstat } from 'node:fs/promises';
 import { join } from 'node:path';

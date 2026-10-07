@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成并观察 HA 故障演练计划，通过见证和实例状态样本判断实际接管结果。
+ */
 import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { hostname } from 'node:os';

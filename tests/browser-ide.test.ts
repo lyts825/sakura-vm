@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - root-owned project data requires explicit directory migration before BrowserIde writes a runtime intent or launches code
+ * - reload restores only the original full ticket and refuses a native inode, build or boot substitution despite healthy HTTP
+ * - a UID listener from another domain cannot be accepted just because the shared guest port serves healthz
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';

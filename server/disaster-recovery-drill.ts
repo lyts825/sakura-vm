@@ -1,3 +1,6 @@
+/**
+ * 模块职责：将备份恢复到临时实例并检查启动及选定文件，用实际恢复结果验证灾备可用性。
+ */
 import type { BackupsV1, BundlesV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理 TPM 与安全启动资源及快照状态，缺少配套身份文件时拒绝恢复或导出。
+ */
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import {

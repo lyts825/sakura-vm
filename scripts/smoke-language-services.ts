@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实项目 UID 下 TypeScript/Python LSP 的补全、定义、诊断与重命名。 */
 import assert from 'node:assert/strict';
 import { withOwnedProtocolSmoke, protocolSmokeObserver, protocolLspProbe } from './project-protocol-smoke-support.ts';
 const source = 'export const flower = 1;\n';

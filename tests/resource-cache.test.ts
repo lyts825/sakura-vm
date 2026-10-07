@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - observers of the same resource share a read; one unmount cannot cancel another observer
+ * - invalidation during a read discards stale completion and coalesces a burst into one fresh read
+ * - query identity and request capabilities stay separate; last unsubscribe cancels its own read
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';

@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - perf stacks become a bounded, escaped SVG with proportional frame counts
+ * - guest profiler checks perf and samples with bounded validated options
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkFlamegraph, renderFlamegraph, runFlamegraph } from '../server/flamegraph.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理 Windows 文件关联及原生集成配置，校验路径、注册项并支持恢复与撤销。
+ */
 import { lstat, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';

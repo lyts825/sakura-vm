@@ -1,3 +1,4 @@
+/** 烟雾验收：验证来宾调用已注册 Windows EXE 的退出码、禁止列表与授权撤销。 */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';

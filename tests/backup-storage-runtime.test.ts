@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - a real 128 GiB sparse QCOW2 backup fits a 64 MiB free-space budget and retains its VM lock while queued
+ * - real sparse LUKS QCOW2 measurement uses the encrypted output format before backup admission
+ * - backup verification failure releases I/O, but an actual materialized-file cleanup failure remains charged
+ */
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { execFile } from 'node:child_process';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：合并桌面偏好及本地草稿，区分用户编辑与服务端更新，避免远端同步覆盖尚未保存的修改。
+ */
 import type { DesktopPreferences } from '../shared/desktop-preferences.ts';
 import type { DesktopView } from '../shared/contracts/vm.ts';
 

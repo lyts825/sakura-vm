@@ -1,3 +1,4 @@
+/** 烟雾验收：验证来宾在线观测、停止状态与重启后的记录；未采样时段保留未知。 */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, open, rm } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取控制面 API 文档，按操作契约构造请求并展示响应及下载结果。
+ */
 import { useEffect, useState } from 'react';
 import { apiPath, type ApiDocument } from '../shared/api-document';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - GPG resource fixes both host hashes and has only constant UUID source/home/endpoint paths
+ * - GPG assets use exact private SHA generations and compressed stdin without root command/environment
+ * - prepare has an exact nullable pre-RUN receipt and refuses reply paths, scope adoption and live replacement
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';

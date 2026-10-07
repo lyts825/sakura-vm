@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取主机磁盘健康报告并呈现设备指标、告警及检查结果。
+ */
 import { formatDecimal } from './localization';
 import type { hostDiskHealth } from '../server/host-disk-health';
 

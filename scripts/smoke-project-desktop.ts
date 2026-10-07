@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实项目桌面的双显示器、服务/VM 重启及停机配置重绑定。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

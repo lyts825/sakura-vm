@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供终端标签、分屏和布局操作，并管理共享终端授权与观看者界面。
+ */
 import { formatDateTime } from './localization';
 import { Columns2, Plus, X } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';

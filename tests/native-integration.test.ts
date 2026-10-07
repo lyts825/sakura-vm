@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - Windows registration quotes executable paths, preserves trailing root separators and never sets extension defaults
+ * - native settings persist a repair journal before registry changes and recover after restart
+ * - Explorer handoff maps nested paths and explicit file associations to the right project, with expiring revocable tickets
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, link } from 'node:fs/promises';

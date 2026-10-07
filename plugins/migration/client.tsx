@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“数据目录迁移”插件的主机数据目录迁移预检、执行和结果面板，使用宿主传入的实例、项目和请求上下文。
+ */
 import { useState } from 'react';
 import type { JobView } from '../../shared/contracts/jobs.ts';
 import '../../src/development.css';

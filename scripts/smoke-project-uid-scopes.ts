@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目 UID 的主进程、任务和服务作用域以及旧启动代次清理。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

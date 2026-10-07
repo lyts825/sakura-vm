@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理项目 Envoy 边车策略及运行状态，校验端口关系和完整项目运行归属。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';

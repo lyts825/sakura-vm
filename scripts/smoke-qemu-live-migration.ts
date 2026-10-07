@@ -1,3 +1,4 @@
+/** 烟雾验收：验证QEMU NBD 磁盘镜像、RAM 迁移、切换和持久 fencing 失败边界。 */
 import assert from 'node:assert/strict';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';

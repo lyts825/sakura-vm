@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目 SSH 的持久账户、目录/网络绑定及真实客户端身份。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';

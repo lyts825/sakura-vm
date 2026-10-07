@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目 SSH 配置变更失败后的回滚、凭据和运行域状态。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

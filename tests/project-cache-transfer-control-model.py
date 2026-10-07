@@ -1,3 +1,4 @@
+# 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
 """Run the exact root helper against a deterministic POSIX fd/filesystem model.
 
 This models kernel paths and failures; it is not a VM or a claim of Linux execution.

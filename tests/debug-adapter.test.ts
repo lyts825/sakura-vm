@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - DAP transport assembles split frames, resolves requests and buffers early events
+ * - DAP transport rejects protocol errors and an oversized frame
+ * - debug sessions reject concurrent starts and paths outside the current project
+ */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Duplex } from 'node:stream';

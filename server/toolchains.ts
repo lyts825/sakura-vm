@@ -1,3 +1,6 @@
+/**
+ * 模块职责：探测并安装项目工具链，结果必须对应捕获的项目配置及客户机运行身份。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

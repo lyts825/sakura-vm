@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理有期限的临时权限请求、审批及执行，操作依据原请求和当前决定。
+ */
 import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';

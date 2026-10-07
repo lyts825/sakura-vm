@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - host and private seccomp launches keep original UID binding, once-resolved environment and bounded stdin
+ * - concurrent outside project selection cannot change a named original operation
+ * - lease scope, config and Live mismatches fail before administrative probe or UID execution
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AppError } from '../server/model.ts';

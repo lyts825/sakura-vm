@@ -1,3 +1,6 @@
+/**
+ * 模块职责：将能力检查记录中的就绪、实际执行和退出码转换为状态徽标，区分前置条件通过与执行结果。
+ */
 export type FeatureExecutionState = {
   featureId: string;
   ready: boolean;

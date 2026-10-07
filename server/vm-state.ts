@@ -1,3 +1,6 @@
+/**
+ * 模块职责：描述单次虚拟机运行的内部状态，集中保存启动、连接、取消及退出等待资源。
+ */
 import type { Socket } from 'node:net';
 import type { Client } from 'ssh2';
 import type { VMStatus } from '../shared/contracts/vm.ts';

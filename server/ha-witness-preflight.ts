@@ -1,3 +1,6 @@
+/**
+ * 模块职责：只读检查见证部署、证书与动作配置，不通过预检执行真实接管。
+ */
 import { X509Certificate } from 'node:crypto';
 import { createSecureContext } from 'node:tls';
 import { readFile } from 'node:fs/promises';

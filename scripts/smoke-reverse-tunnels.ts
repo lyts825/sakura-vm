@@ -1,3 +1,4 @@
+/** 烟雾验收：验证公开扩展入口下的项目 UID TCP 反向隧道、授权和票据关闭。 */
 import assert from 'node:assert/strict';
 import { connect } from 'node:net';
 import { once } from 'node:events';

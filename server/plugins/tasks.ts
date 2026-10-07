@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理插件任务查询、操作与产物路由，核对任务存在性和运行状态。
+ */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { VmAccess } from '../vm-access.ts';
 

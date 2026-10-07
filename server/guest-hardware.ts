@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验并统计客户机 CPU 集合表达式，为硬件状态读取提供明确的格式边界。
+ */
 import { AppError } from '../shared/errors.ts';
 
 export function cpuSetSize(text: string) {

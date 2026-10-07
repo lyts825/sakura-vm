@@ -1,3 +1,6 @@
+/**
+ * 模块职责：控制面登录、会话与可访问项目的响应校验 Schema，定义核心身份接口的公开输出。
+ */
 import { z } from 'zod';
 export { recoveryViewSchema } from './recovery.ts';
 

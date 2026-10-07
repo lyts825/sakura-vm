@@ -1,3 +1,6 @@
+/**
+ * 模块职责：跨主机激活、副本检查和退役请求/结果契约，约束主机协作的资源身份。
+ */
 import { z } from 'zod';
 
 /** Immutable import authority shared by source coordination and target validation. */

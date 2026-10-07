@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成固定缓存转交控制程序，核对原暂存归属并按账户边界交付或清理缓存。
+ */
 /** Trusted root code. It copies only inert cache bytes and never reads project files or environment. */
 export const projectCacheTransferControl = String.raw`
 import base64,fcntl,hashlib,json,os,re,stat,sys,time,uuid

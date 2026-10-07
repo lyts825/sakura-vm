@@ -1,3 +1,6 @@
+/**
+ * 模块职责：导入、导出和克隆实例包；校验清单、磁盘与签名，传输及暂存受存储预算约束。
+ */
 import type { SignedBundlesV1, StorageRuntimeV1, TrustedBootServiceV1 } from './service-contracts/v1.ts';
 import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { createReadStream, createWriteStream } from 'node:fs';

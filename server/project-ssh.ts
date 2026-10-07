@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理独立项目 SSH 服务与账户绑定，按原启动身份、目录和守护进程票据回滚及停止。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, lstat } from 'node:fs/promises';

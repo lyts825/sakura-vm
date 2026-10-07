@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“备份策略”插件的备份保留策略、加密设置、执行记录与文件恢复入口，使用宿主传入的实例、项目和请求上下文。
+ */
 import { formatDateTime } from '../../src/localization';
 import { useEffect, useState } from 'react';
 import type { BackupPolicy, BackupView } from './view-types';

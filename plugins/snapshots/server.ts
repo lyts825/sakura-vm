@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“磁盘快照”插件服务端入口。激活时装配 SignedBundles、Bundles、GoldenImages、Rescue、SnapshotDiff、SnapshotMerge，并处理声明的服务端操作。
+ */
 import { services as transfersServices } from '../transfers/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { requestHasBody } from '../../server/http.ts';
@@ -28,6 +31,7 @@ export async function activate(host: PluginContext) {
   await signatures.init();
   host.provide(snapshotsServices.bundles, new Bundles(host.vm, signatures, host.system));
   const golden = host.provide(snapshotsServices.goldenImages, new GoldenImages(host.vm, host.use(snapshotsServices.bundles)));
+  // 这些操作包含镜像、快照、分支或命令输入；重试入口要求回原界面复核，避免自动重放旧决策。
   host.registerJobs(golden.jobs, () => {
     throw new AppError('请先刷新黄金镜像库核对结果，再明确发起操作', 409);
   });

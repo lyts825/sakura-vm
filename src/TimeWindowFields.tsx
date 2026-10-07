@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑由星期和时段组成的时间窗口，复用到同步和调度策略表单。
+ */
 import type { TimeWindow } from '../shared/time-windows';
 
 export function TimeWindowFields({

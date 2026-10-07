@@ -1,3 +1,4 @@
+/** Shell 夹具共用的阶段证据与私有环境检查，供父进程、子进程及导入 DLL 共享。 */
 #pragma once
 #include "protocol.h"
 #include "descendant-reservation.h"

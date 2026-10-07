@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - disk growth creates a recovery snapshot and restores its original capacity metadata
+ * - disk growth preserves legacy snapshot capacity across multiple expansions
+ * - snapshots restore unfinished filesystem growth and preserve it in recovery backups
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';

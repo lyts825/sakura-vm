@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存宿主电源策略并计算启停决策，使用不同电池阈值避免频繁反复切换。
+ */
 import { join } from 'node:path';
 import { z } from 'zod';
 import { vmDir } from './paths.ts';

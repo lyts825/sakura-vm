@@ -1,3 +1,6 @@
+/**
+ * 模块职责：封装远端故障副本的核验、激活与退役，操作前核对原副本身份。
+ */
 import { AppError } from '../../shared/errors.ts';
 import { peerReplicaActivationInput, peerActivationResult, peerActivationCheckResult, peerRetirementResult } from '../../shared/contracts/peer-transfer.ts';
 

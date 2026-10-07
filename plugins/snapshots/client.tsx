@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“磁盘快照”插件的快照创建/恢复、克隆及差异/合并/救援/备份入口，使用宿主传入的实例、项目和请求上下文。
+ */
 import { embeddedPluginComponent } from '../../src/plugin-client';
 import { formatDateTime } from '../../src/localization';
 import { Copy, Download, Plus, Trash2 } from 'lucide-react';

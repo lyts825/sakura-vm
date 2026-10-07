@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义插件声明和受限上下文，检查依赖与服务读取权限后才提供能力。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { z } from 'zod';

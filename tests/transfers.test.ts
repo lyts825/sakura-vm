@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - multi-file uploads report cumulative progress and release event handlers after success
+ * - cancelling an active batch aborts the request and never sends subsequent files
+ * - failed upload preserves server feedback, stops the batch and permits a fresh retry
+ */
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { uploadFiles, type UploadProgress } from '../src/transfers.ts';

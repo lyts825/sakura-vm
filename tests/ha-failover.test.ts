@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - failover policy accepts bounded health settings and rejects unknown parameters
+ * - failover health check identifies a fresh verified replica without claiming safe takeover
+ * - host-loss plan requires an eligible verified stopped replica
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

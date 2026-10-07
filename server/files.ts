@@ -1,3 +1,6 @@
+/**
+ * 模块职责：封装客户机文件读取、上传及修改，约束可变路径并保留替换文件所需的元数据。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
 import { Readable, Transform, Writable } from 'node:stream';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：虚拟机沙箱策略、执行和制品契约，约束资源、时限、输出大小及到期判定。
+ */
 import { z } from 'zod';
 
 export const sandboxPolicySchema = z

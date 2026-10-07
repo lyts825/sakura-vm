@@ -1,3 +1,6 @@
+/**
+ * 模块职责：入口证书轮换策略、动作及证书状态的公共 Schema，统一有效期和轮换错误视图。
+ */
 import { z } from 'zod';
 
 export const certificatePolicySchema = z

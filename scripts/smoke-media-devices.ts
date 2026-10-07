@@ -1,3 +1,4 @@
+/** 烟雾验收：验证HDA 音频后端能力与真实来宾 PCI 枚举。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

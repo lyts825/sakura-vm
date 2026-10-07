@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - terminal leases bind to the selected project and block directory or network edits until disconnected
+ * - task preparation refuses a missing original directory without creating it or issuing a lease
+ * - prepared direct terminal leases block migration across terminal instances until the exact connection releases
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

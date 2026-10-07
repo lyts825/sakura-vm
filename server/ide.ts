@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成并维护实例或项目的编辑器 SSH 档案，项目连接需先完成对应账户配置。
+ */
 import type { IdeV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { mkdir, readFile, readdir, writeFile, rename, copyFile, lstat, rm } from 'node:fs/promises';
 import { join, resolve, isAbsolute, dirname } from 'node:path';

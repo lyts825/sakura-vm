@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - file recovery requires explicit valid backup, partition and bounded file selection
+ * - plain, encrypted and deduplicated backups yield verified disks, files and durable reports without registering an instance
+ * - wrong passwords, broken bundle hashes and missing records fail before booting a rescue system
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import assert from 'node:assert/strict';
 import test, { after, type TestContext } from 'node:test';

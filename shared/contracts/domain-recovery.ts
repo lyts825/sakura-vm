@@ -1,3 +1,6 @@
+/**
+ * 模块职责：领域恢复票据、来源和证明契约，绑定恢复目标、摘要及令牌以校验恢复请求。
+ */
 import { z } from 'zod';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -16,6 +19,7 @@ export const domainRecoveryTicketSchema = z.object({
 }).strict();
 export type DomainRecoveryTicket = z.infer<typeof domainRecoveryTicketSchema>;
 /** A domain verifies its complete original receipt and confirms its own durable terminal state. */
+// 恢复证明必须由原业务领域确认持久化终态；控制面不能仅凭通用任务状态宣告业务已经恢复。
 export interface DomainRecoveryPort {
   recoveryTickets(): Promise<DomainRecoveryTicket[]>;
   recoverTicket(ticket: DomainRecoveryTicket): Promise<void>;

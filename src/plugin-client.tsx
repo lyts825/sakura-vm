@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按插件声明懒加载页面、标签与开发分区，并按插件生命周期缓存 React 组件。
+ */
 import { lazy, Suspense, type ComponentType } from 'react';
 import type { VMView } from '../shared/contracts/vm.ts';
 import { PLUGINS } from '../shared/plugins';
@@ -29,6 +32,7 @@ type ClientModule = { [Kind in keyof ClientProps]?: Record<string, ComponentType
 const entries = import.meta.glob<ClientModule>('../plugins/*/client.tsx');
 const components = new Map<string, { lifetime: string; value: ComponentType<any> }>();
 
+// 缓存既看界面贡献标识也看寿命；同一寿命保持组件引用稳定，换代/重试才新建 lazy 对象。
 function cachedComponent<Props extends object>(key: string, lifetime: string,
   load: () => Promise<{ default: ComponentType<Props> }>): ComponentType<Props> {
   const cached = components.get(key);

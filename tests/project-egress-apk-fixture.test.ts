@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - APK fixture serves only frozen binary files and actually closes all sockets
+ * - APK fixture rejects changed bytes, duplicate entries and nonofficial source URLs before serving
+ * - APK fixture requires both indexes, refuses path traversal and records changed cache after serving
+ */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';

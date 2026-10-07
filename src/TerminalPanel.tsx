@@ -1,3 +1,6 @@
+/**
+ * 模块职责：装配 xterm 终端、尺寸适配和 WebSocket 连接，处理输入、剪贴板与终端资源释放。
+ */
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import { Minus, Play, Plus, RefreshCw, TerminalSquare, Trash2, Unplug } from 'lucide-react';
@@ -36,6 +39,7 @@ export function TerminalPanel({
   const [disconnected, setDisconnected] = useState(false);
   const [networkMode, setNetworkMode] = useState<'host' | 'private' | null>(null);
   const mode = vm.status === 'running' ? 'terminal' : 'logs';
+  // 终端实例与监听器由此 effect 成对创建/释放；实例、会话或项目切换会结束原连接并建立新的作用域。
   useEffect(() => {
     setNetworkMode(null);
     if (!ref.current || vm.status === 'stopped' || disconnected) return;

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - resource boundary rejects imported and dynamically loaded raw process and worker factories
+ * - ordinary periodic loops and aliases require Scheduler while reviewed deadlines remain separate
+ * - plugin helper files cannot bypass scoped resource capabilities, and JSON writes require reviewed publication
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import ts from 'typescript';

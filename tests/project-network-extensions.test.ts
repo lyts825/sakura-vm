@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - private project probes stay in its namespace and SSH has no shared fallback before project setup
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';

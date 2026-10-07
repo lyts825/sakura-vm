@@ -1,3 +1,6 @@
+/**
+ * 模块职责：流式发送已存储文件，校验打开文件身份与长度，防止下载期间替换产生失配。
+ */
 import { open } from 'node:fs/promises';
 import { finished, pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';

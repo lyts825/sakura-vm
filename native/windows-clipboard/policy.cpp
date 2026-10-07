@@ -1,3 +1,4 @@
+/** Windows 剪贴板策略 DLL，拦截 Win32、OLE 和控件操作；核实共享策略快照并在早期导入阶段接管后代创建。 */
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0a00
 #endif

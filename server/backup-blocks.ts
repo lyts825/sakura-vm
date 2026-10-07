@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理不可变备份块与引用清单；下载期间持有存储锁，回收前验证全部引用。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { lstat, mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';

@@ -1,3 +1,4 @@
+/** 将指定服务版本的独立接口冻结为摘要化发布基线，验证版本与 Git 修订后写入不可覆盖的记录。 */
 import { execFileSync } from 'node:child_process';
 import { open, unlink } from 'node:fs/promises';
 import { isBuiltin } from 'node:module';

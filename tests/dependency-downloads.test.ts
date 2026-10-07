@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - download authentication accepts only named secrets and a fixed HTTPS or loopback endpoint
+ * - prefetch resolves only its separately applied download credential, without project secret resolution
+ * - credentials use exclusive 0600 SFTP files and are cleaned on success, error and cancellation
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

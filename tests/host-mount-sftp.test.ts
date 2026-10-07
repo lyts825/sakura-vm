@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - host share maps only ordinary paths below configured root
+ * - SFTP share reads and writes files while denying parent paths and links
+ * - read-only SFTP share rejects mutations
+ */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

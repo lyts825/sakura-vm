@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目 Git 仓库认证、网络、操作与身份边界。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';

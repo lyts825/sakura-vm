@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - phase quantiles use a bounded rolling window and separate resource lifetime from task execution
+ * - atomic admission never holds an available dimension while queued for another
+ * - control has reserved execution and queue capacity when ordinary work is saturated
+ */
 import assert from 'node:assert/strict';
 import { RuntimeTimings } from '../server/runtime-timings.ts';
 

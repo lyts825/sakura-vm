@@ -1,3 +1,4 @@
+/** 原生后代父进程夹具，驱动 TLS 初始化、创建请求和管道命令，记录精确父子身份与退出结果。 */
 #include "fixture-descendant.h"
 #include "fixture-descendant-token.h"
 #include <cstdio>

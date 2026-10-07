@@ -1,3 +1,7 @@
+# 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
+# 覆盖：test_modern_strict_fast_path_has_no_text_or_second_query
+# 覆盖：test_official_106_json_shape_requires_real_top_comment_and_unchanged_snapshot
+# 覆盖：test_captured_debian_106_unmarked_pending_stays_refused
 """Portable models extracted from the actual production egress controller.
 
 Owned Debian COWs captured nft 1.0.6 missing table.comment and nested create

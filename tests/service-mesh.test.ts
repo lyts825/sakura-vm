@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - mesh saves legacy-compatible policies and binds persistent sidecars to a private project
+ * - private projects reuse ports while shared policy saves and network edits cannot race reservations
+ * - mesh refuses stale process bindings, preserves other projects on cancellation and cleans orphans
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

@@ -1,3 +1,4 @@
+/** 拦截常规 CreateProcess 系列入口，为子进程固定映像、预留 Job 并保持挂起，直到后代代理完成策略接管。 */
 #pragma once
 #include "descendant.h"
 #include "descendant-reservation.h"

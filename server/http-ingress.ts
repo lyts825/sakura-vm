@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理本地 HTTP 入口、别名和客户端证书，维护 TLS 入口及转发资源生命周期。
+ */
 import type { IngressCertificatesV1 } from './service-contracts/v1.ts';
 import { networkFor, type NetworkScope } from './network/index.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';

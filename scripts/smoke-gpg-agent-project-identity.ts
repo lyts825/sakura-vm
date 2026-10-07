@@ -1,3 +1,4 @@
+/** 烟雾验收：验证GnuPG 中继源身份、nonce 前拒绝、项目绑定与本轮运行票据清理。 */
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';

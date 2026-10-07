@@ -1,3 +1,4 @@
+/** 场景舞台与 UI 示意组件，统一局部帧、旁白 cue、转场和终端打字动画的时间基准。 */
 import type {CSSProperties, ReactNode} from 'react';
 import {AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Brand, clamp, ease, Icon, MockLabel, Paper, Reveal} from './components';
@@ -6,6 +7,7 @@ import {getScene, sceneTitles, type SceneId} from './timeline';
 
 export type SceneProps = {style?: CSSProperties};
 export const useScene = (id: SceneId) => {
+  // Sequence 内 frame 为局部帧，字幕 start 为全片秒数；减去场景起点才能驱动场景动画。
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const timing = getScene(id);

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - idle expiry is checked on access; read polling never extends it, activity does, and restart locks
+ * - five failed passwords start a durable cooldown; password changes and disabling require the current proof
+ * - pending verification cannot unlock a newer lock; parallel password work is bounded and shutdown drains it
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

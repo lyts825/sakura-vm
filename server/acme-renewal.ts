@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存实例证书续期策略并调度客户机 Certbot；执行中的策略不能同时修改。
+ */
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

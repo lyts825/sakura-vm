@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理 LSP 分帧、通知及请求关联，连接退出时结束未完成请求。
+ */
 import type { Duplex } from 'node:stream';
 import { AppError } from '../shared/errors.ts';
 

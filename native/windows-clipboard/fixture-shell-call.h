@@ -1,3 +1,4 @@
+/** Shell 夹具的 CreateProcess 调用探针，记录普通创建路径及属性列表，供来源链验证使用。 */
 #pragma once
 #include "fixture-shell.h"
 #include <shellapi.h>

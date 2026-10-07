@@ -1,3 +1,6 @@
+/**
+ * 模块职责：声明并检查 HA 接管策略，核对已配对目标、实例状态与接管前置条件。
+ */
 import type { HostPeersV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';

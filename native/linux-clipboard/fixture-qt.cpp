@@ -1,3 +1,4 @@
+/** Qt 剪贴板夹具，通过真实 QClipboard 读写 CLIPBOARD 或 PRIMARY，覆盖工具包与原生策略的交互。 */
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QMimeData>

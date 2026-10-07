@@ -1,3 +1,4 @@
+/** Xlib/XCB 剪贴板拦截库：按方向、格式和内容检查选择数据；INCR 与 MULTIPLE 在完整检查后才向接收方释放。 */
 #include "protocol.h"
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -62,6 +63,7 @@ template<class T> T real(const char* name) {
 #define CACHED_REAL(variable,name) static std::atomic<decltype(&name)> variable##Cache{nullptr}; \
   auto variable=variable##Cache.load();if(!variable){variable=real<decltype(&name)>(#name);variable##Cache.store(variable);}
 #define ORIGINAL(name) CACHED_REAL(original,name)
+// 已配置进程读取策略失败时保持 Active 且无方向许可，不能因记录丢失退回无约束剪贴板。
 Policy current() {
   Policy value{};
   if (!configured) return value;
@@ -293,6 +295,7 @@ void parentFork(){
   forkSource->mutex.unlock();forkSource->transportMutex.unlock();
   delete candidate;
 }
+// fork 子进程仅关闭自己固定的描述符引用；隔离旧状态，不能碰父进程仍使用的锁和连接。
 void childFork(){
   const int saved=errno;
   // close() drops only this process's descriptor reference. shutdown() or

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“多终端工作区”插件服务端入口。激活时装配 ProjectCatalog，并处理声明的服务端操作。
+ */
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -10,6 +13,7 @@ import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 import { ProjectCatalog } from '../../server/project-catalog.ts';
 
 export async function activate(host: PluginContext) {
+  // 终端会话能力由宿主提供，插件只发布其服务引用，不另建一套会话拥有者。
   host.provide(terminalWorkspaceServices.terminals, host.capabilities.sessions.terminals());
 }
 export async function route(

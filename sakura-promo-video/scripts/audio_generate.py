@@ -1,3 +1,4 @@
+# 按 STORYBOARD 合成中文旁白和原创配乐，根据语音边界生成帧对齐场景、字幕与总时长元数据。
 """Generate STORYBOARD-based Chinese narration and original music for Sakura.
 
 Python 3.12, edge-tts 7.2.8, numpy 2.4.2, FFmpeg/FFprobe on PATH.
@@ -100,6 +101,7 @@ async def narration(storyboard: dict, cache: Path, force: bool) -> tuple[np.ndar
     if SR % fps:
         raise RuntimeError("Audio sample rate must divide evenly into the storyboard FPS")
     samples_per_frame = SR // fps
+    # 所有场景和字幕先量化到整帧，再换算音频样本位置，避免逐章累积浮点时长漂移。
     scenes, captions, pieces = [], [], []
     cursor = 0
     for index, source in enumerate(storyboard["scenes"]):
@@ -115,6 +117,7 @@ async def narration(storyboard: dict, cache: Path, force: bool) -> tuple[np.ndar
             cue_from = speech_from + round(boundary["start"] * fps)
             cue_to = min(speech_to, speech_from + math.ceil((boundary["start"] + boundary["duration"]) * fps))
             if line_index + 1 < len(boundaries):
+                # 当前字幕最多显示到下一句前一帧，避免相邻句在同一时间竞争显示。
                 next_from = speech_from + round(boundaries[line_index + 1]["start"] * fps)
                 cue_to = min(cue_to, next_from - 1)
             if cue_to <= cue_from:

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存热冷存储策略并迁移实例，要求明确且不同的存储池并协调后台调度。
+ */
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';

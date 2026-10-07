@@ -1,3 +1,6 @@
+/**
+ * 模块职责：集中定义应用及数据目录路径，实例目录解析受已登记存储池位置约束。
+ */
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataDirectory } from './data-directory.ts';

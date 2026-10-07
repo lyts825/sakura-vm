@@ -1,3 +1,6 @@
+/**
+ * 模块职责：汇集平台功能配置和动作，连接 Notebook、浏览器 IDE、HA 等领域服务。
+ */
 import { jsonValueSchema } from '../shared/contracts/json-values.ts';
 import type { BrowserIdeV1, ColdMigrationsV1, CommunityPluginsV1, DisasterRecoveryDrillV1, HaHostFailoverV1, HaLocalFailoversV1, HostMountsV1, HostPeersV1, MediaDevicesV1, NotebookEnvironmentsV1, ProcessInteropV1, SnapshotMergeV1, SnapshotReplicationsV1, VirtioFsSharesV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { PlatformDomainServices } from './platform-domain-services.ts';

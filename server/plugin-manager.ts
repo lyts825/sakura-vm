@@ -1,3 +1,6 @@
+/**
+ * 模块职责：协调插件目录、装配、卸载与清理重试，核对实例代次并发布当前管理状态。
+ */
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

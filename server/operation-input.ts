@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按操作声明计算请求字节边界并准备输入，选择对应的有限结果存储预算。
+ */
 import type { IncomingMessage } from 'node:http';
 import type { OperationEntry } from './operation-catalog.ts';
 import { DEFAULT_JSON_REQUEST_BYTES, MAX_TEXT_REQUEST_BYTES, readJsonBody, requestHasBody } from './http.ts';

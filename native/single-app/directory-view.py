@@ -1,3 +1,4 @@
+# 单窗口应用的挂载目录视图：用独立映射 UID 暴露项目目录，保持磁盘所有者与 ACL；核心函数须与 Wayland 实现保持 AST 一致。
 """Manifest-bound copy of the verified Wayland directory-view functions.
 
 The application never enters the mapper user namespace. Its mount view maps
@@ -260,6 +261,7 @@ def directory_view_route_guard(route, user):
             raise DirectoryViewError('route-private-account-overlap', errno.EXDEV)
 
 
+# 用 userns 建立 IDMAP 后把挂载视图交给应用；应用自身不进入映射账户命名空间。
 def directory_view_create(checked, user):
     identity = checked['identity']
     path = Path(identity['directory'])

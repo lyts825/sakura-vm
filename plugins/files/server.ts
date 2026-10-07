@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“文件工作台”插件服务端入口。激活时装配 Files、FileHistory、FileLocks，并处理声明的服务端操作。
+ */
 import { services as transfersServices } from '../transfers/services.ts';
 import { services as migrationServices } from '../migration/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
@@ -24,6 +27,7 @@ export async function activate(host: PluginContext) {
   const locks = host.provide(filesServices.fileLocks, new FileLocks());
   const unregister = m.beforeFileReplace((id, path, ftp, signal) => history.capture(id, path, ftp, signal));
   files.trash = (id, path, recursive) => history.trash(id, path, recursive);
+  // 文件历史钩子与 trash 替换属于本次激活；关闭时撤销并清空租约，防止旧插件实例继续拦截写入。
   host.onDispose(() => { unregister(); locks.clear(); files.trash = undefined; });
 }
 export async function route(

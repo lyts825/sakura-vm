@@ -1,3 +1,4 @@
+/** 固定 setuid 项目启动器：在同一注册锁下核实二进制票据、网络及目录身份，封闭继承描述符并降权后执行受摘要保护的负载。 */
 #define _GNU_SOURCE
 #include "protocol.h"
 #include <errno.h>
@@ -66,6 +67,7 @@ static void trusted(const struct stat *s, bool directory) {
 }
 /* Walk every component: O_NOFOLLOW on a final filename alone does not protect
  * a privileged program from a substituted parent directory. */
+/* 逐级以目录描述符打开并拒绝链接，保护父目录替换边界；仅检查最终文件的 O_NOFOLLOW 不够。 */
 static int open_directory(const char *name, bool root_owned) {
     if (name[0] != '/' || strlen(name) > 1023) refuse("DIRECTORY_PATH");
     char copy[1024]; strcpy(copy, name);
@@ -278,6 +280,7 @@ static void native_image(void) {
         refuse("LAUNCHER_IMAGE");
     close(fd);
 }
+/* 同时移除补充组、saved IDs、capability 与提升权限能力，再读回核实，不能只切换 effective UID。 */
 static void capabilities_drop(uint32_t uid, uint32_t gid) {
     if (prctl(PR_SET_KEEPCAPS, 0L, 0L, 0L, 0L) || prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0L, 0L, 0L))
         refuse("CAPABILITIES_DROP");
@@ -460,6 +463,7 @@ static struct payload payload_read(const char *expected, bool session_input) {
     return value;
 }
 static void wipe(void *buffer, size_t size) { volatile unsigned char *p=buffer; while (size--) *p++=0; }
+/* 负载已在降权后验摘要和完整 EOF；脚本文本封入只读 memfd，身份字段不能被环境条目覆盖。 */
 static _Noreturn void payload_exec(struct payload *value) {
     if (value->flags & SK_PAYLOAD_SESSION) {
         if (dup2(3,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
@@ -498,6 +502,7 @@ static _Noreturn void payload_exec(struct payload *value) {
     char *arguments[]={"/bin/sh","/proc/self/fd/3",NULL};
     execv(arguments[0],arguments); refuse("COMMAND_EXEC");
 }
+/* 顺序属于授权边界：先锁定票据并进入真实域，封闭继承权限，降权后再接收正文。 */
 int main(int argc, char **argv) {
     for (int fd = 0; fd <= 3; ++fd) local_transport(fd);
     /* Snapshot fd 3 before native_image/record_fd can reuse an absent fd for a
@@ -591,6 +596,7 @@ int main(int argc, char **argv) {
     close(directory);
     if (clearenv() || setenv("HOME", b.home, 1) || setenv("USER", b.account, 1) || setenv("LOGNAME", b.account, 1) ||
         setenv("PATH", "/usr/local/bin:/usr/bin:/bin", 1) || setenv("LANG", "C.UTF-8", 1)) refuse("PROJECT_ENVIRONMENT");
+    /* 注册共享锁保留到整帧验收，防止撤销控制面与尚未接受的执行正文交错。 */
     struct payload body=payload_read(payload_sha, session_input);
     close(lock);
     payload_exec(&body);

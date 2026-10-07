@@ -1,3 +1,6 @@
+/**
+ * 模块职责：以独立本地通道持有数据目录的宿主归属，直到领域清理完成才释放独占保护。
+ */
 import { createHash } from 'node:crypto';
 import { mkdir, realpath } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';

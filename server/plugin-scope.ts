@@ -1,3 +1,6 @@
+/**
+ * 模块职责：限定插件并发、等待期限与清理生命周期，保留失败清理并提供原作用域重试。
+ */
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
 import { hostRuntime, type ResourceLease } from './host-runtime/index.ts';

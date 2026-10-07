@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存事件自动化与 Runbook 执行记录；动作成功但回执写入失败时保留待核对状态。
+ */
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';

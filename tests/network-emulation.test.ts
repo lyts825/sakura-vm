@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - network emulation previews, applies and clears a verified guest netem rule
+ * - network emulation rejects unsafe or inconsistent parameters before guest execution
+ * - network emulation reports missing tc without claiming an applied rule
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Machines } from '../server/machines.ts';

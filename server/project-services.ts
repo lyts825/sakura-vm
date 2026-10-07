@@ -1,3 +1,6 @@
+/**
+ * 模块职责：声明项目服务及依赖顺序，生成环境和启动命令并绑定项目服务运行作用域。
+ */
 import { z } from 'zod';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AppError } from '../shared/errors.ts';

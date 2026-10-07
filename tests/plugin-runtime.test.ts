@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - plugin activation timeout aborts registration and cleanup is bounded
+ * - declared operations validate responses before writing to the client
+ * - older automation selection preserves its scheduled worker and readiness distinguishes records
+ */
 import { services as sandboxesContract } from '../plugins/sandbox/services.ts';
 type GatewayFixtureHost = import('../server/features.ts').Features;
 type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];

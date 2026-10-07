@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - Git conflict choices show deleted and retained sides and submit reviewed index tokens
+ * - remote controls select the upstream, submit explicit targets and stay busy before polling catches up
+ * - conflicts, unfinished operations, dirty work and detached or unborn branches explain blocked actions
+ */
 import { expect, test, type Page } from '@playwright/test';
 import type { GitChange } from '../shared/git';
 import type { JobView } from '../server/jobs';

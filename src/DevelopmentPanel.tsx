@@ -1,3 +1,6 @@
+/**
+ * 模块职责：根据已启用插件装配开发能力分区，并提供开发项目的统一上下文。
+ */
 import { useMemo, useState } from 'react';
 import { developmentSections, PLUGINS } from '../shared/plugins';
 import './development.css';

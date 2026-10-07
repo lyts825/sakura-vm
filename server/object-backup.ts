@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理对象存储备份策略和动作，解析私密凭证并协调备份校验及远端传输。
+ */
 import type { BackupsV1, BundlesV1, SecretsV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';

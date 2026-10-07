@@ -1,3 +1,6 @@
+/**
+ * 模块职责：统一写入 HTTP 响应头及 JSON，文档响应委托已验证快照入口发送。
+ */
 import type { OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import { validateResponseHead, validateResponseJson } from './operation-response.ts';
 import { noteOperationBusinessResult, noteOperationResponseValidated } from './operation-results.ts';

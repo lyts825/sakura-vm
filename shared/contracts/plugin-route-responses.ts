@@ -1,3 +1,6 @@
+/**
+ * 模块职责：把插件 HTTP 路由标识映射到响应 Schema 和传输模式，供运行时校验与客户端契约生成使用。
+ */
 import { z } from 'zod';
 import type { HttpResponseContract } from './http-response.ts';
 import { jsonValueSchema } from './json-values.ts';

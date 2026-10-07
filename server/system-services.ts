@@ -1,3 +1,6 @@
+/**
+ * 模块职责：装配系统服务并提供受限解析器，协调就绪、实例归属和生命周期退休。
+ */
 import { PLUGINS } from '../shared/plugins.ts';
 import { APP_VERSION } from '../shared/version.ts';
 import { AppError } from '../shared/errors.ts';

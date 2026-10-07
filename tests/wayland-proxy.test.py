@@ -1,3 +1,7 @@
+# Python 回归入口：校验辅助进程的协议、输入和失败路径；平台要求以各用例中的条件检查为准。
+# 覆盖：test_identity_and_disabled_operational_bound
+# 覆盖：test_full_sensitive_scan_strict_encoding_and_utf8_limit
+# 覆盖：test_pending_constraints_do_not_relax_before_release
 """Policy/wire regressions on every host; real Unix FD regressions on Linux."""
 import array
 import importlib.util

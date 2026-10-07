@@ -1,3 +1,7 @@
+# Python 回归入口：校验辅助进程的协议、输入和失败路径；平台要求以各用例中的条件检查为准。
+# 覆盖：test_scope_pins_scheme_host_port_and_directory
+# 覆盖：test_real_requests_authorize_only_the_saved_scope
+# 覆盖：test_nested_path_encodings_never_send_auth_to_a_second_decoding_router
 import importlib.util
 import json
 import os

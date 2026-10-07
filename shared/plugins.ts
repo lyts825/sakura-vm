@@ -1,3 +1,6 @@
+/**
+ * 模块职责：导出内置插件目录并查询界面贡献的归属/启用状态，供导航和插件门控使用。
+ */
 import { PLUGINS, PLUGIN_PACKS } from './plugin-catalog.generated.ts';
 export { PLUGINS, PLUGIN_PACKS } from './plugin-catalog.generated.ts';
 export * from './plugin-protocol.ts';

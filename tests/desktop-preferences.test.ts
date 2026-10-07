@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - desktop preference drafts survive a remount until a guest read confirms them
+ * - legacy raw preference storage is upgraded without allowing unknown fields
+ * - browser preference validation preserves the server-supported scale range
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {

@@ -1,3 +1,4 @@
+# 绘制 PosixLoom 管理与 QEMU/Linux 内核职责的 Manim 流程动画，使用 Pango 文本并保留两个分支的职责区别。
 """Eight-second Sakura runtime explainer, rendered with Manim Community.
 
 The two branches represent responsibilities, not alternative Linux backends.

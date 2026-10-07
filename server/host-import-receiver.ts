@@ -1,3 +1,6 @@
+/**
+ * 模块职责：建立同伴实例包接收入口，受插件就绪、维护状态和导入回执约束。
+ */
 import type { BundlesV1 } from './service-contracts/v1.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 

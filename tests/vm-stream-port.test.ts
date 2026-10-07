@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - managed streams support Node pipelines, callback identity and independently owned listener removal
+ * - SFTP streams and SSH channel stderr retain public streaming interfaces
+ * - pipeline cancellation and input failure finish the original managed stream
+ */
 import assert from 'node:assert/strict';
 import { PassThrough, Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';

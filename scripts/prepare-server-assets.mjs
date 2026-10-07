@@ -1,3 +1,4 @@
+/** 组装服务器运行资源、动态入口和原生辅助清单，协调各 prepare 步骤以形成完整安装布局。 */
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';

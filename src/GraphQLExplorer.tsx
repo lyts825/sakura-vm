@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供 GraphQL 查询和变量输入，执行请求并展示数据及查询错误。
+ */
 import { useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 import { saveBlob } from './export-file';

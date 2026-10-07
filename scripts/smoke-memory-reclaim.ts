@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实来宾内存回收操作及宿主观测结果。 */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

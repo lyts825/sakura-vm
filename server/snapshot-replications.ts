@@ -1,3 +1,6 @@
+/**
+ * 模块职责：复制选定快照并保存传输状态，重启后重试先查询远端回执。
+ */
 import type { BundlesV1, HostPeersV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';

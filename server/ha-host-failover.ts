@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理宿主失联接管、来源启动授权和重加入，依赖见证服务确认防止双主。
+ */
 import type { HostPeersV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
 import { AppError } from '../shared/errors.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';

@@ -1,3 +1,4 @@
+/** 运行边界章节，将项目账户和目录隔离的 Manim 片段与说明文本按旁白 cue 对齐。 */
 import {Interactive} from 'remotion';
 import {Icon} from '../components';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Tag, useScene} from '../stage';

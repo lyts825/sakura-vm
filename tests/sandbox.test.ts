@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - sandbox inputs default to isolated disposable environments and reject policy escape fields
+ * - creation persists immutable policy and produces independent sandboxes
+ * - temporary COW policy persists and puts only its writable drive in snapshot mode
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

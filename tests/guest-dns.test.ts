@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - DNS diagnostic parses resolver evidence without claiming DNSSEC validation
+ * - DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：收集并下载沙箱产物，校验相对路径和链接目标，防止读取工作目录之外内容。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, lstat, readFile, rename, rm } from 'node:fs/promises';
 import { join, posix } from 'node:path';

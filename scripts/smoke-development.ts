@@ -1,3 +1,4 @@
+/** 烟雾验收：验证来宾开发工作区、命令执行和相关开发服务集成。 */
 import type { JobsV1 } from '../server/service-contracts/v1.ts';
 import { PLUGINS } from '../shared/plugins.ts';
 import assert from 'node:assert/strict';

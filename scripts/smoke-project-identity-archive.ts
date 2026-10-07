@@ -1,3 +1,4 @@
+/** 烟雾验收：验证新 VM 运行票据归档、容量与冲突拒绝；明确区分真实运行和闭合记录夹具。 */
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';

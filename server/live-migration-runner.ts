@@ -1,3 +1,6 @@
+/**
+ * 模块职责：协调源端、目标端和完成证明执行在线迁移，核验后才推进最终状态。
+ */
 import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';

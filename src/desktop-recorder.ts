@@ -1,3 +1,6 @@
+/**
+ * 模块职责：捕获远程桌面画面并生成有时长/大小上限的浏览器录制结果，统一停止与资源释放。
+ */
 export type RecordingProgress = {
   status: 'recording' | 'paused' | 'stopping';
   milliseconds: number;
@@ -179,6 +182,7 @@ export class DesktopRecorder {
     this.stopping = true;
     this.reason = reason;
     clearInterval(this.timer);
+    // 停止后等待编码器的最后分片和 stop 事件；超时作为失败处理，不能把缺少尾部的数据声明为完整录制。
     this.finishTimeout = setTimeout(() => this.error(), 10000);
     this.update();
     if (this.recorder.state !== 'inactive') {

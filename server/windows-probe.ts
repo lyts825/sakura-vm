@@ -1,3 +1,6 @@
+/**
+ * 模块职责：执行 Windows 宿主只读探测并解析 JSON，区分平台不支持与无效输出。
+ */
 import { hostExecFile } from './host-process.ts';
 import { join } from 'node:path';
 import { AppError } from '../shared/errors.ts';

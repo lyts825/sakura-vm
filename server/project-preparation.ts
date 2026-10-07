@@ -1,3 +1,6 @@
+/**
+ * 模块职责：串行准备项目目录与执行资源，记录保留租约并在关闭时等待原准备资源清理。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目目录迁移的预览、所有权变化、持久 latch、失败和恢复。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置实例高可用与见证节点，查看故障转移监控和提升记录。
+ */
 import { useEffect, useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
 import { formatDateTime } from '../../src/localization';

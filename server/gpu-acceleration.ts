@@ -1,3 +1,6 @@
+/**
+ * 模块职责：检查客户机 GPU 驱动可见性并执行验证，设备配置仍依赖停机后的硬件档案。
+ */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';

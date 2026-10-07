@@ -1,3 +1,6 @@
+/**
+ * 模块职责：构造项目私有 Docker 环境及 Compose 校验，限制网络模式并核对运行路径绑定。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';

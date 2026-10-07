@@ -1,3 +1,6 @@
+/**
+ * 模块职责：选择备份和文件恢复目标，预览恢复内容并跟踪恢复任务。
+ */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';

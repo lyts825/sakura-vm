@@ -1,3 +1,4 @@
+/** HA 烟雾验证的独立目标服务进程，启动生产接收器、公开配对与来宾应用观测，并响应关闭指令。 */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import assert from 'node:assert/strict';
 import { randomUUID, X509Certificate } from 'node:crypto';

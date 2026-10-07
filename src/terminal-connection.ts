@@ -1,3 +1,6 @@
+/**
+ * 模块职责：连接终端 WebSocket，处理认证、输入输出、重连与连接关闭后的清理。
+ */
 import type { SocketClientMessage, SocketServerMessage } from '../shared/contracts/websocket-client.generated.ts';
 
 type Options = {
@@ -51,6 +54,7 @@ export function connectTerminal(options: Options) {
             options.data(`\r\n连接失败：${String(message.data)}\r\n`);
             options.report('连接失败');
           }
+          // 明确的会话退出与网络断线不同：退出后停止自动重连，避免重建用户已经结束的 shell。
           if (message.type === 'exit') {
             exited = true;
             ready = false;

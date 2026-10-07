@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“自动化与运维”插件服务端入口。激活时装配 FeatureSuite，并处理声明的服务端操作。
+ */
 import { services as projectsServices } from '../projects/services.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -64,6 +67,7 @@ export async function activate(host: PluginContext) {
           'database',
         ])
         .parse(operationValue);
+      // 带目标路径或数据库参数的任务无法仅由动作标识重建，重试必须回界面重新提交完整输入。
       if (['worktree-add', 'worktree-remove', 'database'].includes(operation))
         throw new AppError('此开发任务包含参数，请回到能力中心重新执行');
       const manager = ['prefetch-dependencies', 'install-cached-dependencies'].includes(operation)

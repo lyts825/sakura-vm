@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“Git 工作台”插件服务端入口。激活时装配 GitWorkbench，并处理声明的服务端操作。
+ */
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as gitServices } from './services.ts';

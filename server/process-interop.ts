@@ -1,3 +1,6 @@
+/**
+ * 模块职责：协调 Windows 与客户机命令互操作，校验 EXE 的实际路径及启动归属。
+ */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { hostProcess } from './host-process.ts';
 import { createReadStream } from 'node:fs';

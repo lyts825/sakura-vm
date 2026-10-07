@@ -1,3 +1,6 @@
+/**
+ * 模块职责：封装 HTTPS 见证心跳、启动授权和重加入请求，校验返回身份与结果契约。
+ */
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { HaWitnessHttpError, haHttpsRequest } from './ha-witness-http.ts';

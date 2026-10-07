@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - HA activation works while the web session is locked and passes the complete replica identity
+ * - wrong origins, checksums, retired replicas and non-runnable states never launch
+ * - maintenance, incident locks and missing plugins reject HA starts and retirement
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

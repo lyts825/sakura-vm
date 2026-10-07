@@ -1,3 +1,6 @@
+/**
+ * 模块职责：采集并解析客户机指标，利用相邻网络采样计算速率并清理失效实例缓存。
+ */
 import { AppError } from '../shared/errors.ts';
 type MetricsVm = { state(id: string): string; boot?(id: string): string | undefined;
   live?: ReadonlyMap<string, { startedAt?: string }>;

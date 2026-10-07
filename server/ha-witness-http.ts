@@ -1,3 +1,6 @@
+/**
+ * 模块职责：发送有界见证 HTTPS 请求并分类上游错误，拒绝 URL 内嵌凭据。
+ */
 import { networkFor } from './network/index.ts';
 import { X509Certificate } from 'node:crypto';
 

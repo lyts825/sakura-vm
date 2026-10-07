@@ -1,3 +1,4 @@
+/** 将来宾 GPG agent 固定辅助源码复制为服务器资源，计算文件摘要及整体构建身份。 */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

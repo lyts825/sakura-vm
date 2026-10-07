@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理 Linux 应用剪贴板策略与运行票据，桌面退休需确认对应完整应用域清理。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join, posix } from 'node:path';

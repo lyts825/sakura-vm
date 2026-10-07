@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - production project UID egress transactions preserve exact owners, boot restoration and retry after lost acknowledgements
+ * - private UID admission verifies protected OpenRC and systemd PAM SSH ancestry, including live authority changes
+ * - systemd admission verifies effective NNP, authoritative exec flags, SSH templates and future service drop-ins
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

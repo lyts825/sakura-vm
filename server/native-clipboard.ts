@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理 Windows 原生应用剪贴板规则与启动归属，校验可执行文件和受管进程身份。
+ */
 import { hostExecFile } from './host-process.ts';
 import { processSupervisor, spawnObserved as spawn } from './process-supervisor.ts';
 import { randomUUID } from 'node:crypto';

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证插件独立连接寿命、真实 VM 资源身份和缓存传输授权撤销。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

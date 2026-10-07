@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - owned BaseAgent lists and signs a real self-created Ed25519 key over its own socket
+ * - owned connection budgets and cancellation never close another owner using the same source
+ * - late actual host close is recoverable and an execution release cannot lose its unconfirmed owner
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, randomUUID, sign, verify } from 'node:crypto';

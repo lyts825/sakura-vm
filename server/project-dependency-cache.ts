@@ -1,3 +1,6 @@
+/**
+ * 模块职责：规划 npm/pip 依赖预取与缓存发布，校验下载环境并生成受限客户机脚本。
+ */
 import { z } from 'zod';
 import { randomBytes } from 'node:crypto';
 import { quote } from './shell.ts';

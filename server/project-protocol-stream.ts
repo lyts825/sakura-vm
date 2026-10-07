@@ -1,3 +1,6 @@
+/**
+ * 模块职责：维护项目协议运行票据与双向流，核对原项目配置、账户及客户机启动身份。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, rename } from 'node:fs/promises';

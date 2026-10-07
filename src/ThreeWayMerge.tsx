@@ -1,3 +1,6 @@
+/**
+ * 模块职责：展示三方合并片段，收集冲突选择和手工编辑后输出最终合并文本。
+ */
 import { useMemo, useState } from 'react';
 import { threeWayMerge, resolvedMerge } from '../shared/three-way-merge';
 

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：检查宿主 GPG extra socket 并启动项目转发，将权限限制在受限 Agent 接口。
+ */
 import type { ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { hostExecFile } from './host-process.ts';
 import { existsSync } from 'node:fs';

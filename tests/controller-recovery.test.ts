@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - GraphQL query validation remains visible through the controller without exposing unclassified HTTP errors
+ * - a locked bootstrap displays the gate and never admits a pending mutation or replays it on unlock
+ * - a private 423 clears credentials and stale bootstrap completion cannot restore a locked session
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ControllerSession, RefreshQueue } from '../src/controller-session.ts';

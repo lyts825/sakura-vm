@@ -1,3 +1,6 @@
+/**
+ * 模块职责：从浏览器剪贴板项目中提取文件，为文件粘贴上传入口统一处理文件列表。
+ */
 export function clipboardFiles(data: Pick<DataTransfer, 'files'>): File[] {
   return Array.from(data.files).map((file) => {
     if (file.name && file.name !== 'image.png' && file.name !== 'image.jpeg') return file;

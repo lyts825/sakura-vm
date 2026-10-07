@@ -1,3 +1,4 @@
+/** 注册全片、封面和独立场景 Composition，以已生成旁白的时间线决定视频帧数。 */
 import {Composition, Folder, Still} from 'remotion';
 import {SakuraPromo} from './SakuraPromo';
 import {Cover} from './Cover';

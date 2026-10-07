@@ -1,3 +1,4 @@
+/** Shell 子进程导入 DLL 探针，在 TLS 和 DllMain 阶段采集策略是否已生效。 */
 #define SHELL_PROBE_DLL
 #include "fixture-shell.h"
 static ShellPhase phases[4]{};

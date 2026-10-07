@@ -1,3 +1,4 @@
+/** 烟雾验收：验证已释放自有夹具中 guest-task 控制、回调及票据撤销。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';

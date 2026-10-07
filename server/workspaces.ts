@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理项目配置、准备和运行，协调网络、凭证、日志与客户机身份变化钩子。
+ */
 import type { JobsV1, NetworkProfilesV1, ProjectCatalogV1, SecretsV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
 import { assertProjectPreparationIdle } from './project-preparation-registry.ts';

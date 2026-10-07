@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理认证与公开 API 入口，登录流程核对会话变化及请求方法。
+ */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { sendJson as send } from './http-response.ts';

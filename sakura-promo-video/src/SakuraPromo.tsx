@@ -1,3 +1,4 @@
+/** 将十二个章节按旁白时间线组装成全片，同步旁白、配乐、字幕与章节进度。 */
 import {Audio} from '@remotion/media';
 import {AbsoluteFill, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Captions} from './Captions';

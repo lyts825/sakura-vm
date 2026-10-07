@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 VM 项目 UID 出站隔离、规则持久恢复与网络释放边界。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';

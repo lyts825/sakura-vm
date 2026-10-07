@@ -1,9 +1,11 @@
+/** Linux 内核章节及 ManimClip 时间映射组件，将预渲染流程片段按当前场景帧播放。 */
 import {Video} from '@remotion/media';
 import {Freeze, Interactive, Sequence, staticFile, useVideoConfig} from 'remotion';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Tag, useScene} from '../stage';
 import {colors, font} from '../theme';
 
 export const ManimClip = ({src, seconds}: {src: string; seconds: number}) => {
+  // 流程短片结束后固定在最后一帧，让较长旁白继续讲解，避免重复播放或黑帧。
   const {fps} = useVideoConfig();
   return <>
     <Sequence name="Manim 动画" durationInFrames={seconds * fps} premountFor={fps}><Video name={src} src={staticFile(src)} muted premountFor={fps} style={{width: '100%', height: '100%'}}/></Sequence>

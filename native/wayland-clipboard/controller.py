@@ -1,3 +1,4 @@
+# Wayland 应用监督器：核实 compositor 和项目网络，为会话创建独立账户、目录视图及代理进程，并按代次发布策略。
 """Root supervisor for explicitly launched native Wayland applications.
 
 The protocol broker is a separate pinned process, not a preload library. A new
@@ -989,6 +990,7 @@ def directory_view_route_guard(route, user):
             raise DirectoryViewError('route-private-account-overlap', errno.EXDEV)
 
 
+# 用 userns 建立 IDMAP 后把挂载视图交给应用；应用自身不进入映射账户命名空间。
 def directory_view_create(checked, user):
     identity = checked['identity']
     path = Path(identity['directory'])
@@ -1139,6 +1141,7 @@ def directory_view_proof(value):
     return proof
 
 
+# 会话账户不回收复用，避免旧文件、socket 或残留进程在后续会话获得相同 UID 的权限。
 def create_account(session):
     name = "skwl" + session.replace("-", "")[:24]
     home = Path("/home") / name
@@ -1465,6 +1468,7 @@ def readiness():
         return {"ready": False, "build": BUILD, "error": str(error)[:256]}
 
 
+# 首字节释放与策略发布使用同一把锁；新策略不会与尚未提交的旧内容放行交错。
 def publish_policy(directory, raw):
     descriptor = os.open(directory / "policy-lock", os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW)
     try:

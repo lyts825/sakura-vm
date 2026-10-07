@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - project operations use the captured UID payload without root helper files or selected-config rereads
+ * - non-enumerable named-project metadata stays bound to the original task without changing the config hash
+ * - a matching config hash cannot authorize preparation captured for another project
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';

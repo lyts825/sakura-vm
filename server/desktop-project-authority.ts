@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供固定桌面权限核验程序，核对显示凭据与目录身份且不导出敏感 cookie。
+ */
 /* Shared verbatim with both source-bound Linux clipboard controllers. */
 export const desktopAuthoritySource = String.raw`# Shared verbatim by the fixed Desktop adapter and both Linux clipboard controllers.
 # This file is a draft generator input, not a guest-installed authority record.

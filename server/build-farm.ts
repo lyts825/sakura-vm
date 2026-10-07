@@ -1,3 +1,6 @@
+/**
+ * 模块职责：维护构建队列与项目执行任务；重启中断的构建保留记录，由用户核查后重试。
+ */
 import type { JobsV1, ProjectTerminalsV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';

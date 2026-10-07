@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - target and threshold replacement require a withdrawn source entry and preserve failed-attempt evidence
+ * - CLI migration refuses an active lock and never replaces an unknown legacy phase
+ * - damaged-state recovery holds all authority until every historical replica is stopped and retired
+ */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import test from 'node:test';
 import assert from 'node:assert/strict';

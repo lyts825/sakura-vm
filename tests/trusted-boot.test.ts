@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - TPM backend binds a private socket and protects the secure pflash variable store
+ * - secure boot requires QMP reboot action support before admitting a VM
+ * - TPM and Secure Boot check separates host prerequisites from guest evidence
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';

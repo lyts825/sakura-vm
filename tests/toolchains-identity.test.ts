@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - tool catalog and public view shape remain compatible while one lease owns the entire probe
+ * - all catalog versions and relative markers use the captured descriptor cwd without root wrappers
+ * - named scope survives non-enumerable config capture and concurrent outside project selection
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';

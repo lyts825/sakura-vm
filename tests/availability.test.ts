@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - availability reports measured uptime, downtime and collector gaps without inventing coverage
+ * - availability clamps report windows, bounds retention and rejects overlapping evidence
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { observeAvailability, availabilityReport, type AvailabilitySpan } from '../server/availability.ts';

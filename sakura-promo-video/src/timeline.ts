@@ -1,3 +1,4 @@
+/** 将 STORYBOARD 与实际 transcript 合并为场景帧时间线；旁白未就绪时用目标时长供预览，全片渲染依赖完整语音时间。 */
 import storyboard from '../STORYBOARD.json';
 import rawTranscript from '../public/audio/transcript.json';
 
@@ -8,6 +9,7 @@ type AudioTranscript = {durationInFrames?: number; duration?: number; captions: 
 
 const transcript = rawTranscript as unknown as AudioTranscript;
 export const audioReady = storyboard.scenes.every(({id}) => transcript.scenes.some((scene) => scene.id === id && Number.isInteger(scene.from) && Number.isInteger(scene.durationInFrames)));
+// 必须整条时间线都有语音帧数据才采用 transcript，避免已合成和估计章节混用两个时间基准。
 let cursor = 0;
 export const timeline: SceneTiming[] = storyboard.scenes.map((scene) => {
   const spoken = transcript.scenes.find(({id}) => id === scene.id);

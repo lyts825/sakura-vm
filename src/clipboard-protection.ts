@@ -1,3 +1,6 @@
+/**
+ * 模块职责：识别剪贴板中的敏感凭证，执行复制/粘贴前的保护检查，并同步本地保护偏好。
+ */
 import type { ClipboardContext } from '../shared/clipboard-policy';
 import { assertClipboardPolicy, clipboardContext, currentClipboardRule } from './clipboard-policy';
 const key = 'sakura-clipboard-protection';

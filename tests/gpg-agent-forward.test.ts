@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - GPG forwarding requires a confirmed, bounded single command
+ * - GPG captures the target before probing and transports only the resolved project body to the UID runner
+ * - GPG cancellation holds its project lease through cleanup and redacts a cleanup refusal
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

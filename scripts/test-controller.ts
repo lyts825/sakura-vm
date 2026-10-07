@@ -1,3 +1,4 @@
+/** 启动临时认证控制器供烟雾验收使用，管理独立数据目录、API 请求和关闭清理生命周期。 */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';

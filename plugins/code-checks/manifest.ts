@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“代码与调试工具”插件清单：提供代码检查、TypeScript/JavaScript/Python LSP 语言服务和 Python DAP 调试。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

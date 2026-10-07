@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“Git 工作台”插件清单：差异、暂存、提交、分支与远程仓库。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理在线迁移目标的准备、完成与终止，使用装配层提供的核验端口确认状态。
+ */
 import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { VmAccess as Machines } from './vm-access.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：构造固定运行时安装流程并解析安装/恢复回执，核对原账户与暂存目录归属。
+ */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';

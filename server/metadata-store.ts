@@ -1,3 +1,6 @@
+/**
+ * 模块职责：封装元数据快照、修订号与条件替换，在串行队列内实现冲突检查及原子发布。
+ */
 import { createHash } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“沙箱工作台”插件服务端入口。激活时装配 Sandboxes，并处理声明的服务端操作。
+ */
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { services as sandboxServices } from './services.ts';
 export { manifest } from './manifest.ts';

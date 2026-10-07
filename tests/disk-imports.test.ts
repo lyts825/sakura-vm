@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - checksum is checked before publication, and converted disk receives independent identity
+ * - OVA imports a single referenced disk and rejects duplicate or unsafe members
+ * - external dependencies and invalid format headers do not publish an instance
+ */
 type GatewayFixtureHost = import('../server/features.ts').Features;
 type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
 const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {

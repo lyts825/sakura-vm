@@ -1,3 +1,6 @@
+/**
+ * 模块职责：装配并关闭平台领域服务，汇总清理失败以保留未完成的资源归属。
+ */
 import type { SnapshotMergeV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { StorageTiering } from './storage-tiering.ts';
 import { ServiceMesh } from './service-mesh.ts';

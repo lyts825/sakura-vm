@@ -1,3 +1,6 @@
+/**
+ * 模块职责：协调文件编辑器的离开保护和保存确认，避免保存返回覆盖请求期间新增的编辑。
+ */
 export type FileEdit = {
   path: string;
   content: string;
@@ -8,6 +11,7 @@ export type FileEdit = {
 export const dirtyEdit = (edit: FileEdit | null) =>
   !!edit && (edit.fresh ? !!edit.content : edit.content !== (edit.baseContent ?? edit.content));
 let leaveGuard: (() => Promise<boolean>) | undefined;
+// 卸载只能移除自己注册的保护函数；较晚卸载的旧编辑器不能清掉已经接管的新保护。
 export function registerEditorGuard(guard: () => Promise<boolean>) {
   leaveGuard = guard;
   return () => {

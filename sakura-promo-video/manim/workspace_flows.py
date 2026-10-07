@@ -1,3 +1,4 @@
+# 绘制磁盘恢复及项目账户边界的 Manim 动画，为宣传视频提供可重用流程片段。
 """Ten-second recovery and project-account explainers for Sakura video 1.1.
 
 These illustrate disk recovery semantics and Linux account boundaries.

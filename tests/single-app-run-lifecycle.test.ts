@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - native prepare lost ACK recovers only the same existing UUID and closes it without relaunch or double release
+ * - missing native ticket and extant unknown cgroup retain intent and never reissue native prepare
+ * - start ACK loss closes the exact original guest run and retains the durable stopped receipt
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile, readFile } from 'node:fs/promises';

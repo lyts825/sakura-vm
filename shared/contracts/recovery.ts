@@ -1,3 +1,6 @@
+/**
+ * 模块职责：恢复记录、绑定、诊断和重建请求的公开 Schema，约束恢复目录中的目标与状态。
+ */
 import { z } from 'zod';
 
 const token = z

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证备份恢复预览、文件选择及实际恢复内容。 */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

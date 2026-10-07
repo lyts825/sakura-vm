@@ -1,3 +1,4 @@
+/** 烟雾验收：验证当前编译版本的健康检查和首页读取，核对自更新启动入口。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';

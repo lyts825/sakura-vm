@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成并维护系统 hosts 的 Sakura 区块，发现未知或重复标记时保留文件供核查。
+ */
 import { networkFor } from './network/index.ts';
 import { lstat, open, readFile } from 'node:fs/promises';
 

@@ -1,3 +1,4 @@
+/** 反向隧道项目身份验证支撑，构造受控接收端、来宾内核观测和票据/进程归属断言。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';

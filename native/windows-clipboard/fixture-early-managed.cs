@@ -1,3 +1,4 @@
+/** 离线 CLR 早期剪贴板夹具，独立选择非交互 window station 后才调用 API 并记录初始化证据。 */
 // Owned, offline CLR fixture. Clipboard calls begin only after independently
 // selecting a non-interactive station; no interactive clipboard is inspected.
 using System;

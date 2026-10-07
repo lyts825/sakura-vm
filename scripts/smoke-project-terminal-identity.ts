@@ -1,3 +1,4 @@
+/** 烟雾验收：验证新自有 VM 的项目 PTY/tmux、只读连接、作用域清理和陈旧 ID 拒绝。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';

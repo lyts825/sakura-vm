@@ -1,3 +1,6 @@
+/**
+ * 模块职责：统一启动宿主工具并关联原生资源归属，校验命令路径、环境和进程选项。
+ */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';

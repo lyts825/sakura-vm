@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理团队项目模板的导入和应用，校验内容及目录条目唯一性。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';

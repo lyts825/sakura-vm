@@ -1,3 +1,6 @@
+/**
+ * 模块职责：汇集 HTTP 路由的线路输入模式，为请求契约选择提供明确的参数结构。
+ */
 import { z } from 'zod';
 import { MAX_TEXT_BYTES } from './files.ts';
 import { singleAppInput, singleAppProgram, singleAppClipboard } from './single-app-windows.ts';

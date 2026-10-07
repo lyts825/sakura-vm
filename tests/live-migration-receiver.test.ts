@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - target completion binds the session and transfer, then permits idempotent readiness polling
+ * - target abort requires the original session and a still-prepared receiver
+ * - public peer callers cannot forge a stopped-source declaration to cold-start a target
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

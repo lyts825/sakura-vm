@@ -1,3 +1,6 @@
+/**
+ * 模块职责：实现 QMP 与客户机代理请求，关联响应标识并管理连接、超时及快照任务等待。
+ */
 import { networkFor } from './network/index.ts';
 
 import { once } from 'node:events';

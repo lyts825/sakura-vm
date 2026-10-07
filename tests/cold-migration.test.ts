@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - cold migration persists a retry identity and removes only an unchanged source after a remote receipt
+ * - a changed source is retained even when the remote copy exists
+ * - an interrupted transfer becomes reviewable and retryable after restart
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

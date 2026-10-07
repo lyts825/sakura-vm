@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - storage admission atomically limits a device and task while independent devices continue
+ * - device aliases share temporary reservations and sequential stages charge their peak
+ * - temporary free-space recheck detects device replacement and releases every acquired dimension
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';

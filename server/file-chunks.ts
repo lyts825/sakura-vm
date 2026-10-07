@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按固定分块尺寸计算下载清单，检测读取期间文件长度变化以避免发布失配清单。
+ */
 import type { FilesV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { Writable } from 'node:stream';

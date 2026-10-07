@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - source coordinator fences before confirming target and stops source only after readiness
+ * - pre-fence failure aborts a paused target only after source is confirmed running
+ * - post-fence failure keeps target and source fence for manual reconciliation
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

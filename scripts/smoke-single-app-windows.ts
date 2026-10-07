@@ -1,3 +1,4 @@
+/** 烟雾验收：验证历史 UID-only 单窗口夹具；保留旧入口的 VNC、网络和剪贴板验证。 */
 // Historical fixture for the former UID-only controller. The current npm
 // entry uses smoke-project-desktop-identity.ts and requires --run-cow x11|wayland.
 import assert from 'node:assert/strict';

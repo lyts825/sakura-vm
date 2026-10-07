@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存并执行项目流水线，管理运行记录和产物，执行中的流水线配置受保护。
+ */
 import type { FilesV1, ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
 import { randomUUID } from 'node:crypto';

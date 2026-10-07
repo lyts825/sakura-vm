@@ -1,3 +1,4 @@
+/** 基础实例章节示意，展示发行版选择、资源配置和实例启动状态。 */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Badge, Button, Chapter, ScenePaper, type SceneProps, SoftFocus, Status, StepStrip, Tag, Terminal, Typed, useScene, Window} from '../stage';

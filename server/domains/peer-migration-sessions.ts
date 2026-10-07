@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理同伴迁移会话、数据通道和 QMP 转发；连接受配对权限及原会话身份限制。
+ */
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Server as TcpServer, Socket } from 'node:net';

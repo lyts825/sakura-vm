@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - all 37 operation envelopes reach the executor and failures mark jobs as error
+ * - all 200 configure branches accept the public envelope and reject unexpected fields
+ * - checks do not lock machines and GPU visibility requires real guest evidence
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

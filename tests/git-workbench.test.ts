@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - private project Git commands bind the UID task to the original checked namespace
+ * - three-way Git editor reads index stages, rejects stale edits and stages the resolved content
+ * - Git conflict choices stage binary versions and reject an edited worktree
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';

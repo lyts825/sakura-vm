@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# 自有临时来宾的信号夹具：中断账户创建，核实 UID/身份预留仍保留，并用已固定 pidfd 清理本轮工具进程。
 """Signal fixture for an owned disposable guest; never a production asset."""
 import base64
 import importlib.util

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - bounded SSH input sends exact binary bytes and EOF outside the command argv
+ * - input is captured before a delayed connection and explicitly empty input still sends EOF
+ * - ordinary exec keeps stdin open and preserves agent forwarding and split UTF-8 output
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

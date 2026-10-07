@@ -1,3 +1,6 @@
+/**
+ * 模块职责：应用外壳共用的状态徽标、资源格式化和模态框基础组件。
+ */
 import { X } from 'lucide-react';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import type { VMView } from '../../shared/contracts/vm.ts';

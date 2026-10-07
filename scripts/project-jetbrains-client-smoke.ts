@@ -1,3 +1,4 @@
+/** 准备独立 JetBrains Gateway 配置，并观测远程后端的 UID、cgroup、目录及项目 SSH 身份。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';

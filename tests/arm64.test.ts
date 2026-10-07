@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - ARM64 instances require a matching Debian image, UEFI and TCG-compatible acceleration
+ * - ARM64 cloud-init writes the readiness marker to the PL011 serial device
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSchema } from '../server/model.ts';

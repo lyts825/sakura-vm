@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - download tickets are single-use, expire, bind one target and bound abandoned requests
+ * - native download streams original binary bytes, ignores path substitution and rejects replay
+ * - preflight rejects failed downloads and export while running without issuing a capability
+ */
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/** 主服务启动器，先检查端口并启动活动版本；健康检查失败时切回已有 previous 指针并重新启动。 */
 import { networkFor } from './network-client.mjs';
 const { createServer } = networkFor('tool:launch');
 import { spawn } from 'node:child_process';
@@ -38,6 +39,7 @@ async function launch(version) {
 }
 
 async function main() {
+  // 先确认目标端口空闲，避免把其他既有服务的健康响应误判成本轮启动成功。
   await requireFreePort();
   const current = await pointer(installation);
   let child;

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验插件目录并解析插件/插件包选择，检测版本、依赖、路由重叠和循环并迁移旧配置。
+ */
 import {
   pluginManifestSchema,
   pluginPackSchema,
@@ -217,6 +220,7 @@ export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) 
   );
 }
 
+// 只自动启用 requires；optional 必须已被其他选择启用。依赖先于插件入序，排序使结果不受用户选择顺序影响。
 export function resolveSelection(selection: PluginSelection, plugins: PluginManifest[], packs: PluginPack[]) {
   pluginSelectionSchema.parse(selection);
   validateCatalog(plugins, packs);
@@ -245,6 +249,7 @@ export function resolveSelection(selection: PluginSelection, plugins: PluginMani
   return order;
 }
 
+// 旧版 automation 的调度能力拆成独立插件；迁移保留原先的调度意图，当前版选择不自动增加它。
 export function migrateSelection(input: unknown, packs: PluginPack[]) {
   const source = zSelection(input);
   const selection = {

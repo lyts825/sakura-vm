@@ -1,3 +1,6 @@
+/**
+ * 模块职责：日志保留策略、占用汇总和清理预览的公共视图类型。
+ */
 export type LogRetentionPolicy = { enabled: boolean; days: number; maxMiB: number };
 export type LogRetentionSummary = {
   stores: number;

@@ -1,3 +1,4 @@
+/** CLI 可恢复文件下载，按清单逐块核对 SHA-256 并复用有效块，完整校验后原子发布且拒绝覆盖已有目标。 */
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { open, lstat, readFile, writeFile, link, unlink } from 'node:fs/promises';
@@ -27,6 +28,7 @@ export async function resumableDownload(api, vmId, path, destination) {
   )
     throw new Error('服务返回了无效下载清单');
   const owner = { vmId, path, manifest },
+    // 续传记录绑定实例、远端路径及全部块摘要；远端变化时保留旧部分文件并要求新目标。
     previous = await existing(metadata),
     file = await existing(partial);
   if (previous) {

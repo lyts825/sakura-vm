@@ -1,3 +1,6 @@
+/**
+ * 模块职责：计算插件及系统产物摘要，为实例代次、审计与恢复核对提供内容身份。
+ */
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';

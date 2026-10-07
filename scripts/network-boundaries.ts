@@ -1,3 +1,4 @@
+/** 通过 AST 检查直接网络 API、动态导入及包装器使用，要求网络能力遵循声明的受管理入口。 */
 import ts from 'typescript';
 
 const modules = new Set([

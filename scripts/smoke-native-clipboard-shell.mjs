@@ -1,3 +1,4 @@
+/** 烟雾验收：验证Shell 常规创建路径的来源、后代握手、精确句柄退出及证据。 */
 import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';

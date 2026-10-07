@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - egress policy rejects invalid targets before accessing the guest
+ * - egress policy refuses to remove a similarly named foreign firewall chain
+ * - egress policy rolls back both chains if attaching the second family fails
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Machines } from '../server/machines.ts';

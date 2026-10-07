@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“资源采样”插件清单：独立采样客户机 CPU、内存、磁盘与进程，无需项目服务。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, http, operation } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

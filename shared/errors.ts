@@ -1,3 +1,6 @@
+/**
+ * 模块职责：控制面内部错误与公开 API 错误 DTO，安全解码服务端错误并保留状态、错误码和关联标识。
+ */
 export class AppError extends Error {
   constructor(
     message: string,

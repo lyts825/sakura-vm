@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - a full-size UTF-8 text file remains saveable when JSON escapes enlarge its request
+ * - oversized JSON returns an HTTP error instead of resetting the client connection
+ * - a still-streaming oversized request receives 413 without an abrupt socket reset
+ */
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request, type IncomingMessage } from 'node:http';

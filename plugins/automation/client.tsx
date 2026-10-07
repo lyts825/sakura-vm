@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“自动化与运维”插件的资源预设、功能就绪状态与能力中心页面，使用宿主传入的实例、项目和请求上下文。
+ */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { Activity, Bell, Compass, HardDrive, Package, Play, Search, ShieldCheck, Wifi } from 'lucide-react';

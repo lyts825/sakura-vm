@@ -1,3 +1,6 @@
+/**
+ * 模块职责：建立终端等 WebSocket 通道；异步准备期间也监听断开，确保原连接资源可清理。
+ */
 import { type IncomingMessage } from 'node:http';
 import { StringDecoder } from 'node:string_decoder';
 import type { ClientChannel } from 'ssh2';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：过滤只读 RFB 客户端消息，允许协议握手及画面请求，阻止输入事件到达桌面。
+ */
 import { Transform, type TransformCallback } from 'node:stream';
 import { readOnlyRfbPolicy as policy } from '../shared/contracts/websocket.ts';
 const [setPixelFormat, setEncodings, framebufferRequest, continuousUpdates, fence] = policy.clientMessageTypes;

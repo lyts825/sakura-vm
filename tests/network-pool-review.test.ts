@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - pool shutdown is shared, revokes pins and refuses capabilities after release
+ * - worker preserves the complete EOF tail when the receiver starts late
+ * - cancelled DNS lookup refuses before starting a worker
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供桌面录制控制、本地录制库、回放与导出，展示录制配额和失败反馈。
+ */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
 import { useEffect, useRef, useState, type RefObject } from 'react';

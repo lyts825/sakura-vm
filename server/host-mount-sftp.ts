@@ -1,3 +1,6 @@
+/**
+ * 模块职责：通过受控 SFTP 服务共享宿主目录，核对路径并使用临时 SSH 身份。
+ */
 import { timingSafeEqual } from 'node:crypto';
 import { constants } from 'node:fs';
 import {

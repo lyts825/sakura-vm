@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理单应用桌面会话，启动应用窗口并查看或终止已有会话。
+ */
 import { ExternalLink, LoaderCircle, Square, TerminalSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { VMView } from '../shared/contracts/vm.ts';

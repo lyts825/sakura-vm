@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“项目流水线”插件的构建流水线步骤、运行记录与产物下载分区，使用宿主传入的实例、项目和请求上下文。
+ */
 import { formatDateTime } from '../../src/localization';
 import { Play, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';

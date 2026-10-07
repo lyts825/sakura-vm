@@ -1,3 +1,4 @@
+/** 烟雾验收：验证NUMA/网卡/IPv6 配置、磁盘恢复与无引用块回收。 */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';

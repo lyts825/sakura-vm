@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - the kernel excludes another process even when the live owner record is removed
+ * - an abrupt process death releases the kernel lock and permits serialized stale-owner recovery
+ * - a remote or malformed owner record never becomes an automatic empty-state authorization
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';

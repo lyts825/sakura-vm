@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理按路径保存的编辑草稿与保存结果，保留请求发出后继续输入的内容。
+ */
 import { type FileEdit, dirtyEdit } from './file-editor-state';
 
 export type EditorDraft = FileEdit & { id: string };
@@ -32,6 +35,7 @@ export function restoreDrafts(value: unknown): EditorDraft[] {
       };
     });
 }
+// 保存响应只更新提交时的基线和版本，当前草稿正文保留，因此请求期间继续输入的文本仍被标为未保存。
 export function saveDraftResult(drafts: EditorDraft[], submitted: EditorDraft, version: string) {
   return drafts.map((draft) =>
     draft.id === submitted.id && draft.path === submitted.path

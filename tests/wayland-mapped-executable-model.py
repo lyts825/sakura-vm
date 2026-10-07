@@ -1,3 +1,7 @@
+# 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
+# 覆盖：test_owner_only_elf_uses_mapped_fd_and_closes_original_before_application
+# 覆盖：test_different_device_or_inode_cannot_replace_pinned_image
+# 覆盖：test_digest_mismatch_closes_both_fds_without_execution
 """Exercise the packaged application bootstrap with two distinct mount views."""
 import ast
 import copy

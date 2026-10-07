@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理语言和区域偏好、日期/数字格式与语言包 DOM 替换，保留不应翻译的输入和代码内容。
+ */
 export type LocalePreferences = {
   language: 'zh-CN' | 'zh-TW';
   timeZone: string;
@@ -60,6 +63,7 @@ export async function installLanguagePack(root: HTMLElement) {
   ]);
   const dictionary = pack as Record<string, string>;
   const dynamic = fragments as { prefix: [string, string][]; suffix: [string, string][] };
+  // 记录本模块刚写入的译文，MutationObserver 再看到同一值时跳过，避免由翻译自身触发循环。
   const lastText = new WeakMap<Text, string>();
   const lastAttribute = new WeakMap<Element, Map<string, string>>();
   const translate = (source: string) => {

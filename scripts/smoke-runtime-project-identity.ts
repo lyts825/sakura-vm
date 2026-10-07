@@ -1,3 +1,4 @@
+/** 烟雾验收：验证固定源码与已审阅夹具中的运行时项目身份及配置边界。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';

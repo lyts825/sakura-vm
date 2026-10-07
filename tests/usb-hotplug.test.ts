@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - USB rules reapply after a VM restart and manual devices remain temporary
+ * - USB forwarding records a QMP failure without claiming a configured device
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

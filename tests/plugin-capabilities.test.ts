@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - plugin jobs bind owner, revoke queued admission and wait for running cleanup
+ * - plugin storage cancels while queued and binds owner while holding real cleanup
+ * - plugin execution cancels queued admission and captures plugin/VM identity
+ */
 type GatewayFixtureHost = import('../server/features.ts').Features;
 type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
 const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {

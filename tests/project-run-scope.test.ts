@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - domain recovery validates the original full task binding before retrying its owned cleanup closure
+ * - identities and inherited intents survive manager reload without persisting payload bodies
+ * - protocol task own intent callback runs before lower host intent becomes durable
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取宿主卷容量并评估磁盘健康阈值，提供维护前可检查的容量证据。
+ */
 import { access, realpath, statfs } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { z } from 'zod';

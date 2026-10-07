@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供原服务清理能力视图，只允许零参数清理回执调用以防清理权限扩张。
+ */
 import { AppError } from '../shared/errors.ts';
 import { isCleanupReceipt } from './cleanup-receipt.ts';
 import { withPluginCleanup } from './plugin-authority.ts';

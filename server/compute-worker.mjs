@@ -1,3 +1,6 @@
+/**
+ * 模块职责：选择开发或发布环境的计算任务入口；发布运行不依赖 TypeScript 开发加载器。
+ */
 import { existsSync } from 'node:fs';
 
 const source = new URL('./compute-task.ts', import.meta.url);

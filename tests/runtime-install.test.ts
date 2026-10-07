@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - installation and recovery replies require complete matching identities and strict envelopes
+ * - administrator installation requests validate architecture, boot, identifiers and credential-free network
+ * - installer prerequisites supply relocatable shell tools under a fixed environment and directory
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

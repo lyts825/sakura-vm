@@ -1,3 +1,4 @@
+/** 后代启动代理与收养流程：复制精确句柄，核实父子、令牌及 Job 身份，再等待服务持久授权后装载策略与恢复线程。 */
 #pragma once
 #include "descendant.h"
 #include <condition_variable>
@@ -30,6 +31,7 @@ static std::wstring descendantNonce() {
   for(auto& character:result)if(character>=L'A' && character<=L'F')character+=L'a'-L'A';
   return result;
 }
+// 对端 PID 只用于取得句柄；创建时间、会话、父子关系、令牌与精确 Job 成员必须全部吻合。
 static void descendantClient(HANDLE input,std::wstring owner) {
   Handle pipe(input),parent(nullptr),process(nullptr),thread(nullptr),job(nullptr),file(nullptr),reservation(nullptr);
   SakuraDescendantReply reply{SakuraDescendantMagic,SakuraDescendantVersion,ERROR_ACCESS_DENIED,0};
@@ -178,6 +180,7 @@ static void descendantBroker(const std::wstring& owner) {
 static HANDLE descendantDuplicate(HANDLE source,const wchar_t* value) {
   return descendantAcquire(source,number(value));
 }
+// 从已固定代理复制句柄并反复核实代次；旧数字句柄不能跨代理重启复用为新进程授权。
 static void descendantAdopt(const wchar_t* owner,const std::wstring& expected,const std::wstring& digest,const std::wstring& library,
     uint32_t flags,uint32_t maximum,const std::wstring& nonce,DWORD brokerPid,uint64_t brokerCreated,
     const wchar_t* processToken,const wchar_t* threadToken,const wchar_t* jobToken,const wchar_t* fileToken,bool suspended,DWORD parentPid,uint64_t parentCreated) {

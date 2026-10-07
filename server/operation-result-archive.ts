@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验并保留操作结果档案，以原文摘要标识回执，归档失败时保护原证据。
+ */
 import { createHash } from 'node:crypto';
 import { mkdir, lstat, open, opendir } from 'node:fs/promises';
 import { join } from 'node:path';

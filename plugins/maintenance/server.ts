@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“磁盘与诊断”插件服务端入口。激活时装配 Maintenance，并处理声明的服务端操作。
+ */
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
@@ -14,6 +17,7 @@ import { retryTarget } from '../../server/plugins/retry.ts';
 export async function activate(host: PluginContext) {
   const m = host.vm;
   const maintenance = host.provide(maintenanceServices.maintenance, new Maintenance(m, { deferInitialization: true }));
+  // 服务先纳入宿主再初始化维护工作，避免激活中的后台资源失去所属插件。
   maintenance.init();
   host.registerJobs(host.use(maintenanceServices.maintenance).jobs, (job) => {
     const id = retryTarget(job);

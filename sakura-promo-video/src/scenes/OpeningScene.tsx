@@ -1,3 +1,4 @@
+/** 片头品牌定位画面，按帧插值呈现樱花资源、产品名称与终端/代码/文件能力。 */
 import {CanvasImage, Interactive, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {clamp, ease, Icon, Reveal} from '../components';
 import {ScenePaper, useScene} from '../stage';

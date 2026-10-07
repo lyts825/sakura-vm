@@ -1,3 +1,4 @@
+/** 项目身份控制器与 C 启动器的定长二进制 ABI，包含绑定、运行、网络释放守卫及瞬时 stdin 负载帧。 */
 #ifndef SAKURA_PROJECT_IDENTITY_PROTOCOL_H
 #define SAKURA_PROJECT_IDENTITY_PROTOCOL_H
 #include <stdint.h>
@@ -29,6 +30,7 @@
 #define SK_PAYLOAD_ENTRY_LIMIT 8192u
 #define SK_PAYLOAD_TIMEOUT_MS 8000
 
+/* 与 Python struct 格式共享小端定长布局；保留字节必须为零，新增字段需同步版本和尺寸断言。 */
 #pragma pack(push, 1)
 struct sk_binding {
     char magic[8];

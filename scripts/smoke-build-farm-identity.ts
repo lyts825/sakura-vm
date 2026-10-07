@@ -1,3 +1,4 @@
+/** 烟雾验收：验证经单独 farm 授权的既有停机夹具中构建任务的项目身份。 */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';

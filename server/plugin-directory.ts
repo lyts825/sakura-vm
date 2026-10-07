@@ -1,3 +1,6 @@
+/**
+ * 模块职责：维护插件实例与期望状态目录，原实例清理未确认时拒绝覆盖其运行归属。
+ */
 import { AppError } from '../shared/errors.ts';
 import type { PluginSource } from '../shared/contracts/plugin-runtime.ts';
 import { PluginInstance } from './plugin-instance.ts';

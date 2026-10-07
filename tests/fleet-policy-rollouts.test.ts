@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - fleet rollout requires per-peer permission, reviews versions, publishes and survives restart
+ */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import test from 'node:test';
 import assert from 'node:assert/strict';

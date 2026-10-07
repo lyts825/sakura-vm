@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“资源采样”插件的CPU、内存、磁盘和进程资源监控标签，使用宿主传入的实例、项目和请求上下文。
+ */
 import { formatDecimal } from '../../src/localization';
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';

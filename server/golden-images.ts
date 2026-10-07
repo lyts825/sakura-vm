@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理实例黄金模板及索引，拒绝链接和特殊文件进入模板内容。
+ */
 import type { BundlesV1, JobsV1 } from './service-contracts/v1.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readdir, lstat, readFile, rename, rm, rmdir } from 'node:fs/promises';

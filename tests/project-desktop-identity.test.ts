@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - initial endpoint absence retries but permanent authority refusal rolls back immediately
+ * - typed adapter waiting can authorize retry only for an uncommitted probe
+ * - adapter public refusals retain only validated fixed stages and lines, including malformed null replies
+ */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';

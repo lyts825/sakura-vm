@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义项目配置及内容版本，校验目录与私有网络的预览端口约束。
+ */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { guestPath } from '../shared/paths.ts';

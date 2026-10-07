@@ -1,3 +1,4 @@
+/** Shell 子进程夹具，在 DLL、EXE TLS 和入口阶段记录策略状态与常规创建证据。 */
 #include "fixture-shell.h"
 #include <shellapi.h>
 #include "fixture-shell-call.h"

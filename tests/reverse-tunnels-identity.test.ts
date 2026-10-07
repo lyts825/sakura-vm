@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - original named UID, home and complete durable intent precede the first broker frame
+ * - view retains a false readiness result and explicit directory migration never invokes root fallback
+ * - live replacement during the first config read is rejected before any preparation
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';

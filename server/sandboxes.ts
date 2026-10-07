@@ -1,3 +1,6 @@
+/**
+ * 模块职责：创建、执行并控制临时沙箱，协调到期清理和产物收集生命周期。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';

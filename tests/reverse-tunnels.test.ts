@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - temporary TCP entrance forwards bytes and revokes on close, stop and lockdown
+ * - project tunnels keep independent bindings, protect configuration and preserve half-closed binary responses
+ * - shutdown aborts an unfinished tunnel setup and releases the instance lock
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成客户机桌面安装、启动、显示和输入法脚本，项目环境在切换账户后才导出。
+ */
 import {
   defaultDesktopPreferences,
   desktopPreferencesSchema,

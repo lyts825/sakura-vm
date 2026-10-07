@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存磁盘维护策略并执行 TRIM 或离线整理；替换前保留原磁盘恢复硬链接。
+ */
 import { randomUUID } from 'node:crypto';
 import { link, lstat, open, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';

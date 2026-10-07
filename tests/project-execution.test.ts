@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - default execution passes saved active project command and environment to the identity runner and redacts secrets
+ * - abort and service shutdown clean the guest process group and release execution locks
+ * - agent command setup resolves the persisted active project and preserves an explicit default scope
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

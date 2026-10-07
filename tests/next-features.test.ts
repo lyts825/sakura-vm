@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - project catalog keeps a default project and rejects duplicate identities
+ * - pipelines validate bounded steps and artifact paths
+ * - runtime declarations and selected environments are deterministic
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { projectIndexSchema } from '../server/project-catalog.ts';

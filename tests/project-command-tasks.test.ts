@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - saved commands use the captured project, protected payload, declared parameters and exact live instance
+ * - command cancellation holds its preparation lease until cleanup finishes and preserves a 503 failure
+ * - ordinary command failures redact their message without changing the exit classification
+ */
 import { projectMetadataFile } from '../server/project-catalog.ts';
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';

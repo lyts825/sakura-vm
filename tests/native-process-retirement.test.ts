@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - native spawn failure waits for close without inventing a live child tree
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';

@@ -1,3 +1,4 @@
+/** 按全片当前秒数选择 transcript 字幕并绘制字幕条，确保字幕随实际旁白时间显示。 */
 import {interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {captions} from './timeline';
 import {clamp} from './components';

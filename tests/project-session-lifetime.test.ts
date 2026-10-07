@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - VM barriers retire the original plugin session through its receipt after revocation without new execution admission
+ * - plugin exit retains failed session cleanup and quota until the original receipt succeeds
+ * - persistent sessions use independent atomic budgets and retain ordinary domain start/stop access
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

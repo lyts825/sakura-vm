@@ -1,3 +1,6 @@
+/**
+ * 模块职责：主界面使用的系统和项目索引视图类型，集中描述控制面快照。
+ */
 import type { SessionLockView } from '../session-lock.ts';
 
 export type System = {

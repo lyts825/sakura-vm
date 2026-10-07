@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - automation rules preview by default, deduplicate across restart and execute only new matching events
+ * - automation cooldown survives execution history eviction
+ * - automation rules reject stale saves and preserve ambiguous pending actions without replay
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

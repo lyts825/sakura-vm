@@ -1,3 +1,4 @@
+/** 片尾品牌收束画面，按当前帧展示产品口号、能力提示和品牌资源。 */
 import {CanvasImage, Interactive, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {clamp, ease, Reveal} from '../components';
 import {ScenePaper} from '../stage';

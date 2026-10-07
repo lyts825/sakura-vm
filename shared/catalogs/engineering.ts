@@ -1,4 +1,7 @@
 /**
+ * 模块职责：工程扩展功能目录及状态类型，用于能力中心、API 和插件界面的统一描述。
+ */
+/**
  * Catalogue states describe implementation, not persisted configuration.
  * Planned entries never claim to have a working executor.
  */

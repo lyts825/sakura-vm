@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - tryAcquire is atomic, preserves queued fairness and leaves no failed partition allocations
+ * - independent pools share the global cap and an expansion failure reuses live worker capacity
+ * - cancelled startup and failed forks release budget only after owned process closure
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter, once } from 'node:events';

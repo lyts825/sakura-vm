@@ -1,3 +1,6 @@
+/**
+ * 模块职责：暂存并校验有限响应，完成审计前阻止发送字节；文档快照可重复发送已验证内容。
+ */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ServerResponse } from 'node:http';
 import type { HttpResponseContract } from '../shared/contracts/http-response.ts';
@@ -10,7 +13,7 @@ const validated = new WeakMap<ServerResponse, { binding: ResponseBinding; status
 
 type DocumentOperation = 'core.openapi' | 'core.sdk';
 declare const documentSnapshotBrand: unique symbol;
-/** Only this module can associate a document snapshot with validated, immutable wire bytes. */
+/** 只有本模块能把文档快照关联到已验证且不可变的线路字节，调用方不能自行伪造。 */
 export type DocumentJsonSnapshot = { readonly [documentSnapshotBrand]: true };
 type DocumentSnapshotProof = {
   id: DocumentOperation;
@@ -23,7 +26,7 @@ type DocumentSnapshotProof = {
 const documentSnapshots = new WeakMap<DocumentJsonSnapshot, DocumentSnapshotProof>();
 const normalizedMedia = (media: string) => media.split(';')[0].trim().toLowerCase();
 
-/** Mutations publish their finite response only after the audit and durable receipt finish. */
+/** 变更操作先暂存有限响应，待审计及持久回执完成后再由调用方发布。 */
 export function stageOperationResponse(res: ServerResponse) {
   const head = res.writeHead, end = res.end, write = res.write, flush = res.flushHeaders;
   let argumentsHead: unknown[] | undefined, argumentsEnd: unknown[] | undefined;
@@ -44,7 +47,7 @@ export function stageOperationResponse(res: ServerResponse) {
   };
 }
 
-/** The admitted operation owns its response, including asynchronous stream setup. */
+/** 已准入操作持有响应契约上下文，异步建立的流也继续使用同一绑定。 */
 export function withOperationResponse<T>(binding: ResponseBinding, work: () => T): T {
   return response.run(binding, work);
 }
@@ -68,7 +71,7 @@ export function validateResponseHead(status: number, media?: string) {
   }
 }
 
-/** Validate serialized JSON, so optional undefined fields and toJSON match the wire. */
+/** 检查发送方准备的线路 JSON 值，使 undefined 字段及 toJSON 转换按实际发送内容校验。 */
 export function validateResponseJson(value: unknown, status: number, media = 'application/json', res?: ServerResponse) {
   const binding = response.getStore();
   if (!binding?.contract) return;
@@ -80,7 +83,7 @@ export function validateResponseJson(value: unknown, status: number, media = 'ap
     if (contract.kind !== 'json' || !contract.schema) invalid(binding, '未声明 JSON 响应');
     const result = contract.schema.safeParse(value);
     if (!result.success) {
-      // Paths explain contract drift without including credentials or response contents.
+      // 只报告少量字段路径解释契约偏差，不把凭证或响应正文放进错误消息。
       const paths = result.error.issues.slice(0, 5).map(issue => issue.path.join('.') || '<root>');
       invalid(binding, `字段 ${paths.join(', ')}`);
     }
@@ -90,7 +93,7 @@ export function validateResponseJson(value: unknown, status: number, media = 'ap
   }
 }
 
-/** Create a document snapshot once, using the same serialized-JSON validation as sendJson. */
+/** 创建并验证静态文档的序列化快照，复用 sendJson 的同一线路 JSON 契约。 */
 export function createDocumentJsonSnapshot(id: DocumentOperation, data: unknown): DocumentJsonSnapshot {
   const binding = response.getStore();
   if ((id !== 'core.openapi' && id !== 'core.sdk') || !binding?.contract || binding.id !== id)
@@ -109,7 +112,7 @@ export function createDocumentJsonSnapshot(id: DocumentOperation, data: unknown)
   return snapshot;
 }
 
-/** A cache entry becomes unusable if its operation, contract, schema, status or media changed. */
+/** 操作、契约对象、schema、状态或媒体类型任一改变，原缓存快照即失去发送资格。 */
 export function isCurrentDocumentJsonSnapshot(snapshot: DocumentJsonSnapshot): boolean {
   const proof = documentSnapshots.get(snapshot), binding = response.getStore();
   return !!proof && !!binding?.contract && binding.id === proof.id && binding.contract === proof.contract &&
@@ -118,7 +121,7 @@ export function isCurrentDocumentJsonSnapshot(snapshot: DocumentJsonSnapshot): b
     normalizedMedia(binding.contract.media || '') === proof.media;
 }
 
-/** Keep wire bytes private so callers cannot substitute another payload after validation. */
+/** 已验证字节保存在模块私有表内，调用方无法在校验后替换快照正文。 */
 export function sendDocumentJsonSnapshot(res: ServerResponse, snapshot: DocumentJsonSnapshot) {
   const binding = response.getStore();
   if (!isCurrentDocumentJsonSnapshot(snapshot))
@@ -135,7 +138,7 @@ export function sendDocumentJsonSnapshot(res: ServerResponse, snapshot: Document
   return true;
 }
 
-/** A newly added handler cannot bypass a declared JSON contract by writing raw bytes. */
+/** 响应头发布前要求当前 JSON 校验证明，防止新处理器直接写字节绕过契约。 */
 export function guardOperationResponse(res: ServerResponse, binding: ResponseBinding) {
   const original = res.writeHead;
   res.writeHead = function (this: ServerResponse, ...args: [number, unknown?, unknown?]) {

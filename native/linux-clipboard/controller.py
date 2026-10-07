@@ -1,3 +1,4 @@
+# X11 应用的 root 控制面：校验源摘要、桌面来源和项目网络，发布策略并管理本次应用的 cgroup 生命周期。
 """Root controller for explicitly launched X11 apps in the managed desktop.
 
 No ptrace, compositor modification, system-wide preload or clipboard contents.
@@ -680,6 +681,7 @@ def desktop_environment(network, expected, proof):
     except BaseException:
         os.close(checked["directoryFd"]); raise
 
+# 启动仅接受明确选择且核实过的应用/桌面，在自身运行域注入策略，不接管已有连接。
 def launch(base, owner, request):
     library_hash = library_valid()
     application = identify(request["image"])

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证两个独立 Sakura 服务在重启和丢失回复后以原传输继续迁移。 */
 import assert from 'node:assert/strict';
 import { fork, type ChildProcess } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';

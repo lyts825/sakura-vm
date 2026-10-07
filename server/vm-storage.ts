@@ -1,3 +1,6 @@
+/**
+ * 模块职责：写入实例身份文件并验证目录复制，拒绝链接和特殊文件进入存储迁移。
+ */
 import { writeFile, rename, rm, readdir, mkdir, lstat } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { createHash } from 'node:crypto';

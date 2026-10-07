@@ -1,3 +1,4 @@
+/** 自有 Alpine APK 包源夹具，按清单提供受控依赖文件，支持项目出站网络规则的真实安装验证。 */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';

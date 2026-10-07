@@ -1,3 +1,4 @@
+/** 构建 Windows x64/x86 剪贴板控制器与策略 DLL，核对 MinHook/Detours 来源摘要并记录源码和输出身份。 */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
@@ -48,6 +49,7 @@ for (const file of earlyProvenance.files) {
   hash.update(data);
 }
 const build = hash.digest('hex');
+// 构建身份覆盖自有源码与已核实的第三方字节；策略段和控制器必须使用同一摘要。
 await mkdir(target, { recursive: true });
 const bundled32 = resolve('.tools/mingw32-16.2.0/mingw32/bin/g++.exe');
 const compilers = [
@@ -70,6 +72,7 @@ const compilers = [
 ];
 for (const entry of compilers) {
   const { stdout: machine } = await execute(entry.compiler, ['-dumpmachine'], {
+    // 两种架构都先核实编译器目标，再生成任何输出，避免将错误位数的 DLL 装入目标进程。
     windowsHide: true,
     timeout: 10000,
   });

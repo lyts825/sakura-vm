@@ -1,3 +1,4 @@
+/** 网络与服务章节示意，展示端口转发、本机预览以及数据库/API/网页按依赖就绪的过程。 */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Chapter, FlowArrow, ScenePaper, type SceneProps, SoftFocus, Status, Tag, Terminal, Typed, useScene, Window} from '../stage';

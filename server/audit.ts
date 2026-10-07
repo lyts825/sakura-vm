@@ -1,3 +1,6 @@
+/**
+ * 模块职责：记录操作跨度与带校验封印的审计日志；读取时核对完整性，结束记录保留原操作身份。
+ */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHmac, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';

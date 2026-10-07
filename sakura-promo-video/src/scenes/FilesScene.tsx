@@ -1,3 +1,4 @@
+/** 文件与同步章节示意，按场景时间展示文件操作、传输和同步方向。 */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Button, Chapter, FlowArrow, ScenePaper, type SceneProps, StepStrip, Tag, useScene, Window} from '../stage';

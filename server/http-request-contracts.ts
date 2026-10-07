@@ -1,3 +1,6 @@
+/**
+ * 模块职责：从操作声明选择 HTTP 线路请求契约，缺少明确契约的操作拒绝发布。
+ */
 import { z } from 'zod';
 import type { OperationPolicy } from '../shared/contracts/operations.ts';
 import { organizationSchema } from '../shared/contracts/vm.ts';

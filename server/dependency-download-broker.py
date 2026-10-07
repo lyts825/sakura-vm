@@ -1,3 +1,4 @@
+# 模块职责：在受限下载端点内代理认证依赖预取，校验 URL 与重定向范围并限制服务并发。
 """An ephemeral loopback mirror. Upstream authorization never reaches npm/pip.
 
 Only the separately saved endpoint receives authorization; authenticated redirects
@@ -35,12 +36,11 @@ def checked_url(value):
     if parsed.scheme != "https" and not (parsed.scheme == "http" and
                                          parsed.hostname in ("127.0.0.1", "::1", "localhost")):
         raise ValueError("insecure download URL")
-    # Never allow a second decoder to discover a new separator or dot segment.
+    # 禁止二次解码产生新的分隔符或点路径，确保校验方与下载端看到同一范围。
     if re.search(r"%(?:25|5c|00|0a|0d)", parsed.path, re.I):
         raise ValueError("ambiguous download path")
     if re.search(r"%2f", parsed.path, re.I):
-        # npm packuments encode the slash in a final, strictly named @scope/name.
-        # Preserve that wire URL; no prefix or other path segment gets this exception.
+        # npm scoped 包只在末尾 @scope/name 中允许一个编码斜线，其他路径段不享有此例外。
         if len(re.findall(r"%2f", parsed.path, re.I)) != 1 or not re.fullmatch(
                 r".*/@[a-z0-9][a-z0-9._-]*%2f[a-z0-9][a-z0-9._-]*", parsed.path, re.I):
             raise ValueError("ambiguous download path")
@@ -64,6 +64,7 @@ class AuthorizationScope:
         self.path = parsed.path.rstrip("/") + "/"
         self.authorization = authorization
 
+    # 凭证范围同时包含准确 origin 和路径边界，不能以相同主机但不同仓库替代。
     def contains(self, url):
         parsed, origin = checked_url(url)
         return origin == self.origin and (parsed.path == self.path[:-1] or parsed.path.startswith(self.path))
@@ -81,6 +82,7 @@ class ScopedRedirect(urllib.request.HTTPRedirectHandler):
         authenticated = self.scope.contains(request.full_url)
         if authenticated and not self.scope.contains(newurl):
             raise ValueError("authenticated redirect left its approved scope")
+        # 重定向后去掉继承的认证头，再仅为核定范围内的目标重新附加。
         redirected = super().redirect_request(request, response, code, message, headers, newurl)
         if redirected is not None:
             redirected.remove_header("Authorization")

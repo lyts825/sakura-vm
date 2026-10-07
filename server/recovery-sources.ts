@@ -1,3 +1,6 @@
+/**
+ * 模块职责：将插件和宿主资源清理接入恢复目录，重试要求原实例产物及代次仍可核对。
+ */
 import type { RecoverySource } from './recovery-catalog.ts';
 import type { PluginManager } from './plugin-manager.ts';
 import type { HostRuntimeView } from '../shared/contracts/host-runtime.ts';

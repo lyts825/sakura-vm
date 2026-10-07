@@ -1,3 +1,4 @@
+/** 烟雾验收：验证LUKS 转换、快照、扩容、克隆、导出/导入及启动。 */
 import assert from 'node:assert/strict';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';

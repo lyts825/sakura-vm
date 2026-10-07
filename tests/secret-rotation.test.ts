@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - rotation deadlines handle reminder boundaries, disabled policies and unknown timestamps
+ * - only changing the protected value resets secret age; policy and reminder metadata survive restart
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

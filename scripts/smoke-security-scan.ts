@@ -1,3 +1,4 @@
+/** 烟雾验收：验证实际发行版源包清单与 OSV 漏洞扫描结果。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

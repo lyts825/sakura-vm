@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 Debian 私有 DNS 路由、DNSSEC 策略和恢复。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

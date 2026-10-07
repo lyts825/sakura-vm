@@ -1,5 +1,9 @@
+/**
+ * 模块职责：操作执行结果、结果池及归档契约，区分执行结论与 HTTP 请求是否成功。
+ */
 import { z } from 'zod';
 
+// 执行结论、响应校验、审计和投递分别记录；投递失败或未知结果不等同于操作尚未执行。
 export const operationResultSchema = z
   .object({
     correlationId: z.uuid(),
@@ -19,6 +23,7 @@ export type OperationResult = z.infer<typeof operationResultSchema>;
 
 export const operationResultPoolSchema = z.enum(['normal', 'management', 'authentication']);
 export type OperationResultPool = z.infer<typeof operationResultPoolSchema>;
+// 归档要求对当前记录摘要明确确认未知结果，防止把重新变化的记录误当成已核查记录释放容量。
 export const operationResultArchiveRequest = z.object({
   correlationId: z.uuid(),
   digest: z.string().regex(/^[a-f0-9]{64}$/),

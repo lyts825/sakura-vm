@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - npm prefetch reads actual locked registry files and strips executable manifest configuration
+ * - npm prefetch rejects Git, URL, local and workspace dependencies before running npm
+ * - npm prefetch rejects unsafe lock entries, missing integrity and credential-bearing archives
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';

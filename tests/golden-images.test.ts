@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - golden images persist a standalone template and create independent rekeying instances even after source deletion
+ * - golden image hash and incomplete metadata failures never adopt a VM, and incomplete folders can be removed
+ * - golden image operations reject running and sandbox sources, require review, serialize work, and cancel incomplete output
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';

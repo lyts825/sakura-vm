@@ -1,3 +1,6 @@
+/**
+ * 模块职责：组合实例切换、工作区导航、项目命令和文件搜索，提供键盘驱动的命令面板。
+ */
 import { Search, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { PresetRunner } from '../plugins/commands/client';

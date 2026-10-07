@@ -1,4 +1,7 @@
 /**
+ * 模块职责：计算列表的键盘选择索引，为方向键、首尾跳转和循环导航提供一致行为。
+ */
+/**
  * Return the next item in a keyboard-navigated list.
  *
  * Keeping this small bit of state transition outside the React components makes

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：搜索和管理客户机软件包，预览安装/移除变化并查看包任务结果。
+ */
 import { useEffect, useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
 

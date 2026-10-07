@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存桌面启动器与完整项目会话绑定；连接必须匹配已发布的启动器摘要。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { Readable } from 'node:stream';

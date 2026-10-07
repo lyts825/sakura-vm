@@ -1,3 +1,4 @@
+/** 使用独立 VS Code Remote-SSH 用户配置与探针扩展核对项目远端身份，并保存真实客户端证据。 */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';

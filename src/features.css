@@ -1,3 +1,6 @@
+/**
+ * 模块职责：功能面板、状态反馈、日志和管理页面的通用样式，供插件界面复用。
+ */
 .feature-panel {
   display: flex;
   flex-direction: column;

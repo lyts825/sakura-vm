@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - metadata collection omits private fields and alert routes require all labels plus matching identities and types
+ * - actual HTTP receives a verifiable signature and stable id; durable retries deduplicate across restart and hide secrets
+ * - redirects and permanent rejection fail without automatic replay; explicit retries keep the identity and destination checks reject unsafe URLs
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

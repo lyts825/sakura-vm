@@ -1,3 +1,6 @@
+/**
+ * 模块职责：把控制面锁定状态映射为解锁界面、锁定按钮与闲置锁定配置。
+ */
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { LockKeyhole } from 'lucide-react';
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';

@@ -1,3 +1,4 @@
+/** 烟雾验收：验证配对 TLS 在线迁移的 RAM 标记、项目配置、目标就绪和源 fencing。 */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';

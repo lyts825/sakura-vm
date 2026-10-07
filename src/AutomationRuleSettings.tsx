@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑事件自动化规则、筛选条件与动作，并提供执行预览和最近执行记录。
+ */
 import { formatDateTime } from './localization';
 import { useState } from 'react';
 import type { AutomationRule, AutomationView } from '../server/automation-rules';

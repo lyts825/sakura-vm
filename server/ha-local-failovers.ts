@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理本机实例故障接管，执行前重新核对策略及见证撤防结果。
+ */
 import type { HaFailureMonitorV1, HostPeersV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
 import { AppError } from '../shared/errors.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';

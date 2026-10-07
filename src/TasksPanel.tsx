@@ -1,3 +1,6 @@
+/**
+ * 模块职责：展示控制面任务列表、执行详情与日志，提供取消、重试和刷新入口。
+ */
 import { formatDateTime } from './localization';
 import { ClipboardList, Inbox } from 'lucide-react';
 import { useState } from 'react';

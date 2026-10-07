@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“Linux 图形桌面”插件服务端入口。激活时装配 Desktops，并处理声明的服务端操作。
+ */
 import { services as projectsServices } from '../projects/services.ts';
 import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
@@ -30,6 +33,7 @@ export async function activate(host: PluginContext) {
   const m = host.vm;
   const desktops = host.provide(desktopServices.desktops,
     new Desktops(m, host.use(projectsServices.workspaces), { deferInitialization: true }));
+  // 先把桌面服务登记给宿主，再启动其初始化，确保生命周期管理已经拥有该服务。
   desktops.init();
   host.provide(desktopServices.jobs, host.capabilities.jobs.create('input-method', { historyName: 'input-method' }));
   host.registerJobs(host.use(desktopServices.jobs), (job) => retryInProject(host, job, async () => installIme.call(host, retryTarget(job))));

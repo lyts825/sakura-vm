@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按 operation ID 构造有类型的 API 客户端，统一路径参数、查询、请求体和响应模式，响应读取与解码由传入的 transport 执行。
+ */
 import { apiPath } from './api-document.ts';
 import {
   operationRoutes,

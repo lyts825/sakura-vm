@@ -1,3 +1,4 @@
+/** 宣传视频 CLI 渲染配置，固定 H.264、yuv420p、BT.709 和质量参数；Node API 调用需显式传入相同选项。 */
 /**
  * Note: When using the Node.JS APIs, the config file
  * doesn't apply. Instead, pass options directly to the APIs.

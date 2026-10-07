@@ -1,3 +1,6 @@
+/**
+ * 模块职责：累积实例可用性区间并生成报告；拒绝重叠区间，避免重复计算可用时间。
+ */
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：封装系统程序、注册表和原生启动，注册值已被其他程序修改时拒绝覆盖。
+ */
 import { join } from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { hostProcess } from './host-process.ts';

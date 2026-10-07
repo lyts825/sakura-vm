@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - released service signatures reject parameter narrowing, required inputs and deleted optional DTO fields
+ * - released service gate follows shared DTOs and enforces callback variance
+ * - every released baseline protects fields introduced after 2.1 and rejects missing or corrupt metadata
+ */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

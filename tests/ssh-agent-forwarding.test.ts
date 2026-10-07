@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - forwarding captures the target before host probing and sends code/env only to the UID task runner
+ * - forwarded cancellation holds the task lease until cleanup finishes and shared close waits for it
+ * - a resolver-time instance replacement is passed to admission rather than followed
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

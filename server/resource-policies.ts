@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存宿主资源预留策略，在实例启动和扩容前检查可用内存及准入条件。
+ */
 import { cpus, totalmem, freemem } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';

@@ -1,3 +1,4 @@
+/** 汇总功能实现与验收状态，生成未完成功能清单文档；目录读取与报告生成本身不代表功能测试通过。 */
 import { readFile, writeFile } from 'node:fs/promises';
 import { featureCatalogView } from '../server/feature-suite.ts';
 import { extendedFeatureCatalog } from '../server/extended-features.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“网络管理”插件清单：端口转发、代理、软件源与网络诊断。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http, operation } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

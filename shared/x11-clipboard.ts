@@ -1,3 +1,6 @@
+/**
+ * 模块职责：X11/Wayland 剪贴板应用与会话状态的公共视图，描述桥接安装、连接和应用策略。
+ */
 import type { ClipboardRule } from './clipboard-policy.ts';
 import type { JobView } from './contracts/jobs.ts';
 

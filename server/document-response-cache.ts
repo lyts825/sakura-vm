@@ -1,3 +1,6 @@
+/**
+ * 模块职责：缓存已验证的 JSON 文档响应快照，复用时核对快照是否仍为当前内容。
+ */
 import {
   createDocumentJsonSnapshot,
   isCurrentDocumentJsonSnapshot,

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - assistant redaction covers complete and partial keys, credentials, headers, URL credentials and known tokens
+ * - actual HTTP model discovery, preflight and generation send only reviewed text; context and answers never persist
+ * - expired previews, unsupported URLs, disabled integration and cloud aliases are rejected before sending context
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

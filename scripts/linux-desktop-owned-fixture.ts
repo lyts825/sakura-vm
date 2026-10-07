@@ -1,3 +1,4 @@
+/** 建立可核实的 Linux 桌面写时复制夹具，固定原始源证据、QEMU 参数和 SSH 生命周期并保存本轮归属记录。 */
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';

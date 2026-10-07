@@ -1,3 +1,4 @@
+/** 开发章节的编辑、Git 差异、运行与调试示意，按旁白 cue 逐步呈现工作流程。 */
 import {Interactive} from 'remotion';
 import {Icon} from '../components';
 import {Badge, Chapter, ScenePaper, type SceneProps, SoftFocus, Terminal, Typed, useScene, Window} from '../stage';

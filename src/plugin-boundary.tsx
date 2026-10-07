@@ -1,3 +1,6 @@
+/**
+ * 模块职责：隔离插件界面的渲染错误、重试和请求权限生命周期，仅重挂载所属插件的界面。
+ */
 import { Component, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { Request } from './feature-shared';
 import { pluginGeneration } from './plugin-generation';
@@ -25,6 +28,7 @@ function PluginMount({ identity, request, children }: { identity: string; reques
     return () => lifetime.current.abort(new Error('插件界面已关闭'));
   }, []);
   const scopedRequest = useMemo(() => {
+    // 组合安装身份代次、界面挂载寿命和调用者信号；返回之后再检查一次，阻止撤权后的结果进入组件。
     const generationSignal = pluginGeneration.captureIdentity(identity);
     const scoped: Request = async <T = unknown,>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal) => {
       const combined = AbortSignal.any([generationSignal, lifetime.current.signal, ...(signal ? [signal] : [])]);
@@ -46,6 +50,7 @@ export function PluginBoundary({ identity, request, label = '插件界面', chil
   const revision = useSyncExternalStore(pluginGeneration.subscribe,
     () => pluginGeneration.snapshot(identity), () => '');
   const [attempt, retry] = useState(0);
+  // 重试次数也进入 React key 和懒加载寿命，确保被缓存的加载失败能够通过新的组件实例重试。
   const lifetime = `${identity}:${revision}:${attempt}`;
   if (!pluginGeneration.available(identity)) return <p role="status">{label}当前不可用，请等待插件恢复。</p>;
   return <PluginErrorBoundary key={lifetime} label={label} retry={() => retry(value => value + 1)}>

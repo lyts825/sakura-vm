@@ -1,3 +1,6 @@
+/**
+ * 模块职责：接入本机模型服务并生成可预览命令计划，校验服务地址、配置与输出结构。
+ */
 import { networkFor } from './network/index.ts';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';

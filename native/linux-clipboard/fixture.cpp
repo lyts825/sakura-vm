@@ -1,3 +1,4 @@
+/** Xlib/XCB 真实选择所有者和读取器夹具，用不同目标格式及传输方式驱动剪贴板策略验证。 */
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib-xcb.h>

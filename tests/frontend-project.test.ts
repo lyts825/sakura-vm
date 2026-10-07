@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - workspace-scoped requests carry the selected development project
+ * - an active project action waits for boot and installation before saving and starting
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { VMView } from '../server/model.ts';

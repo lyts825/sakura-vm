@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - witness persists fencing before target activation and denies a returning source
+ * - uncertain power state never starts the target and survives process restart
+ * - stale replica is disarmed; promotion waits for application health and verified traffic
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

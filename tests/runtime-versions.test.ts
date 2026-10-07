@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - GET is host-only before and after thousands of polls; stale samples never launch a task
+ * - sample cache is bounded, separates scopes, and a new module does not reuse a previous ticket
+ * - selected pins require a read-only ready receipt before the project task and compare exact versions
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

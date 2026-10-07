@@ -1,3 +1,6 @@
+/**
+ * 模块职责：登记虚拟机访问器并生成受控运行视图，隔离内部运行对象与外部资源身份。
+ */
 import type { Live } from './vm-state.ts';
 
 export type VmLive = Readonly<Pick<Live, 'status' | 'incoming' | 'accelerator' | 'startedAt' |

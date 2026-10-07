@@ -1,3 +1,6 @@
+/**
+ * 模块职责：规划并应用快照文件合并，校验目标父目录和文件类型以保护现有目录结构。
+ */
 import type { BundlesV1 } from './service-contracts/v1.ts';
 import { copyFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';

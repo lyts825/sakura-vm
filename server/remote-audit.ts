@@ -1,3 +1,6 @@
+/**
+ * 模块职责：同步并验证远端审计对象，显式读取凭证并管理对象完整性与远端锁状态。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';

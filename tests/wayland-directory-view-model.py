@@ -1,3 +1,7 @@
+# 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
+# 覆盖：test_mapping_direction_preserves_disk_project_owner
+# 覆盖：test_overlap_and_wrong_ranges_never_create_a_namespace
+# 覆盖：test_receipt_rejects_unknown_fields_uid_run_and_source_changes
 """Execute production directory-view guards against explicit kernel/FD models.
 
 These portable models supplement, and do not replace, the actual Linux helper

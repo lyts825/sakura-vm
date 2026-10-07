@@ -1,3 +1,4 @@
+# 可移植边界模型：通过受控适配器验证生产流程；真实系统权限与进程隔离需另行运行 Linux 验证。
 """Portable SSH authority/transport checks against production definitions.
 
 Linux process, account, filesystem and descriptor authority is simulated here;

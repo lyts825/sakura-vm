@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存变更请求、审批决定与应用状态；应用前复核当前账户的审批权限。
+ */
 import type { ProjectPermissionsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';

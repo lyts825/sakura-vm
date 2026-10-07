@@ -1,3 +1,6 @@
+/**
+ * 模块职责：注册并封存 HTTP 操作处理器，统一执行输入验证、预检、授权和业务分派。
+ */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AppError } from '../shared/errors.ts';
@@ -14,7 +17,7 @@ import { resolveOperationBody } from '../shared/http-transport.ts';
 import { requestHasBody, requestMediaType } from './http.ts';
 
 export type OperationBinding = {
-  /** Captures credentials and target identity once; reads live authority on every invocation. */
+  /** 凭证和目标身份在绑定时捕获；每次调用都重新读取当前授权，不能沿用过期许可。 */
   check(): Promise<OperationRole | undefined>;
   input?(input: unknown): Promise<void>;
   identity?: Partial<ResourceIdentity>;
@@ -29,14 +32,14 @@ type GatewayOptions = {
 };
 const current = new AsyncLocalStorage<{ entry: OperationEntry; binding: OperationBinding }>();
 const preflightFailures = new WeakMap<object, string>();
-/** A resolved operation rejected before its registered HTTP handler was invoked. */
+/** 标记已解析但尚未进入登记处理器就被拒绝的操作，供审计区分预检与业务失败。 */
 export const operationPreflightFailure = (error: unknown) => error !== null && typeof error === 'object'
   ? preflightFailures.get(error) : undefined;
 export const currentOperation = () => current.getStore()?.entry.declaration;
 export type HttpOperationHandler = (req: IncomingMessage, res: ServerResponse, url: URL,
   entry: OperationEntry) => unknown | Promise<unknown>;
 
-/** Validate the already bounded JSON read without consuming streams or binary bodies twice. */
+/** 验证已按字节限制读入的 JSON；流和二进制正文不会因此被重复消费。 */
 export async function validateOperationInput(input: any) {
   const context = current.getStore();
   context?.entry.requestSchema?.parse(input);
@@ -45,14 +48,14 @@ export async function validateOperationInput(input: any) {
   return input;
 }
 
-/** Shared, deny-by-default dispatch and execution authority for HTTP and WebSocket entry points. */
+/** HTTP 与 WebSocket 共用的操作准入边界，缺少声明、处理器或授权时拒绝执行。 */
 export class OperationGateway {
   private handlers = new Map<string, HttpOperationHandler>();
   private sealed = false;
   constructor(private options: GatewayOptions, private entries = operationEntries) {
     validateOperationEntries(entries);
   }
-  /** Registration binds this exact declaration and handler before publication. */
+  /** 发布前把确切的操作声明与处理器绑定，目录封存后禁止增加或替换处理器。 */
   register(entry: OperationEntry, handler: HttpOperationHandler) {
     if (this.sealed) throw new Error('操作处理器目录已经发布');
     if (!this.entries.includes(entry) || entry.declaration.method === 'UPGRADE')
@@ -60,6 +63,7 @@ export class OperationGateway {
     if (this.handlers.has(entry.declaration.id)) throw new Error('重复操作处理器：' + entry.declaration.id);
     this.handlers.set(entry.declaration.id, handler);
   }
+  /** 检查每个 HTTP 操作都已有处理器，再开放分派，避免部分装配状态接受请求。 */
   seal() {
     const missing = this.entries.filter(entry => entry.declaration.method !== 'UPGRADE' &&
       !this.handlers.has(entry.declaration.id));
@@ -97,7 +101,7 @@ export class OperationGateway {
   directory() { return operationDirectory(this.options.enabled()); }
   get version() { return this.options.catalogVersion?.() || 0; }
   resolve(method: string, path: string) {
-    // A literal endpoint takes precedence over a variable endpoint, including when its method fails.
+    // 固定路径优先于变量路径；固定路径的方法不匹配时也不能退回更宽泛的变量接口。
     const matches = this.entries.flatMap(entry => {
       const parameters = matchOperationPath(entry.declaration.path, path);
       return parameters ? [{ entry, parameters }] : [];
@@ -123,7 +127,7 @@ export class OperationGateway {
           throw new AppError('操作所属插件代次已变化', 403, 'PLUGIN_REVOKED');
       }
     };
-    // The authority checks availability after credentials, before reading target metadata.
+    // 先核对凭证和可用性，再读取目标元数据，避免未授权请求探测领域状态。
     const binding = await this.options.bind(req, url, entry, Object.freeze(parameters), enabled);
     const check = async () => {
       const role = await binding.check();

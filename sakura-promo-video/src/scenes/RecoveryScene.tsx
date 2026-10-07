@@ -1,3 +1,4 @@
+/** 恢复章节示意，对齐快照、克隆、备份说明与 Manim 流程，并保留停机前提。 */
 import {Interactive} from 'remotion';
 import {Icon} from '../components';
 import {Chapter, ScenePaper, type SceneProps, SoftFocus, Tag, useScene} from '../stage';

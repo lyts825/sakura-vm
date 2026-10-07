@@ -1,3 +1,4 @@
+/** 创建前的命名 Job 预留表，绑定父 PID、创建时间和构建摘要，保护子进程出现到服务接管之间的窗口。 */
 #pragma once
 #include "protocol.h"
 #include <sddl.h>
@@ -54,6 +55,7 @@ inline bool descendantCreationValid(const SakuraCreationRegistry& value,DWORD pi
   return value.magic==SakuraCreationMagic && value.version==SakuraCreationVersion && !value.reserved &&
     value.parentPid==pid && value.parentCreated==created && std::memcmp(value.build,SAKURA_CLIPBOARD_BUILD,65)==0;
 }
+// 预留存在于真实创建之前；关闭 Job 的兜底语义只在服务成功接管后解除。
 class DescendantReservation {
   CreationHandle section,writer,job;
   CreationView view;

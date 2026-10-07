@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目目录物理重叠与文件系统别名的迁移拒绝边界。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';

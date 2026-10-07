@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - matrix reports actual QEMU devices and distinguishes WHPX startup verification from binary support
+ * - matrix identifies missing selected devices, incompatible accelerators and invalid NUMA without claiming guest support
+ * - failed QEMU probes are visible and prevent a successful report; cancellation is propagated
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSchema } from '../server/model.ts';

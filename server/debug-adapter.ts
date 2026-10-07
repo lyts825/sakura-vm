@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理项目 Python 调试适配器及断点、检查请求；停止依赖原协议运行票据。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { posix } from 'node:path';
 import type { VmAccess as Machines } from './vm-access.ts';

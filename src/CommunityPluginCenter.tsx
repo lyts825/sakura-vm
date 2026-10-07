@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理社区插件安装、授权与运行状态，并在插件边界内加载其扩展面板。
+ */
 import { useCallback, useEffect, useState } from 'react';
 import { useAction, type Request } from './feature-shared';
 import { PluginBoundary } from './plugin-boundary';

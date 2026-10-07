@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - language service installation provisions Python for Pyright diagnostics
+ * - private project language server supplies project code and environment only through SESSION2 frame
+ * - LSP successful protocol response cannot hide full-domain cleanup failure
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Duplex, PassThrough } from 'node:stream';

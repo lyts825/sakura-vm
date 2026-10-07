@@ -1,3 +1,6 @@
+/**
+ * 模块职责：展示插件/插件包依赖、启用选择、生命周期和恢复入口，提交用户的插件配置。
+ */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownRight,

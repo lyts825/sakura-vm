@@ -1,3 +1,6 @@
+/**
+ * 模块职责：配置 virtio-fs 共享目录，展示可用性、挂载状态和操作反馈。
+ */
 import { useEffect, useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from '../../src/feature-shared';
 

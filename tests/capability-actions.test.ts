@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - large structured job results survive log truncation, restart and detect tampering
+ * - PAC rules match exact domain boundaries and reject invalid proxy ports
+ * - dependency startup validates cycles and waits in topological order
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';

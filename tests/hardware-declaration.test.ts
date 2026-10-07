@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - compute check needs a real driver query and guest device nodes
+ * - PCI and USB declaration previews never mutate host or VM devices
+ * - vTPM enrollment persists public fingerprints and computes rotation reminders
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';

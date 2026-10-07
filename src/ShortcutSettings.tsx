@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑和校验工作区快捷键，展示冲突并保存用户偏好。
+ */
 import { useLayoutEffect, useState } from 'react';
 import {
   effectiveShortcuts,

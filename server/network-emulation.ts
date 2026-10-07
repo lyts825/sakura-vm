@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验并应用客户机延迟、抖动和丢包策略，拒绝相互矛盾或没有效果的输入。
+ */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - public service descriptors deny implementation fields and consumer lifecycle while unregister receipts survive revocation
+ * - queued metadata rechecks the originating generation before editing or publishing
+ * - the UI consumes only contributions published for a running generation
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

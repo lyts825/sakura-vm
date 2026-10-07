@@ -1,3 +1,4 @@
+/** 烟雾验收：验证恢复工具中的真实来宾救援和磁盘恢复操作。 */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

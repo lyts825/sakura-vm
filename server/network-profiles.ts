@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存网络档案并预览、应用或恢复镜像、代理和转发设置，拒绝重复端口及 URL 凭据。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { join, posix } from 'node:path';

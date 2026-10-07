@@ -1,3 +1,4 @@
+/** 项目作用域身份夹具；对受控传输中的启动正文与票据归属作断言，供主进程和服务用例复用。 */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mock } from 'node:test';

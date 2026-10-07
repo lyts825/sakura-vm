@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理黄金镜像库，执行构建、导入、检查和实例创建并呈现任务结果。
+ */
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';

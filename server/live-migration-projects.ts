@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取在线迁移所需项目配置，限制配置大小并验证其与项目目录的关系。
+ */
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按实例/项目隔离终端持久化状态，向多个界面订阅者提供一致快照。
+ */
 import { restoreTerminals, terminalReducer, type TerminalAction, type TerminalState } from './terminal-state';
 import { applyTerminalLayout, type TerminalLayout } from './terminal-layouts';
 

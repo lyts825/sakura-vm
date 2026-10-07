@@ -1,3 +1,6 @@
+/**
+ * 模块职责：规划并清理日志保留内容，策略读取失败时停用自动清理以保护原日志。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';

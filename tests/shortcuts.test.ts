@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - shortcut normalization protects standard operations and accepts platform-neutral modifier aliases
+ * - project bindings inherit live global changes, can disable individual actions, and reject conflicts in every scope
+ * - keyboard events ignore repeats, IME, prevented events, AltGr and ambiguous modifier combinations
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {

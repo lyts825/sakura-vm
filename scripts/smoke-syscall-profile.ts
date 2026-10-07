@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 seccomp 策略下项目 UID、任务作用域、继承策略和字面参数。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

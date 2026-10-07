@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存操作执行与响应阶段的持久回执，区分业务开始、结果验证和审计失败。
+ */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdir, opendir, open, lstat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -126,8 +129,7 @@ export class OperationResults {
     // long serial-I/O admission delay. Keep at most 32 file handles in flight.
     for (let offset = 0; offset < ids.length; offset += 32)
       await Promise.all(ids.slice(offset, offset + 32).map(readEntry));
-    // Invalid records reserve capacity and remain untouched; healthy operations
-    // continue without trusting or deleting an unconfirmed outcome.
+    // 无效记录仍占用容量并保留原文；正常操作继续执行，但不信任或删除未确认结果。
     const loaded = { records: inventory, blocked, truncated, evidence };
     this.inventories.set(pool, loaded);
     return loaded;
@@ -211,7 +213,7 @@ export class OperationResults {
   run<T>(receipt: Receipt, work: () => T) {
     return withAuditFailureObserver(() => failedAudit.add(receipt), () => context.run(receipt, work));
   }
-  /** Commit execution admission before invoking any business code. */
+  /** 业务执行前先持久化开始标志；进程中断后以 unknown 保留可能已产生效果的证据。 */
   async begin(receipt: Receipt) {
     receipt.outcome = 'unknown';
     receipt.executed = true;
@@ -227,7 +229,7 @@ export class OperationResults {
     return !!receipt.actorId || receipt.sessionKey === 'local-owner';
   }
   auditFailed(receipt: Receipt) { return failedAudit.has(receipt); }
-  /** Catch paths pass failed explicitly because JavaScript can throw undefined. */
+  /** 捕获路径显式传入 failed，因为 JavaScript 也能 throw undefined，不能仅凭错误值判断失败。 */
   async finish(receipt: Receipt, error?: unknown, sent?: boolean, retainActive = false, failed = error !== undefined) {
     receipt.finishedAt = new Date().toISOString();
     if (failed && receipt.outcome !== 'succeeded' && operationRefusedBeforeEffect(error, receipt.operationId)) {

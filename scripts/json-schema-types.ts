@@ -1,3 +1,4 @@
+/** 将可支持的 JSON Schema wire 形状转成去重 TypeScript 类型，明确拒绝无法表达的契约以避免退化成 unknown。 */
 /** Conservative JSON Schema conversion: an unsupported or absent shape stays unknown. */
 type Schema = Record<string, any> | boolean;
 type ReferenceResolver = (reference: string) => string | undefined;

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - failed initialization cleans partial resources in dependency order and continues after failure
+ * - transferring runtime ownership avoids double disposal, equal-priority resources close in reverse order
+ * - operation accounting survives failure, nested work and repeated release
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';

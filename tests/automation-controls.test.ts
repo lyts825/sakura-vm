@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - weekly windows handle overnight day boundaries, timezones and repeated DST hours
+ * - byte budgets constrain real stream throughput and cancel waiting transfers promptly
+ * - backup retention survives policy changes and restart, protects pruning, and expires
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“容器工作台”插件的Docker/Compose/Dev Container 管理与模板工作台，使用宿主传入的实例、项目和请求上下文。
+ */
 import { Download, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';

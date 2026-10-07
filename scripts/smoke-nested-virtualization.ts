@@ -1,3 +1,4 @@
+/** 烟雾验收：验证来宾嵌套虚拟化能力检查及实际工具执行结果。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

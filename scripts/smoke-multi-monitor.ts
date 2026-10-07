@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 Alpine Xvnc 通过生产配置发布一或两块 RandR 显示器。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

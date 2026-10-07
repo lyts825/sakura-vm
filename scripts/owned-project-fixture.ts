@@ -1,3 +1,4 @@
+/** 核对明确拥有的项目夹具并授权其迁移/执行作用域，防止烟雾脚本误用既有实例数据。 */
 import assert from 'node:assert/strict';
 import type { VmAccess } from '../server/vm-access.ts';
 import type { Workspaces } from '../server/workspaces.ts';

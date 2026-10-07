@@ -1,3 +1,4 @@
+/** 沙箱 CLI 子命令，将配置、生命周期、执行及产物下载请求转为服务 API 调用。 */
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 

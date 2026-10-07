@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - short-code pairing pins TLS, persists a peer, polls live resources and revokes access
+ */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import test from 'node:test';
 import assert from 'node:assert/strict';

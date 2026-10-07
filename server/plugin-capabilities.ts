@@ -1,3 +1,6 @@
+/**
+ * 模块职责：向插件暴露受管任务与存储能力，限制租约数量并保留待恢复的任务资源。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';

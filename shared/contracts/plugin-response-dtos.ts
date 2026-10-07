@@ -1,3 +1,6 @@
+/**
+ * 模块职责：文件、语言服务、容器和剪贴板等插件响应的共用 DTO Schema，减少跨路由结构漂移。
+ */
 import { z } from 'zod';
 import { jsonValueSchema } from './json-values.ts';
 import { jobViewSchema } from './core-dtos.ts';

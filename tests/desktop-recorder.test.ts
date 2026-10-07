@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - desktop recorder excludes pauses, retains the final encoder chunk and releases capture resources once
+ * - desktop recorder enforces elapsed and byte limits and fails visibly on oversized delayed chunks
+ * - disposing an unfinished recording discards all data and encoder failure cannot publish a partial result
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DesktopRecorder, type RecordingResult, type RecordingProgress } from '../src/desktop-recorder.ts';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理客户机任务控制目录、进程归属和取消清理，按原任务票据核验资源退出。
+ */
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { VmAccess as Machines } from './vm-access.ts';

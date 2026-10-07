@@ -1,3 +1,6 @@
+/**
+ * 模块职责：将内部错误转换为稳定的公开 API 错误分类，避免暴露内部异常细节。
+ */
 import { ZodError } from 'zod';
 import { AppError, type ApiErrorDto } from '../shared/errors.ts';
 import { auditFailure } from './audit.ts';

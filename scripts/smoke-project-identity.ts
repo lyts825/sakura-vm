@@ -1,3 +1,4 @@
+/** 烟雾验收：验证持久项目账户、原生运行票据、目录/网络身份及关闭证据。 */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';

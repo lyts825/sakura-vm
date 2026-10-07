@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - editor profiles honor saved private siblings and unreadable settings without the IDE plugin
+ * - all editor exports share the checked project endpoint and refuse a missing one
+ * - a host-network project exports its own SSH service even without private siblings
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';

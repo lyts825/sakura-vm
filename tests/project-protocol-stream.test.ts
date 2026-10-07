@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - owned SESSION2 admission persists own intent before lower intent and sends exact frame without protocol EOF
+ * - detached child prevents native closure and retains original ticket plus leases until explicit retry
+ * - native cleanup failure preserves full original scope receipt and status code
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';

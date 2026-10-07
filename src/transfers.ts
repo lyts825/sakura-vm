@@ -1,3 +1,6 @@
+/**
+ * 模块职责：上传浏览器文件列表并反馈总进度，按文件大小选择普通流式或可续传分块路径。
+ */
 import { resumableUpload } from './resumable-upload';
 export type UploadProgress = {
   name: string;

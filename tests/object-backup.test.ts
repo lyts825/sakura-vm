@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - S3 target checks, multipart upload, integrity, restore and deletion
+ */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFile, mkdir, mkdtemp, rm, readFile } from 'node:fs/promises';

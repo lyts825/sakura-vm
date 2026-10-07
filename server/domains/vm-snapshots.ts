@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理磁盘快照及对应身份记录，恢复和编辑前校验快照归属与数量限制。
+ */
 import { randomUUID } from 'node:crypto';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

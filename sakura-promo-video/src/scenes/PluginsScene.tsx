@@ -1,3 +1,4 @@
+/** 插件中心章节示意，按旁白 cue 展示选择、保存及重启后生效的顺序。 */
 import {Interactive, interpolate} from 'remotion';
 import {clamp, Icon} from '../components';
 import {Button, Chapter, ScenePaper, type SceneProps, StepStrip, Tag, useScene, Window} from '../stage';

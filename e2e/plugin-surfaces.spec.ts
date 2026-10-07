@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile
+ * - read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile
+ * - snapshot comparison selects historical and current states, shows file changes and downloads the report
+ */
 import { expect, test, type Page } from '@playwright/test';
 import { readFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

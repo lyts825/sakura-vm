@@ -1,3 +1,6 @@
+/**
+ * 模块职责：汇集存储诊断、磁盘整理及扩容维护，返回脱敏报告并协调客户机维护动作。
+ */
 import { networkFor } from './network/index.ts';
 import { stat, statfs, readdir } from 'node:fs/promises';
 import { join } from 'node:path';

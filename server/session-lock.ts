@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理会话锁配置、活动期限与解锁，锁定代次变化使原授权操作失效。
+ */
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';

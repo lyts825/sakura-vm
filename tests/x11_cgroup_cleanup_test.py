@@ -1,3 +1,7 @@
+# Python 回归入口：校验辅助进程的协议、输入和失败路径；平台要求以各用例中的条件检查为准。
+# 覆盖：test_retries_busy_and_not_empty_after_kernel_domain_is_empty
+# 覆盖：test_descendants_keep_the_domain_until_kernel_reports_empty
+# 覆盖：test_busy_cleanup_has_bounded_timeout
 import errno
 import importlib.util
 import os

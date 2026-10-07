@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - container jobs keep the requested project when the active project changes
+ * - saved Docker bindings prevent changes after the container plugin closes and while containers are stopped
+ * - an existing VM operation prevents container execution before any guest mutation
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

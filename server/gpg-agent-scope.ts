@@ -1,3 +1,6 @@
+/**
+ * 模块职责：部署固定 GPG 代理并维护任务资源票据，准备与清理核对宿主及客户机运行身份。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - binary artifacts survive VM destruction, verify checksums and expire with their execution record
+ * - artifact capture rejects symlink escapes and oversize files before reading or publishing
+ */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：统一按请求查询解析请求体模式，并把 JSON、原始数据或表单请求体编码到线上格式。
+ */
 /** Query-dependent body modes are shared by admission and both generated clients. */
 export function resolveOperationBody(
   contract: { kind: 'none' | 'json' | 'form' | 'binary'; required: boolean; bodylessQuery?: string },

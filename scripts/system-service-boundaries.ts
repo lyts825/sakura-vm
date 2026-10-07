@@ -1,3 +1,4 @@
+/** 使用 TypeScript 类型检查器核对系统服务工厂与独立服务契约，约束返回类型和能力暴露。 */
 import ts from 'typescript';
 import { resolve } from 'node:path';
 import { strictMethods } from './service-compatibility.ts';

@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# 烟雾验收：验证Linux 原生项目负载的描述符封闭、降权与 stdin/session 通道。
 """Production descriptor/drop/payload checks on a caller-owned Linux fixture.
 
 The caller owns the guest or PID/mount/network namespace. This script compiles

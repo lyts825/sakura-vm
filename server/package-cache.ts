@@ -1,3 +1,6 @@
+/**
+ * 模块职责：生成客户机离线软件包缓存脚本，限制包名输入并按发行版选择缓存操作。
+ */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';

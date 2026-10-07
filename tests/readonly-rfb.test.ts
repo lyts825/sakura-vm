@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - read-only RFB passes fragmented setup and framebuffer requests unchanged
+ * - read-only RFB removes the clipboard pseudo-encoding before it reaches the guest
+ * - read-only RFB rejects security negotiation and oversized encoding requests
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';

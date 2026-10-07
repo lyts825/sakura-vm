@@ -1,3 +1,4 @@
+/** 烟雾验收：验证项目 UID 配额的超限写入拒绝、重启、清除和卷移除。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

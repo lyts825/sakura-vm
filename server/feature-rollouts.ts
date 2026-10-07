@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存插件灰度策略并计算启用决策，校验插件存在性及持久记录唯一性。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：渲染欢迎界面的装饰性花瓣与光点，保持装饰元素不参与辅助技术阅读。
+ */
 import { memo, useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { Pause, Play, Wind } from 'lucide-react';
 import paintedBough from './assets/sakura-bough-painted.webp';

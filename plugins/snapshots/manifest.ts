@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“磁盘快照”插件清单：快照、恢复、差异比较、分支合并、克隆、只读救援、黄金镜像库以及独立磁盘包导入导出。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http, operation } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

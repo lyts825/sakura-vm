@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实项目 SSH agent 转发、保留 socket、秘密脱敏、路由拒绝与取消。 */
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“发行版镜像”插件的Linux 镜像目录、外部磁盘导入及黄金镜像/签名包入口，使用宿主传入的实例、项目和请求上下文。
+ */
 import { Download, Layers, Plus, Upload } from 'lucide-react';
 import { Suspense, useRef, useState } from 'react';
 import type { OperationResponse } from '../../shared/contracts/api-client.generated';

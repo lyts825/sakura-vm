@@ -1,3 +1,4 @@
+/** Qt 原生 Wayland 剪贴板夹具，覆盖 CLIPBOARD、PRIMARY 及不同内容格式的实际数据传输。 */
 #include <QGuiApplication>
 #include <QClipboard>
 #include <QMimeData>

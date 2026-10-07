@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实拒绝端口、非法 TLS、超时终止和本机网络路由。 */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

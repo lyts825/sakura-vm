@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - boot reply cannot admit a replaced live instance even when its boot UUID is unchanged
+ * - administrator system dependency body executes with only the fixed root environment
+ * - venv and strict offline wheel install execute only within captured UID task, with an original protected wheel lease
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';

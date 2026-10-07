@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供受限 GraphQL 查询入口，限制查询深度及展开数量并读取服务状态快照。
+ */
 import type { JobsV1 } from './service-contracts/v1.ts';
 import { arch, cpus, freemem, hostname, platform, totalmem } from 'node:os';
 import {

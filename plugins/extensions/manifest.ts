@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“工程扩展适配器”插件清单：工程操作与能力检查；只依赖项目，不启动自动化调度。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

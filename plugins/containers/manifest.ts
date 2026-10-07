@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“容器工作台”插件清单：Docker、Compose、Dev Container 与官方模板。 声明依赖、服务和界面/路由贡献，供插件解析与准入发布使用。
+ */
 import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({

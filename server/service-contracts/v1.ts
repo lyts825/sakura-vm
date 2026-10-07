@@ -1,3 +1,6 @@
+/**
+ * 模块职责：维护独立于实现的 V1 公共服务接口；成员变化属于显式契约修订，初始化仍由提供者负责。
+ */
 import type WebSocket from 'ws';
 import type { DomainRecoveryTicket } from '../../shared/contracts/domain-recovery.ts';
 import type { RecoveryView, RecoveryDiagnostics, RecoveryCatalogView } from '../../shared/contracts/recovery.ts';

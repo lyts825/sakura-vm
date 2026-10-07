@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供在线迁移完成证明端口；来源进程退出无法确认时继续保留来源栅栏。
+ */
 import { createHash } from 'node:crypto';
 import type { LiveMigrationFence } from '../shared/contracts/vm.ts';
 import type { LiveMigrationTargetStatus } from '../shared/contracts/live-migration.ts';

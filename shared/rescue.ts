@@ -1,3 +1,6 @@
+/**
+ * 模块职责：快照救援任务、默认只读检查命令和输出制品的公共契约。
+ */
 import { z } from 'zod';
 import { sandboxArtifactSchema, sandboxExecutionSchema } from './sandbox.ts';
 

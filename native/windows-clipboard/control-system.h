@@ -1,3 +1,4 @@
+/** 核对可信 Windows 系统模块路径，供原生控制器和策略库判断系统组件来源。 */
 #pragma once
 #include <windows.h>
 #include <string>

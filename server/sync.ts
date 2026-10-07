@@ -1,3 +1,6 @@
+/**
+ * 模块职责：协调宿主与客户机双向同步、冲突和回滚，基于原文件版本与检查点验证变更。
+ */
 import type { ProjectCatalogV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
 import { createReadStream, createWriteStream } from 'node:fs';

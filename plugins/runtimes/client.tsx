@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“运行时版本”插件的项目语言运行时选择、安装与状态分区，使用宿主传入的实例、项目和请求上下文。
+ */
 import { useState } from 'react';
 import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import '../../src/development.css';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“实例整理”插件的实例分组、标签、收藏和批量操作页面，使用宿主传入的实例、项目和请求上下文。
+ */
 import { embeddedPluginComponent } from '../../src/plugin-client';
 import { Boxes, Inbox, Play, Save, Square, Star } from 'lucide-react';
 import { Suspense, useState } from 'react';

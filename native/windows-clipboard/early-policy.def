@@ -1,3 +1,4 @@
+; 固定早期策略 DLL 的 ordinal 1 和公开配置导出，供受控启动的导入表与注入调用共同使用。
 EXPORTS
   SakuraClipboardEarlyOrdinal @1
   SakuraConfigureClipboard

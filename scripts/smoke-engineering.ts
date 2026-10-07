@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 QMP 热插拔及工程工具在独立 VM 中的集成。 */
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

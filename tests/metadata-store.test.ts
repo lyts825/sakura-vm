@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - damaged recovery index starts read-only and explicit rebuild preserves original bytes and domain authority
+ * - recovery read and write byte limits agree; capacity never replaces the last readable index
+ * - recovery prunes only completed history, refuses incomplete discovery, and retains an unwritable path
+ */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：HTTP 入口、健康检查与客户端认证契约，校验域名、路径和路由动作。
+ */
 import { z } from 'zod';
 
 const pathSchema = z

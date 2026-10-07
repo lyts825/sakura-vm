@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - private loopback bridge carries binary streams, validates each namespace connection and revokes on lifecycle changes
+ * - bridge failures release the requested host port, and shutdown cancels a pending namespace probe
+ * - a late SSH connection is destroyed when its local bridge has already been revoked
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';

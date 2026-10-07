@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - independent HTTPS witness powers off source before promoting a paired target
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';

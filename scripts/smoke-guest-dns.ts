@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实来宾 resolver 配置及 DNSSEC 工具诊断。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

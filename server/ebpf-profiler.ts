@@ -1,3 +1,6 @@
+/**
+ * 模块职责：检查客户机 eBPF 工具并解析内核调用栈采样，缺少有效采样时拒绝伪造结果。
+ */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';

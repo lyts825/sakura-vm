@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/** Sakura 本机管理 CLI：解析实例与工作区命令，取得认证并调用服务 API，路由开发和沙箱子命令。 */
 import { networkFor } from './network-client.mjs';
 const { fetch, webSocket } = networkFor('tool:cli');
 import { WebSocket } from 'ws';

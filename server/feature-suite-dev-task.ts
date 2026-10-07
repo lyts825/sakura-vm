@@ -1,3 +1,6 @@
+/**
+ * 模块职责：组织开发任务命令与输入，执行前核对捕获的项目配置和客户机运行身份。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

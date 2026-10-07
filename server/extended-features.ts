@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理工程扩展功能配置及动作，区分可持久策略与一次性命令输入。
+ */
 import { jsonValueSchema } from '../shared/contracts/json-values.ts';
 import type { IdeV1, TrustedBootServiceV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { EngineeringDomainServices } from './engineering-domain-services.ts';

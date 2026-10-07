@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - signed marketplace installs, runs, rejects tampering and unloads an isolated plugin
+ * - isolated plugin validation requires bounded memory and no host imports
+ * - event subscriptions trigger signed WASM once for new metadata-only events
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';

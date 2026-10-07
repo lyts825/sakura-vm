@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - stopped snapshots keep TPM and NVRAM with their disk and reject damaged or legacy state
+ * - online disk snapshots reject active TPM state before freezing the guest
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

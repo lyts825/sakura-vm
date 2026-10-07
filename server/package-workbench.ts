@@ -1,3 +1,6 @@
+/**
+ * 模块职责：查询和操作客户机软件包，校验包名并解析不同包管理器的列表结果。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';

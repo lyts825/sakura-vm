@@ -1,3 +1,4 @@
+/** 烟雾验收：验证账户模式 HTTP、WebSocket、浏览器访问、凭据撤销和重启后的授权状态。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { generateKeyPairSync, sign } from 'node:crypto';

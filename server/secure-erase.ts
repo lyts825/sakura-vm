@@ -1,3 +1,6 @@
+/**
+ * 模块职责：检查并执行客户机文件安全擦除，限制输入为项目内普通文件的相对路径。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { readFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';

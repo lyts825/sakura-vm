@@ -1,3 +1,4 @@
+/** 烟雾验收：验证明确停机的自有 Wayland 夹具中 compositor、代理和真实剪贴板策略。 */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';

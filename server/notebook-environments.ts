@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理绑定项目账户的 Notebook 会话，连接和停止需核对原启动及完整运行域。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
 import { createHash, randomBytes } from 'node:crypto';

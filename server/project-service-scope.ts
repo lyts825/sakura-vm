@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义项目常驻服务票据和控制器；启动意图先持久化，停止核对原完整运行域。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { lstat, writeFile } from 'node:fs/promises';
@@ -723,8 +726,7 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
     this.assertLive();
     const metadata = { version: 1, record, sha256: payload.sha256, bytes: payload.input.length,
       commandSha256: createHash('sha256').update(payload.command).digest('hex') };
-    // Immutable per-run metadata is persisted before transporting any body.
-    // An acknowledgement lost for this run must never overwrite its old frame.
+    // 每次运行的不可变运输元数据先落盘再传正文，丢失回执后的重试不能覆盖原帧。
     await writeFile(this.transportFile(record), JSON.stringify(metadata, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     this.assertLive();
   }
@@ -785,8 +787,7 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
       binding, phase: 'intent', sessionId: null, paneId: null, panePid: null, paneStartTicks: null });
   }
   async start(record: Record, payload: ProjectScopeInput, signal: AbortSignal) {
-    // Validate and copy the caller's bytes before the first await. No root
-    // command contains the body; it is delivered only to execInput's stdin.
+    // 首次 await 前校验并复制正文；root 命令只含固定控制逻辑，项目正文经 execInput 的 stdin 交付。
     projectScopeCommand(this.project, this.target, 'start', record, payload);
     payload = { ...payload, input: Buffer.from(payload.input) };
     await this.persistIntent(record);
@@ -994,8 +995,7 @@ export class ProjectReverseTunnelScope extends ProjectProcessScope<ProjectRevers
   constructor(machines: Machines, id: string, project: Project, durationSeconds?: number) {
     if (durationSeconds !== undefined) z.number().int().min(10).max(600).parse(durationSeconds);
     let deadline: number | undefined;
-    // Start the lifetime at commit, after potentially slow prepare/pane setup.
-    // The first commit read fixes one deadline for all nested watchdog JSON.
+    // 慢速准备及 pane 创建结束后才从 commit 开始计时；首次读取固定所有 watchdog 共用的截止时间。
     const target: ScopeTarget = { kind: 'service', name: 'reverse-tunnel', namespace: 'reverse-tunnel',
       get deadline() { return durationSeconds === undefined ? undefined : deadline ??= Math.floor(Date.now() / 1000) + durationSeconds; } };
     super(machines, id, project, target, projectReverseTunnelRecordSchema, machines.live.get(id));

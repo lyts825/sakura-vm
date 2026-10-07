@@ -1,3 +1,6 @@
+/**
+ * 模块职责：记录单个插件实例的权限及受管贡献，撤销后拒绝继续使用原能力。
+ */
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
 import type {

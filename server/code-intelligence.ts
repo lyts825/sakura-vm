@@ -1,3 +1,6 @@
+/**
+ * 模块职责：在捕获的项目配置与客户机身份下运行代码诊断，拒绝将结果用于已变化的项目。
+ */
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { posix } from 'node:path';
 import type { VmAccess as Machines } from './vm-access.ts';

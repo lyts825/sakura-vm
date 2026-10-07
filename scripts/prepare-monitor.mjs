@@ -1,3 +1,4 @@
+/** 打包只读监控 PWA，计算静态壳版本并替换 service worker 的缓存修订占位符。 */
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

@@ -1,3 +1,4 @@
+/** 单应用窗口的共享夹具；构造受控传输、来源摘要和关闭回执，供隔离与剪贴板回归使用。 */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';

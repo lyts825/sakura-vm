@@ -1,3 +1,6 @@
+/**
+ * 模块职责：统一管理宿主资源预算、等待队列与租约；未确认清理的资源继续占用额度。
+ */
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../../shared/errors.ts';
 import type {

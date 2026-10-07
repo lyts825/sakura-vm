@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - team templates preview and copy safe project and resource settings
+ * - team template mutation rejects stale source, failed target setup cleans the new instance, and corrupt state fails closed
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

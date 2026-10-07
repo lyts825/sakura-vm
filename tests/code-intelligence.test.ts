@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - editor and CLI paths execute the same finite UID check and reject paths outside the original project
+ * - all existing checker commands, including the TypeScript fallback, stay inside the UID body
+ * - unsupported extensions and canceled requests never prepare a task or select a root fallback
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';

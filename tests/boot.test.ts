@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - SSH authentication alone cannot mark an unprovisioned guest ready
+ * - stopping during a readiness probe cancels it and cannot revive the guest
+ * - a fragmented kernel panic fails immediately even if SSH later responds
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';

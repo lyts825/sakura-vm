@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - CLI preserves Git paths and command parameters as structured data
+ * - CLI applies the reviewed network and migration tokens without silently replanning
+ * - CLI secrets require the dedicated environment variable and never accept a positional value
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';

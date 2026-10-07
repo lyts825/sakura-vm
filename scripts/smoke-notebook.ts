@@ -1,3 +1,4 @@
+/** 烟雾验收：验证真实 Notebook 进程的项目 UID、作用域、会话和清理。 */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';

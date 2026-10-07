@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理项目主命令会话与日志；旧 tmux 会话缺少可验证归属时保留记录等待人工核查。
+ */
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';

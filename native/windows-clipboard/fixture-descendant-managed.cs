@@ -1,3 +1,4 @@
+/** 离线 CLR 后代夹具：类型初始化器通过普通 System.Diagnostics 路径创建另一 EXE，验证 Main 前的受控创建。 */
 // Owned CLR ancestor: its type initializer creates a different EXE through the
 // ordinary System.Diagnostics CreateProcess path, before Main begins.
 using System;

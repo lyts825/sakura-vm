@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - GPU profiles preview a real hardware change and preserve applied provenance
+ * - GPU preview rejects an unavailable 3D backend and insufficient instance memory
+ */
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';

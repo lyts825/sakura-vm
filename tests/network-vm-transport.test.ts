@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - VM transport retries a dropped SSH greeting but never replays an admitted command
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Socket } from 'node:net';

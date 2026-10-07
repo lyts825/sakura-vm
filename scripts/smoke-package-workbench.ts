@@ -1,3 +1,4 @@
+/** 烟雾验收：验证来宾包的已安装/搜索/更新列表解析以及审阅后的安装和移除。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：提供 HA 与在线迁移栅栏恢复来源；完成证明不足时保留原栅栏等待核验。
+ */
 import { createHash } from 'node:crypto';
 import { liveMigrationFenceSchema, type HaPromotion, type LiveMigrationFence, type VMRecord } from '../shared/contracts/vm.ts';
 import type { RecoverySource } from './recovery-catalog.ts';

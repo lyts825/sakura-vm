@@ -1,3 +1,4 @@
+/** Windows 剪贴板控制器：核实精确进程与文件身份，装载策略并按 prepared、attached、committed 握手控制挂起启动。 */
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0a00
 #endif
@@ -660,6 +661,7 @@ static void initializeLoader(HANDLE process,DWORD pid) {
 static void printIdentity(DWORD pid,uint64_t created,const std::wstring& expected,unsigned architecture) {
   std::cout<<"{\"pid\":"<<pid<<",\"created\":\""<<created<<"\",\"image\":"<<json(expected)<<",\"bits\":"<<architecture<<'}';
 }
+// 服务先持久登记精确子进程，再给出对应阶段与 nonce；EOF 或错阶段直接拒绝继续。
 static void permission(const std::wstring& nonce,const char* phase) {
   std::string line;
   if (!std::getline(std::cin,line) || line!=std::string(phase)+" "+utf8(nonce))
@@ -669,6 +671,7 @@ static void published() {
   std::cout.flush();
   if(!std::cout.good())throw std::runtime_error("controlled launch response unavailable");
 }
+// Job 在 CreateProcess 前设置关闭即终止，覆盖子进程出现到持久授权之间的失败窗口。
 static void launch(const wchar_t* owner,const std::wstring& expected,const std::wstring& digest,
     const std::wstring& library,uint32_t flags,uint32_t maximum,const std::wstring& nonce,
     int count,wchar_t** arguments) {

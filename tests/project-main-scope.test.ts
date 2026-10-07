@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - protected main command and secret bytes never enter root controller or tmux argv
+ * - old main v2 receipt is stoppable but cannot silently run a root command again
+ * - identity close failure keeps the stopped scope and journal recoverable until a later stop
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

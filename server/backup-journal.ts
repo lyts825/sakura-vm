@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义备份发布日志与文件身份约束，为中断后的发布恢复保留可验证票据。
+ */
 import { z } from 'zod';
 import { isAbsolute } from 'node:path';
 import { metadataFile } from './metadata-store.ts';

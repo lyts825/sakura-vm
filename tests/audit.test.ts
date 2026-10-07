@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - rejected mutations record paired safe audit events while ordinary reads need no audit
+ * - a failed rejection audit never replaces the primary rejection, including primitive throws
+ * - falsy failures have a stable receipt code and never imply a failed execution after admission
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir, readdir } from 'node:fs/promises';

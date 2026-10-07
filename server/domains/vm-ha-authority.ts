@@ -1,3 +1,6 @@
+/**
+ * 模块职责：维护实例 HA 见证、栅栏和接管归属；更改必须匹配原登记身份。
+ */
 import { z } from 'zod';
 import { haPromotionSchema, haRetirementSchema, haWitnessEnrollmentSchema, type HaPromotion, type VMRecord } from '../../shared/contracts/vm.ts';
 import { AppError } from '../../shared/errors.ts';

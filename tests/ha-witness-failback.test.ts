@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - failback releases only a retired target, persists exact identity and waits for source health
+ * - a restored route with a lost response resumes after restart without a second restore write
+ * - automatic failback cannot overwrite traffic redirected to an unknown third VM
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';

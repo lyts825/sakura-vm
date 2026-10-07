@@ -1,3 +1,4 @@
+/** 烟雾验收：验证PosixLoom/QEMU 真实实例启动、来宾命令与生命周期。 */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';

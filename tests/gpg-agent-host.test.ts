@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - snapshot digest binds complete source pins and construction has no process effects
+ * - unsupported host formats refuse before any helper starts
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';

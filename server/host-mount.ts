@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理宿主目录共享配置与客户机挂载状态，关闭时收回对应共享资源。
+ */
 import { join } from 'node:path';
 import { lstat } from 'node:fs/promises';
 import { z } from 'zod';

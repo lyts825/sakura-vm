@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/** WSL 运行入口，检查宿主环境和所需运行时，再按参数启动服务或输出预检结果。 */
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

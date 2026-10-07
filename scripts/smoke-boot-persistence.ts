@@ -1,3 +1,4 @@
+/** 烟雾验收：验证新建单 VM 的启动持久性、源文件身份与最终 QEMU 关闭证据。 */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';

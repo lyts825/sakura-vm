@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理任务执行、日志、结果和取消，检测任务等待循环并保留待恢复资源。
+ */
 import { createHash, randomUUID } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFileSync } from 'node:fs';

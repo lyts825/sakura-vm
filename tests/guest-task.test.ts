@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - binary task input stays outside argv and survives the background launcher stdin redirection
+ * - oversized task input is refused before allocating or cleaning any task receipt
+ * - only an exact minted Agent task preserves the authenticated channel socket; every cleanup stays env-i
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { guestTask, guestTaskControlPaths, guestTaskControlRoot } from '../server/guest-task.ts';

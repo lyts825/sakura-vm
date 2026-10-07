@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - service scope persists after readiness and repeated stop is idempotent
+ * - legacy service v1 may stop but cannot reuse a root execution entry
+ * - service ready uses protected task input and identity closure retries before scope retirement
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

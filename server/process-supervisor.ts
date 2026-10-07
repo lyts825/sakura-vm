@@ -1,3 +1,6 @@
+/**
+ * 模块职责：观察并管理宿主子进程及辅助程序，实际退出未确认时保留原进程资源额度。
+ */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { hostRuntime, resourceContext, type ResourceLease } from './host-runtime/index.ts';
@@ -99,7 +102,7 @@ export class ProcessSupervisor {
     });
   }
 
-  /** A protocol adapter retains its own handshake; this observes only the actual host child. */
+  /** 协议握手仍由适配器负责；此层观察实际创建的宿主子进程及其物理关闭。 */
   async observe(
     adapter: HostProcessAdapter,
     create: () => ChildProcess,
@@ -118,8 +121,7 @@ export class ProcessSupervisor {
       mode: 'direct' as const,
     };
     if (request.kind === 'helper' && request.lane !== 'control') await captureOperationCheck()();
-    // A protocol guard can already own a helper when it admits a relay. Queueing another
-    // helper would deadlock at capacity; fail atomically so its domain can reject/clean up.
+    // 协议保护器可能已持有一个辅助进程；再排队申请会在额度耗尽时互等，所以即时准入或失败。
     const lease =
       request.kind === 'helper'
         ? this.governor.tryAcquire({
@@ -151,8 +153,7 @@ export class ProcessSupervisor {
       }
     } catch (error) {
       if (admission.created) {
-        // A protocol constructor can throw after spawning. Retain admission until
-        // the exact child has physically closed, even though construction failed.
+        // 适配器可能创建子进程后才抛错；构造失败也必须保留额度直到确切子进程物理关闭。
         admission.created.child.kill('SIGKILL');
         await admission.created.waitForClose();
       } else lease.release();
@@ -168,7 +169,7 @@ export class ProcessSupervisor {
     let unresolved = false;
     try {
       options.signal?.throwIfAborted();
-      // Never race the operation against abort. Its adapter must acknowledge exit.
+      // 取消只通知适配器；不以 Promise 竞速提前交还额度，必须收到实际退出/清理确认。
       return await operation({
         cleanupPending(error) {
           unresolved = true;
@@ -196,7 +197,7 @@ export class ProcessSupervisor {
   }
 }
 
-/** EOF/abort/exit are not physical closure. A late close can retire a previously pending slot. */
+/** EOF、取消或 exit 都不等于物理关闭；迟到的 close 仍能核销原先待清理的额度。 */
 export class ObservedHostProcess {
   readonly closed: Promise<HelperExit>;
   private actual?: HelperExit;
@@ -284,7 +285,7 @@ export class ManagedHelper {
         this.ended = true;
         this.actual = { code, signal, failure: this.failure };
         options.signal?.removeEventListener('abort', this.abort);
-        // A kill request and even an exit event are not physical stdio closure.
+        // kill 请求及 exit 事件仍不证明 stdio 已关闭；此 close 回调才释放进程额度。
         lease.release();
         resolve(this.actual);
         notify(this.actual);

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：呈现当前实例的项目导航，协调项目切换、创建与列表刷新。
+ */
 import { FileText, Folder, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { ProjectFile, SearchMatch } from '../server/project-files';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：准备并执行项目命令，将输入、日志脱敏及取消绑定到捕获的项目运行身份。
+ */
 import type { ProjectPreparationV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';

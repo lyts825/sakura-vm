@@ -1,3 +1,4 @@
+# 单窗口应用控制器：固定 root 引导核实项目运行域、目录视图及网络，再以永久独立 UID 监督 VNC、窗口管理器和应用。
 """Fixed Root preparation and permanent UID launcher for a single GUI window.
 
 Application arguments and environment are JSON data, never Root shell text.
@@ -271,6 +272,7 @@ def validate_environment(environment):
             and len(json.dumps(environment).encode()) <= 32768, 'SINGLE_APP_ENVIRONMENT_INVALID')
 
 
+# 应用参数和环境只作为有界 JSON 数据校验；固定 root 引导不执行用户提供的 shell 文本。
 def prepare(request):
     origin = request['origin']
     validate_origin(origin, request['id'])
@@ -768,6 +770,7 @@ def seal_descriptors(descriptors):
         os.set_inheritable(descriptor, False)
 
 
+# root 阶段只建立并核实运行域，进入目录视图后永久降到应用账户，随后才应用项目环境。
 def supervise(identifier, descriptors, view_module):
     # No project environment is applied while this fixed process is Root.
     seal_descriptors(descriptors)
@@ -925,6 +928,7 @@ def runtime_remove(value):
         os.close(parent)
 
 
+# 清理重新核对运行域及目录视图证据，不能仅按 receipt 名称结束替代进程或删除替代路径。
 def stop(value, view_module):
     view_receipt(value, view_module)
     value['state'] = 'stopping'

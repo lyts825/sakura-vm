@@ -1,3 +1,6 @@
+/**
+ * 模块职责：展示控制面事件与通知，提供事件详情和用户可操作的反馈。
+ */
 import { formatDateTime } from './localization';
 import { useEffect, useRef, useState } from 'react';
 import type { AlertEvent } from '../server/feature-suite';

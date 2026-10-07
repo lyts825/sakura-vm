@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“项目工作区”插件的项目切换、配置、运行状态与目录迁移工作台，使用宿主传入的实例、项目和请求上下文。
+ */
 import { embeddedPluginComponent } from '../../src/plugin-client';
 import { ExternalLink, Play, Save, Square } from 'lucide-react';
 import { Suspense, useEffect, useMemo, useState } from 'react';
@@ -192,6 +195,7 @@ export function ProjectPanel(props: FeatureProps) {
     if (!remote.data) return;
     const nextId = remote.data.projectId || 'default';
     onProjectChange?.(nextId);
+    // 同一项目的后台轮询只更新远端视图；本地配置表单仅在首次加载或项目身份变化时初始化。
     if (!project || loadedProjectId !== nextId) {
       setProject(remote.data.project);
       setLoadedProjectId(nextId);

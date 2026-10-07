@@ -1,3 +1,8 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - JIT approval is scoped, durable, expiring, revocable and consumed before execution
+ * - JIT denial, revocation, expiry and failed execution cannot be replayed
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：管理虚拟机目录、运行生命周期与领域端口，协调启动、停止、快照、迁移和资源清理。
+ */
 import { VmDiskEncryption } from './domains/vm-disk-encryption.ts';
 import { VmSnapshots } from './domains/vm-snapshots.ts';
 import { VmStoragePlacement } from './domains/vm-storage-placement.ts';

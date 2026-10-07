@@ -1,3 +1,6 @@
+/**
+ * 模块职责：按行计算三方文本差异和冲突片段，将用户的冲突选择还原为合并文本。
+ */
 export type MergePart =
   | { kind: 'text'; text: string }
   | {
@@ -21,6 +24,7 @@ function edits(base: string[], changed: string[], side: Edit['side']): Edit[] {
     suffix++;
   const a = base.slice(prefix, base.length - suffix),
     b = changed.slice(prefix, changed.length - suffix);
+  // 去掉共同首尾后仍以 LCS 表计算差异；矩阵上限限制最坏情况下的内存与计算量。
   if ((a.length + 1) * (b.length + 1) > 4_000_000) throw new Error('差异过大，请分段手动合并');
   const width = b.length + 1,
     table = new Uint32Array((a.length + 1) * width);

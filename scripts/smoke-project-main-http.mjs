@@ -1,3 +1,4 @@
+/** 烟雾验收：验证编译 HTTP/SDK 主进程的命名空间、后代、幂等和失败清理重试。 */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile, realpath, writeFile, rm } from 'node:fs/promises';

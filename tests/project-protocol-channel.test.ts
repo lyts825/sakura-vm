@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - SSH exec setup retains cancellation after connect readiness and destroys a late channel
+ * - SSH connection closure before exec acknowledgment rejects and never adopts a late channel
+ * - SSH exec setup deadline cancels a stalled durable launch callback without issuing a command
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

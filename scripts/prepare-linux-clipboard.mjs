@@ -1,3 +1,4 @@
+/** 打包 X11 控制器、策略与协议源码，并记录逐文件摘要用于来宾执行前验证。 */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

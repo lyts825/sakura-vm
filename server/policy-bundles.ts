@@ -1,3 +1,6 @@
+/**
+ * 模块职责：导出、验证并应用签名项目策略包，管理受信任 Ed25519 公钥和目标预览。
+ */
 import type { ProjectPermissionsV1 } from './service-contracts/v1.ts';
 import {
   createHash,

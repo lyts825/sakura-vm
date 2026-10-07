@@ -1,3 +1,6 @@
+/**
+ * 模块职责：依据操作目录生成客户端 SDK，保留请求体要求及公开错误关联信息。
+ */
 import type { ApiDocument } from '../shared/api-document.ts';
 import { encodeOperationBody, resolveOperationBody } from '../shared/http-transport.ts';
 

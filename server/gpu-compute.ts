@@ -1,3 +1,6 @@
+/**
+ * 模块职责：读取 CUDA 与 ROCm 设备状态，报告实际工具输出与不可用原因。
+ */
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 

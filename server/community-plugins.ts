@@ -1,3 +1,6 @@
+/**
+ * 模块职责：校验、安装并执行社区 WASM 扩展，管理签名、路由及可恢复的原资源清理。
+ */
 import { networkFor } from './network/index.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { createHash, createPublicKey, randomUUID, verify, type KeyObject } from 'node:crypto';

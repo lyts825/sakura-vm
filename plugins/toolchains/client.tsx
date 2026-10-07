@@ -1,3 +1,6 @@
+/**
+ * 模块职责：“工具安装”插件的客户机开发工具检查与安装分区，使用宿主传入的实例、项目和请求上下文。
+ */
 import type { OperationResponse } from '../../shared/contracts/api-client.generated.ts';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';

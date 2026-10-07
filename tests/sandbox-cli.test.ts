@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - sandbox CLI keeps shell syntax inside quoted guest arguments
+ * - sandbox CLI retrieves execution history after the VM has been destroyed
+ * - sandbox CLI exports verified binary artifacts without overwriting an existing file
+ */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

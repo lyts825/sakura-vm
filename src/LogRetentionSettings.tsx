@@ -1,3 +1,6 @@
+/**
+ * 模块职责：编辑日志保留策略，预览清理范围并展示存储占用与实际清理结果。
+ */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
 import { useEffect, useState } from 'react';

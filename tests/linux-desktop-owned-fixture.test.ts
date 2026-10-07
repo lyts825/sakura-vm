@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - ordinary service admission restarts only loaded real fragments and skips only explicit not-found
+ * - post-restart admission bounds only waiting for the original typed refusal and preserves public call timeouts
+ * - fixed native observer selects only current Root install ensure inspect and excludes environments and other builds
+ */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createCipheriv, randomUUID } from 'node:crypto';

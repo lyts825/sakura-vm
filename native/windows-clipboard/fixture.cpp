@@ -1,3 +1,4 @@
+/** 私有 window station 上的真实 Win32/OLE 读写夹具，以命令通道驱动策略验证并隔离用户交互桌面。 */
 // Actual Win32/OLE test processes share a private window station. They never
 // open or overwrite the user's interactive desktop clipboard.
 #include "protocol.h"

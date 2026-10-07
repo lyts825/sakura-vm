@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - power policy fails closed for starts with stale or unknown samples, and never stops without a known low battery
+ * - scheduler uses persisted power policy to defer starts and stop at low battery while honoring maintenance
+ * - host power reads the real Windows source without changing its power plan
+ */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';

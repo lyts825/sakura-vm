@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存并检查 vTPM 登记状态，校验持久记录类型及指纹唯一性。
+ */
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';

@@ -1,3 +1,9 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - GraphQL executes aliases, variables, named operations, fragments and full inventory pagination with one snapshot
+ * - normal introspection works without reading host data and does not reveal private contracts
+ * - validation, cycles, cost, nesting, token and body bounds reject queries before resolving host data
+ */
 import type { JobsV1 } from '../server/service-contracts/v1.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';

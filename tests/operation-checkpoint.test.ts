@@ -1,3 +1,7 @@
+/**
+ * 回归范围（完整情景见下方用例与断言）：
+ * - full committed permission checkpoints never reacquire a held metadata writer
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';

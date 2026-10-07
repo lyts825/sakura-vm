@@ -1,3 +1,4 @@
+/** 监控 PWA 的版本化静态壳缓存；仅缓存明确列出的同源无查询 GET 资源，监控 API 和控制台请求始终直连。 */
 const cacheName = 'sakura-monitor-shell-__MONITOR_REVISION__';
 const base = new URL('./', self.location.href);
 const shell = [

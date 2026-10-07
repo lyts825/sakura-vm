@@ -1,3 +1,6 @@
+/**
+ * 模块职责：连接虚拟机网络后端并分配端口，将客户机网络资源纳入统一租约关闭流程。
+ */
 import { createServer } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';

@@ -1,3 +1,6 @@
+/**
+ * 模块职责：处理插件启停、配置与清理重试请求，核对请求路径与声明操作一致性。
+ */
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { sendJson as send } from './http-response.ts';

@@ -1,3 +1,4 @@
+/** Detours 早期导入载荷 ABI，绑定策略段、进程创建时间和构建摘要，用于原应用初始化代码运行前配置策略。 */
 #pragma once
 #include "protocol.h"
 #include "vendor/detours/src/detours.h"

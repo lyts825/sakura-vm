@@ -1,3 +1,6 @@
+/**
+ * 模块职责：定义终端标签与分屏状态，通过 reducer 维护选择、移动、拆分和恢复行为。
+ */
 export type TerminalTab = { id: string; name: string };
 export type TerminalState = { tabs: TerminalTab[]; active: string };
 export type TerminalAction =

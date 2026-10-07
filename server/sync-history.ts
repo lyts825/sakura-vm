@@ -1,3 +1,6 @@
+/**
+ * 模块职责：保存双端同步检查点及回滚版本，限定恢复内容数量和大小以保护历史完整性。
+ */
 import { createReadStream, createWriteStream } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, relative, isAbsolute, sep, resolve } from 'node:path';

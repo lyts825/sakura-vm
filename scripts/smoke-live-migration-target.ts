@@ -1,3 +1,4 @@
+/** 烟雾验收：验证生产接收器创建真实暂停目标、限制 QMP 并安全中止移除。 */
 const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

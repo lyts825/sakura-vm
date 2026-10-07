@@ -1,3 +1,4 @@
+/** 烟雾验收：验证私有 window station 上 Windows 原生剪贴板方向、内容和格式策略。 */
 import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
