@@ -1,6 +1,6 @@
 # 源码阅读与维护指南
 
-核对日期：2026-10-07；应用与内置包版本：2.3.7；宿主插件 API：5；公共服务契约：V1。全部主题文档见 [文档索引](README.md)，当前交付状态见 [项目状态](../PROJECT_STATUS.md)。
+核对日期：2026-10-23；应用与内置包版本：2.3.7；宿主插件 API：5；公共服务契约：V1。全部主题文档见 [文档索引](README.md)，当前交付状态见 [项目状态](../PROJECT_STATUS.md)。
 
 ## 从哪里开始读
 
@@ -55,6 +55,26 @@ npm run dev
 
 宣传视频是独立子项目，保持自身版本和依赖，入口及渲染步骤见 [视频说明](../sakura-promo-video/README.md)；主应用的版本迭代不自动提升视频版本。
 
+## 仓库目录与本地材料
+
+正式源码、配置、文档、资源和版本记录由 Git 管理。主题说明集中在 `docs/`，根目录保留项目入口、配置与 `PROJECT_STATUS.md`。
+
+| 目录 | 用途与维护边界 |
+| --- | --- |
+| `src/`、`server/`、`shared/`、`plugins/` | 应用源码、共享契约与插件 |
+| `native/`、`browser-extension/`、`public/`、`scripts/` | 原生组件、扩展、静态资源与开发运行入口 |
+| `docs/`、`server/service-contracts/releases/` | 主题文档与已提交的服务契约基线 |
+| `sakura-promo-video/` | 独立视频源码、资源与正式成片；本地缓存按子项目规则忽略 |
+| `tests/`、`e2e/`、`integration/` | 现有 CI 验证入口；新增本地材料放入 `artifacts/` 或命名为 `tests/*.local.*` |
+| `.data/`、`.sakura-update/`、`versions/` | 本地实例、更新与运行版本状态；即使被忽略，也应保留，清理前核对运行及恢复用途 |
+| `node_modules/`、`.tools/`、`.vendor/` | 本机依赖与运行工具；普通仓库整理保留 |
+| `dist/`、`.sakura-server/`、`.sakura-witness/`、`release/` | 构建与打包产物；清理前核对启动、交付及回退引用 |
+| `artifacts/`、`test-results/` | 本地复现脚本、报告、日志与测试产物；有用证据保留，确认失用后才删除具体路径 |
+
+`.gitignore` 只决定 Git 是否收录文件，不作为删除依据。删除或移动目录前，核对绝对路径位于工作区内、没有链接跳转，并确认文件来源及引用。避免使用 `git clean -fdx` 清空本地数据、依赖或交付物。
+
+取消跟踪已有测试前，检查 `package.json`、TypeScript 配置与 CI 的引用。当前自动验证直接依赖这些入口，批量取消跟踪会破坏新检出环境；因此保留已有入口，新增本地测试材料继续忽略。
+
 ## 生成文件与权威来源
 
 | 文件或目录 | 权威来源与同步命令 |
@@ -90,6 +110,8 @@ npm run dev
 ## 版本与交付
 
 采用 `MAJOR.MINOR.PATCH`：不兼容变更提升主版本，兼容新功能提升次版本，兼容修复或维护提升补丁版本。应用版本同步根 `package.json`、`package-lock.json`、`shared/version.ts` 与 `shared/plugin-protocol.ts` 的内置包版本；插件 API 与服务契约版本按真实兼容性变化独立处理。
+
+只调整仓库文档位置、忽略规则或本地缓存时，应用版本保持不变，以独立维护提交记录，保留原应用发布标签及服务契约基线。
 
 迭代开始记录基线、目标、范围与验收要求，完成后更新 [项目状态](../PROJECT_STATUS.md)。普通实现提交后，使用 `npm run plugins:contracts:freeze -- --release <版本> --commit <实现提交>` 冻结已提交的服务声明；冻结和简短验证结论再形成交付提交，以本地 `v<版本>` 标签定位。提交号由 Git 和冻结文件给出，避免在该提交自己的正文中写入自引用哈希。
 

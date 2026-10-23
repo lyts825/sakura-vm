@@ -289,7 +289,7 @@ box-shadow: var(--shadow);
 
 ## 📊 验证范围
 
-- 提交前验证结果见[优化总结](../FRONTEND_OPTIMIZATION.md)。
+- 提交前验证结果见[优化总结](frontend-optimization.md)。
 - 动画使用 transform、opacity，也包含颜色、边框和阴影过渡；未测量 GPU 合成或帧率。
 - 保留已有 `prefers-reduced-motion` 规则；未进行完整的无障碍或跨浏览器审计。
 

@@ -1,6 +1,6 @@
 # 文档索引
 
-核对日期：2026-10-07；应用与内置包版本：**2.3.7**；宿主插件 API：**5**；公共服务契约：**V1**。
+核对日期：2026-10-23；应用与内置包版本：**2.3.7**；宿主插件 API：**5**；公共服务契约：**V1**。
 
 | 使用场景 | 从这里开始 |
 | --- | --- |
@@ -162,7 +162,7 @@
 
 ## 其他项目资料
 
-- [前端优化记录](../FRONTEND_OPTIMIZATION.md)
+- [前端优化记录](frontend-optimization.md)
 - [字体来源与重建](../src/assets/fonts/README.md)
 - [宣传视频源码与交付物](../sakura-promo-video/README.md)
 - [视频中的 Manim 动画](../sakura-promo-video/manim/README.md)
