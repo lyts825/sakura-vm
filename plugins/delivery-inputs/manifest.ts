@@ -1,0 +1,60 @@
+/** 输入快照的声明式能力和所有者准入。
+ * Declare delivery capabilities, dependencies and owner-only admission. */
+import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
+export const manifest = definePlugin({
+  id: 'delivery-inputs',
+  name: '输入快照',
+  description: '审阅并固定源码、命令与声明环境。',
+  category: 'development',
+  requires: [pin('delivery-artifacts'), pin('projects')],
+  services: ['inputs'],
+  contributes: {
+    tabs: ['development'],
+    developmentSections: ['delivery-inputs'],
+    http: [http('/api/delivery-inputs', ['GET', 'POST'])],
+    routes: [
+      {
+        id: 'view',
+        method: 'GET',
+        path: '/api/delivery-inputs',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'allow',
+          transport: 'json',
+          mutating: false,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+      {
+        id: 'act',
+        method: 'POST',
+        path: '/api/delivery-inputs',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'block',
+          transport: 'json',
+          mutating: true,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+    ],
+  },
+});

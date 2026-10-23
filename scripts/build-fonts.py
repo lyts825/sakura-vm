@@ -7,8 +7,10 @@ python scripts/build-fonts.py
 """
 
 import hashlib
+import html
 import json
 from pathlib import Path
+import subprocess
 import sys
 from urllib.request import Request, urlopen
 
@@ -53,6 +55,47 @@ SOURCES = [
     },
 ]
 
+# 使用现有 TypeScript 解析器收集运行时文本；注释与类型标识不进入字形清单。
+# Collect runtime text with the installed TypeScript parser; exclude comments and type identifiers.
+TEXT_COLLECTOR = r"""
+import ts from 'typescript';
+import { readFileSync } from 'node:fs';
+const texts = [];
+for (const path of JSON.parse(readFileSync(0, 'utf8'))) {
+  const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest,
+    true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  if (source.parseDiagnostics.length) throw new Error(`Invalid font corpus source: ${path}`);
+  function visit(node) {
+    if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) ||
+        ts.isTemplateTail(node) || ts.isJsxText(node)) texts.push(node.text);
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+}
+process.stdout.write(JSON.stringify(texts));
+"""
+
+
+# 按 family 的显式源码范围提取文案，返回原覆盖基线与文案码点的并集；不写资源。
+# Extract text from the explicit family source scope and return its union with baseline codepoints, without writing assets.
+def ui_codepoints(family, coverage):
+    points = set(coverage["baseline"]["codepoints"])
+    paths = set()
+    for pattern in coverage["sources"][family]:
+        matched = [path for path in ROOT.glob(pattern) if path.is_file()]
+        if not matched:
+            raise ValueError(f"Font corpus pattern matched no source: {pattern}")
+        paths.update(path.relative_to(ROOT).as_posix() for path in matched)
+    if paths:
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", TEXT_COLLECTOR],
+            input=json.dumps(sorted(paths)), text=True, encoding="utf-8",
+            cwd=ROOT, check=True, capture_output=True,
+        )
+        for text in json.loads(result.stdout):
+            points.update(ord(char) for char in html.unescape(text) if ord(char) >= 0x20)
+    return points
+
 
 # 复用或下载固定字体源，按 Git blob SHA-1 核对原始字节后才写入缓存。
 # Reuse/download pinned font sources and validate original bytes by Git blob SHA-1 before caching.
@@ -89,13 +132,9 @@ def rename(font, family):
 def main():
     CACHE.mkdir(parents=True, exist_ok=True)
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    ui_text = "".join(
-        path.read_text(encoding="utf-8")
-        for folder in (ROOT / "src", ROOT / "server")
-        for path in sorted(folder.rglob("*.ts*"))
-    )
-    ui_points = set(range(0x20, 0x100)) | {ord(char) for char in ui_text if ord(char) > 127}
-    ui_points |= {ord(char) for char in "、。·：；？！「」『』（）【】《》〈〉—…〜・　"}
+    coverage = json.loads((OUTPUT / "ui-coverage.json").read_text(encoding="utf-8"))
+    if coverage["schemaVersion"] != 1:
+        raise ValueError("Unsupported font coverage schema")
     records = []
     for source in SOURCES:
         print(f"Preparing {source['upstream']}…", flush=True)
@@ -105,7 +144,8 @@ def main():
         font = TTFont(original, recalcTimestamp=False)
         cmap = font.getBestCmap()
         # Keep the mono family's full language/symbol coverage for arbitrary shell output.
-        points = set(cmap) if source["family"] == "Sakura Mono" else ui_points & set(cmap)
+        points = (set(cmap) if source["family"] == "Sakura Mono"
+                  else ui_codepoints(source["family"], coverage) & set(cmap))
         options = subset.Options()
         options.name_IDs = ["*"]
         options.name_languages = ["*"]

@@ -6,6 +6,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
+import type { Duplex } from 'node:stream';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Agent as FetchAgent } from 'undici';
 import { WebSocket } from 'ws';
@@ -724,6 +725,19 @@ export class NetworkScope {
     return request;
   }
   httpRequest: typeof http.request = ((...args: any[]) => this.request(false, args)) as typeof http.request;
+  /** Parse HTTP over an already owned transport (for example a managed SSH channel), without host dialing. */
+  httpStreamRequest(options: Pick<http.RequestOptions, 'method' | 'path' | 'headers' | 'host' | 'port'>, stream: Duplex): http.ClientRequest {
+    this.abort.signal.throwIfAborted(); this.runtime.check(this.identity, 'dial');
+    const socket = stream as Duplex & { setTimeout?: (milliseconds: number, listener?: () => void) => unknown };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (!socket.setTimeout) socket.setTimeout = (milliseconds, listener) => {
+      clearTimeout(timer); if (milliseconds > 0) timer = setTimeout(() => { listener?.(); stream.destroy(new Error('Owned HTTP transport timed out')); }, Math.min(milliseconds, 60_000)); return stream;
+    };
+    const close = () => stream.destroy(); this.abort.signal.addEventListener('abort', close, { once: true });
+    stream.once('close', () => { clearTimeout(timer); this.abort.signal.removeEventListener('abort', close); });
+    const request = new http.ClientRequest({ ...options, createConnection: () => stream as net.Socket });
+    request.once('error', close); return request;
+  }
   httpsRequest: typeof https.request = ((...args: any[]) => this.request(true, args)) as typeof https.request;
   httpsGet: typeof https.get = ((...args: any[]) => {
     const request = this.request(true, args);

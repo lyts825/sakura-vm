@@ -1,0 +1,60 @@
+/** 制品仓库的声明式能力和所有者准入。
+ * Declare delivery capabilities, dependencies and owner-only admission. */
+import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
+export const manifest = definePlugin({
+  id: 'delivery-artifacts',
+  name: '制品仓库',
+  description: '分块传输、不可变清单、持久引用和精确清理。',
+  category: 'development',
+  requires: [],
+  services: ['artifacts'],
+  contributes: {
+    tabs: ['development'],
+    developmentSections: ['delivery-artifacts'],
+    http: [http('/api/delivery-artifacts', ['GET', 'POST'])],
+    routes: [
+      {
+        id: 'view',
+        method: 'GET',
+        path: '/api/delivery-artifacts',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'allow',
+          transport: 'json',
+          mutating: false,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+      {
+        id: 'act',
+        method: 'POST',
+        path: '/api/delivery-artifacts',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'block',
+          transport: 'json',
+          mutating: true,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+    ],
+  },
+});

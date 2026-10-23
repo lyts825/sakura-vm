@@ -1,0 +1,66 @@
+/** 交付规则的声明式能力和所有者准入。
+ * Declare delivery capabilities, dependencies and owner-only admission. */
+import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
+export const manifest = definePlugin({
+  id: 'delivery-gates',
+  name: '交付规则',
+  description: '按不可变规则核对同一候选的完整证据。',
+  category: 'development',
+  requires: [
+    pin('delivery-artifacts'),
+    pin('delivery-inputs'),
+    pin('delivery-runners'),
+    pin('delivery-reports'),
+    pin('delivery-previews'),
+  ],
+  services: ['gates'],
+  contributes: {
+    tabs: ['development'],
+    developmentSections: ['delivery-gates'],
+    http: [http('/api/delivery-gates', ['GET', 'POST'])],
+    routes: [
+      {
+        id: 'view',
+        method: 'GET',
+        path: '/api/delivery-gates',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'allow',
+          transport: 'json',
+          mutating: false,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+      {
+        id: 'act',
+        method: 'POST',
+        path: '/api/delivery-gates',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'block',
+          transport: 'json',
+          mutating: true,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+    ],
+  },
+});

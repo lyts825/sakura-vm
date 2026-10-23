@@ -353,7 +353,7 @@ async function probe(selected, expected) {
     const worker = await fetch(origin + '/monitor/sw.js');
     assert.equal(worker.headers.get('cache-control'), 'no-cache');
     assert.ok(!(await worker.text()).includes('__MONITOR_REVISION__'));
-    assert.equal(plugins.plugins.length, 33);
+    assert.equal(plugins.plugins.length, 41);
     const auditBefore = await fetch(origin + '/api/audit', { headers }).then((response) => response.json());
     assert.equal(auditBefore.valid, true);
     const rejected = await fetch(origin + '/api/audit-smoke', {

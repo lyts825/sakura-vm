@@ -1,0 +1,80 @@
+/* 交付工作台的响应式表单、记录与窄屏布局。
+ * Responsive delivery forms, evidence records and narrow-screen layout. */
+.delivery-workspace {
+  min-width: 0;
+}
+.delivery-workspace nav,
+.delivery-toolbar {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0.8rem 0;
+}
+.delivery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 0.8rem;
+  margin: 0.8rem 0;
+}
+.delivery-workspace label {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  margin: 0.6rem 0;
+}
+.delivery-workspace label.delivery-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.delivery-workspace input,
+.delivery-workspace select,
+.delivery-workspace textarea {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.delivery-workspace textarea {
+  width: 100%;
+  resize: vertical;
+}
+.delivery-workspace article {
+  border: 1px solid var(--line, #8885);
+  border-radius: 10px;
+  padding: 0.85rem;
+  margin: 0.8rem 0;
+  min-width: 0;
+}
+.delivery-workspace pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+  font-size: 0.85rem;
+}
+.delivery-workspace code,
+.delivery-workspace p {
+  overflow-wrap: anywhere;
+}
+.delivery-workspace button {
+  margin: 0.2rem;
+}
+.delivery-workspace details {
+  margin: 0.65rem 0;
+  min-width: 0;
+}
+.delivery-workspace summary {
+  cursor: pointer;
+}
+.delivery-workspace h4 {
+  margin: 0.5rem 0;
+}
+@media (max-width: 480px) {
+  .delivery-workspace nav button {
+    flex: 1 1 40%;
+  }
+  .delivery-workspace article {
+    padding: 0.6rem;
+  }
+}

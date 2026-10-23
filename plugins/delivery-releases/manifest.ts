@@ -1,0 +1,68 @@
+/** 本地版本的声明式能力和所有者准入。
+ * Declare delivery capabilities, dependencies and owner-only admission. */
+import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
+export const manifest = definePlugin({
+  id: 'delivery-releases',
+  name: '本地版本',
+  description: '登记版本和渠道、安全导出导入与发布者信任。',
+  category: 'development',
+  requires: [
+    pin('delivery-artifacts'),
+    pin('delivery-inputs'),
+    pin('delivery-runners'),
+    pin('delivery-reports'),
+    pin('delivery-gates'),
+    pin('delivery-previews'),
+  ],
+  services: ['releases'],
+  optional: [pin('secrets')],
+  contributes: {
+    tabs: ['development'],
+    developmentSections: ['delivery-releases'],
+    http: [http('/api/delivery-releases', ['GET', 'POST'])],
+    routes: [
+      {
+        id: 'view',
+        method: 'GET',
+        path: '/api/delivery-releases',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'allow',
+          transport: 'json',
+          mutating: false,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+      {
+        id: 'act',
+        method: 'POST',
+        path: '/api/delivery-releases',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'block',
+          transport: 'json',
+          mutating: true,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+    ],
+  },
+});

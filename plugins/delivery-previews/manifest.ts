@@ -1,0 +1,61 @@
+/** 候选预览的声明式能力和所有者准入。
+ * Declare delivery capabilities, dependencies and owner-only admission. */
+import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
+export const manifest = definePlugin({
+  id: 'delivery-previews',
+  name: '候选预览',
+  description: '启动制品并验证独立入口、健康与到期回收。',
+  category: 'development',
+  requires: [pin('delivery-artifacts'), pin('projects')],
+  services: ['previews'],
+  contributes: {
+    managed: ['jobs', 'job-retry'],
+    tabs: ['development'],
+    developmentSections: ['delivery-previews'],
+    http: [http('/api/delivery-previews', ['GET', 'POST'])],
+    routes: [
+      {
+        id: 'view',
+        method: 'GET',
+        path: '/api/delivery-previews',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'allow',
+          transport: 'json',
+          mutating: false,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+      {
+        id: 'act',
+        method: 'POST',
+        path: '/api/delivery-previews',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'block',
+          transport: 'json',
+          mutating: true,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+    ],
+  },
+});

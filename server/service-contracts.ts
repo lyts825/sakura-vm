@@ -8,6 +8,14 @@ import type { ServiceContract } from './service-ref.ts';
 
 /** Stable descriptor IDs are independent of implementation names and paths. */
 export const serviceContracts = {
+  DeliveryArtifacts: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-artifacts.v1'] as ServiceContract<V1.DeliveryArtifactsV1>,
+  DeliveryInputs: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-inputs.v1'] as ServiceContract<V1.DeliveryInputsV1>,
+  DeliveryRunners: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-runners.v1'] as ServiceContract<V1.DeliveryRunnersV1>,
+  DeliveryReports: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-reports.v1'] as ServiceContract<V1.DeliveryReportsV1>,
+  DeliveryPreviews: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-previews.v1'] as ServiceContract<V1.DeliveryPreviewsV1>,
+  DeliveryGates: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-gates.v1'] as ServiceContract<V1.DeliveryGatesV1>,
+  DeliveryReleases: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-releases.v1'] as ServiceContract<V1.DeliveryReleasesV1>,
+  DeliveryWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-workbench.v1'] as ServiceContract<V1.DeliveryWorkbenchV1>,
   RecoveryCatalog: PUBLIC_SERVICE_CONTRACTS['sakura.service.recovery-catalog.v1'] as ServiceContract<V1.RecoveryCatalogV1>,
   FeatureSuite: PUBLIC_SERVICE_CONTRACTS['sakura.service.feature-suite.v1'] as ServiceContract<V1.FeatureSuiteV1>,
   FeatureScheduler: PUBLIC_SERVICE_CONTRACTS['sakura.service.feature-scheduler.v1'] as ServiceContract<V1.FeatureSchedulerV1>,

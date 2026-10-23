@@ -5,10 +5,13 @@
     "source": "https://raw.githubusercontent.com/google/fonts/e44c4b011a820c2cbe2fd2cfa8052037d7edb571/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
     "sourceGitBlob": "fb0637bafbcd804fe32152370a1225990745b4bc",
     "file": "sakura-sans-ui.woff2",
-    "bytes": 127848,
-    "glyphs": 621,
-    "weights": [400, 700],
-    "sha256": "2306e5c7a377a7fbc7a3802d7214acb37ba26b86d1ed554cda7caec34437216d"
+    "bytes": 175600,
+    "glyphs": 816,
+    "weights": [
+      400,
+      700
+    ],
+    "sha256": "5cd86af94be94c4d161c02d11ac4ded93cd67cdb4a419136d2f36c32cbc42a88"
   },
   {
     "family": "Sakura Serif",
@@ -18,7 +21,10 @@
     "file": "sakura-serif-ui.woff2",
     "bytes": 169576,
     "glyphs": 621,
-    "weights": [400, 700],
+    "weights": [
+      400,
+      700
+    ],
     "sha256": "76acf50681e0b9baf213818fd7ab23b1b52d05ad88e321ca846e267506453a1f"
   },
   {
@@ -29,7 +35,10 @@
     "file": "sakura-mono.woff2",
     "bytes": 76104,
     "glyphs": 1372,
-    "weights": [400, 700],
+    "weights": [
+      400,
+      700
+    ],
     "sha256": "393bf9f95dfd840ebe6dab0e904cdb58e200ef124748e37d44179206fbced9fe"
   }
 ]

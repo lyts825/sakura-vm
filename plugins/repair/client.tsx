@@ -10,10 +10,10 @@ const stateLabels: Record<RepairSession['state'], string> = { preview: '待确�
 
 /** 每个阶段由单独用户动作触发，命令编辑后禁用旧验证的接受入口。
  * Trigger each stage explicitly and disable acceptance when the reviewed command changes. */
-export function RepairPanel({ vm, request, projectId }: FeatureProps) {
-  const [target, setTarget] = useState('');
+export function RepairPanel({ vm, request, projectId, developmentDraft }: FeatureProps) {
+  const [target, setTarget] = useState(developmentDraft?.target ?? '');
   const [context, setContext] = useState('');
-  const [instruction, setInstruction] = useState('');
+  const [instruction, setInstruction] = useState(developmentDraft?.instruction ?? '');
   const [command, setCommand] = useState('');
   const [reviewed, setReviewed] = useState(false);
   const [saved, setSaved] = useState<{ value: RepairSession; request: Request }>();

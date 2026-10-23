@@ -32,6 +32,7 @@ manifest.scripts = {
   'ha:witness': manifest.scripts['ha:witness'],
   'check:wsl': manifest.scripts['check:wsl'],
   sakura: manifest.scripts.sakura,
+  delivery: manifest.scripts.delivery,
   tray: manifest.scripts.tray,
   'update:status': manifest.scripts['update:status'],
   'update:check': manifest.scripts['update:check'],
@@ -52,6 +53,7 @@ for (const file of [
   'cli.mjs',
   'guest-cli.mjs',
   'development-cli.mjs',
+  'delivery.mjs',
   'sandbox-cli.mjs',
   'resumable-download.mjs',
   'native-open.mjs',
@@ -66,6 +68,14 @@ for (const file of [
   'release-manifest.mjs',
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
+await cp(join(root, 'docs', 'delivery-cli.md'), join(output, '.sakura-server', 'docs', 'delivery-cli.md'));
+if (manifest.scripts.delivery !== 'node scripts/delivery.mjs')
+  throw new Error('交付 CLI 必须使用无开发依赖的纯 Node 入口');
+const deliveryCheck = spawnSync(process.execPath, [join(output, 'scripts', 'delivery.mjs'), 'help'], {
+  cwd: output, encoding: 'utf8', windowsHide: true, env: { ...process.env, NODE_OPTIONS: '' },
+});
+if (deliveryCheck.status !== 0 || !deliveryCheck.stdout.includes('Sakura 项目交付 CLI'))
+  throw new Error(`运行包交付 CLI 不可用：${deliveryCheck.stderr || deliveryCheck.error?.message || deliveryCheck.status}`);
 const readme = [
   '# Sakura 运行包',
   '',
@@ -81,6 +91,7 @@ const readme = [
   '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行依赖以随包 `package.json` 为准。',
   '已配置含 Linux QEMU、swtpm、virtiofsd 和 OVMF 的 WSL 发行版时，也可先运行 `npm run check:wsl`，再用 `npm run start:wsl` 启动可用 TPM 与 Virtio-FS 的 Linux 后端；数据单独保存在该发行版的 Linux 文件系统中。',
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
+  '启用 `delivery` 插件包并重启后，可在本目录运行 `npm run delivery -- help`。CLI 使用随包的受管网络入口和运行依赖，不需要源码、TypeScript、tsx 或开发依赖。设置 `SAKURA_TOKEN` 后，显式传入 `--vm` 和 `--project`，通过本机服务保存定义、捕获输入、运行构建及分块导入导出交付包。完整步骤见 `.sakura-server/docs/delivery-cli.md`。CLI 不自动启用插件、执行包内命令或发布外部系统。',
   '统一网络运行时属于基础设施，始终启用。宿主 TCP/DNS 使用有界 Node worker 池；VM 使用单独的 Node worker 与无客户机 CPU 的 QEMU user/slirp 后端。默认最多 4 个宿主 worker、2 个 VM worker 及其最多 2 个 QEMU 网络进程，不需要管理员权限或额外网络驱动。每个 VM 固定在一个 worker；该 worker 故障会停止受影响的 VM，不自动重放连接。配置、诊断接口、退出顺序及限制见 `.sakura-server/docs/network-runtime.md`。',
   '升级注意：旧网络后端的内存快照因运行时指纹变化不能恢复；磁盘快照保持兼容。远程审计现在须向服务显式提供 AWS_ACCESS_KEY_ID、AWS_SECRET_ACCESS_KEY，以及临时凭据所需的 AWS_SESSION_TOKEN，不再自动调用 AWS 默认 IAM/元数据凭据链。',
   '独立第三节点可运行 `npm run ha:witness -- --preflight <config.json>` 检查见证配置，再运行 `npm run ha:witness -- <config.json>`；见证入口随活动版本切换，完整性失败时拒绝启动。部署说明和配置模板位于 `.sakura-witness/docs/ha-external-drill.md`，systemd 示例位于 `.sakura-witness/scripts/ha-witness.service.example`；这些文件均纳入运行包摘要。',

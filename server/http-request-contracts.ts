@@ -25,6 +25,7 @@ import { secretRotationRequest, secretSaveRequest } from './secrets.ts';
 import { syncSchema } from './sync.ts';
 import { toolchainInstallRequest } from './toolchains.ts';
 import { extensionCodeInput } from './browser-extensions.ts';
+import { deliveryScopeSchema } from '../shared/contracts/delivery-common.ts';
 
 export type HttpRequestContract = {
   kind: 'none' | 'json' | 'form' | 'binary';
@@ -229,6 +230,22 @@ const project = () => z.string().regex(/^(default|[a-f0-9]{16})$/);
 const flag = () => z.enum(['0', '1']);
 type QueryShape = Record<string, z.ZodType>;
 const queries: Readonly<Record<string, QueryShape>> = {
+  'delivery-artifacts.view': deliveryScopeSchema.shape,
+  'delivery-artifacts.act': deliveryScopeSchema.shape,
+  'delivery-inputs.view': deliveryScopeSchema.shape,
+  'delivery-inputs.act': deliveryScopeSchema.shape,
+  'delivery-runners.view': deliveryScopeSchema.shape,
+  'delivery-runners.act': deliveryScopeSchema.shape,
+  'delivery-reports.view': deliveryScopeSchema.shape,
+  'delivery-reports.act': deliveryScopeSchema.shape,
+  'delivery-gates.view': deliveryScopeSchema.shape,
+  'delivery-gates.act': deliveryScopeSchema.shape,
+  'delivery-previews.view': deliveryScopeSchema.shape,
+  'delivery-previews.act': deliveryScopeSchema.shape,
+  'delivery-releases.view': deliveryScopeSchema.shape,
+  'delivery-releases.act': deliveryScopeSchema.shape,
+  'delivery-workbench.view': deliveryScopeSchema.shape,
+  'delivery-workbench.act': deliveryScopeSchema.shape,
   'core.access.ssoOidcCallback': {
     state: text(),
     code: text().optional(),

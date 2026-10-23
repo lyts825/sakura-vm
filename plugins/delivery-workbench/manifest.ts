@@ -1,0 +1,68 @@
+/** 交付工作台的声明式能力和所有者准入。
+ * Declare delivery capabilities, dependencies and owner-only admission. */
+import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
+export const manifest = definePlugin({
+  id: 'delivery-workbench',
+  name: '交付工作台',
+  description: '从定义和输入到验证、预览及离线交接。',
+  category: 'development',
+  requires: [
+    pin('delivery-artifacts'),
+    pin('delivery-inputs'),
+    pin('delivery-runners'),
+    pin('delivery-reports'),
+    pin('delivery-gates'),
+    pin('delivery-previews'),
+    pin('delivery-releases'),
+  ],
+  services: ['workbench'],
+  contributes: {
+    tabs: ['development'],
+    developmentSections: ['delivery-workbench'],
+    http: [http('/api/delivery-workbench', ['GET', 'POST'])],
+    routes: [
+      {
+        id: 'view',
+        method: 'GET',
+        path: '/api/delivery-workbench',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'allow',
+          transport: 'json',
+          mutating: false,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+      {
+        id: 'act',
+        method: 'POST',
+        path: '/api/delivery-workbench',
+        handler: 'route',
+        status: 200,
+        policy: {
+          access: 'controller',
+          roles: ['owner'],
+          projectScoped: false,
+          identity: 'host',
+          maintenance: 'block',
+          transport: 'json',
+          mutating: true,
+          session: 'required',
+          vmLock: 'allow-locked',
+          projectBinding: 'none',
+          approval: 'none',
+          extensionAuth: 'none',
+        },
+      },
+    ],
+  },
+});

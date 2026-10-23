@@ -7,6 +7,23 @@ import type { DomainRecoveryTicket } from '../../shared/contracts/domain-recover
 import type { RecoveryView, RecoveryDiagnostics, RecoveryCatalogView } from '../../shared/contracts/recovery.ts';
 import type { TrustedUpdateView } from '../../shared/contracts/trusted-update.ts';
 import type { RepairSession } from '../../shared/contracts/repair-session.ts';
+import type { DeliveryArtifactsV1 as DeliveryArtifactsContract } from './delivery-storage.ts';
+import type { DeliveryInputsV1 as DeliveryInputsContract } from './delivery-storage.ts';
+import type { DeliveryRunnersV1 as DeliveryRunnersContract } from './delivery-execution.ts';
+import type { DeliveryPreviewsV1 as DeliveryPreviewsContract } from './delivery-execution.ts';
+import type { DeliveryReportsV1 as DeliveryReportsContract } from './delivery-quality.ts';
+import type { DeliveryGatesV1 as DeliveryGatesContract } from './delivery-quality.ts';
+import type { DeliveryReleasesV1 as DeliveryReleasesContract } from './delivery-quality.ts';
+import type { DeliveryWorkbenchV1 as DeliveryWorkbenchContract } from './delivery-workbench.ts';
+
+export interface DeliveryArtifactsV1 extends DeliveryArtifactsContract {}
+export interface DeliveryInputsV1 extends DeliveryInputsContract {}
+export interface DeliveryRunnersV1 extends DeliveryRunnersContract {}
+export interface DeliveryPreviewsV1 extends DeliveryPreviewsContract {}
+export interface DeliveryReportsV1 extends DeliveryReportsContract {}
+export interface DeliveryGatesV1 extends DeliveryGatesContract {}
+export interface DeliveryReleasesV1 extends DeliveryReleasesContract {}
+export interface DeliveryWorkbenchV1 extends DeliveryWorkbenchContract {}
 
 /** 可选修复插件的单文件会话契约；模型发送、验证和应用分别确认。
  * Single-file repair sessions separate model transmission, validation and application. */

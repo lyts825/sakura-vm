@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { cleanupProvidersSchema, cleanupPreviewSchema, cleanupResultSchema } from './cleanup-plan.ts';
 import { recipePlanSchema } from './recipe-plan.ts';
 import { repairSessionSchema, repairActionResponseSchema } from './repair-session.ts';
+import { deliveryHttpResponses } from './delivery-http.ts';
 import type { HttpResponseContract } from './http-response.ts';
 import { jsonValueSchema } from './json-values.ts';
 import { jobViewSchema, vmViewSchema } from './core-dtos.ts';
@@ -4891,6 +4892,7 @@ export const pluginRouteResponses = {
     kind: 'json', statuses: [200], media: 'application/json', schema: recipePlanSchema,
   },
   'repair.view': { kind: 'json', statuses: [200], media: 'application/json', schema: repairSessionSchema },
+  ...deliveryHttpResponses,
   'repair.act': { kind: 'json', statuses: [200], media: 'application/json', schema: repairActionResponseSchema },
   'recipes.post.vms.vmId.recipe.apply-plan': {
     kind: 'json', statuses: [200], media: 'application/json', schema: projectsGetVmsVmIdProjectResponseSchema,

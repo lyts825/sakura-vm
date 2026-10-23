@@ -18,6 +18,22 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'commands': () => import('../../plugins/commands/server.ts'),
   /** 按需加载 containers 的固定服务入口，无外部路径参数。 / Load the fixed containers service entry on demand, with no external path input. */
   'containers': () => import('../../plugins/containers/server.ts'),
+  /** 按需加载 delivery-artifacts 的固定服务入口，无外部路径参数。 / Load the fixed delivery-artifacts service entry on demand, with no external path input. */
+  'delivery-artifacts': () => import('../../plugins/delivery-artifacts/server.ts'),
+  /** 按需加载 delivery-gates 的固定服务入口，无外部路径参数。 / Load the fixed delivery-gates service entry on demand, with no external path input. */
+  'delivery-gates': () => import('../../plugins/delivery-gates/server.ts'),
+  /** 按需加载 delivery-inputs 的固定服务入口，无外部路径参数。 / Load the fixed delivery-inputs service entry on demand, with no external path input. */
+  'delivery-inputs': () => import('../../plugins/delivery-inputs/server.ts'),
+  /** 按需加载 delivery-previews 的固定服务入口，无外部路径参数。 / Load the fixed delivery-previews service entry on demand, with no external path input. */
+  'delivery-previews': () => import('../../plugins/delivery-previews/server.ts'),
+  /** 按需加载 delivery-releases 的固定服务入口，无外部路径参数。 / Load the fixed delivery-releases service entry on demand, with no external path input. */
+  'delivery-releases': () => import('../../plugins/delivery-releases/server.ts'),
+  /** 按需加载 delivery-reports 的固定服务入口，无外部路径参数。 / Load the fixed delivery-reports service entry on demand, with no external path input. */
+  'delivery-reports': () => import('../../plugins/delivery-reports/server.ts'),
+  /** 按需加载 delivery-runners 的固定服务入口，无外部路径参数。 / Load the fixed delivery-runners service entry on demand, with no external path input. */
+  'delivery-runners': () => import('../../plugins/delivery-runners/server.ts'),
+  /** 按需加载 delivery-workbench 的固定服务入口，无外部路径参数。 / Load the fixed delivery-workbench service entry on demand, with no external path input. */
+  'delivery-workbench': () => import('../../plugins/delivery-workbench/server.ts'),
   /** 按需加载 desktop 的固定服务入口，无外部路径参数。 / Load the fixed desktop service entry on demand, with no external path input. */
   'desktop': () => import('../../plugins/desktop/server.ts'),
   /** 按需加载 extensions 的固定服务入口，无外部路径参数。 / Load the fixed extensions service entry on demand, with no external path input. */

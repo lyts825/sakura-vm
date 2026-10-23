@@ -22,6 +22,12 @@ export type FeatureProps = {
   token: string;
   refresh: /** 中文：请求父级重新核对远端视图；完成异步刷新后才兑现返回值；这是 FeatureProps 的调用契约 | English: Ask the parent to reconcile remote state and fulfill only after asynchronous refresh; this is the callable contract of FeatureProps | 中文：结果：Promise<unknown>；调用者依赖此类型约定，Promise 拒绝表示异步失败 | English: Result: Promise<unknown>; callers depend on this type contract, with promise rejection representing asynchronous failure */ () => Promise<unknown>;
   projectId?: string;
+  /** 分区跳转只携带待审阅文本，不代表发送或执行授权。
+   * Section navigation carries draft text only, never authorization to send or execute. */
+  developmentDraft?: { target: string; instruction: string };
+  /** 请求父层切换到已启用分区；目标使用自己的插件请求能力。
+   * Ask the parent to open an enabled section with its own plugin request capability. */
+  onDevelopmentNavigate?: (section: string, draft?: { target: string; instruction: string }) => void;
   onProjectChange?: /** 中文：通知项目切换，让外层撤销旧作用域并读取新项目；这是 FeatureProps 的调用契约 | English: Notify a project switch so the owner revokes the old scope and reads the new project; this is the callable contract of FeatureProps | 中文：输入：projectId：当前项目标识 | English: Inputs: projectId: current project identifier | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ (projectId: string) => void;
 };
 /**

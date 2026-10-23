@@ -2,9 +2,11 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
-应用与内置包版本：**2.4.0**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+应用与内置包版本：**2.5.0**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
 
-本轮新增 [环境变更预览](docs/environment-plan.md)、[流水线依赖与局部重跑](docs/pipeline-graph.md)、[安全清理中心](docs/cleanup-center.md)和[任务证据与处理](docs/task-evidence.md)。[AI 修复会话](docs/repair-sessions.md)作为可选插件提供单文件补丁与隔离验证；[可信更新中心](docs/self-update.md)在系统设置中管理签名发行包。
+本轮新增 [项目交付工作台](docs/delivery-workbench.md)：启用 `delivery` 插件包后，可固定源码与定义、隔离构建、解析报告、核对交付规则、预览实际制品，并通过签名交付包完成离线交接。也可使用 [交付 CLI](docs/delivery-cli.md)。
+
+[环境变更预览](docs/environment-plan.md)、[流水线依赖与局部重跑](docs/pipeline-graph.md)、[安全清理中心](docs/cleanup-center.md)和[任务证据与处理](docs/task-evidence.md)继续可用。[AI 修复会话](docs/repair-sessions.md)为可选插件；[可信更新中心](docs/self-update.md)管理应用发行包，与项目交付签名分别管理信任。
 
 **真正运行 Linux 内核。** [PosixLoom](https://github.com/lyts825/posixloom) 负责命令编排、会话与 Windows 进程树管理，[QEMU](https://www.qemu.org/) 负责虚拟化。当前不是 WSL 的替代实现，也不依赖现有的 WSL 发行版。
 

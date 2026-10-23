@@ -392,6 +392,178 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "stop"
     ]
   },
+  "sakura.service.delivery-artifacts.v1": {
+    "id": "sakura.service.delivery-artifacts.v1",
+    "version": 1,
+    "members": [
+      "begin",
+      "chunk",
+      "cleanup",
+      "cleanupPlan",
+      "closeRead",
+      "complete",
+      "get",
+      "list",
+      "openRead",
+      "read",
+      "references",
+      "release",
+      "retain",
+      "seal",
+      "verify"
+    ],
+    "methods": [
+      "begin",
+      "chunk",
+      "cleanup",
+      "cleanupPlan",
+      "closeRead",
+      "complete",
+      "get",
+      "list",
+      "openRead",
+      "read",
+      "references",
+      "release",
+      "retain",
+      "seal",
+      "verify"
+    ]
+  },
+  "sakura.service.delivery-gates.v1": {
+    "id": "sakura.service.delivery-gates.v1",
+    "version": 1,
+    "members": [
+      "assertCurrent",
+      "evaluate",
+      "savePolicy",
+      "view"
+    ],
+    "methods": [
+      "assertCurrent",
+      "evaluate",
+      "savePolicy",
+      "view"
+    ]
+  },
+  "sakura.service.delivery-inputs.v1": {
+    "id": "sakura.service.delivery-inputs.v1",
+    "version": 1,
+    "members": [
+      "capture",
+      "compare",
+      "get",
+      "list",
+      "preview"
+    ],
+    "methods": [
+      "capture",
+      "compare",
+      "get",
+      "list",
+      "preview"
+    ]
+  },
+  "sakura.service.delivery-previews.v1": {
+    "id": "sakura.service.delivery-previews.v1",
+    "version": 1,
+    "members": [
+      "get",
+      "health",
+      "list",
+      "recover",
+      "start",
+      "stop"
+    ],
+    "methods": [
+      "get",
+      "health",
+      "list",
+      "recover",
+      "start",
+      "stop"
+    ]
+  },
+  "sakura.service.delivery-releases.v1": {
+    "id": "sakura.service.delivery-releases.v1",
+    "version": 1,
+    "members": [
+      "acceptImport",
+      "candidate",
+      "changeStatus",
+      "channel",
+      "createCandidate",
+      "export",
+      "importPackage",
+      "register",
+      "trust",
+      "view"
+    ],
+    "methods": [
+      "acceptImport",
+      "candidate",
+      "changeStatus",
+      "channel",
+      "createCandidate",
+      "export",
+      "importPackage",
+      "register",
+      "trust",
+      "view"
+    ]
+  },
+  "sakura.service.delivery-reports.v1": {
+    "id": "sakura.service.delivery-reports.v1",
+    "version": 1,
+    "members": [
+      "compare",
+      "get",
+      "ingest",
+      "view"
+    ],
+    "methods": [
+      "compare",
+      "get",
+      "ingest",
+      "view"
+    ]
+  },
+  "sakura.service.delivery-runners.v1": {
+    "id": "sakura.service.delivery-runners.v1",
+    "version": 1,
+    "members": [
+      "cancel",
+      "get",
+      "list",
+      "recover",
+      "start"
+    ],
+    "methods": [
+      "cancel",
+      "get",
+      "list",
+      "recover",
+      "start"
+    ]
+  },
+  "sakura.service.delivery-workbench.v1": {
+    "id": "sakura.service.delivery-workbench.v1",
+    "version": 1,
+    "members": [
+      "archive",
+      "copy",
+      "previewImport",
+      "save",
+      "view"
+    ],
+    "methods": [
+      "archive",
+      "copy",
+      "previewImport",
+      "save",
+      "view"
+    ]
+  },
   "sakura.service.desktops.v1": {
     "id": "sakura.service.desktops.v1",
     "version": 1,

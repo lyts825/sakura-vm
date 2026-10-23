@@ -1,6 +1,6 @@
 # 文档索引
 
-核对日期：2026-10-23；应用与内置包版本：**2.4.0**；宿主插件 API：**5**；公共服务契约：**V1**。
+核对日期：2026-10-23；应用与内置包版本：**2.5.0**；宿主插件 API：**5**；公共服务契约：**V1**。
 
 | 使用场景 | 从这里开始 |
 | --- | --- |
@@ -22,7 +22,7 @@
 - [统一网络运行时](network-runtime.md)
 - [最小核心、插件与整合包](plugin-architecture.md)
 - [插件设计契约与统管层接口](plugin-design-contract.md)
-- [项目交付工作台插件包设计（待实施）](delivery-pack-design.md)
+- [项目交付工作台插件包设计](delivery-pack-design.md)
 - [插件与整合包协议](plugin-protocol.md)
 - [独立运行包自更新](self-update.md)
 - [受管存储与恢复](storage-runtime.md)
@@ -36,6 +36,7 @@
 - [npm 依赖升级机器人](dependency-bot.md)
 - [工作区恢复与自动化功能](development-next.md)
 - [开发工作台与安全维护](development-workbench.md)
+- [项目交付工作台](delivery-workbench.md) 与 [交付 CLI](delivery-cli.md)
 - [开发工作区与数据互通](development-workspaces.md)
 - [工程操作的项目账号](engineering-project-identity.md)
 - [文件锁](file-locks.md)

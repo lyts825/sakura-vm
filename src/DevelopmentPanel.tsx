@@ -28,7 +28,21 @@ export function DevelopmentPanel(props: FeatureProps) {
   );
   const scopedProps = { ...props, request: scopedRequest };
   const [choice, setSection] = useState<string>(available[0] || '');
+  const [handoff, setHandoff] = useState<{
+    section: string; vmId: string; projectId?: string; request: FeatureProps['request'];
+    draft?: FeatureProps['developmentDraft']; revision: number;
+  }>();
   const section = available.some((id) => id === choice) ? choice : available[0];
+  const currentHandoff = handoff?.section === section && handoff.vmId === props.vm.id &&
+    handoff.projectId === props.projectId && handoff.request === props.request ? handoff : undefined;
+  /** 转交草稿前核对可见分区，切换后由目标插件重新建立请求寿命。
+   * Check the enabled section before handing off a draft; the target establishes its own request lifetime. */
+  const navigate: NonNullable<FeatureProps['onDevelopmentNavigate']> = (id, draft) => {
+    if (!available.includes(id)) return;
+    setHandoff(prior => ({ section: id, vmId: props.vm.id, projectId: props.projectId,
+      request: props.request, draft, revision: (prior?.revision ?? 0) + 1 }));
+    setSection(id);
+  };
   return (
     <div className="content-panel feature-panel">
       <div className="panel-heading">
@@ -43,7 +57,7 @@ export function DevelopmentPanel(props: FeatureProps) {
             key={id}
             className={`${section === id ? 'primary' : 'secondary'} compact`}
             aria-pressed={section === id}
-            onClick={() => setSection(id)}
+            onClick={() => navigate(id)}
           >
             {sectionLabels[id] ||
               PLUGINS.find((plugin) => plugin.contributes.developmentSections.includes(id))?.name ||
@@ -51,7 +65,8 @@ export function DevelopmentPanel(props: FeatureProps) {
           </button>
         ))}
       </div>
-      {section && <PluginDevelopmentSection id={section} {...scopedProps} />}
+      {section && <PluginDevelopmentSection key={`${props.vm.id}:${props.projectId}:${section}:${currentHandoff?.revision ?? 0}`}
+        id={section} {...scopedProps} developmentDraft={currentHandoff?.draft} onDevelopmentNavigate={navigate} />}
     </div>
   );
 }

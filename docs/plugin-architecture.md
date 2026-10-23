@@ -37,7 +37,7 @@ flowchart TB
 
 ## 插件划分
 
-当前有 **33 个插件、9 个整合包**。每个插件在 `plugins/<id>/` 内维护 `manifest.ts`、`server.ts` 和可选的 `client.tsx`。运行 `npm run plugins:sync` 从目录生成共享声明与可信加载器；路由和项目作用域直接从声明生成。插件标识不会与磁盘导入导出的 `.sakura` 包混用。协议和 JSON Schema 见 [插件协议](plugin-protocol.md)。
+当前有 **41 个插件、10 个整合包**。每个插件在 `plugins/<id>/` 内维护 `manifest.ts`、`server.ts` 和可选的 `client.tsx`。运行 `npm run plugins:sync` 从目录生成共享声明与可信加载器；路由和项目作用域直接从声明生成。插件标识不会与磁盘导入导出的 `.sakura` 包混用。协议和 JSON Schema 见 [插件协议](plugin-protocol.md)。
 
 | 插件标识               | 业务范围                                                              | 直接依赖                      |
 | ---------------------- | --------------------------------------------------------------------- | ----------------------------- |
@@ -74,6 +74,14 @@ flowchart TB
 | `extensions`           | 工程扩展能力与操作适配器，实验性                                      | projects                      |
 | `platform`             | 远程、灾备、安全与协作适配器，实验性                                  | projects                      |
 | `command-palette`      | 全局导航与已启用能力的搜索                                            | 无                            |
+| `delivery-artifacts` | 不可变制品、分块传输、保留与清理 | 无 |
+| `delivery-inputs` | 固定源码和定义快照 | delivery-artifacts、projects |
+| `delivery-runners` | 新 VM 构建、矩阵和接收验证 | delivery-artifacts、delivery-inputs、projects |
+| `delivery-reports` | 有界报告解析与证据绑定 | delivery-artifacts、delivery-runners |
+| `delivery-previews` | 候选服务、独立来源和到期回收 | delivery-artifacts、projects |
+| `delivery-gates` | 不可变规则与交付判定 | delivery-artifacts、delivery-inputs、delivery-runners、delivery-reports、delivery-previews |
+| `delivery-releases` | 本地版本、通道、签名与交接 | delivery-artifacts、delivery-inputs、delivery-runners、delivery-reports、delivery-gates、delivery-previews；可选 secrets |
+| `delivery-workbench` | 定义管理与完整交付工作台 | 其余 7 个 delivery 插件 |
 
 `transfers` 只拥有下载票据、流式传输与任务服务。`Files` 和文件历史属于 `files`，`Bundles` 属于 `snapshots`；传输服务通过延迟读取的可选提供者复用它们，单独启用传输不会创建文件或磁盘包服务。下载票据签发再次检查具体业务所属插件；已有导出任务的重试也必须启用 `snapshots`。
 
@@ -94,8 +102,9 @@ flowchart TB
 | `development` 开发工具组合 | 可独立选择的开发能力  | toolchains、project-search、code-checks、commands、pipelines、runtimes                                     |
 | `environment` 环境互通组合 | 项目环境与 IDE        | recipes、ide                                                                                               |
 | `monitoring` 监控组合      | 资源与服务监控        | metrics、service-health                                                                                    |
+| `delivery` 项目交付工作台 | 从固定输入到离线交接 | 8 个 delivery 插件、command-palette |
 
-没有默认整合包。`complete` 是迁移便利选项，不是首次启动配置。整合包通过带 `kind` 的成员引用，精确锁定插件或子整合包的版本。当前插件和整合包版本均为 `2.4.0`，声明格式版本为 `1`，宿主插件 API 为 `5`。解析前校验完整目录，包括未选包的声明、服务/路由/操作冲突、版本和循环；必需依赖先于消费者初始化，可选配套不会自动启用。
+没有默认整合包。`complete` 是迁移便利选项，不是首次启动配置。整合包通过带 `kind` 的成员引用，精确锁定插件或子整合包的版本。当前插件和整合包版本均为 `2.5.0`，声明格式版本为 `1`，宿主插件 API 为 `5`。解析前校验完整目录，包括未选包的声明、服务/路由/操作冲突、版本和循环；必需依赖先于消费者初始化，可选配套不会自动启用。
 
 整合包不复制插件代码，不覆盖插件配置，也不代表新的运行实例。两个整合包引用同一插件时只激活一次。停用整合包后，独立选择及其他整合包所需的插件继续保留；只有不再被引用的依赖才从下次启动清单移除。
 
