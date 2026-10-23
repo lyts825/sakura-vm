@@ -15,6 +15,19 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  */
 type OperationCheck = () => Promise<void>;
 const checks = new AsyncLocalStorage<OperationCheck>();
+const receipts = new AsyncLocalStorage<string>();
+
+/** 关联请求产生的任务和持久回执，不传递凭证或正文。
+ * Associate spawned jobs with a durable receipt without carrying credentials or request bodies. */
+export function withOperationReceipt<T>(correlationId: string, work: () => T): T {
+  return receipts.run(correlationId, work);
+}
+
+/** 读取当前回执身份；独立后台工作没有继承的请求回执。
+ * Read the current receipt identity; detached background work has no inherited receipt. */
+export function operationReceiptId(): string | undefined {
+  return receipts.getStore();
+}
 const auditObservers = new AsyncLocalStorage<
 /**
  * 中文功能：观察当前操作审计状态变化的无参数通知。
@@ -83,13 +96,13 @@ export function withOperationCheck<T>(check: OperationCheck, work: () => T): T {
 /** Independently owned schedulers and recovery domains establish their own authority. */
 /**
  * 入口 / Entry: withoutOperationContext.
- * 功能：退出当前用户操作检查上下文，让独立调度或原资源清理建立自身权限。
- * Purpose: Exits the current user-operation check context so independent schedulers or original-resource cleanup can establish their own authority.
+ * 功能：退出当前用户操作检查和请求回执上下文，让独立调度或原资源清理建立自身权限。
+ * Purpose: Exits user-operation checks and request receipt context so independent schedulers or original-resource cleanup establish their own authority.
  * 输入 / Inputs: work: () => T
- * 输出 / Returns: T；结果来自 / values from `checks.exit(work)`.
+ * 输出 / Returns: T；结果来自 / values from `checks.exit(() => receipts.exit(work))`.
  * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
  * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
  */
 export function withoutOperationContext<T>(work: () => T): T {
-  return checks.exit(work);
+  return checks.exit(() => receipts.exit(work));
 }

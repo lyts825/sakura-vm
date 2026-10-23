@@ -18,6 +18,8 @@ export type JobMeta = {
   admissionTimeoutMs?: number;
 };
 export type JobView = JobMeta & {
+  /** 发起任务的请求回执；不代表后台任务已完成。 / Request receipt, not proof of job completion. */
+  correlationId?: string;
   id?: string;
   key?: string;
   scope?: string;

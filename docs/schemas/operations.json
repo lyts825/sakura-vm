@@ -797,6 +797,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -1105,6 +1110,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -2069,6 +2079,11 @@
           "items": {
             "type": "object",
             "properties": {
+              "correlationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "title": {
                 "type": "string"
               },
@@ -4337,6 +4352,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -6507,6 +6527,11 @@
             "job": {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -9209,6 +9234,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -9907,6 +9937,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -10210,6 +10245,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -10648,6 +10688,11 @@
           "items": {
             "type": "object",
             "properties": {
+              "correlationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "title": {
                 "type": "string"
               },
@@ -11028,6 +11073,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -12940,6 +12990,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -13535,6 +13590,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -14016,6 +14076,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -14375,6 +14440,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -14953,6 +15023,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -15317,6 +15392,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -15963,6 +16043,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -16569,6 +16654,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -18387,6 +18477,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -19181,6 +19276,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -19652,6 +19752,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -20256,6 +20361,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -21050,6 +21160,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -21521,6 +21636,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -21922,6 +22042,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -22276,6 +22401,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -24527,6 +24657,11 @@
           "items": {
             "type": "object",
             "properties": {
+              "correlationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "title": {
                 "type": "string"
               },
@@ -25376,6 +25511,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -27874,6 +28014,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -28343,6 +28488,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -28958,6 +29108,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -29796,6 +29951,11 @@
               {
                 "type": "object",
                 "properties": {
+                  "correlationId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
                   "title": {
                     "type": "string"
                   },
@@ -30157,6 +30317,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -32993,6 +33158,338 @@
       "additionalProperties": false
     }
   },
+  "maintenance.cleanup.providers": {
+    "id": "cleanup.providers",
+    "method": "GET",
+    "path": "/api/cleanup",
+    "policy": {
+      "access": "controller",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": false,
+      "identity": "host",
+      "maintenance": "allow",
+      "transport": "json",
+      "mutating": false,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "none",
+      "approval": "none",
+      "extensionAuth": "none"
+    },
+    "handler": "route",
+    "status": 200,
+    "statuses": [
+      200
+    ],
+    "kind": "json",
+    "media": "application/json",
+    "input": {
+      "kind": "none",
+      "required": false,
+      "query": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "headers": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "backup-blocks",
+                  "job-logs"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "description"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "maintenance.cleanup.preview": {
+    "id": "cleanup.preview",
+    "method": "POST",
+    "path": "/api/cleanup/preview",
+    "policy": {
+      "access": "controller",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": false,
+      "identity": "host",
+      "maintenance": "block",
+      "transport": "json",
+      "mutating": false,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "none",
+      "approval": "none",
+      "extensionAuth": "none"
+    },
+    "handler": "route",
+    "status": 200,
+    "statuses": [
+      200
+    ],
+    "kind": "json",
+    "media": "application/json",
+    "input": {
+      "kind": "json",
+      "required": true,
+      "media": "application/json",
+      "query": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "headers": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "backup-blocks",
+            "job-logs"
+          ]
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "bytes": {
+                "type": "number",
+                "minimum": 0
+              },
+              "eligible": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "source",
+              "owner",
+              "label",
+              "bytes",
+              "eligible",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "backup-blocks",
+            "job-logs"
+          ]
+        },
+        "token": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "estimatedBytes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "candidateCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "revision",
+        "entries",
+        "notes",
+        "provider",
+        "token",
+        "expiresAt",
+        "estimatedBytes",
+        "candidateCount"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "maintenance.cleanup.execute": {
+    "id": "cleanup.execute",
+    "method": "POST",
+    "path": "/api/cleanup/execute",
+    "policy": {
+      "access": "controller",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": false,
+      "identity": "host",
+      "maintenance": "block",
+      "transport": "json",
+      "mutating": true,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "none",
+      "approval": "none",
+      "extensionAuth": "none"
+    },
+    "handler": "route",
+    "status": 200,
+    "statuses": [
+      200
+    ],
+    "kind": "json",
+    "media": "application/json",
+    "input": {
+      "kind": "json",
+      "required": true,
+      "media": "application/json",
+      "query": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "headers": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "backup-blocks",
+            "job-logs"
+          ]
+        },
+        "token": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "provider",
+        "token"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "backup-blocks",
+            "job-logs"
+          ]
+        },
+        "removedCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reclaimedBytes": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "provider",
+        "removedCount",
+        "reclaimedBytes"
+      ],
+      "additionalProperties": false
+    }
+  },
   "maintenance.legacy.get.storage": {
     "id": "legacy.get.storage",
     "method": "GET",
@@ -33313,6 +33810,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -33674,6 +34176,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -34043,6 +34550,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -34344,6 +34856,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -34698,6 +35215,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -35058,6 +35580,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -35818,6 +36345,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -36327,6 +36859,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -36737,6 +37274,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -37085,6 +37627,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -38470,6 +39017,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -39498,6 +40050,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -42895,6 +43452,18 @@
                     },
                     "timeout": {
                       "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "dependsOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "rerunnable": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -42903,6 +43472,15 @@
                     "timeout"
                   ],
                   "additionalProperties": false
+                }
+              },
+              "maxConcurrency": {
+                "type": "number"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
                 }
               },
               "artifacts": {
@@ -42933,6 +43511,21 @@
                 "type": "string"
               },
               "pipelineId": {
+                "type": "string"
+              },
+              "sourceRunId": {
+                "type": "string"
+              },
+              "selectedStepIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "fingerprint": {
+                "type": "string"
+              },
+              "rerunUnavailable": {
                 "type": "string"
               },
               "name": {
@@ -42983,6 +43576,18 @@
                   "type": "object",
                   "properties": {
                     "name": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "dependsOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "blockedReason": {
                       "type": "string"
                     },
                     "status": {
@@ -43078,6 +43683,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -43473,6 +44083,21 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 3600
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "dependsOn": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                }
+              },
+              "rerunnable": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -43484,6 +44109,20 @@
         },
         "artifacts": {
           "default": [],
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "maxConcurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "inputs": {
           "maxItems": 20,
           "type": "array",
           "items": {
@@ -43522,6 +44161,18 @@
               },
               "timeout": {
                 "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "dependsOn": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rerunnable": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -43530,6 +44181,15 @@
               "timeout"
             ],
             "additionalProperties": false
+          }
+        },
+        "maxConcurrency": {
+          "type": "number"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         },
         "artifacts": {
@@ -43677,28 +44337,72 @@
     },
     "request": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "const": "run"
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "run"
+            },
+            "pipelineId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "action",
+            "pipelineId"
+          ],
+          "additionalProperties": false
         },
-        "pipelineId": {
-          "type": "string",
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "rerun"
+            },
+            "pipelineId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "sourceRunId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "stepIds": {
+              "minItems": 1,
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              }
+            }
+          },
+          "required": [
+            "action",
+            "pipelineId",
+            "sourceRunId",
+            "stepIds"
+          ],
+          "additionalProperties": false
         }
-      },
-      "required": [
-        "action",
-        "pipelineId"
-      ],
-      "additionalProperties": false
+      ]
     },
     "response": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -46000,6 +46704,11 @@
           "items": {
             "type": "object",
             "properties": {
+              "correlationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "title": {
                 "type": "string"
               },
@@ -46833,6 +47542,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -48181,6 +48895,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -49005,6 +49724,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -50545,6 +51269,1081 @@
         "projectId",
         "plan",
         "lastFailure"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "recipes.post.vms.vmId.recipe.plan": {
+    "id": "post.vms.vmId.recipe.plan",
+    "method": "POST",
+    "path": "/api/vms/{vmId}/recipe/plan",
+    "policy": {
+      "access": "controller",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "allow",
+      "transport": "json",
+      "mutating": false,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none"
+    },
+    "handler": "route",
+    "status": 200,
+    "statuses": [
+      200
+    ],
+    "kind": "json",
+    "media": "application/json",
+    "input": {
+      "kind": "json",
+      "required": true,
+      "media": "application/json",
+      "query": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "pattern": "^(default|[a-f0-9]{16})$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "headers": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "resources": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "cpus": {
+              "default": 2,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8
+            },
+            "memoryMiB": {
+              "default": 512,
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 8192
+            },
+            "diskGiB": {
+              "default": 8,
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 128
+            },
+            "accelerator": {
+              "default": "auto",
+              "type": "string",
+              "enum": [
+                "auto",
+                "tcg",
+                "whpx"
+              ]
+            },
+            "distro": {
+              "type": "string",
+              "enum": [
+                "alpine",
+                "debian",
+                "ubuntu"
+              ]
+            },
+            "template": {
+              "type": "string",
+              "enum": [
+                "none",
+                "node",
+                "python",
+                "rust"
+              ]
+            },
+            "forwards": {
+              "default": [],
+              "maxItems": 12,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "host": {
+                    "type": "integer",
+                    "minimum": 1024,
+                    "maximum": 65535
+                  },
+                  "guest": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  }
+                },
+                "required": [
+                  "host",
+                  "guest"
+                ],
+                "additionalProperties": {
+                  "$ref": "#/$defs/requestJsonValue"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "project": {
+          "type": "object",
+          "properties": {
+            "directory": {
+              "default": "/workspace",
+              "type": "string"
+            },
+            "template": {
+              "default": "none",
+              "type": "string",
+              "enum": [
+                "none",
+                "node",
+                "python",
+                "rust"
+              ]
+            },
+            "repository": {
+              "default": "",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              ]
+            },
+            "setup": {
+              "default": "",
+              "type": "string",
+              "maxLength": 8192
+            },
+            "command": {
+              "default": "",
+              "type": "string",
+              "maxLength": 8192
+            },
+            "previewPort": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 65535
+            },
+            "networkIsolation": {
+              "type": "string",
+              "enum": [
+                "host",
+                "private"
+              ]
+            },
+            "environment": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 4096
+              }
+            },
+            "secrets": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,59}$"
+              }
+            },
+            "runtimes": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "type": "string",
+                  "pattern": "^\\d{1,2}\\.\\d{1,3}\\.\\d{1,3}$"
+                },
+                "python": {
+                  "type": "string",
+                  "pattern": "^\\d{1,2}\\.\\d{1,3}\\.\\d{1,3}$"
+                }
+              },
+              "additionalProperties": false
+            },
+            "services": {
+              "maxItems": 12,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,31}$"
+                  },
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "dependsOn": {
+                    "default": [],
+                    "maxItems": 12,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "ready": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "timeout": {
+                    "default": 30,
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 300
+                  },
+                  "environment": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 4096
+                    }
+                  },
+                  "secrets": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,59}$"
+                    }
+                  },
+                  "health": {
+                    "type": "object",
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      },
+                      "interval": {
+                        "default": 30,
+                        "type": "integer",
+                        "minimum": 5,
+                        "maximum": 3600
+                      },
+                      "timeout": {
+                        "default": 5,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 30
+                      },
+                      "failures": {
+                        "default": 3,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10
+                      },
+                      "restart": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "maxRestarts": {
+                        "default": 3,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 5
+                      },
+                      "backoff": {
+                        "default": 10,
+                        "type": "integer",
+                        "minimum": 5,
+                        "maximum": 300
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name",
+                  "command"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "version",
+        "project"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "requestJsonValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/requestJsonValue"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/requestJsonValue"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "vmId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "inputSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "configurationSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "resourceDeclarationSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "canApply": {
+          "type": "boolean"
+        },
+        "unchanged": {
+          "type": "boolean"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "before": {
+                "type": "string"
+              },
+              "after": {
+                "type": "string"
+              },
+              "disposition": {
+                "type": "string",
+                "enum": [
+                  "apply",
+                  "stop-required",
+                  "rebuild-required",
+                  "separate-operation",
+                  "unsupported"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field",
+              "before",
+              "after",
+              "disposition",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "runtimeVerification": {
+          "type": "string",
+          "const": "not-probed"
+        },
+        "dependencyVerification": {
+          "type": "string",
+          "const": "not-probed"
+        },
+        "imageVerification": {
+          "type": "string",
+          "const": "not-probed"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "token",
+        "expiresAt",
+        "vmId",
+        "projectId",
+        "inputSha256",
+        "configurationSha256",
+        "resourceDeclarationSha256",
+        "canApply",
+        "unchanged",
+        "changes",
+        "runtimeVerification",
+        "dependencyVerification",
+        "imageVerification",
+        "warnings"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "recipes.post.vms.vmId.recipe.apply-plan": {
+    "id": "post.vms.vmId.recipe.apply-plan",
+    "method": "POST",
+    "path": "/api/vms/{vmId}/recipe/apply-plan",
+    "policy": {
+      "access": "controller",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "json",
+      "mutating": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none"
+    },
+    "handler": "route",
+    "status": 200,
+    "statuses": [
+      200
+    ],
+    "kind": "json",
+    "media": "application/json",
+    "input": {
+      "kind": "json",
+      "required": true,
+      "media": "application/json",
+      "query": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "pattern": "^(default|[a-f0-9]{16})$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "headers": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "object",
+          "properties": {
+            "directory": {
+              "type": "string"
+            },
+            "template": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "none"
+                },
+                {
+                  "type": "string",
+                  "const": "node"
+                },
+                {
+                  "type": "string",
+                  "const": "python"
+                },
+                {
+                  "type": "string",
+                  "const": "rust"
+                }
+              ]
+            },
+            "repository": {
+              "type": "string"
+            },
+            "setup": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            },
+            "previewPort": {
+              "type": "number"
+            },
+            "networkIsolation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "host"
+                },
+                {
+                  "type": "string",
+                  "const": "private"
+                }
+              ]
+            },
+            "environment": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "secrets": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "runtimes": {
+              "type": "object",
+              "properties": {
+                "python": {
+                  "type": "string"
+                },
+                "node": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "services": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string"
+                  },
+                  "dependsOn": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "ready": {
+                    "type": "string"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  },
+                  "environment": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "secrets": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "health": {
+                    "type": "object",
+                    "properties": {
+                      "command": {
+                        "type": "string"
+                      },
+                      "interval": {
+                        "type": "number"
+                      },
+                      "timeout": {
+                        "type": "number"
+                      },
+                      "failures": {
+                        "type": "number"
+                      },
+                      "restart": {
+                        "type": "boolean"
+                      },
+                      "maxRestarts": {
+                        "type": "number"
+                      },
+                      "backoff": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "interval",
+                      "timeout",
+                      "failures",
+                      "restart",
+                      "maxRestarts",
+                      "backoff"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name",
+                  "command",
+                  "dependsOn",
+                  "ready",
+                  "timeout"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "_workspace": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "directory",
+            "template",
+            "repository",
+            "setup",
+            "command"
+          ],
+          "additionalProperties": false
+        },
+        "version": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "job": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "vmId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "type": "string"
+                },
+                "execution": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string"
+                    },
+                    "cwd": {
+                      "type": "string"
+                    },
+                    "timeoutSeconds": {
+                      "type": "number"
+                    },
+                    "requestedArtifacts": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "artifacts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "type": "number"
+                          },
+                          "sha256": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "path",
+                          "bytes",
+                          "sha256"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "timings": {
+                      "type": "object",
+                      "properties": {
+                        "bootMs": {
+                          "type": "number"
+                        },
+                        "commandMs": {
+                          "type": "number"
+                        },
+                        "artifactsMs": {
+                          "type": "number"
+                        },
+                        "shutdownMs": {
+                          "type": "number"
+                        },
+                        "totalMs": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "exitCode": {
+                      "type": "number"
+                    },
+                    "outcome": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "success"
+                        },
+                        {
+                          "type": "string",
+                          "const": "failed"
+                        },
+                        {
+                          "type": "string",
+                          "const": "timeout"
+                        },
+                        {
+                          "type": "string",
+                          "const": "cancelled"
+                        },
+                        {
+                          "type": "string",
+                          "const": "expired"
+                        },
+                        {
+                          "type": "string",
+                          "const": "interrupted"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "command",
+                    "cwd",
+                    "timeoutSeconds",
+                    "requestedArtifacts",
+                    "artifacts",
+                    "timings"
+                  ],
+                  "additionalProperties": false
+                },
+                "owner": {
+                  "type": "string"
+                },
+                "lane": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "interactive"
+                    },
+                    {
+                      "type": "string",
+                      "const": "background"
+                    },
+                    {
+                      "type": "string",
+                      "const": "control"
+                    }
+                  ]
+                },
+                "admissionTimeoutMs": {
+                  "type": "number"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "error"
+                    },
+                    {
+                      "type": "string",
+                      "const": "cancelled"
+                    },
+                    {
+                      "type": "string",
+                      "const": "interrupted"
+                    },
+                    {
+                      "type": "string",
+                      "const": "running"
+                    },
+                    {
+                      "type": "string",
+                      "const": "done"
+                    }
+                  ]
+                },
+                "admission": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "running"
+                    },
+                    {
+                      "type": "string",
+                      "const": "queued"
+                    },
+                    {
+                      "type": "string",
+                      "const": "cancelling"
+                    },
+                    {
+                      "type": "string",
+                      "const": "cleanup-pending"
+                    }
+                  ]
+                },
+                "queuedAt": {
+                  "type": "string"
+                },
+                "executionStartedAt": {
+                  "type": "string"
+                },
+                "resourceWait": {
+                  "type": "object",
+                  "properties": {
+                    "resource": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "since": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "resource",
+                    "reason",
+                    "since"
+                  ],
+                  "additionalProperties": false
+                },
+                "resourceLeaseId": {
+                  "type": "string"
+                },
+                "cleanupLeaseId": {
+                  "type": "string"
+                },
+                "cleanupResolvedAt": {
+                  "type": "string"
+                },
+                "delegatedFrom": {
+                  "type": "string"
+                },
+                "log": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "errorCode": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": "string"
+                },
+                "finishedAt": {
+                  "type": "string"
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "progress": {
+                  "type": "number"
+                },
+                "result": {
+                  "type": "object",
+                  "properties": {
+                    "bytes": {
+                      "type": "number"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "bytes",
+                    "sha256"
+                  ],
+                  "additionalProperties": false
+                },
+                "logPruned": {
+                  "type": "object",
+                  "properties": {
+                    "at": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "at",
+                    "bytes"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "status",
+                "log",
+                "startedAt"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "project",
+        "version",
+        "projectId",
+        "job"
       ],
       "additionalProperties": false
     }
@@ -52942,6 +54741,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -53602,6 +55406,1223 @@
       "additionalProperties": false
     }
   },
+  "repair.view": {
+    "id": "view",
+    "method": "GET",
+    "path": "/api/vms/{vmId}/repair",
+    "handler": "route",
+    "status": 200,
+    "policy": {
+      "access": "controller",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "allow",
+      "transport": "json",
+      "mutating": false,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none"
+    },
+    "statuses": [
+      200
+    ],
+    "kind": "json",
+    "media": "application/json",
+    "input": {
+      "kind": "none",
+      "required": false,
+      "query": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "pattern": "^(default|[a-f0-9]{16})$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "headers": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "vmId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "preview",
+            "generating",
+            "review",
+            "validating",
+            "validated",
+            "apply-unknown",
+            "applied",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "bytes": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "path",
+              "sha256",
+              "bytes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "preview": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "endpoint": {
+              "type": "string"
+            },
+            "redactions": {
+              "type": "number"
+            },
+            "expiresAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "content",
+            "model",
+            "endpoint",
+            "redactions",
+            "expiresAt"
+          ],
+          "additionalProperties": false
+        },
+        "before": {
+          "type": "string"
+        },
+        "patch": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "content": {
+              "type": "string",
+              "maxLength": 16000
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "path",
+            "content",
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "patchSha256": {
+          "type": "string"
+        },
+        "validation": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "patchSha256": {
+              "type": "string"
+            },
+            "job": {
+              "type": "object",
+              "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "vmId": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "type": "string"
+                },
+                "execution": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string"
+                    },
+                    "cwd": {
+                      "type": "string"
+                    },
+                    "timeoutSeconds": {
+                      "type": "number"
+                    },
+                    "requestedArtifacts": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "artifacts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "type": "number"
+                          },
+                          "sha256": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "path",
+                          "bytes",
+                          "sha256"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "timings": {
+                      "type": "object",
+                      "properties": {
+                        "bootMs": {
+                          "type": "number"
+                        },
+                        "commandMs": {
+                          "type": "number"
+                        },
+                        "artifactsMs": {
+                          "type": "number"
+                        },
+                        "shutdownMs": {
+                          "type": "number"
+                        },
+                        "totalMs": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "exitCode": {
+                      "type": "number"
+                    },
+                    "outcome": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "success"
+                        },
+                        {
+                          "type": "string",
+                          "const": "failed"
+                        },
+                        {
+                          "type": "string",
+                          "const": "timeout"
+                        },
+                        {
+                          "type": "string",
+                          "const": "cancelled"
+                        },
+                        {
+                          "type": "string",
+                          "const": "expired"
+                        },
+                        {
+                          "type": "string",
+                          "const": "interrupted"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "command",
+                    "cwd",
+                    "timeoutSeconds",
+                    "requestedArtifacts",
+                    "artifacts",
+                    "timings"
+                  ],
+                  "additionalProperties": false
+                },
+                "owner": {
+                  "type": "string"
+                },
+                "lane": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "interactive"
+                    },
+                    {
+                      "type": "string",
+                      "const": "background"
+                    },
+                    {
+                      "type": "string",
+                      "const": "control"
+                    }
+                  ]
+                },
+                "admissionTimeoutMs": {
+                  "type": "number"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "error"
+                    },
+                    {
+                      "type": "string",
+                      "const": "cancelled"
+                    },
+                    {
+                      "type": "string",
+                      "const": "interrupted"
+                    },
+                    {
+                      "type": "string",
+                      "const": "running"
+                    },
+                    {
+                      "type": "string",
+                      "const": "done"
+                    }
+                  ]
+                },
+                "admission": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "running"
+                    },
+                    {
+                      "type": "string",
+                      "const": "queued"
+                    },
+                    {
+                      "type": "string",
+                      "const": "cancelling"
+                    },
+                    {
+                      "type": "string",
+                      "const": "cleanup-pending"
+                    }
+                  ]
+                },
+                "queuedAt": {
+                  "type": "string"
+                },
+                "executionStartedAt": {
+                  "type": "string"
+                },
+                "resourceWait": {
+                  "type": "object",
+                  "properties": {
+                    "resource": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "since": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "resource",
+                    "reason",
+                    "since"
+                  ],
+                  "additionalProperties": false
+                },
+                "resourceLeaseId": {
+                  "type": "string"
+                },
+                "cleanupLeaseId": {
+                  "type": "string"
+                },
+                "cleanupResolvedAt": {
+                  "type": "string"
+                },
+                "delegatedFrom": {
+                  "type": "string"
+                },
+                "log": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "errorCode": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": "string"
+                },
+                "finishedAt": {
+                  "type": "string"
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "progress": {
+                  "type": "number"
+                },
+                "result": {
+                  "type": "object",
+                  "properties": {
+                    "bytes": {
+                      "type": "number"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "bytes",
+                    "sha256"
+                  ],
+                  "additionalProperties": false
+                },
+                "logPruned": {
+                  "type": "object",
+                  "properties": {
+                    "at": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "at",
+                    "bytes"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "status",
+                "log",
+                "startedAt"
+              ],
+              "additionalProperties": false
+            },
+            "sandboxId": {
+              "type": "string"
+            },
+            "cleanup": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "done",
+                "failed"
+              ]
+            },
+            "passed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "command",
+            "patchSha256",
+            "cleanup",
+            "passed"
+          ],
+          "additionalProperties": false
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "vmId",
+        "projectId",
+        "target",
+        "state",
+        "expiresAt",
+        "files",
+        "preview",
+        "before"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "repair.act": {
+    "id": "act",
+    "method": "POST",
+    "path": "/api/vms/{vmId}/repair",
+    "handler": "route",
+    "status": 200,
+    "policy": {
+      "access": "controller",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "json",
+      "mutating": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none"
+    },
+    "statuses": [
+      200
+    ],
+    "kind": "json",
+    "media": "application/json",
+    "input": {
+      "kind": "json",
+      "required": true,
+      "media": "application/json",
+      "query": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "pattern": "^(default|[a-f0-9]{16})$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "headers": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "preview"
+            },
+            "input": {
+              "type": "object",
+              "properties": {
+                "target": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240
+                },
+                "context": {
+                  "default": [],
+                  "maxItems": 7,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  }
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "target",
+                "instruction"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "action",
+            "input"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "validate"
+            },
+            "input": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "command": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "timeoutSeconds": {
+                  "default": 60,
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 300
+                }
+              },
+              "required": [
+                "sessionId",
+                "command"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "action",
+            "input"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "generate"
+            },
+            "sessionId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "action",
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "apply"
+            },
+            "sessionId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "action",
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "cancel"
+            },
+            "sessionId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "action",
+            "sessionId"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "vmId": {
+              "type": "string"
+            },
+            "projectId": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "preview",
+                "generating",
+                "review",
+                "validating",
+                "validated",
+                "apply-unknown",
+                "applied",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "sha256": {
+                    "type": "string"
+                  },
+                  "bytes": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "path",
+                  "sha256",
+                  "bytes"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "preview": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "redactions": {
+                  "type": "number"
+                },
+                "expiresAt": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "content",
+                "model",
+                "endpoint",
+                "redactions",
+                "expiresAt"
+              ],
+              "additionalProperties": false
+            },
+            "before": {
+              "type": "string"
+            },
+            "patch": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240
+                },
+                "content": {
+                  "type": "string",
+                  "maxLength": 16000
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "path",
+                "content",
+                "summary"
+              ],
+              "additionalProperties": false
+            },
+            "patchSha256": {
+              "type": "string"
+            },
+            "validation": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "patchSha256": {
+                  "type": "string"
+                },
+                "job": {
+                  "type": "object",
+                  "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "vmId": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "execution": {
+                      "type": "object",
+                      "properties": {
+                        "command": {
+                          "type": "string"
+                        },
+                        "cwd": {
+                          "type": "string"
+                        },
+                        "timeoutSeconds": {
+                          "type": "number"
+                        },
+                        "requestedArtifacts": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "artifacts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "number"
+                              },
+                              "sha256": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "path",
+                              "bytes",
+                              "sha256"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "timings": {
+                          "type": "object",
+                          "properties": {
+                            "bootMs": {
+                              "type": "number"
+                            },
+                            "commandMs": {
+                              "type": "number"
+                            },
+                            "artifactsMs": {
+                              "type": "number"
+                            },
+                            "shutdownMs": {
+                              "type": "number"
+                            },
+                            "totalMs": {
+                              "type": "number"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "exitCode": {
+                          "type": "number"
+                        },
+                        "outcome": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "const": "success"
+                            },
+                            {
+                              "type": "string",
+                              "const": "failed"
+                            },
+                            {
+                              "type": "string",
+                              "const": "timeout"
+                            },
+                            {
+                              "type": "string",
+                              "const": "cancelled"
+                            },
+                            {
+                              "type": "string",
+                              "const": "expired"
+                            },
+                            {
+                              "type": "string",
+                              "const": "interrupted"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "command",
+                        "cwd",
+                        "timeoutSeconds",
+                        "requestedArtifacts",
+                        "artifacts",
+                        "timings"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "owner": {
+                      "type": "string"
+                    },
+                    "lane": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "interactive"
+                        },
+                        {
+                          "type": "string",
+                          "const": "background"
+                        },
+                        {
+                          "type": "string",
+                          "const": "control"
+                        }
+                      ]
+                    },
+                    "admissionTimeoutMs": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "error"
+                        },
+                        {
+                          "type": "string",
+                          "const": "cancelled"
+                        },
+                        {
+                          "type": "string",
+                          "const": "interrupted"
+                        },
+                        {
+                          "type": "string",
+                          "const": "running"
+                        },
+                        {
+                          "type": "string",
+                          "const": "done"
+                        }
+                      ]
+                    },
+                    "admission": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "running"
+                        },
+                        {
+                          "type": "string",
+                          "const": "queued"
+                        },
+                        {
+                          "type": "string",
+                          "const": "cancelling"
+                        },
+                        {
+                          "type": "string",
+                          "const": "cleanup-pending"
+                        }
+                      ]
+                    },
+                    "queuedAt": {
+                      "type": "string"
+                    },
+                    "executionStartedAt": {
+                      "type": "string"
+                    },
+                    "resourceWait": {
+                      "type": "object",
+                      "properties": {
+                        "resource": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "resource",
+                        "reason",
+                        "since"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "resourceLeaseId": {
+                      "type": "string"
+                    },
+                    "cleanupLeaseId": {
+                      "type": "string"
+                    },
+                    "cleanupResolvedAt": {
+                      "type": "string"
+                    },
+                    "delegatedFrom": {
+                      "type": "string"
+                    },
+                    "log": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "errorCode": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": "string"
+                    },
+                    "phase": {
+                      "type": "string"
+                    },
+                    "progress": {
+                      "type": "number"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "bytes": {
+                          "type": "number"
+                        },
+                        "sha256": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "bytes",
+                        "sha256"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "logPruned": {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "bytes": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "bytes"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "log",
+                    "startedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "sandboxId": {
+                  "type": "string"
+                },
+                "cleanup": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "done",
+                    "failed"
+                  ]
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "command",
+                "patchSha256",
+                "cleanup",
+                "passed"
+              ],
+              "additionalProperties": false
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "vmId",
+            "projectId",
+            "target",
+            "state",
+            "expiresAt",
+            "files",
+            "preview",
+            "before"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
   "runtimes.legacy.get.vms.vmId.runtimes": {
     "id": "legacy.get.vms.vmId.runtimes",
     "method": "GET",
@@ -53775,6 +56796,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -54325,6 +57351,11 @@
                 {
                   "type": "object",
                   "properties": {
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
                     "title": {
                       "type": "string"
                     },
@@ -54817,6 +57848,11 @@
         {
           "type": "object",
           "properties": {
+            "correlationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
             "title": {
               "type": "string"
             },
@@ -56233,6 +59269,11 @@
           "items": {
             "type": "object",
             "properties": {
+              "correlationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "title": {
                 "type": "string"
               },
@@ -59066,6 +62107,30 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "inputFiles": {
+          "minItems": 1,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 16000
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ],
+            "additionalProperties": false
+          }
+        },
         "command": {
           "type": "string",
           "minLength": 1,
@@ -59104,6 +62169,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -60113,6 +63183,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -60582,6 +63657,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -61094,6 +64174,11 @@
           "items": {
             "type": "object",
             "properties": {
+              "correlationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "title": {
                 "type": "string"
               },
@@ -61483,6 +64568,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -66802,6 +69892,11 @@
           "items": {
             "type": "object",
             "properties": {
+              "correlationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "title": {
                 "type": "string"
               },
@@ -67189,6 +70284,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -67529,6 +70629,11 @@
           "items": {
             "type": "object",
             "properties": {
+              "correlationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "title": {
                 "type": "string"
               },
@@ -67931,6 +71036,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -69738,6 +72848,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -70642,6 +73757,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -71481,6 +74601,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },
@@ -71999,6 +75124,11 @@
             {
               "type": "object",
               "properties": {
+                "correlationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
                 "title": {
                   "type": "string"
                 },
@@ -72387,6 +75517,11 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "correlationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
         "title": {
           "type": "string"
         },

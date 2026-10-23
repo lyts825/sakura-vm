@@ -50,6 +50,8 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'projects': () => import('../../plugins/projects/server.ts'),
   /** 按需加载 recipes 的固定服务入口，无外部路径参数。 / Load the fixed recipes service entry on demand, with no external path input. */
   'recipes': () => import('../../plugins/recipes/server.ts'),
+  /** 按需加载 repair 的固定服务入口，无外部路径参数。 / Load the fixed repair service entry on demand, with no external path input. */
+  'repair': () => import('../../plugins/repair/server.ts'),
   /** 按需加载 runtimes 的固定服务入口，无外部路径参数。 / Load the fixed runtimes service entry on demand, with no external path input. */
   'runtimes': () => import('../../plugins/runtimes/server.ts'),
   /** 按需加载 sandbox 的固定服务入口，无外部路径参数。 / Load the fixed sandbox service entry on demand, with no external path input. */

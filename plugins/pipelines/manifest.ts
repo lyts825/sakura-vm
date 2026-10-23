@@ -9,7 +9,7 @@ import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
 export const manifest = definePlugin({
   id: 'pipelines',
   name: '项目流水线',
-  description: '构建步骤、运行记录与产物下载。',
+  description: '步骤依赖图、有限并发、受控局部重跑、运行记录与产物下载。',
   category: 'development',
   requires: [pin('projects'), pin('files'), pin('transfers')],
   services: ['pipelines'],

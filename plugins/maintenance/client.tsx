@@ -12,6 +12,7 @@ import { saveText } from '../../src/export-file';
 import type { FeatureProps, Request } from '../../src/feature-shared';
 import { Feedback, formatBytes, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
+import { CleanupPanel } from './cleanup-panel.tsx';
 
 /**
  * 中文：呈现实例诊断、磁盘扩容与整理的界面交互与状态呈现中的 StoragePanel 界面，订阅 /storage，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
@@ -64,6 +65,7 @@ export function StoragePanel({ request }: { request: Request }) {
           <p className="subtle-note">内部快照与实例共享磁盘文件，占用合并显示。</p>
         </>
       )}
+      <CleanupPanel request={request} />
     </div>
   );
 }

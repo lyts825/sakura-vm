@@ -1,6 +1,6 @@
 # 文档索引
 
-核对日期：2026-10-23；应用与内置包版本：**2.3.7**；宿主插件 API：**5**；公共服务契约：**V1**。
+核对日期：2026-10-23；应用与内置包版本：**2.4.0**；宿主插件 API：**5**；公共服务契约：**V1**。
 
 | 使用场景 | 从这里开始 |
 | --- | --- |
@@ -40,6 +40,9 @@
 - [文件锁](file-locks.md)
 - [Git 工作台的项目账号](git-project-identity.md)
 - [本地 AI 编程助手与命令规划](local-assistant.md)
+- [AI 修复会话](repair-sessions.md)
+- [环境变更预览与受控应用](environment-plan.md)
+- [流水线依赖与局部重跑](pipeline-graph.md)
 - [JupyterLab 与 Marimo 环境](notebook-environments.md)
 - [离线软件包缓存](package-cache.md)
 - [发行版包管理器](package-workbench.md)
@@ -83,6 +86,8 @@
 
 ## 磁盘、备份、恢复与高可用
 
+- [安全清理中心](cleanup-center.md)
+- [任务证据与处理](task-evidence.md)
 - [备份文件级恢复](backup-file-recovery.md)
 - [灾备演练](disaster-recovery-drill.md)
 - [黄金镜像库](golden-images.md)

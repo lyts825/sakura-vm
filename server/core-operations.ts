@@ -49,6 +49,7 @@ import { hostPeerRequest } from './host-peers.ts';
 import { communityPluginRequest } from './community-plugins.ts';
 import { mobileAction } from './mobile-companion.ts';
 import { assistantRequest } from './local-assistant.ts';
+import { trustedUpdateRequest } from '../shared/contracts/trusted-update.ts';
 import { nativeRequest } from './native-integration.ts';
 import { nativeClipboardRequest } from './native-clipboard.ts';
 import { storagePoolInput } from './storage-pools.ts';
@@ -392,6 +393,16 @@ export const coreOperations: {
     title: '模型设置、脱敏预览、编程建议或命令规划',
     body: request(assistantRequest),
 
+    policy: {"access":"controller","roles":["owner"],"projectScoped":false,"identity":"host","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},
+  },
+  {
+    id: 'trusted-updates.get', method: 'GET', path: '/api/trusted-updates',
+    title: '可信发布者与本地更新版本状态', inspect: true,
+    policy: {"access":"controller","roles":["owner"],"projectScoped":false,"identity":"host","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"none","approval":"none","extensionAuth":"none"},
+  },
+  {
+    id: 'trusted-updates.action', method: 'POST', path: '/api/trusted-updates',
+    title: '更新信任策略、检查、暂存、启用或回退签名运行包', body: request(trustedUpdateRequest),
     policy: {"access":"controller","roles":["owner"],"projectScoped":false,"identity":"host","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},
   },
   {

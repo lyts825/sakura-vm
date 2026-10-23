@@ -11,7 +11,7 @@ import { operationResultSchema, type OperationResult } from '../shared/contracts
 import { operationResultArchiveRequest, type OperationResultPool, type OperationResultDirectory, type OperationResultArchive } from '../shared/contracts/operation-results.ts';
 import { writeStore, regularDirectory } from './local-store.ts';
 import { DATA } from './paths.ts';
-import { withoutOperationContext, withAuditFailureObserver } from './operation-context.ts';
+import { withoutOperationContext, withAuditFailureObserver, withOperationReceipt } from './operation-context.ts';
 import { withoutPluginAuthority } from './plugin-authority.ts';
 import { withNewResourceContext } from './host-runtime/context.ts';
 import { auditFailure } from './audit.ts';
@@ -382,7 +382,8 @@ export class OperationResults {
    * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
    */
   run<T>(receipt: Receipt, work: () => T) {
-    return withAuditFailureObserver(() => failedAudit.add(receipt), () => context.run(receipt, work));
+    return withAuditFailureObserver(() => failedAudit.add(receipt),
+      () => withOperationReceipt(receipt.correlationId, () => context.run(receipt, work)));
   }
   /** 业务执行前先持久化开始标志；进程中断后以 unknown 保留可能已产生效果的证据。 */
   /**

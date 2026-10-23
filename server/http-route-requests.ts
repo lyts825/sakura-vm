@@ -3,6 +3,7 @@
  * Module purpose: Collects route wire-input schemas, providing explicit parameter shapes for request contract selection.
  */
 import { z } from 'zod';
+import { cleanupPreviewRequest, cleanupExecuteRequest } from '../shared/contracts/cleanup-plan.ts';
 import { MAX_TEXT_BYTES } from './files.ts';
 import { singleAppInput, singleAppProgram, singleAppClipboard } from './single-app-windows.ts';
 import {
@@ -12,6 +13,8 @@ import {
 import { networkSchema, forwardsSchema } from './network-profiles.ts';
 import { projectSchema } from './project-config.ts';
 import { recipeSchema } from './recipes.ts';
+import { recipeApplyPlanRequestSchema } from '../shared/contracts/recipe-plan.ts';
+import { repairActionSchema } from '../shared/contracts/repair-session.ts';
 
 /** HTTP route inputs are used by the handlers, admission and generated clients. */
 export const httpRouteRequests = {
@@ -153,6 +156,8 @@ export const httpRouteRequests = {
   'library.legacy.post.vms.batch': z
     .object({ ids: z.array(z.string().uuid()).min(1).max(32), action: z.enum(['start', 'stop']) })
     .strict(),
+  'maintenance.cleanup.preview': cleanupPreviewRequest,
+  'maintenance.cleanup.execute': cleanupExecuteRequest,
   'maintenance.legacy.post.vms.vmId.disk-maintenance': z
     .object({ mode: z.enum(['trim', 'compact']) })
     .strict(),
@@ -176,9 +181,11 @@ export const httpRouteRequests = {
     .strict(),
   'network.legacy.patch.vms.vmId.services': z.object({ forwards: forwardsSchema }).strict(),
   'pipelines.legacy.delete.vms.vmId.pipelines': z.object({ id: z.uuid() }).strict(),
-  'pipelines.legacy.post.vms.vmId.pipelines': z
-    .object({ action: z.literal('run'), pipelineId: z.uuid() })
-    .strict(),
+  'pipelines.legacy.post.vms.vmId.pipelines': z.discriminatedUnion('action', [
+    z.object({ action: z.literal('run'), pipelineId: z.uuid() }).strict(),
+    z.object({ action: z.literal('rerun'), pipelineId: z.uuid(), sourceRunId: z.uuid(),
+      stepIds: z.array(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)).min(1).max(20) }).strict(),
+  ]),
   'pipelines.legacy.post.vms.vmId.pipeline-artifact': z
     .object({ runId: z.uuid(), index: z.number().int().min(0).max(19) })
     .strict(),
@@ -203,6 +210,9 @@ export const httpRouteRequests = {
   'recipes.legacy.post.recipes': z
     .object({ name: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/), recipe: recipeSchema })
     .strict(),
+  'recipes.post.vms.vmId.recipe.plan': recipeSchema,
+  'repair.act': repairActionSchema,
+  'recipes.post.vms.vmId.recipe.apply-plan': recipeApplyPlanRequestSchema,
   'recipes.legacy.post.vms.vmId.recipe': z.object({ action: z.enum(['read', 'write']) }).strict(),
   'runtimes.legacy.post.vms.vmId.runtimes': z.discriminatedUnion('action', [
     z.object({ action: z.literal('probe') }).strict(),

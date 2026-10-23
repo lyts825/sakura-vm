@@ -16,6 +16,10 @@ import { AppError } from '../../shared/errors.ts';
 
 import { Maintenance } from '../../server/maintenance.ts';
 import { retryTarget } from '../../server/plugins/retry.ts';
+import { CleanupPlans } from '../../server/cleanup-plan.ts';
+import { backupBlocks } from '../../server/backup-blocks.ts';
+
+const cleanupCenters = new WeakMap<PluginContext, CleanupPlans>();
 
 /**
  * 中文：在本次插件激活中构造 Maintenance，发布 maintenanceServices.maintenance 服务引用；依赖通过 host 获取，登记的任务和清理由本激活寿命拥有
@@ -26,6 +30,19 @@ import { retryTarget } from '../../server/plugins/retry.ts';
  * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
  */
 export async function activate(host: PluginContext) {
+  const cleanup = new CleanupPlans();
+  cleanup.register({ id: 'backup-blocks', label: '未引用备份块', description: '完整核验备份引用后回收孤儿块。',
+    snapshot: (signal) => backupBlocks().cleanupSnapshot(signal),
+    execute: (revision, signal) => backupBlocks().cleanupExecute(revision, signal) });
+  const retention = () => {
+    const service = host.system.optional('retention');
+    if (!service) throw new AppError('日志保留服务暂不可用', 503);
+    return service;
+  };
+  cleanup.register({ id: 'job-logs', label: '已完成任务日志', description: '按现有保留期限和容量清理成功任务的日志正文。',
+    snapshot: () => retention().cleanupSnapshot(), execute: (revision, signal) => retention().cleanupExecute(revision, signal) });
+  cleanupCenters.set(host, cleanup);
+  host.onDispose(async () => { await cleanup.close(); cleanupCenters.delete(host); });
   const m = host.vm;
   const maintenance = host.provide(maintenanceServices.maintenance, new Maintenance(m, { deferInitialization: true }));
   // 服务先纳入宿主再初始化维护工作，避免激活中的后台资源失去所属插件。
@@ -68,6 +85,20 @@ export async function route(
    * English: Inputs: data: the unknown domain value in the signature; status: the invocation value for this handler (default 200)
    */
   const send = (data: unknown, status = 200) => sendJson(res, data, status);
+  if (parts[1] === 'cleanup') {
+    const cleanup = cleanupCenters.get(this);
+    if (!cleanup) throw new AppError('清理中心未激活', 503);
+    if (parts.length === 2 && req.method === 'GET') { send(cleanup.list()); return true; }
+    if (parts.length === 3 && parts[2] === 'preview' && req.method === 'POST') {
+      const input = httpRouteRequests['maintenance.cleanup.preview'].parse(await body(req, signal));
+      send(await cleanup.preview(input.provider, signal)); return true;
+    }
+    if (parts.length === 3 && parts[2] === 'execute' && req.method === 'POST') {
+      const input = httpRouteRequests['maintenance.cleanup.execute'].parse(await body(req, signal));
+      send(await cleanup.execute(input.provider, input.token, signal)); return true;
+    }
+    return false;
+  }
   if (parts[1] === 'storage' && parts.length === 2 && req.method === 'GET') {
     send(await this.use(maintenanceServices.maintenance).storage());
     return true;
@@ -118,6 +149,9 @@ export async function route(
 
 /** Exact implemented HTTP operations; declarations alone never publish a handler. */
 export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+  'cleanup.providers': route,
+  'cleanup.preview': route,
+  'cleanup.execute': route,
   "legacy.get.storage": route,
   "legacy.get.vms.vmId.diagnostics": route,
   "legacy.post.vms.vmId.diagnostics": route,

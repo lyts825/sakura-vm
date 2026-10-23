@@ -13,6 +13,7 @@ import type { JobView } from '../shared/contracts/jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { LogRetentionPolicy, LogRetentionSummary, LogRetentionView } from '../shared/log-retention.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
+import type { CleanupSnapshot } from '../shared/contracts/cleanup-plan.ts';
 
 export const logRetentionPolicy = z
   .object({
@@ -67,7 +68,7 @@ const stateSchema = z
  * 副作用 / Effects: `removals.push`; `createHash().update().digest`; `createHash().update`; `createHash`; 更新 / updates `bytes`, `summary.removeLogs`, `summary.removeBytes`, `summary.remainingBytes`.
  * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
  */
-export function planLogRetention(stores: JobsV1[], policy: LogRetentionPolicy, now = Date.now()) {
+export function planLogRetention(stores: JobsV1[], policy: LogRetentionPolicy, now = Date.now(), onlySuccessful = false) {
   const summary: LogRetentionSummary = {
     stores: stores.length,
     completedLogs: 0,
@@ -102,7 +103,9 @@ export function planLogRetention(stores: JobsV1[], policy: LogRetentionPolicy, n
       const bytes = Buffer.byteLength(job.log);
       if (!bytes) continue;
       const at = Date.parse(job.finishedAt || job.startedAt);
-      if (job.status === 'running' || !job.id || !Number.isFinite(at) || at > now) {
+      if (job.status === 'running' || job.admission === 'cleanup-pending' ||
+          (job.cleanupLeaseId && !job.cleanupResolvedAt) || (onlySuccessful && job.status !== 'done') ||
+          !job.id || !Number.isFinite(at) || at > now) {
         summary.protectedLogs++;
         summary.protectedBytes += bytes;
         continue;
@@ -264,6 +267,51 @@ export class LogRetention {
       warning: this.warning,
     };
   }
+  /** 中文：清理中心只选择成功结束且超过现有期限或容量的日志。English: The center selects successful logs exceeding the current age or capacity limits. */
+  private cleanupPlan() {
+    if (this.closed) throw new AppError('日志保留服务正在关闭', 503);
+    if (this.warning) throw new AppError(this.warning, 409);
+    const stores = this.stores();
+    const plan = planLogRetention(stores, { ...this.state.policy, enabled: true }, this.now(), true);
+    const removable = new Set(plan.removals.map((item) => item.storeIndex + ':' + item.job.id));
+    const entries: CleanupSnapshot['entries'] = [];
+    const evidence: unknown[] = [this.state.policy, plan.token];
+    stores.forEach((store, index) => {
+      for (const job of store.list()) {
+        if (!job.log) continue;
+        const id = index + ':' + (job.id || job.key || 'unknown');
+        const eligible = removable.has(id);
+        evidence.push([id, job.status, job.admission, job.cleanupLeaseId, job.cleanupResolvedAt, job.finishedAt,
+          createHash('sha256').update(job.log).digest('hex')]);
+        entries.push({ id, source: 'job-logs', owner: job.owner || job.scope || '任务历史',
+          label: (job.title || job.action || '任务') + ' · ' + (job.id || job.key || '未知标识'),
+          bytes: Buffer.byteLength(job.log), eligible,
+          reason: eligible ? '已成功结束，超过当前日志保留期限或容量' :
+            job.status === 'running' ? '活动任务' :
+            job.admission === 'cleanup-pending' || (job.cleanupLeaseId && !job.cleanupResolvedAt) ? '仍有恢复清理资源' :
+            job.status !== 'done' ? '失败、取消或中断日志保留为处理证据' : '仍在保留范围内或时间、标识无效' });
+      }
+    });
+    const snapshot: CleanupSnapshot = { entries,
+      revision: createHash('sha256').update(JSON.stringify(evidence)).digest('hex'),
+      notes: [`按当前策略的 ${this.state.policy.days} 天、${this.state.policy.maxMiB} MiB 上限计算；本次手动清理不会开启自动清理。`,
+        '任务结果、审计记录和恢复证据存储均不参与清理；字节估计是日志正文的 UTF-8 大小。'] };
+    return { plan, snapshot };
+  }
+  cleanupSnapshot(): CleanupSnapshot {
+    return this.cleanupPlan().snapshot;
+  }
+  /** 中文：复核后复用领域删除入口，不改变自动保留策略。English: Revalidate and use the domain deletion path without changing automatic retention policy. */
+  cleanupExecute(revision: string, signal?: AbortSignal) {
+    return this.serialized(async () => {
+      signal?.throwIfAborted();
+      if (this.blocked()) throw new AppError('数据目录迁移维护中，日志清理已暂停', 409);
+      const current = this.cleanupPlan();
+      if (current.snapshot.revision !== revision) throw new AppError('任务日志或策略已变化，请重新预览', 409);
+      await this.apply(current.plan, signal);
+      return { removedCount: this.state.lastRun!.removedLogs, reclaimedBytes: this.state.lastRun!.removedBytes };
+    });
+  }
   /**
    * 入口 / Entry: LogRetention.preview.
    * 功能：在规划并清理日志保留内容中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ ...plan.summary, token: this.previewToken(plan.token) }` 供上层消费（`LogRetention`）。
@@ -361,12 +409,13 @@ export class LogRetention {
    * 失败处理：catch 分支执行 `this.warning = '日志清理未全部完成，请检查任务历史的磁盘空间和权限；已完成部分不会恢复，稍后可重试。';`; `throw new AppError(this.warning, 500);`，是否吞掉错误或重新拒绝由这些语句决定。
    * Failure handling: Catch paths execute `this.warning = '日志清理未全部完成，请检查任务历史的磁盘空间和权限；已完成部分不会恢复，稍后可重试。';`; `throw new AppError(this.warning, 500);`; these statements determine whether a failure is absorbed or rejected again.
    */
-  private async apply(plan: ReturnType<typeof planLogRetention>) {
+  private async apply(plan: ReturnType<typeof planLogRetention>, signal?: AbortSignal) {
     const at = new Date(this.now()).toISOString();
     let removedLogs = 0,
       removedBytes = 0;
     try {
       for (const store of new Set(plan.removals.map((item) => item.store))) {
+        signal?.throwIfAborted();
         const items = plan.removals.filter((item) => item.store === store);
         const result = await store.clearCompletedLogs(
           items.map((item) => ({ id: item.job.id!, signature: item.signature })),

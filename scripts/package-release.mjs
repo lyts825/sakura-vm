@@ -61,6 +61,8 @@ for (const file of [
   'launch-witness.mjs',
   'wsl-runtime.mjs',
   'self-update.mjs',
+  'trusted-update.mjs',
+  'sign-release.mjs',
   'release-manifest.mjs',
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
@@ -100,6 +102,7 @@ const readme = [
   '更新：从原安装目录运行 `npm run update:check -- <新包目录>`、`npm run update:stage -- <新包目录>`，',
   '然后运行 `npm run update:activate -- versions/<编号>` 并重启 Sakura。',
   '可用 `npm run update:rollback` 切回上一个版本，再重启服务。更新前请保存或备份重要数据。',
+  '系统设置中的“可信更新”可登记发布者公钥，并检查、暂存和启用本地签名发行包。签名验证通过后才安装依赖或运行候选程序；旧版无签名 CLI 更新仍保持兼容。发行方可用随包的 `scripts/sign-release.mjs` 签名，私钥须保存在包目录之外。',
   '',
 ].join('\n');
 await writeFile(join(output, 'README.md'), readme);

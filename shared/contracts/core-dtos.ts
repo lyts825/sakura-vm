@@ -32,6 +32,7 @@ export const jobView_executionVariant0Schema = z.object({
 }).strict();
 
 export const jobViewSchema = z.object({
+  "correlationId": z.uuid().optional(),
   "title": z.string().optional(),
   "vmId": z.string().optional(),
   "action": z.string().optional(),

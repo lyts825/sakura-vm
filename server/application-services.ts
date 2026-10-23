@@ -34,6 +34,7 @@ import { JitPrivileges } from './jit-privileges.ts';
 import { Jobs } from './jobs.ts';
 import { LiveMigrationReceiver, registerLiveMigrationTargetPort } from './live-migration-receiver.ts';
 import { LocalAssistant } from './local-assistant.ts';
+import { TrustedUpdates } from './trusted-updates.ts';
 import { LogRetention } from './log-retention.ts';
 import { Machines } from './machines.ts';
 import { MediaDevices } from './media-devices.ts';
@@ -2188,6 +2189,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 150,
   });
+  const trustedUpdates = await plugins.system.startDegradable({
+    id: 'trustedUpdates', startup: 'degradable',
+    startupRecovery: '检查原安装目录中的更新信任策略与版本状态',
+    requires: [],
+    create: () => new TrustedUpdates(),
+    initialize: value => value.init(),
+    dispose: value => value?.close(),
+    disposePhase: 155,
+  });
   const communityPlugins = await plugins.system.start({
     id: 'communityPlugins',
     startup: 'required',
@@ -2568,6 +2578,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   return {
     access,
     assistant,
+    trustedUpdates,
     audit,
     automationRules,
     browserExtensions,

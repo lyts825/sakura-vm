@@ -2,7 +2,9 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
-应用与内置包版本：**2.3.7**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+应用与内置包版本：**2.4.0**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+
+本轮新增 [环境变更预览](docs/environment-plan.md)、[流水线依赖与局部重跑](docs/pipeline-graph.md)、[安全清理中心](docs/cleanup-center.md)和[任务证据与处理](docs/task-evidence.md)。[AI 修复会话](docs/repair-sessions.md)作为可选插件提供单文件补丁与隔离验证；[可信更新中心](docs/self-update.md)在系统设置中管理签名发行包。
 
 **真正运行 Linux 内核。** [PosixLoom](https://github.com/lyts825/posixloom) 负责命令编排、会话与 Windows 进程树管理，[QEMU](https://www.qemu.org/) 负责虚拟化。当前不是 WSL 的替代实现，也不依赖现有的 WSL 发行版。
 
@@ -12,7 +14,7 @@
 
 文件、桌面、多终端、项目、Git、同步、备份、监控等均为可选插件。**默认不启用任何插件或整合包**，也不运行它们的后台任务。默认导航为「工作空间 / 插件中心 / 系统设置」，实例标签为「终端 / 配置」。
 
-当前有 **32 个插件、9 个整合包**。在「插件中心」单独选择插件，或按场景选择整合包：
+当前有 **33 个插件、9 个整合包**。在「插件中心」单独选择插件，或按场景选择整合包：
 
 | 整合包                     | 内容                                                   |
 | -------------------------- | ------------------------------------------------------ |

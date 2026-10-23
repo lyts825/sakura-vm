@@ -32,7 +32,7 @@ async function launch(version) {
   const child = spawn(process.execPath, [entry], {
     cwd: path, stdio: 'inherit', windowsHide: true,
     env: { ...process.env, SAKURA_DATA_DIR: process.env.SAKURA_DATA_DIR || join(installation, '.data'),
-      SAKURA_PORT: String(port) },
+      SAKURA_PORT: String(port), SAKURA_INSTALLATION_ROOT: installation },
   });
   child.on('error', (error) => { child.launchError = error; });
   try { await waitForHealth(child, port); }

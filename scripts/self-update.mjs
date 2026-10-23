@@ -14,6 +14,27 @@ import { inside, releaseEntriesFor, verifyReleaseManifest } from './release-mani
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
+/** 中文：逐层拒绝安装根及受管路径中的链接，缺失路径只允许后续受控创建。English: Reject links at every installation/managed-path component; missing tails may only be created by the caller. */
+export async function validateInstallationPath(installation, target = installation, allowMissing = false) {
+  const base = resolve(installation), path = resolve(target);
+  if (path !== base && !inside(base, path)) throw new Error('更新路径越界');
+  const rootInfo = await lstat(base);
+  const canonical = await realpath(base);
+  const normalize = (value) => process.platform === 'win32' ? value.toLowerCase() : value;
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink() || normalize(canonical) !== normalize(base)) throw new Error('安装根不能包含链接');
+  const segments = relative(base, path).split(/[\\/]/).filter(Boolean);
+  let cursor = base;
+  for (let index = 0; index < segments.length; index++) {
+    cursor = join(cursor, segments[index]);
+    let info;
+    try { info = await lstat(cursor); }
+    catch (error) { if (allowMissing && error.code === 'ENOENT') return; throw error; }
+    if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile()) || (index < segments.length - 1 && !info.isDirectory()))
+      throw new Error('更新路径不能包含链接或特殊文件');
+    if (normalize(await realpath(cursor)) !== normalize(cursor)) throw new Error('更新路径不能包含链接');
+  }
+}
+
 /** 在受管网络代理环境中启动外部工具并等待成功，finally 关闭本轮代理租约，启动或非零退出抛错。
  * Run external tools with the managed proxy environment, await success and close this proxy lease in finally; spawn/nonzero failures throw. */
 async function run(command, args, cwd) {
@@ -66,6 +87,7 @@ export async function waitForHealth(child, port, timeoutMs = 60000) {
 /** 用独立临时数据目录和自有端口启动候选服务，健康后记录验证指纹，finally 停止候选并清理本轮数据。
  * Start the candidate with isolated temporary data/owned port, record its verified fingerprint after health and stop/clean owned data in finally. */
 export async function canary(candidate, installation = root) {
+  await validateInstallationPath(installation, join(installation, '.sakura-update'));
   const temp = await mkdtemp(join(installation, '.sakura-update', 'canary-'));
   if (!inside(join(installation, '.sakura-update'), temp)) throw new Error('临时目录越界');
   const port = await portAvailable();
@@ -81,6 +103,7 @@ export async function canary(candidate, installation = root) {
       child.kill();
       await Promise.race([new Promise((done) => child.once('exit', done)), delay(5000)]);
     }
+    await validateInstallationPath(installation, temp);
     await rm(temp, { recursive: true, force: true });
   }
 }
@@ -100,6 +123,7 @@ export function versionPath(installation, value) {
  * Read/validate active and previous version pointers, defaulting to the installation root only on absence and rejecting malformed records. */
 export async function pointer(installation = root) {
   const file = join(installation, '.sakura-update', 'current.json');
+  await validateInstallationPath(installation, file, true);
   let value;
   try { value = JSON.parse(await readFile(file, 'utf8')); }
   catch (error) {
@@ -116,19 +140,22 @@ export async function pointer(installation = root) {
 
 /** 以独占临时文件写入新 active/previous，再在同目录 rename 替换，失败清理本轮临时文件。
  * Write active/previous through an exclusive temporary and same-directory rename, cleaning only this temporary on failure. */
-export async function setPointer(installation, active, previous) {
+export async function setPointer(installation, active, previous, check = () => {}) {
   // 指针只接受已限定的版本路径；同目录临时记录经 rename 发布，读取方不会看到半份 JSON。
   versionPath(installation, active);
   if (previous !== null) versionPath(installation, previous);
   const folder = join(installation, '.sakura-update');
+  await validateInstallationPath(installation, folder, true);
   await mkdir(folder, { recursive: true });
+  await validateInstallationPath(installation, join(folder, 'current.json'), true);
   const temp = join(folder, `current-${randomUUID()}.tmp`);
   if (!inside(folder, temp)) throw new Error('升级指针越界');
   try {
     await writeFile(temp, JSON.stringify({ schemaVersion: 1, active, previous,
       switchedAt: new Date().toISOString() }) + '\n', { flag: 'wx' });
+    await check(); await validateInstallationPath(installation, join(folder, 'current.json'), true);
     await rename(temp, join(folder, 'current.json'));
-  } finally { await rm(temp, { force: true }); }
+  } finally { await validateInstallationPath(installation, temp, true); await rm(temp, { force: true }); }
 }
 
 /** 要求版本准备脚本字节一致，复用已核实工具目录并以 npm ci 禁用生命周期脚本安装生产依赖。
@@ -152,16 +179,21 @@ export async function stageUpdate(source, installation = root, options = {}) {
   // 候选先复制到新版本目录并再次验摘要；使用独立数据目录预检，成功后才允许修改活动指针。
   const selected = await realpath(source);
   const manifest = await verifyReleaseManifest(selected);
+  await validateInstallationPath(installation, join(installation, 'versions'), true);
+  await validateInstallationPath(installation, join(installation, '.sakura-update'), true);
   await mkdir(join(installation, 'versions'), { recursive: true });
   await mkdir(join(installation, '.sakura-update'), { recursive: true });
   const id = randomUUID().replaceAll('-', '');
   const candidate = versionPath(installation, `versions/${id}`);
   await mkdir(candidate);
+  await validateInstallationPath(installation, candidate);
   try {
     for (const entry of releaseEntriesFor(manifest.schemaVersion))
       await cp(join(selected, entry), join(candidate, entry), { recursive: true, errorOnExist: true, force: false });
     await cp(join(selected, 'sakura-release.json'), join(candidate, 'sakura-release.json'));
     await verifyReleaseManifest(candidate);
+    // 中文：可信入口在任何依赖安装或候选执行之前复核副本签名。English: Trusted callers revalidate the copied signature before dependency installation or candidate execution.
+    if (options.verifyCandidate) await options.verifyCandidate(candidate);
     await prepareRuntime(candidate, installation);
     if (!options.skipInstall) {
       if (process.platform === 'win32')
@@ -177,6 +209,7 @@ export async function stageUpdate(source, installation = root, options = {}) {
   } catch (error) {
     // Only this freshly created, checked path is removed. Existing versions and user data are untouched.
     if (!inside(join(installation, 'versions'), candidate)) throw error;
+    await validateInstallationPath(installation, candidate);
     await rm(candidate, { recursive: true, force: true });
     throw error;
   }
@@ -184,26 +217,31 @@ export async function stageUpdate(source, installation = root, options = {}) {
 
 /** 重新核对候选目录、发行指纹和健康标记后替换活动指针，previous 保留原活动版本用于启动失败回滚。
  * Revalidate candidate directory/release fingerprint/health marker before pointer replacement, retaining the prior active version for rollback. */
-export async function activateUpdate(version, installation = root) {
+export async function activateUpdate(version, installation = root, check = () => {}) {
   const candidate = versionPath(installation, version);
+  await validateInstallationPath(installation, candidate);
   if (version === '.') throw new Error('请选择已预检的新版本');
   const manifest = await verifyReleaseManifest(candidate);
   const info = await lstat(candidate);
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('候选版本目录不是普通目录');
+  await validateInstallationPath(installation, join(candidate, '.sakura-verified.json'));
   const verified = JSON.parse(await readFile(join(candidate, '.sakura-verified.json'), 'utf8'));
   if (verified.fingerprint !== manifest.fingerprint) throw new Error('候选版本的验证记录不匹配');
   const before = await pointer(installation);
   if (before.active === version) return before;
-  await setPointer(installation, version, before.active);
+  await check();
+  await setPointer(installation, version, before.active, check);
   return await pointer(installation);
 }
 
 /** 要求已记录 previous，切回该版本并清空 previous，避免重复回滚环路。
  * Require a recorded previous version, switch back and clear previous to prevent repeated rollback loops. */
-export async function rollbackUpdate(installation = root) {
+export async function rollbackUpdate(installation = root, check = () => {}) {
   const before = await pointer(installation);
   if (!before.previous) throw new Error('没有可回滚的上一个版本');
-  await setPointer(installation, before.previous, null);
+  await validateInstallationPath(installation, versionPath(installation, before.previous));
+  await check();
+  await setPointer(installation, before.previous, null, check);
   return await pointer(installation);
 }
 

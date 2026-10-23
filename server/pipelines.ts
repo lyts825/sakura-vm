@@ -4,7 +4,7 @@
  */
 import type { FilesV1, ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { mkdir, rm } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
@@ -20,6 +20,12 @@ import { readStore, writeStore } from './local-store.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
+import { pipelineGraph, pipelineSelection, schedulePipeline } from './pipeline-graph.ts';
+import { quote } from './shell.ts';
+
+const stepId = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/);
+export const pipelineRerunSchema = z.object({ sourceRunId: z.uuid(), stepIds: z.array(stepId).min(1).max(20) }).strict();
+export type PipelineRerun = z.infer<typeof pipelineRerunSchema>;
 
 export const pipelineSchema = z
   .object({
@@ -32,14 +38,22 @@ export const pipelineSchema = z
             name: z.string().trim().min(1).max(80),
             command: z.string().trim().min(1).max(8192),
             timeout: z.number().int().min(1).max(3600).default(300),
+            id: stepId.optional(),
+            dependsOn: z.array(stepId).max(20).optional(),
+            rerunnable: z.boolean().optional(),
           })
           .strict(),
       )
       .min(1)
       .max(20),
     artifacts: z.array(repositoryPath).max(20).default([]),
+    maxConcurrency: z.number().int().min(1).max(4).optional(),
+    inputs: z.array(repositoryPath).max(20).optional(),
   })
-  .strict();
+  .strict().superRefine((value, context) => {
+    try { pipelineGraph(value.steps); }
+    catch (error) { context.addIssue({ code: 'custom', path: ['steps'], message: (error as Error).message }); }
+  });
 export type Pipeline = z.infer<typeof pipelineSchema> & { id: string };
 export type PipelineRun = {
   id: string;
@@ -51,8 +65,15 @@ export type PipelineRun = {
   status: 'running' | 'done' | 'error' | 'cancelled' | 'interrupted';
   error?: string;
   errorCode?: string;
+  sourceRunId?: string;
+  selectedStepIds?: string[];
+  fingerprint?: string;
+  rerunUnavailable?: string;
   steps: {
     name: string;
+    id?: string;
+    dependsOn?: string[];
+    blockedReason?: string;
     status: 'pending' | 'running' | 'done' | 'error' | 'cancelled';
     startedAt?: string;
     finishedAt?: string;
@@ -135,6 +156,8 @@ export class Pipelines {
     return this.machines.locked(`pipelines:${this.workspaces.projects.key(id)}`, async () => {
       const list = await this.list(id),
         entry = { ...value, id: value.id || randomUUID() };
+      if (this.jobs.view(this.workspaces.projects.key(id))?.status === 'running')
+        throw new AppError('请等待流水线结束后修改配置', 409);
       if (list.length >= 30 && !list.some((p) => p.id === entry.id)) throw new AppError('最多 30 个流水线');
       await writeStore(this.file(id), [...list.filter((p) => p.id !== entry.id), entry]);
       return entry;
@@ -214,9 +237,10 @@ export class Pipelines {
    * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
    * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
    */
-  async run(id: string, pipelineId: string) {
+  async run(id: string, pipelineId: string, rerun?: PipelineRerun) {
     const projectId = this.workspaces.projects.current(id);
-    return this.workspaces.projects.inScope(id, projectId, () => this.runSelected(id, pipelineId, projectId));
+    const selection = rerun ? pipelineRerunSchema.parse(rerun) : undefined;
+    return this.workspaces.projects.inScope(id, projectId, () => this.runSelected(id, pipelineId, projectId, selection));
   }
   /**
    * 入口 / Entry: Pipelines.runSelected.
@@ -229,10 +253,25 @@ export class Pipelines {
    * 副作用 / Effects: `this.jobs.start`.
    * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; `!definition`; 异常 / errors `new AppError('请先启动发行版')`; `new AppError('流水线不存在', 404)`.
    */
-  private async runSelected(id: string, pipelineId: string, projectId: string) {
+  private async runSelected(id: string, pipelineId: string, projectId: string, rerun?: PipelineRerun) {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
-    const definition = (await this.list(id)).find((p) => p.id === pipelineId);
-    if (!definition) throw new AppError('流水线不存在', 404);
+    const saved = (await this.list(id)).find((p) => p.id === pipelineId);
+    if (!saved) throw new AppError('流水线不存在', 404);
+    const definition = { ...pipelineSchema.parse(saved), id: saved.id };
+    const graph = pipelineGraph(definition.steps);
+    const selected = rerun ? pipelineSelection(graph, rerun.stepIds) : new Set(graph.map(node => node.id));
+    const source = rerun ? (await this.runs(id)).find(run => run.id === rerun.sourceRunId) : undefined;
+    if (rerun) {
+      if (!source || source.projectId !== projectId || source.pipelineId !== pipelineId ||
+          !['done', 'error'].includes(source.status) || !source.fingerprint || source.errorCode?.endsWith('_CLEANUP_FAILED'))
+        throw new AppError('原运行未确认或缺少指纹，请核对结果后重新完整运行', 409);
+      for (const node of graph.filter(node => selected.has(node.id))) {
+        const oldStep = source.steps.find(step => step.id === node.id);
+        if (!definition.steps[node.index].rerunnable || !oldStep ||
+            (oldStep.startedAt && oldStep.code === undefined) || oldStep.errorCode?.endsWith('_CLEANUP_FAILED'))
+          throw new AppError(`步骤 ${node.id} 未声明可重跑或原执行结果未确认`, 409);
+      }
+    }
     const record: PipelineRun = {
       id: randomUUID(),
       pipelineId,
@@ -240,7 +279,11 @@ export class Pipelines {
       projectId,
       startedAt: new Date().toISOString(),
       status: 'running',
-      steps: definition.steps.map((s) => ({ name: s.name, status: 'pending', log: '' })),
+      sourceRunId: rerun?.sourceRunId,
+      selectedStepIds: rerun ? [...selected] : undefined,
+      steps: definition.steps.map((s, index) => ({ name: s.name, id: graph[index].id,
+        dependsOn: graph[index].dependencies, status: 'pending', log: '',
+        blockedReason: selected.has(graph[index].id) ? undefined : '未选入本次重跑' })),
       artifacts: [],
     };
     const file = this.file(id, 'pipeline-runs');
@@ -255,7 +298,9 @@ export class Pipelines {
      * 副作用 / Effects: `next.splice`; `writeStore`; `rm`.
      * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
      */
-    const persist = async () => {
+    let persistence = Promise.resolve();
+    const persist = () => {
+      const nextWrite = persistence.then(async () => {
       const runs = await readStore<PipelineRun[]>(file, () => []);
       const next = [...runs.filter((r) => r.id !== record.id), record];
       const expired = next.splice(0, Math.max(0, next.length - 30));
@@ -264,6 +309,9 @@ export class Pipelines {
         z.uuid().parse(old.id);
         await rm(join(vmDir(id), 'pipeline-artifacts', old.id), { recursive: true, force: true });
       }
+      });
+      persistence = nextWrite.catch(() => {});
+      return nextWrite;
     };
     /**
      * 入口 / Entry: Pipelines.runSelected.callback@153.
@@ -296,14 +344,33 @@ export class Pipelines {
           const project = await this.workspaces.resolveProject(id, captured.project);
           privateValues = projectPrivateValues(project);
           executionSignal.throwIfAborted();
-          for (let i = 0; i < definition.steps.length; i++) {
+          if (definition.steps.some(step => step.rerunnable)) {
+            // 同一项目账户读取代码、输入及启动身份；仅记录摘要，不保存环境值。
+            // Read code/inputs/boot identity through the same project account; persist digests only.
+            const command = ['set -eu', 'status=$(git status --porcelain --untracked-files=all --ignore-submodules=none)', 'test -z "$status"',
+              'git rev-parse --verify HEAD', 'cat /proc/sys/kernel/random/boot_id', 'id -u',
+              ...(definition.inputs || []).map(path => `test -f ${quote(path)} && sha256sum < ${quote(path)}`)].join('\n');
+            const result = await (this.options.runTask || projectIdentityTask)(this.machines, id, project,
+              { command, environment: project.environment }, executionSignal, undefined, 30000, undefined, undefined,
+              { expectedLive: captured.live });
+            if (result.code === 0 && result.stdout.trim().split('\n').length === 3 + (definition.inputs?.length || 0)) {
+              record.fingerprint = createHash('sha256').update(JSON.stringify({ definition, project,
+                projectId, vmId: id, identity: captured.identity, configVersion: captured.configVersion,
+                evidence: result.stdout.trim() })).digest('hex');
+            } else record.rerunUnavailable = '需要干净的 Git 工作区、可读取的声明输入和客户机启动身份';
+            if (rerun && record.fingerprint !== source!.fingerprint)
+              throw new AppError('代码、配置、输入或客户机身份已变化，请重新完整运行', 409, 'PIPELINE_FINGERPRINT_CHANGED');
+            await persist();
+          }
+          let finished = 0;
+          await schedulePipeline(graph, definition.maxConcurrency || 1, selected, executionSignal, async i => {
             executionSignal.throwIfAborted();
             const step = record.steps[i],
               definitionStep = definition.steps[i];
             step.status = 'running';
             step.startedAt = new Date().toISOString();
             await persist();
-            update(`${i + 1}/${record.steps.length} · ${step.name}`, (i / record.steps.length) * 100);
+            update(`${finished}/${selected.size} · ${step.name}`, (finished / selected.size) * 100);
             const output = privateLog((text) => {
               step.log = (step.log + text).slice(-16384);
               rawLog(text);
@@ -323,11 +390,14 @@ export class Pipelines {
             } finally {
               output.flush();
               step.finishedAt = new Date().toISOString();
+              finished++;
               await persist();
             }
-          }
+          }, (index, reason) => { record.steps[index].blockedReason = reason; });
           let total = 0;
-          for (const name of definition.artifacts) {
+          // 局部运行不发布整条流水线的产物；其他分支可能尚未验证。
+          // Partial runs do not publish whole-pipeline artifacts from unverified branches.
+          for (const name of rerun ? [] : definition.artifacts) {
             executionSignal.throwIfAborted();
             const path = posix.join(project.directory, name),
               info = await this.files.info(id, path);
@@ -356,14 +426,23 @@ export class Pipelines {
         } finally {
           record.finishedAt = new Date().toISOString();
           try { await persist(); }
-          finally { this.active.delete(record.id); await prepared?.release(); }
+          finally {
+            try { await prepared?.release(); }
+            catch (error) {
+              record.status = 'error';
+              record.error = redactValues((error as Error).message, privateValues);
+              record.errorCode = 'PIPELINE_CLEANUP_FAILED';
+              await persist();
+              throw new AppError(record.error, 503, record.errorCode);
+            } finally { this.active.delete(record.id); }
+          }
         }
       },
       {
         title: `流水线 · ${definition.name}`,
         vmId: id,
         projectId: record.projectId,
-        action: `run:${definition.id}`,
+        action: rerun ? `rerun:${record.id}` : `run:${definition.id}`,
       },
     );
   }

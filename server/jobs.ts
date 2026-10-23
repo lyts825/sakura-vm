@@ -13,7 +13,7 @@ import { writeStore } from './local-store.ts';
 import { hostRuntime, withResourceContext } from './host-runtime/index.ts';
 import { withNewResourceContext } from './host-runtime/context.ts';
 import { withoutAuditParent } from './audit.ts';
-import { captureOperationCheck, withoutOperationContext } from './operation-context.ts';
+import { captureOperationCheck, withoutOperationContext, operationReceiptId } from './operation-context.ts';
 import { pluginAuthority, withPluginAuthority } from './plugin-authority.ts';
 import { runtimeTimings } from './runtime-timings.ts';
 
@@ -425,6 +425,8 @@ export class Jobs {
       if (
         !view ||
         view.status === 'running' ||
+        view.admission === 'cleanup-pending' ||
+        (view.cleanupLeaseId && !view.cleanupResolvedAt) ||
         !view.log ||
         createHash('sha256').update(view.log).digest('hex') !== entry.signature
       )
@@ -502,6 +504,7 @@ export class Jobs {
     const queuedAt = new Date().toISOString();
     const view: JobView = {
       ...meta,
+      correlationId: operationReceiptId(),
       id: randomUUID(),
       key,
       scope: this.scope,

@@ -5,6 +5,36 @@
 import type WebSocket from 'ws';
 import type { DomainRecoveryTicket } from '../../shared/contracts/domain-recovery.ts';
 import type { RecoveryView, RecoveryDiagnostics, RecoveryCatalogView } from '../../shared/contracts/recovery.ts';
+import type { TrustedUpdateView } from '../../shared/contracts/trusted-update.ts';
+import type { RepairSession } from '../../shared/contracts/repair-session.ts';
+
+/** 可选修复插件的单文件会话契约；模型发送、验证和应用分别确认。
+ * Single-file repair sessions separate model transmission, validation and application. */
+export interface RepairSessionsV1 {
+  /** 读取属于实例项目的快照。Read the VM/project-owned snapshot. */
+  view(id: string, sessionId: string): RepairSession;
+  /** 选择文件并预览脱敏内容。Select files and preview redacted content. */
+  preview(id: string, input: unknown, signal?: AbortSignal): Promise<RepairSession>;
+  /** 确认发送后生成补丁。Generate a patch after transmission confirmation. */
+  generate(id: string, sessionId: string, signal?: AbortSignal): Promise<RepairSession>;
+  /** 执行受控隔离验证。Perform controlled isolated validation. */
+  validate(id: string, input: unknown, signal?: AbortSignal): Promise<RepairSession>;
+  /** 复核并应用已验证的补丁。Recheck and apply a validated patch. */
+  apply(id: string, sessionId: string, signal?: AbortSignal): Promise<RepairSession>;
+  /** 取消会话并等待资源清理。Cancel the session and await resource cleanup. */
+  cancel(id: string, sessionId: string): Promise<{ ok: true }>;
+}
+
+/** 本体更新中心只公开状态和经过信任校验的管理动作；安装根和进程能力留在服务内部。
+ * The core update service exposes state and trust-checked actions; installation roots and process authority stay private. */
+export interface TrustedUpdatesV1 {
+  /** 读取信任策略及活动/候选版本。Read trust policy and active/candidate releases. */
+  view(): Promise<TrustedUpdateView>;
+  /** 校验输入及当前权限后执行动作，可取消等待。Validate input and current authority before an abortable action. */
+  action(input: unknown, signal?: AbortSignal): Promise<TrustedUpdateView>;
+  /** 取消并等待本服务任务。Cancel and await owned operations. */
+  close(): Promise<void>;
+}
 
 /** JSON Schema data published by the operation catalog; Zod's builder and metadata stay private. */
 export type OperationJsonSchemaV1 = {
@@ -3855,16 +3885,7 @@ export interface PipelinesV1 {
    * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
    * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
    */
-  "save": (id: string, input: unknown) => Promise<{
-    id: string;
-    name: string;
-    steps: {
-        name: string;
-        command: string;
-        timeout: number;
-    }[];
-    artifacts: string[];
-}>;
+  "save": (id: string, input: unknown) => Promise<PipelineV1>;
   /**
    * 签名 / Signature: PipelinesV1.remove.
    * 功能：为维护独立于实现的 V1 公共服务接口声明 remove 的输入与结果契约，所属容器为 PipelinesV1。
@@ -3911,7 +3932,7 @@ export interface PipelinesV1 {
    * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
    * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
    */
-  "run": (id: string, pipelineId: string) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
+  "run": (id: string, pipelineId: string, rerun?: { sourceRunId: string; stepIds: string[] }) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
   /**
    * 签名 / Signature: PipelinesV1.artifact.
    * 功能：为维护独立于实现的 V1 公共服务接口声明 artifact 的输入与结果契约，所属容器为 PipelinesV1。
@@ -7682,6 +7703,10 @@ export interface WorkspacesV1 {
 }
 
 export interface RecipesV1 {
+  /** 生成不执行客户机操作的环境差异预览。 Preview differences without guest operations. */
+  "preview": (id: string, input: unknown) => Promise<import('../../shared/contracts/recipe-plan.ts').RecipePlan>;
+  /** 应用有效预览并核对项目版本。 Apply a valid preview with project version checks. */
+  "applyPlan": (id: string, input: unknown) => ReturnType<WorkspacesV1['view']>;
   /**
    * 签名 / Signature: RecipesV1.export.
    * 功能：为维护独立于实现的 V1 公共服务接口声明 export 的输入与结果契约，所属容器为 RecipesV1。
@@ -8069,12 +8094,12 @@ export interface SandboxesV1 {
    * 签名 / Signature: SandboxesV1.control.
    * 功能：为维护独立于实现的 V1 公共服务接口声明 control 的输入与结果契约，所属容器为 SandboxesV1。
    * Purpose: Declares the input/result contract for control in SandboxesV1. Module responsibility: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
-   * 输入 / Inputs: id: string; action: "start" | "stop" | "destroy"
+   * 输入 / Inputs: id: string; action: "start" | "stop" | "destroy"; expectedCreatedAt?: string（原沙箱创建身份 / original sandbox creation identity）
    * 输出 / Returns: Promise<{ ok: true; }>.
    * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
    * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
    */
-  "control": (id: string, action: "start" | "stop" | "destroy") => Promise<{
+  "control": (id: string, action: "start" | "stop" | "destroy", expectedCreatedAt?: string) => Promise<{
     ok: true;
 }>;
   /**
@@ -13756,6 +13781,10 @@ export interface AutomationRulesV1 {
 }
 
 export interface LogRetentionV1 {
+    /** 中文：读取清理候选及引用版本。English: Read cleanup candidates and reference revision. */
+    cleanupSnapshot: () => import('../../shared/contracts/cleanup-plan.ts').CleanupSnapshot;
+    /** 中文：在串行队列内复核并清理。English: Revalidate and clean in the serialized queue. */
+    cleanupExecute: (revision: string, signal?: AbortSignal) => Promise<{ removedCount: number; reclaimedBytes: number }>;
   /**
    * 签名 / Signature: LogRetentionV1.view.
    * 功能：为维护独立于实现的 V1 公共服务接口声明 view 的输入与结果契约，所属容器为 LogRetentionV1。
@@ -14437,7 +14466,12 @@ export type NetworkStateV1 = {
 
 export type PipelineV1 = {
     name: string;
+    maxConcurrency?: number;
+    inputs?: string[];
     steps: {
+        id?: string;
+        dependsOn?: string[];
+        rerunnable?: boolean;
         name: string;
         command: string;
         timeout: number;
@@ -14450,6 +14484,10 @@ export type PipelineV1 = {
 
 export type PipelineRunV1 = {
     id: string;
+    sourceRunId?: string;
+    selectedStepIds?: string[];
+    fingerprint?: string;
+    rerunUnavailable?: string;
     pipelineId: string;
     name: string;
     projectId: string;
@@ -14459,6 +14497,9 @@ export type PipelineRunV1 = {
     error?: string | undefined;
     errorCode?: string | undefined;
     steps: {
+        id?: string;
+        dependsOn?: string[];
+        blockedReason?: string;
         name: string;
         status: "error" | "cancelled" | "running" | "done" | "pending";
         startedAt?: string | undefined;

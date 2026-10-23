@@ -62,6 +62,17 @@ export async function route(
   const id = parts[2],
     action = parts[3];
   this.vm.get(id);
+  if (parts.length === 5 && action === 'recipe' && req.method === 'POST') {
+    const recipes = this.use(recipesServices.recipes);
+    if (parts[4] === 'plan') {
+      send(await recipes.preview(id, httpRouteRequests['recipes.post.vms.vmId.recipe.plan'].parse(await body(req, signal))));
+      return true;
+    }
+    if (parts[4] === 'apply-plan') {
+      send(await recipes.applyPlan(id, httpRouteRequests['recipes.post.vms.vmId.recipe.apply-plan'].parse(await body(req, signal))));
+      return true;
+    }
+  }
   if (parts.length === 4) {
     if (action === 'recipe') {
       const recipes = this.use(recipesServices.recipes);
@@ -86,6 +97,8 @@ export async function route(
 
 /** Exact implemented HTTP operations; declarations alone never publish a handler. */
 export const httpHandlers: Record<string, PluginRoute> = {
+  'post.vms.vmId.recipe.plan': route,
+  'post.vms.vmId.recipe.apply-plan': route,
   "legacy.post.recipes": route,
   "legacy.get.vms.vmId.recipe": route,
   "legacy.put.vms.vmId.recipe": route,

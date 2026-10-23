@@ -15,7 +15,6 @@ export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 import { Pipelines } from '../../server/pipelines.ts';
-import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../shared/errors.ts';
 /**
  * 中文：在本次插件激活中构造 Pipelines，发布 pipelinesServices.pipelines 服务引用；依赖通过 host 获取，登记的任务和清理由本激活寿命拥有
@@ -28,10 +27,9 @@ import { AppError } from '../../shared/errors.ts';
 export async function activate(host: PluginContext) {
   const pipelines = host.provide(pipelinesServices.pipelines,
     new Pipelines(host.vm, host.use(projectsServices.workspaces), host.use(filesServices.files)));
-  host.registerJobs(pipelines.jobs, (job) => {
-    if (!job.action?.startsWith('run:')) throw new AppError('请回到原功能页面重新执行');
-    // 历史任务重试先恢复其项目身份，再运行记录中的流水线，避免当前活动项目变化后执行到另一工作区。
-    return retryInProject(host, job, () => host.use(pipelinesServices.pipelines).run(retryTarget(job), job.action!.slice(4)));
+  host.registerJobs(pipelines.jobs, () => {
+    // 通用重试没有步骤选择和指纹上下文。Generic retry lacks explicit step selection/fingerprint context.
+    throw new AppError('请回到流水线页面核对原运行，再选择局部重跑或完整运行', 409);
   });
 }
 /**
@@ -89,7 +87,8 @@ export async function route(
       if (req.method === 'POST') {
         const input = httpRouteRequests["pipelines.legacy.post.vms.vmId.pipelines"]
           .parse(await body(req, signal));
-        send(await pipelines.run(id, input.pipelineId), 202);
+        send(await pipelines.run(id, input.pipelineId, input.action === 'rerun'
+          ? { sourceRunId: input.sourceRunId, stepIds: input.stepIds } : undefined), 202);
         return true;
       }
     }

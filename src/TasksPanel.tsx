@@ -13,6 +13,8 @@ import type { Request } from './feature-shared';
 import { Feedback, useAction, useRemote } from './feature-shared';
 import './features.css';
 import { jobPresentation, taskLabels } from './job-presentation';
+import { TaskEvidencePanel } from './TaskEvidencePanel';
+import { usePlugins } from './plugin-context';
 export { taskLabels } from './job-presentation';
 
 /**
@@ -21,7 +23,9 @@ export { taskLabels } from './job-presentation';
  * 中文：输入：{ request, vms } 提供 request（带身份和权限作用域的传输能力）、vms（vms 状态） 上下文字段
  * English: Inputs: { request, vms } provides context fields request (transport capability bound to identity/authority scope), vms (vms state)
  */
-export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }) {
+export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms: VMView[]; onDiagnose?: (vmId: string) => void }) {
+  const plugins = usePlugins();
+  const [evidenceId, setEvidenceId] = useState<string>();
   const remote = useRemote<{ jobs: JobView[]; warnings: string[] }>(request, '/jobs', true, 2000),
     events = useRemote<{ events: { title?: string; status: string; message?: string; at: string }[] }>(
       request,
@@ -141,6 +145,7 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
                   : '任务没有日志输出。')}
           </pre>
           <div className="feature-actions">
+            <button className="secondary compact" onClick={() => setEvidenceId(job.id)}>查看证据与处理</button>
             {job.status === 'running' && (
               <button
                 className="secondary compact"
@@ -179,6 +184,10 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
               </button>
             )}
           </div>
+          {evidenceId === job.id && <TaskEvidencePanel key={job.id} request={request} job={job}
+            onClose={() => setEvidenceId(undefined)}
+            onDiagnose={job.vmId && plugins.includes('maintenance') && vms.some(vm => vm.id === job.vmId)
+              && onDiagnose ? () => onDiagnose(job.vmId!) : undefined} />}
         </details>
       ))}
     </div>

@@ -10,6 +10,7 @@ import { controllerResponses, sessionViewSchema } from './controller-api.ts';
 import { hostRuntimeDiagnosticSchema, networkRuntimeDiagnosticSchema, operationDeclarationSchema } from './operations.ts';
 import { recoveryViewSchema, recoveryListSchema } from './recovery.ts';
 import { operationResultSchema, operationResultDirectorySchema, operationResultArchiveSchema } from './operation-results.ts';
+import { trustedUpdateResponseSchema } from './trusted-update.ts';
 import { jsonValueSchema } from './json-values.ts';
 import type { HttpResponseContract } from './http-response.ts';
 
@@ -151,6 +152,7 @@ export const coreResponseSchemas: Readonly<Record<string, z.ZodType>> = {
   monitor: monitorResponseSchema, 'storage-pools.get': storageView, 'storage-pools.action': storageActionSchema,
   'native.get': dto.nativeViewSchema, 'native.action': dto.nativeActionSchema, 'native-clipboard.get': dto.clipboardViewSchema, 'native-clipboard.action': dto.clipboardActionSchema,
   'assistant.get': dto.assistantViewSchema, 'assistant.action': z.union([dto.assistantViewSchema, dto.assistantPreviewSchema, dto.assistantModelsSchema, dto.assistantGeneratedSchema]),
+  'trusted-updates.get': trustedUpdateResponseSchema, 'trusted-updates.action': trustedUpdateResponseSchema,
   'webhooks.get': dto.webhookViewSchema, 'webhooks.change': dto.webhookConfiguredSchema,
   'automation-rules.get': dto.automationViewSchema, 'automation-rules.change': dto.automationConfiguredSchema,
   'feature-rollouts.get': dto.rolloutsSchema.extend({ selected: z.array(z.string()), active: z.array(z.string()) }).strict(), 'feature-rollouts.change': dto.rolloutConfiguredSchema,

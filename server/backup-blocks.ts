@@ -14,6 +14,7 @@ import { checkedId } from '../shared/paths.ts';
 import { DATA } from './paths.ts';
 import { regularDirectory, writeStore } from './local-store.ts';
 import { storageRuntime } from './storage-runtime.ts';
+import type { CleanupSnapshot } from '../shared/contracts/cleanup-plan.ts';
 
 const blockSize = 1024 * 1024;
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
@@ -409,7 +410,20 @@ export class BackupBlocks {
    * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
    * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
    */
-  inspect(collect = false, signal?: AbortSignal) {
+  async inspect(collect = false, signal?: AbortSignal) {
+    const { cleanup: _cleanup, ...statistics } = await this.scan(collect, signal);
+    return statistics;
+  }
+  /** 中文：在备份块串行锁内建立引用快照。English: Capture references inside the immutable-block serialization lock. */
+  async cleanupSnapshot(signal?: AbortSignal): Promise<CleanupSnapshot> {
+    return (await this.scan(false, signal)).cleanup;
+  }
+  /** 中文：同一锁内比较快照并回收孤儿块。English: Compare the snapshot and collect orphans under the same lock. */
+  async cleanupExecute(revision: string, signal?: AbortSignal) {
+    const result = await this.scan(true, signal, revision);
+    return { removedCount: result.cleanup.entries.filter((entry) => entry.eligible).length, reclaimedBytes: result.reclaimedBytes };
+  }
+  private scan(collect = false, signal?: AbortSignal, expectedRevision?: string) {
     // Admission precedes the immutable-block queue, matching every backup caller.
     /**
      * 入口 / Entry: BackupBlocks.inspect.callback@241.
@@ -434,6 +448,9 @@ export class BackupBlocks {
       async () => {
       await regularDirectory(this.root);
       const references = new Map<string, number>();
+      const owners = new Map<string, Set<string>>();
+      const evidence: unknown[] = [];
+      const entries: CleanupSnapshot['entries'] = [];
       let logicalBytes = 0,
         backups = 0;
       const manifests = join(this.root, 'manifests');
@@ -448,12 +465,16 @@ export class BackupBlocks {
           signal?.throwIfAborted();
           if (!/^[a-f0-9-]{36}\.json$/.test(entry.name)) continue;
           const manifest = await this.manifest(machine.name, entry.name.slice(0, -5));
+          evidence.push(manifest);
           logicalBytes += manifest.bytes;
           backups++;
           for (const chunk of manifest.chunks) {
             if (references.has(chunk.sha256) && references.get(chunk.sha256) !== chunk.bytes)
               throw new AppError('同一备份块包含冲突大小');
             references.set(chunk.sha256, chunk.bytes);
+            const held = owners.get(chunk.sha256) || new Set<string>();
+            held.add(manifest.vmId + '/' + manifest.id);
+            owners.set(chunk.sha256, held);
           }
         }
       }
@@ -478,6 +499,12 @@ export class BackupBlocks {
             throw new AppError('备份块路径类型无效');
           const file = this.blockPath(block.name),
             info = await lstat(file);
+          if (!info.isFile() || info.isSymbolicLink()) throw new AppError('备份块路径类型已变化', 409);
+          evidence.push([block.name, info.size, info.mtimeMs, info.ctimeMs, info.ino]);
+          const referenced = references.has(block.name);
+          entries.push({ id: block.name, source: 'backup-blocks', owner: [...(owners.get(block.name) || [])].sort().join(', ') || '备份块存储',
+            label: 'chunks/' + folder.name + '/' + block.name, bytes: info.size, eligible: !referenced,
+            reason: referenced ? '备份清单仍引用此块；保留锁对应的备份清单同样受保护' : '全部清单核验通过且无引用' });
           physicalBytes += info.size;
           chunkCount++;
           if (!references.has(block.name)) {
@@ -490,6 +517,12 @@ export class BackupBlocks {
         }
       }
       if (found.size !== references.size) throw new AppError('备份存在缺失的内容块，拒绝清理', 409);
+      entries.sort((a, b) => a.id.localeCompare(b.id));
+      const cleanup: CleanupSnapshot = { entries,
+        revision: createHash('sha256').update(JSON.stringify(evidence.map((item) => JSON.stringify(item)).sort())).digest('hex'),
+        notes: ['只处理已登记的不可变备份块；未知目录、临时块及备份清单不参与清理。', '写入和下载持有同一领域锁；回收等待其结束后复核全部引用。'] };
+      if (expectedRevision !== undefined && cleanup.revision !== expectedRevision)
+        throw new AppError('备份块或引用已变化，请重新预览', 409);
       // Validate every manifest/reference before removing any unreferenced block.
       if (collect)
         for (const file of orphans) {
@@ -504,6 +537,7 @@ export class BackupBlocks {
       }
       const referencedBytes = [...references.values()].reduce((sum, bytes) => sum + bytes, 0);
       return {
+        cleanup,
         backups,
         logicalBytes,
         physicalBytes,

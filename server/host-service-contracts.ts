@@ -4,6 +4,8 @@
  */
 import type { BrowserIdeV1, CapabilityChecksV1, ColdMigrationsV1, CommunityPluginsV1, DisasterRecoveryDrillV1, HaHostFailoverV1, HaLocalFailoversV1, HostMountsV1, HostPeersV1, MediaDevicesV1, NotebookEnvironmentsV1, ProcessInteropV1, ProjectTerminalsV1, SnapshotReplicationsV1, TrustedBootServiceV1, VirtioFsSharesV1 } from './service-contracts/v1.ts';
 export interface HostServiceContracts {
+  assistant: import('./service-contracts/v1.ts').LocalAssistantV1;
+  retention: import('./service-contracts/v1.ts').LogRetentionV1;
   communityPlugins: CommunityPluginsV1;
   mediaDevices: MediaDevicesV1; hostMounts: HostMountsV1; virtioFsShares: VirtioFsSharesV1;
   processInterop: ProcessInteropV1; hostPeers: HostPeersV1; notebookEnvironments: NotebookEnvironmentsV1;

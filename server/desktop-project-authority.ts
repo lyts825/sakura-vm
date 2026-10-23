@@ -6,9 +6,13 @@
 export const desktopAuthoritySource = String.raw`# Shared verbatim by the fixed Desktop adapter and both Linux clipboard controllers.
 # This file is a draft generator input, not a guest-installed authority record.
 
+# 将暂未就绪条件转换为带固定前缀的可重试桌面错误。
+# Convert an unready condition into a retryable desktop error with a fixed prefix.
 def desktop_wait(condition, reason):
     if not condition: raise RuntimeError('SAKURA_DESKTOP_NOT_READY:' + reason)
 
+# 核实原项目桌面的内层 XWayland display 与私有 Xauthority，拒绝宿主共享 display 或替代凭据。
+# Validate the original project desktop’s nested XWayland display/private Xauthority, excluding shared displays/replaced credentials.
 def desktop_nested_x11(source, identity, run):
     display, filename = source.get('DISPLAY', ''), source.get('XAUTHORITY', '')
     match = re.fullmatch(r':([0-9]{1,5})(?:\.0)?', display)
@@ -72,10 +76,14 @@ def desktop_nested_x11(source, identity, run):
                 'socketInode': str(before.st_ino), 'kernelInode': listeners[0], 'peerPid': pid,
                 'peerCreated': actor['created'], 'peerImage': actor['image']}
     finally: peer.close()
+# 加载固定摘要目录的原生身份实现，逐项核实源文件及聚合摘要后提供校验函数。
+# Load native identity code from its fixed digest directory only after source/aggregate hash validation.
 def desktop_native(build):
     require(isinstance(build, str) and re.fullmatch('[a-f0-9]{64}', build), 'Desktop native build 无效')
     folder = Path('/usr/local/lib/sakura-project-identity') / build
     secure_directory(folder)
+    # 无跟随读取单链接 0600 root 文件并限制大小，读取长度变化拒绝。
+    # Read a bounded single-link 0600 root file without links and refuse changed read length.
     def protected(path, maximum=262144):
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
@@ -108,6 +116,8 @@ def desktop_native(build):
     require(namespace['sources']() == build, 'Desktop native launcher 不符')
     return namespace
 
+# 核实活动桌面进程的真实 UID 槽、创建 ticks、cgroup 及网络归属。
+# Verify a live desktop process’s UID slots, birth ticks, cgroup and network ownership.
 def desktop_process(pid, identity, run):
     require(type(pid) is int and pid > 1, 'Desktop PID 无效')
     root = Path('/proc') / str(pid)
@@ -122,6 +132,8 @@ def desktop_process(pid, identity, run):
             'Desktop 进程网络身份不符')
     return {'pid': pid, 'created': fields[19], 'image': os.readlink(root / 'exe')}
 
+# 交叉核实完整桌面票据、绑定/运行记录、Plasma 进程和私有运行目录；返回持有目录 FD 的可信上下文。
+# Cross-check complete desktop receipts, binding/run records, Plasma process and private runtime, returning a trusted context with pinned directory FD.
 def desktop_authority(proof):
     require(isinstance(proof, dict) and set(proof) == {'version', 'identity', 'run', 'record', 'sha256', 'runtime', 'endpoint'}
             and type(proof['version']) is int and proof['version'] == 1, '需要 Desktop 完整会话票据；旧共享账户不能接管')
@@ -209,6 +221,8 @@ def desktop_authority(proof):
                 and guard.get('build') == run['build'] and (guard.get('runtimeDevice'), guard.get('runtimeInode')) == (str(info.st_dev), str(info.st_ino))
                 and (guard.get('networkDevice'), guard.get('networkInode')) == (run['networkDevice'], run['networkInode']),
                 'Desktop 固定 adapter 原 runtime/网络证明已变化')
+        # 读取项目桌面私有凭据，核实 UID、单链接、权限和字节上限，真实未就绪按桌面状态报告。
+        # Read private desktop credentials with UID/link/mode/size checks, reporting genuine unready state through desktop errors.
         def credential(name, limit):
             try: fd = os.open(runtime / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
             except FileNotFoundError:

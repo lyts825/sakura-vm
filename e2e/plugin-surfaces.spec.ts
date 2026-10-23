@@ -5750,6 +5750,15 @@ test('disk maintenance saves a schedule and only offers TRIM while running', asy
   await app(page, ['maintenance'], true);
   let policy: any = { enabled: false, mode: 'both', compress: true, intervalHours: 168 },
     requested: any;
+  let cleanupResponse: 'valid' | 'invalid' | 'unavailable' = 'valid';
+  await page.route('**/api/cleanup', (route) => {
+    if (cleanupResponse === 'invalid') return route.fulfill({ json: {} });
+    if (cleanupResponse === 'unavailable') return route.fulfill({ status: 503, json: { error: '清理来源暂不可用' } });
+    return route.fulfill({ json: { providers: [
+      { id: 'backup-blocks', label: '未引用备份块', description: '完整核验备份引用后回收孤儿块。' },
+      { id: 'job-logs', label: '已完成任务日志', description: '按现有保留期限和容量清理成功任务的日志正文。' },
+    ] } });
+  });
   await page.route('**/api/storage', (route) =>
     route.fulfill({
       json: {
@@ -5780,11 +5789,26 @@ test('disk maintenance saves a schedule and only offers TRIM while running', asy
   await expect
     .poll(() => policy)
     .toEqual({ enabled: true, mode: 'compact', compress: true, intervalHours: 24 });
+  cleanupResponse = 'invalid';
+  await page.reload();
+  await page.getByRole('tab', { name: '维护', exact: true }).click();
+  await expect(page.getByText('清理来源响应无效，请刷新后重试。', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '立即执行 TRIM', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '整理未使用空间', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '保存磁盘维护策略', exact: true })).toBeEnabled();
+  cleanupResponse = 'valid';
   await page.route('**/api/vms', (route) =>
     route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
   );
   await page.reload();
   await page.getByRole('tab', { name: '维护', exact: true }).click();
+  await expect(page.getByRole('button', { name: '整理未使用空间', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '立即执行 TRIM', exact: true }).click();
+  await expect.poll(() => requested).toEqual({ mode: 'trim' });
+  cleanupResponse = 'unavailable'; requested = undefined;
+  await page.reload();
+  await page.getByRole('tab', { name: '维护', exact: true }).click();
+  await expect(page.getByText('清理来源暂不可用', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '整理未使用空间', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '立即执行 TRIM', exact: true }).click();
   await expect.poll(() => requested).toEqual({ mode: 'trim' });

@@ -5,6 +5,9 @@
  * Detailed scope (English): Public entry points include automationGetFeatureSuiteResponseSchema, automationGetVmsVmIdAdvancedResponseSchema, automationPutVmsVmIdAdvancedResponseSchema, automationPostVmsVmIdAdvancedResponseSchema, automationGetVmsVmIdPackagesResponseSchema, automationPostVmsVmIdPackagesResponseSchema, automationPostVmsVmIdSuspendResponseSchema, backupsGetVmsVmIdBackupsResponseSchema, backupsPutVmsVmIdBackupsResponseSchema, backupsPostVmsVmIdBackupsResponseSchema, backupsPostVmsVmIdBackupDownloadResponseSchema, codeChecksGetVmsVmIdCodeDiagnosticsResponseSchema, codeChecksGetVmsVmIdLanguageServiceResponseSchema, codeChecksPostVmsVmIdLanguageServiceResponseSchema, codeChecksGetVmsVmIdDebuggerResponseSchema, codeChecksPostVmsVmIdDebuggerResponseSchema. The scope covers mapping exact plugin routes to response schemas and transport modes. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { z } from 'zod';
+import { cleanupProvidersSchema, cleanupPreviewSchema, cleanupResultSchema } from './cleanup-plan.ts';
+import { recipePlanSchema } from './recipe-plan.ts';
+import { repairSessionSchema, repairActionResponseSchema } from './repair-session.ts';
 import type { HttpResponseContract } from './http-response.ts';
 import { jsonValueSchema } from './json-values.ts';
 import { jobViewSchema, vmViewSchema } from './core-dtos.ts';
@@ -2816,6 +2819,8 @@ export const networkGetVmsVmIdServicesResponseSchema = z
   })
   .strict();
 
+const pipelineStepResponseSchema = z.object({ name: z.string(), command: z.string(), timeout: z.number(),
+  id: z.string().optional(), dependsOn: z.array(z.string()).optional(), rerunnable: z.boolean().optional() }).strict();
 export const pipelinesGetVmsVmIdPipelinesResponseSchema = z
   .object({
     projectId: z.string(),
@@ -2823,7 +2828,9 @@ export const pipelinesGetVmsVmIdPipelinesResponseSchema = z
       z
         .object({
           name: z.string(),
-          steps: z.array(z.object({ name: z.string(), command: z.string(), timeout: z.number() }).strict()),
+          steps: z.array(pipelineStepResponseSchema),
+          maxConcurrency: z.number().optional(),
+          inputs: z.array(z.string()).optional(),
           artifacts: z.array(z.string()),
           id: z.string(),
         })
@@ -2834,6 +2841,10 @@ export const pipelinesGetVmsVmIdPipelinesResponseSchema = z
         .object({
           id: z.string(),
           pipelineId: z.string(),
+          sourceRunId: z.string().optional(),
+          selectedStepIds: z.array(z.string()).optional(),
+          fingerprint: z.string().optional(),
+          rerunUnavailable: z.string().optional(),
           name: z.string(),
           projectId: z.string(),
           startedAt: z.string(),
@@ -2851,6 +2862,9 @@ export const pipelinesGetVmsVmIdPipelinesResponseSchema = z
             z
               .object({
                 name: z.string(),
+                id: z.string().optional(),
+                dependsOn: z.array(z.string()).optional(),
+                blockedReason: z.string().optional(),
                 status: z.union([
                   z.literal('running'),
                   z.literal('error'),
@@ -2878,7 +2892,9 @@ export const pipelinesPutVmsVmIdPipelinesResponseSchema = z
   .object({
     id: z.string(),
     name: z.string(),
-    steps: z.array(z.object({ name: z.string(), command: z.string(), timeout: z.number() }).strict()),
+    steps: z.array(pipelineStepResponseSchema),
+    maxConcurrency: z.number().optional(),
+    inputs: z.array(z.string()).optional(),
     artifacts: z.array(z.string()),
   })
   .strict();
@@ -4653,10 +4669,19 @@ export const pluginRouteResponses = {
     schema: automationPostVmsVmIdSuspendResponseSchema,
   },
   'maintenance.legacy.get.storage': {
+    kind: 'json', statuses: [200], media: 'application/json', schema: maintenanceGetStorageResponseSchema,
+  },
+  'maintenance.cleanup.providers': {
+    kind: 'json', statuses: [200], media: 'application/json', schema: cleanupProvidersSchema,
+  },
+  'maintenance.cleanup.preview': {
+    kind: 'json', statuses: [200], media: 'application/json', schema: cleanupPreviewSchema,
+  },
+  'maintenance.cleanup.execute': {
     kind: 'json',
     statuses: [200],
     media: 'application/json',
-    schema: maintenanceGetStorageResponseSchema,
+    schema: cleanupResultSchema,
   },
   'maintenance.legacy.get.vms.vmId.diagnostics': {
     kind: 'json',
@@ -4861,6 +4886,14 @@ export const pluginRouteResponses = {
     statuses: [201],
     media: 'application/json',
     schema: automationPostVmsVmIdSuspendResponseSchema,
+  },
+  'recipes.post.vms.vmId.recipe.plan': {
+    kind: 'json', statuses: [200], media: 'application/json', schema: recipePlanSchema,
+  },
+  'repair.view': { kind: 'json', statuses: [200], media: 'application/json', schema: repairSessionSchema },
+  'repair.act': { kind: 'json', statuses: [200], media: 'application/json', schema: repairActionResponseSchema },
+  'recipes.post.vms.vmId.recipe.apply-plan': {
+    kind: 'json', statuses: [200], media: 'application/json', schema: projectsGetVmsVmIdProjectResponseSchema,
   },
   'recipes.legacy.get.vms.vmId.recipe': {
     kind: 'json',

@@ -19,6 +19,9 @@ import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema, type VMView } from '../shared/contracts/vm.ts';
 import { SandboxArtifacts, artifactPathSchema } from './sandbox-artifacts.ts';
+import { repairFilesSchema } from '../shared/contracts/repair-session.ts';
+import { sandboxInputDirectory, stageSandboxInputs } from './sandbox-inputs.ts';
+import { withOperationCheck } from './operation-context.ts';
 
 export const sandboxCreateSchema = z
   .object({
@@ -37,6 +40,7 @@ export const sandboxCreateSchema = z
 
 export const sandboxRunSchema = z
   .object({
+    inputFiles: repairFilesSchema.optional(),
     command: z
       .string()
       .trim()
@@ -56,7 +60,8 @@ export const sandboxRunSchema = z
       .default([])
       .refine((paths) => new Set(paths).size === paths.length, '产物路径不能重复'),
   })
-  .strict();
+  .strict().refine(value => !value.inputFiles || value.cwd === sandboxInputDirectory,
+    '文本输入只允许写入沙箱专用目录 /workspace/sakura-input');
 
 export type SandboxView = VMView & { sandbox: SandboxPolicy; expired: boolean };
 export type SandboxOverview = { sandboxes: SandboxView[]; runs: JobView[]; persistenceError?: string };
@@ -217,22 +222,30 @@ export class Sandboxes {
    * 收尾：退出 try 区域时始终执行 `this.busy.delete(id);`；这些步骤也适用于异常退出。
    * Finalization: Leaving the try region always executes `this.busy.delete(id);`; these steps also apply to exceptional exits.
    */
-  async control(id: string, action: 'start' | 'stop' | 'destroy') {
+  async control(id: string, action: 'start' | 'stop' | 'destroy', expectedCreatedAt?: string) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
-    this.get(id);
+    const original = this.get(id), createdAt = expectedCreatedAt ?? original.createdAt;
+    /** 每个清理边界核对原沙箱，拒绝同标识的替代资源。 Check the original sandbox at cleanup boundaries and reject replacements. */
+    const current = () => {
+      const value = this.machines.records.get(id);
+      if (value && value.createdAt !== createdAt) throw new AppError('沙箱身份已变化，拒绝操作替代资源', 409);
+      return value;
+    };
+    current();
     if (this.busy.has(id)) throw new AppError('另一项沙箱操作正在进行', 409);
     this.busy.add(id);
     try {
       if (action === 'start') {
         this.available(id);
         if (this.jobs.view(id)?.status === 'running') throw new AppError('沙箱任务正在执行', 409);
-        await this.machines.start(id);
+        await withOperationCheck(async () => { current(); }, () => this.machines.start(id));
       } else {
         this.jobs.cancel(id);
         await this.jobs.wait(id);
-        if (this.machines.records.has(id)) {
-          await this.machines.terminateSandbox(id);
-          if (action === 'destroy' && this.machines.records.has(id)) await this.machines.delete(id);
+        if (current()) {
+          await withOperationCheck(async () => { current(); }, () => this.machines.terminateSandbox(id));
+          if (action === 'destroy' && current())
+            await withOperationCheck(async () => { current(); }, () => this.machines.delete(id));
         }
       }
       return { ok: true as const };
@@ -329,6 +342,8 @@ export class Sandboxes {
           const timer = setTimeout(() => timeout.abort(), timeoutMs);
           const combined = AbortSignal.any([signal, timeout.signal]);
           try {
+            // 输入与命令属于同一次启动，停止即丢弃。 Inputs and command share one boot; discard-on-stop remains unchanged.
+            if (config.inputFiles) await stageSandboxInputs(this.machines, id, config.inputFiles, combined);
             // All script text is passed to the guest shell. Never evaluate it on the host.
             const result = await this.machines.exec(
               id,

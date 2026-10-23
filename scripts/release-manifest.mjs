@@ -78,7 +78,9 @@ export async function writeReleaseManifest(root) {
  * Re-enumerate actual files and verify version/sizes/hashes/fingerprint, rejecting additions, omissions or tampering. */
 export async function verifyReleaseManifest(root) {
   // 重新枚举允许的发行入口，整份有序清单逐字比较，同时发现增删文件和字节篡改。
-  const raw = await readFile(join(root, 'sakura-release.json'), 'utf8');
+  const manifestPath = join(root, 'sakura-release.json'), manifestInfo = await lstat(manifestPath);
+  if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink()) throw new Error('发行清单必须是普通文件');
+  const raw = await readFile(manifestPath, 'utf8');
   const manifest = JSON.parse(raw);
   if (![1, 2].includes(manifest.schemaVersion) || manifest.name !== 'sakura-vm' ||
       typeof manifest.version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(manifest.version) ||

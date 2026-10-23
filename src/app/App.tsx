@@ -126,6 +126,8 @@ const MediaDevicesSettings = lazy(/** 中文：懒加载 ../MediaDevicesSettings
 const LocalAssistant = lazy(/** 中文：懒加载 ../LocalAssistant 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../LocalAssistant and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
 );
+/** 按需加载本体可信更新管理界面。Lazily load the core trusted-update management surface. */
+const TrustedUpdateSettings = lazy(() => import('../TrustedUpdateSettings').then(module => ({ default: module.TrustedUpdateSettings })));
 const NativeIntegrationSettings = lazy(/** 中文：懒加载 ../NativeIntegration 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../NativeIntegration and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../NativeIntegration').then((module) => ({ default: module.NativeIntegrationSettings })),
 );
@@ -278,6 +280,7 @@ export function App() {
   const [showBuildFarm, setShowBuildFarm] = useState(false);
   const [showMediaDevices, setShowMediaDevices] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
+  const [showTrustedUpdates, setShowTrustedUpdates] = useState(false);
   const [showNative, setShowNative] = useState(false);
   const [showNativeClipboard, setShowNativeClipboard] = useState(false);
   const [showRecordings, setShowRecordings] = useState(false);
@@ -821,7 +824,8 @@ export function App() {
         </header>
         <main>
           {page === 'plugins' && system && <PluginCenter request={api} />}
-          {page === 'tasks' && <TasksPanel request={api} vms={vms} />}
+          {page === 'tasks' && <TasksPanel request={api} vms={vms}
+            onDiagnose={id => void navigatePalette({ id, page: 'workspace', tab: 'maintenance' })} />}
           {pluginPageOwner && !builtInPageIds.has(page) && (
             <PluginPage
               key={page}
@@ -1500,6 +1504,16 @@ export function App() {
               </div>
               <div className="system-grid">
                 <LocaleSettings />
+                <section className="system-card">
+                  <h3>可信更新中心</h3>
+                  <p>管理可信发布者，验证本地签名发行包，暂存、启用或回退应用版本。</p>
+                  <button className="secondary compact" onClick={() => setShowTrustedUpdates(!showTrustedUpdates)}>
+                    {showTrustedUpdates ? '收起更新中心' : '打开更新中心'}
+                  </button>
+                </section>
+                {showTrustedUpdates && <Suspense fallback={<p>正在读取更新状态…</p>}>
+                  <TrustedUpdateSettings request={api} />
+                </Suspense>}
                 <section className="system-card">
                   <h3>本地 AI 助手与命令规划</h3>
                   <p>使用本机模型解释代码、生成测试与修复建议，或预览命令计划。</p>

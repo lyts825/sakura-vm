@@ -39,6 +39,7 @@ export function hostServiceHandlers(
     | 'native'
     | 'nativeClipboard'
     | 'assistant'
+    | 'trustedUpdates'
     | 'requireService'
   >,
 ): CoreHttpHandlers {
@@ -471,6 +472,28 @@ export function hostServiceHandlers(
     }
     throw new AppError('处理器与操作路径不一致', 404, 'OPERATION_HANDLER_MISMATCH');
   };
+  /** 更新动作沿用请求寿命与维护锁；具体信任与版本验证由本体服务负责。
+   * Update actions share request cancellation and the maintenance guard; the core service owns trust and version checks. */
+  const trustedUpdatesHandler: HttpOperationHandler = async (req, res, url) => {
+    if (url.pathname !== '/api/trusted-updates')
+      throw new AppError('处理器与操作路径不一致', 404, 'OPERATION_HANDLER_MISMATCH');
+    const updates = services.requireService('trustedUpdates');
+    if (req.method === 'GET') return send(res, await updates.view());
+    if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+    const abort = new AbortController();
+    const cancel = () => { if (!res.writableFinished) abort.abort(); };
+    req.once('aborted', cancel); res.once('close', cancel);
+    if (req.aborted || res.destroyed) cancel();
+    let release: (() => void) | undefined;
+    try {
+      release = services.features.operations.enter();
+      if (services.features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const input = await authorizedBody(req, 16 * 1024, abort.signal);
+      return send(res, await updates.action(input, abort.signal));
+    } finally {
+      release?.(); req.off('aborted', cancel); res.off('close', cancel);
+    }
+  };
   return {
     'core.webhooks.get': webhooksGetHandler,
     'core.webhooks.change': webhooksGetHandler,
@@ -504,5 +527,7 @@ export function hostServiceHandlers(
     'core.native.action': nativeGetHandler,
     'core.assistant.get': assistantGetHandler,
     'core.assistant.action': assistantGetHandler,
+    'core.trusted-updates.get': trustedUpdatesHandler,
+    'core.trusted-updates.action': trustedUpdatesHandler,
   };
 }

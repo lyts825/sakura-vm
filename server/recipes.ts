@@ -5,9 +5,13 @@
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { posix } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { AppError } from '../shared/errors.ts';
 import { projectSchema } from './project-config.ts';
+import type { RecipeChange, RecipePlan } from '../shared/contracts/recipe-plan.ts';
+import { recipeApplyPlanRequestSchema } from '../shared/contracts/recipe-plan.ts';
+import { vmLifetime } from './vm-lifetime.ts';
 
 import type { VmAccess as Machines } from './vm-access.ts';
 
@@ -31,7 +35,28 @@ export const recipeSchema = z
   })
   .strict();
 export type Recipe = z.infer<typeof recipeSchema>;
+type SavedPlan = { result: RecipePlan; recipe: Recipe; sourceVersion: string; binding: string };
+
+/** 递归排序对象，保留数组顺序。 Sort object keys recursively while preserving array order. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+  if (value && typeof value === 'object') return '{' + Object.entries(value)
+    .filter(([, item]) => item !== undefined).sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
+  return JSON.stringify(value ?? null);
+}
+/** 摘要只证明配置内容相同，不代表安装状态。 Hash configuration content, never installed state. */
+function digest(value: unknown) { return createHash('sha256').update(canonical(value)).digest('hex'); }
+
+/** 显示差异并避免在预览中重复公开环境变量值。 Present differences without echoing environment values. */
+function display(field: string, value: unknown) {
+  if (value === undefined) return '未声明';
+  if (['project.environment', 'project.secrets', 'project.services'].includes(field))
+    return '配置摘要 ' + digest(value).slice(0, 16);
+  return canonical(value);
+}
 export class Recipes {
+  private plans = new Map<string, SavedPlan>();
   /**
    * 入口 / Entry: Recipes.constructor.
    * 功能：建立 Recipes 的导出和应用项目配方上下文，绑定本实例使用的依赖、初始状态及下述字段。
@@ -44,6 +69,93 @@ export class Recipes {
     private machines: Machines,
     private workspaces: WorkspacesV1,
   ) {}
+  /** 绑定实例代次、项目和全部资源配置。 Bind VM generation, project and all resource settings. */
+  private binding(id: string) {
+    const vm = this.machines.get(id);
+    const live = this.machines.live.get(id);
+    return digest({ vm, projectId: this.workspaces.projects.current(id), state: this.machines.state(id),
+      lifetime: live ? vmLifetime(id, live).capture() : null });
+  }
+
+  /** 对比声明字段并生成限时单次令牌；不连接客户机。 Compare declarations and issue a short-lived token without guest I/O. */
+  async preview(id: string, input: unknown): Promise<RecipePlan> {
+    const recipe = recipeSchema.parse(input);
+    const binding = this.binding(id), current = await this.workspaces.view(id);
+    const vm = this.machines.get(id);
+    if (binding !== this.binding(id)) throw new AppError('环境已变化，请重新预览', 409, 'RECIPE_PLAN_STALE');
+    const changes: RecipeChange[] = [];
+    /** 仅为实际差异创建一行。 Add one row only for an actual difference. */
+    const add = (field: string, before: unknown, after: unknown, disposition: RecipeChange['disposition'], reason: string) => {
+      if (canonical(before) !== canonical(after)) changes.push({ field, before: display(field, before),
+        after: display(field, after), disposition, reason });
+    };
+    for (const [key, after] of Object.entries(recipe.resources)) {
+      if (after === undefined) continue;
+      const before = vm[key as keyof Recipe['resources']];
+      let disposition: RecipeChange['disposition'] = 'stop-required';
+      let reason = '请在实例资源面板修改；硬件变更需要停机后执行，再重新预览。';
+      if (key === 'distro' || key === 'template') {
+        disposition = 'rebuild-required'; reason = '请使用“从 sakura.json 创建环境”新建实例；本操作不更换现有磁盘镜像。';
+      } else if (key === 'forwards') {
+        disposition = 'separate-operation'; reason = '请在端口转发面板核对占用并修改，再重新预览。';
+      } else if (key === 'diskGiB') {
+        disposition = Number(after) < Number(before) ? 'unsupported' : 'stop-required';
+        reason = disposition === 'unsupported' ? '现有磁盘不支持缩容。请创建新实例并迁移数据。' :
+          '请在实例资源面板停机扩容，并完成客户机文件系统扩容，再重新预览。';
+      }
+      add('resources.' + key, before, after, disposition, reason);
+    }
+    for (const key of new Set([...Object.keys(current.project), ...Object.keys(recipe.project)])) {
+      if (key === '_workspace') continue;
+      if (key === 'runtimes') {
+        for (const tool of ['node', 'python'] as const) add('project.runtimes.' + tool,
+          current.project.runtimes?.[tool], recipe.project.runtimes?.[tool], 'apply',
+          '保存版本声明；请在“运行时版本”面板安装并探测实际版本。此处不安装运行时。');
+      } else {
+        add('project.' + key, current.project[key as keyof typeof current.project],
+          recipe.project[key as keyof typeof recipe.project], key === 'directory' ? 'separate-operation' : 'apply',
+          key === 'directory' ? '请在项目配置中完成目录迁移，再重新预览。' :
+            '保存项目配置；相关服务可能停止，环境准备和服务启动由现有项目操作执行。');
+      }
+    }
+    const now = Date.now();
+    for (const [token, plan] of this.plans) if (Date.parse(plan.result.expiresAt) <= now) this.plans.delete(token);
+    while (this.plans.size >= 128) this.plans.delete(this.plans.keys().next().value!);
+    const result: RecipePlan = { token: randomUUID(), expiresAt: new Date(now + 600_000).toISOString(),
+      vmId: id, projectId: current.projectId, inputSha256: digest(recipe),
+      configurationSha256: digest(current.project),
+      resourceDeclarationSha256: digest({ distro: vm.distro, template: vm.template, resources: recipe.resources }),
+      canApply: changes.every(change => change.disposition === 'apply') && current.job?.status !== 'running',
+      unchanged: changes.length === 0, changes,
+      runtimeVerification: 'not-probed', dependencyVerification: 'not-probed', imageVerification: 'not-probed',
+      warnings: ['摘要仅覆盖配置声明，不包含镜像文件、依赖锁文件或实际安装结果。',
+        '保存配置后，请按需准备环境，展开“核对实际 Node/Python 运行时”，并按需执行工程任务的环境锁校验。',
+        ...(current.job?.status === 'running' ? ['项目任务正在运行，结束后请重新预览。'] : [])] };
+    this.plans.set(result.token, { result, recipe, sourceVersion: current.version, binding });
+    return result;
+  }
+
+  /** 消费预览令牌，复核版本后保存；失败需重新预览。 Consume the token and save after CAS checks; failures require a new preview. */
+  async applyPlan(id: string, input: unknown) {
+    const { token } = recipeApplyPlanRequestSchema.parse(input), plan = this.plans.get(token);
+    if (!plan || plan.result.vmId !== id || Date.parse(plan.result.expiresAt) <= Date.now())
+      throw new AppError('预览已失效，请重新预览', 409, 'RECIPE_PLAN_STALE');
+    this.plans.delete(token);
+    /** 在锁内和提交前检查实例、项目及资源。 Recheck VM, project and resources inside the lock and before commit. */
+    const guard = () => {
+      if (plan.binding !== this.binding(id) || plan.result.projectId !== this.workspaces.projects.current(id))
+        throw new AppError('环境已变化，请重新预览', 409, 'RECIPE_PLAN_STALE');
+    };
+    guard();
+    const current = await this.workspaces.view(id);
+    guard();
+    if (current.version !== plan.sourceVersion)
+      throw new AppError('项目配置已变化，请重新预览', 409, 'RECIPE_PLAN_STALE');
+    if (!plan.result.canApply) throw new AppError('请先处理预览中的独立操作，再重新预览', 409, 'RECIPE_PLAN_BLOCKED');
+    if (plan.result.unchanged) return current;
+    await this.workspaces.save(id, plan.recipe.project, undefined, plan.sourceVersion, guard);
+    return this.workspaces.view(id);
+  }
   /**
    * 入口 / Entry: Recipes.export.
    * 功能：在导出和应用项目配方中，执行此领域的具体处理步骤并返回其结果；本入口产生 `{ version: 1, resources: { cpus, memoryMiB, diskGiB, distro, accelerator, forwards, template }, project: await this.workspace…` 供上层消费（`Recipes`）。

@@ -76,6 +76,7 @@ export const hostProcessAdapters = {
   'windows-probe': 'tool',
   'ssh-permissions': 'tool',
   'trusted-boot-probe': 'tool',
+  'trusted-update': 'tool',
   'virtio-fs-probe': 'tool',
   dpapi: 'tool',
   'process-interop': 'tool',

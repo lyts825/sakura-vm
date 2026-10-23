@@ -92,6 +92,8 @@ export const serviceContracts = {
   NativeIntegration: PUBLIC_SERVICE_CONTRACTS['sakura.service.native-integration.v1'] as ServiceContract<V1.NativeIntegrationV1>,
   NativeClipboard: PUBLIC_SERVICE_CONTRACTS['sakura.service.native-clipboard.v1'] as ServiceContract<V1.NativeClipboardV1>,
   LocalAssistant: PUBLIC_SERVICE_CONTRACTS['sakura.service.local-assistant.v1'] as ServiceContract<V1.LocalAssistantV1>,
+  TrustedUpdates: PUBLIC_SERVICE_CONTRACTS['sakura.service.trusted-updates.v1'] as ServiceContract<V1.TrustedUpdatesV1>,
+  RepairSessions: PUBLIC_SERVICE_CONTRACTS['sakura.service.repair-sessions.v1'] as ServiceContract<V1.RepairSessionsV1>,
   CommunityPlugins: PUBLIC_SERVICE_CONTRACTS['sakura.service.community-plugins.v1'] as ServiceContract<V1.CommunityPluginsV1>,
   Webhooks: PUBLIC_SERVICE_CONTRACTS['sakura.service.webhooks.v1'] as ServiceContract<V1.WebhooksV1>,
   AutomationRules: PUBLIC_SERVICE_CONTRACTS['sakura.service.automation-rules.v1'] as ServiceContract<V1.AutomationRulesV1>,
@@ -203,6 +205,7 @@ export const systemServiceContracts: Readonly<Record<string, ServiceContract<any
   'native': serviceContracts.NativeIntegration,
   'nativeClipboard': serviceContracts.NativeClipboard,
   'assistant': serviceContracts.LocalAssistant,
+  'trustedUpdates': serviceContracts.TrustedUpdates,
   'communityPlugins': serviceContracts.CommunityPlugins,
   'webhooks': serviceContracts.Webhooks,
   'automationRules': serviceContracts.AutomationRules,
@@ -251,6 +254,7 @@ export interface SystemServiceContracts {
   'native': V1.NativeIntegrationV1;
   'nativeClipboard': V1.NativeClipboardV1;
   'assistant': V1.LocalAssistantV1;
+  'trustedUpdates': V1.TrustedUpdatesV1;
   'communityPlugins': V1.CommunityPluginsV1;
   'webhooks': V1.WebhooksV1;
   'automationRules': V1.AutomationRulesV1;

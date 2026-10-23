@@ -24,6 +24,7 @@ import { manifest as platform } from '../plugins/platform/manifest.ts';
 import { manifest as project_search } from '../plugins/project-search/manifest.ts';
 import { manifest as projects } from '../plugins/projects/manifest.ts';
 import { manifest as recipes } from '../plugins/recipes/manifest.ts';
+import { manifest as repair } from '../plugins/repair/manifest.ts';
 import { manifest as runtimes } from '../plugins/runtimes/manifest.ts';
 import { manifest as sandbox } from '../plugins/sandbox/manifest.ts';
 import { manifest as secrets } from '../plugins/secrets/manifest.ts';
@@ -44,5 +45,5 @@ import { pack as pack_monitoring } from '../plugins/packs/monitoring.ts';
 import { pack as pack_operations } from '../plugins/packs/operations.ts';
 import type { PluginManifest, PluginPack } from './plugin-protocol.ts';
 /** 已发现插件与整合包的静态声明，保持稳定顺序；启用状态由运行时配置决定。 / Static declarations of discovered plugins/packs in stable order; runtime configuration owns enablement. */
-export const PLUGINS: PluginManifest[] = [automation, automation_scheduler, backups, code_checks, command_palette, commands, containers, desktop, extensions, files, git, ide, images, library, maintenance, metrics, migration, network, pipelines, platform, project_search, projects, recipes, runtimes, sandbox, secrets, service_health, snapshots, sync, terminal_workspace, toolchains, transfers];
+export const PLUGINS: PluginManifest[] = [automation, automation_scheduler, backups, code_checks, command_palette, commands, containers, desktop, extensions, files, git, ide, images, library, maintenance, metrics, migration, network, pipelines, platform, project_search, projects, recipes, repair, runtimes, sandbox, secrets, service_health, snapshots, sync, terminal_workspace, toolchains, transfers];
 export const PLUGIN_PACKS: PluginPack[] = [pack_complete, pack_desktop, pack_developer, pack_development, pack_environment, pack_essentials, pack_lab, pack_monitoring, pack_operations];

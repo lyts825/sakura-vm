@@ -1053,12 +1053,16 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
     "id": "sakura.service.log-retention.v1",
     "version": 1,
     "members": [
+      "cleanupExecute",
+      "cleanupSnapshot",
       "preview",
       "save",
       "sweep",
       "view"
     ],
     "methods": [
+      "cleanupExecute",
+      "cleanupSnapshot",
       "preview",
       "save",
       "sweep",
@@ -1545,15 +1549,19 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
     "version": 1,
     "members": [
       "apply",
+      "applyPlan",
       "create",
       "export",
+      "preview",
       "read",
       "write"
     ],
     "methods": [
       "apply",
+      "applyPlan",
       "create",
       "export",
+      "preview",
       "read",
       "write"
     ]
@@ -1594,6 +1602,26 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "status",
       "sync",
       "verify"
+    ]
+  },
+  "sakura.service.repair-sessions.v1": {
+    "id": "sakura.service.repair-sessions.v1",
+    "version": 1,
+    "members": [
+      "apply",
+      "cancel",
+      "generate",
+      "preview",
+      "validate",
+      "view"
+    ],
+    "methods": [
+      "apply",
+      "cancel",
+      "generate",
+      "preview",
+      "validate",
+      "view"
     ]
   },
   "sakura.service.rescue.v1": {
@@ -2010,6 +2038,20 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "action",
       "capture",
       "restore",
+      "view"
+    ]
+  },
+  "sakura.service.trusted-updates.v1": {
+    "id": "sakura.service.trusted-updates.v1",
+    "version": 1,
+    "members": [
+      "action",
+      "close",
+      "view"
+    ],
+    "methods": [
+      "action",
+      "close",
       "view"
     ]
   },
