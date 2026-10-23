@@ -23,6 +23,7 @@
 - [最小核心、插件与整合包](plugin-architecture.md)
 - [插件设计契约与统管层接口](plugin-design-contract.md)
 - [项目交付工作台插件包设计](delivery-pack-design.md)
+- [三个插件包的产品与实施设计](plugin-pack-roadmap.md)：[环境镜像工坊](foundry-pack-design.md)、[应用运行与运维](app-runtime-pack-design.md)、[数据与实验工作台](data-lab-pack-design.md)（设计提案，未实现）
 - [插件与整合包协议](plugin-protocol.md)
 - [独立运行包自更新](self-update.md)
 - [受管存储与恢复](storage-runtime.md)
