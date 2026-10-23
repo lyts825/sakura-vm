@@ -24,6 +24,7 @@
 - [插件设计契约与统管层接口](plugin-design-contract.md)
 - [项目交付工作台插件包设计](delivery-pack-design.md)
 - [三个插件包的产品与实施设计](plugin-pack-roadmap.md)：[环境镜像工坊](foundry-pack-design.md)、[应用运行与运维](app-runtime-pack-design.md)、[数据与实验工作台](data-lab-pack-design.md)；实现使用指南见下方三个插件包
+- [第二批三个完整插件包设计](plugin-pack-expansion-design.md)：[接口集成验证](integration-lab-pack-design.md)、[可靠性演练](resilience-lab-pack-design.md)、[项目知识与文档](knowledge-studio-pack-design.md)；设计版本 2.0.0，31 个拟议插件，运行实现待开始
 - [插件与整合包协议](plugin-protocol.md)
 - [独立运行包自更新](self-update.md)
 - [受管存储与恢复](storage-runtime.md)
