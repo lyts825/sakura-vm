@@ -801,6 +801,8 @@ export class NetworkRuntime {
           return lease.connected;
         },
         setConnected: lease.setConnected,
+        setIsolation: lease.setIsolation,
+        observeIsolation: lease.observeIsolation,
         /**
          * 入口 / Entry: NetworkRuntime.attachVm.policy.
          * 功能：向调用者提供 `lease.policy` 的当前视图，不复制独立的业务状态。

@@ -114,6 +114,7 @@ const manifestSchema = z
   .object({
     version: z.literal(1),
     config: createSchema,
+    managedNetwork: z.literal('isolated').optional(),
     project: projectSchema.optional(),
     projects: z
       .object({
@@ -548,6 +549,7 @@ export class Bundles {
       const identity = await this.machines.snapshotIdentity(id, snapshotId);
       const unsigned = manifestSchema.parse({
         version: 1,
+        managedNetwork: vm.managedNetwork === 'isolated' ? 'isolated' : undefined,
         desktopBinding: (await new DesktopBindings(this.machines).read(id)) || undefined,
         x11Clipboard: await this.x11Clipboard(id),
         waylandClipboard: await this.x11Clipboard(id, 'wayland'),
@@ -711,6 +713,8 @@ export class Bundles {
             storage,
             signal,
           );
+          if (manifest.managedNetwork === 'isolated')
+            await this.machines.isolateStopped(adopted.id, this.machines.get(adopted.id).createdAt);
           if (manifest.desktopBinding) {
             try {
               await writeStore(join(vmDir(adopted.id), 'desktop-binding.json'), manifest.desktopBinding);

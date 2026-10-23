@@ -353,7 +353,7 @@ async function probe(selected, expected) {
     const worker = await fetch(origin + '/monitor/sw.js');
     assert.equal(worker.headers.get('cache-control'), 'no-cache');
     assert.ok(!(await worker.text()).includes('__MONITOR_REVISION__'));
-    assert.equal(plugins.plugins.length, 41);
+    assert.equal(plugins.plugins.length, 69);
     const auditBefore = await fetch(origin + '/api/audit', { headers }).then((response) => response.json());
     assert.equal(auditBefore.valid, true);
     const rejected = await fetch(origin + '/api/audit-smoke', {
@@ -821,7 +821,7 @@ try {
   for (const folder of ['scripts', '.sakura-server/assets'])
     await mkdir(join(networkFixture, folder), { recursive: true });
   for (const file of ['scripts/network-client.mjs', '.sakura-server/network-entry.js',
-    '.sakura-server/assets/network-worker.mjs'])
+    '.sakura-server/assets/network-worker.mjs', '.sakura-server/assets/bounded-qmp-policy.mjs'])
     await copyFile(resolve(file), join(networkFixture, file));
   await writeFile(join(networkFixture, 'package.json'), '{"type":"module"}\n');
   await symlink(resolve('node_modules'), join(networkFixture, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');

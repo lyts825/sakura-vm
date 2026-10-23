@@ -22,10 +22,13 @@ type Registration = { instance: PluginInstance; version: number; contract: Servi
  * 入口 / Entry: serviceRefForSystem.
  * 功能：为给定系统插件 id 构造固定键名 service 的引用，供 system 查询系统服务目录。
  * Purpose: Builds a reference to the fixed service key for a system plugin id, used by system-directory lookup.
- * 输入与结果：id 是提供者标识；返回 serviceRef 的版本 1、空 contractId 引用，不携带消费者自定义契约。
- * Inputs/result: id identifies the provider; returns the serviceRef default of version 1 and an empty contractId, with no consumer-selected contract.
+ * 输入与结果：id 是提供者标识；使用宿主声明的规范版本与契约，未登记的内部服务沿用版本 1。
+ * Inputs/result: Uses the host's canonical version and contract; unregistered internal services retain the version-one fallback.
  */
-const serviceRefForSystem = <T>(id: string) => serviceRef<T>(id, 'service');
+const serviceRefForSystem = <T>(id: string) => {
+  const contract = systemServiceContracts[id as keyof typeof systemServiceContracts] as ServiceContract<T> | undefined;
+  return contract ? serviceRef(id, 'service', contract) : serviceRef<T>(id, 'service');
+};
 const hidden = new Set(['constructor', '__proto__', 'prototype', 'machines', 'engine', 'options']);
 const lifecycle = new Set(['init', 'close', 'file', 'dataFile']);
 // 转发的公共代理仍按能力处理，保留其契约及内层代理检查，不能按普通空对象复制。
@@ -426,6 +429,8 @@ export class ServiceBroker {
             withResourceContext(
               {
                 callerPluginInstanceId: before?.callerPluginInstanceId || consumer.identity,
+                serviceConsumerPluginInstanceId: consumer.source === 'system'
+                  ? before?.serviceConsumerPluginInstanceId || consumer.identity : consumer.identity,
                 callerPluginGeneration: before?.callerPluginGeneration || consumer.generation,
                 actorId: before?.actorId,
                 vmId: before?.vmId,

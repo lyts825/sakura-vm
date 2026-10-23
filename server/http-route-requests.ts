@@ -4,6 +4,9 @@
  */
 import { z } from 'zod';
 import { deliveryHttpRequests } from '../shared/contracts/delivery-http.ts';
+import { foundryHttpRequests } from '../shared/contracts/foundry-http.ts';
+import { appRouteRequests } from '../shared/contracts/app-http.ts';
+import { dataHttpRequests } from '../shared/contracts/data-http.ts';
 import { cleanupPreviewRequest, cleanupExecuteRequest } from '../shared/contracts/cleanup-plan.ts';
 import { MAX_TEXT_BYTES } from './files.ts';
 import { singleAppInput, singleAppProgram, singleAppClipboard } from './single-app-windows.ts';
@@ -20,6 +23,9 @@ import { repairActionSchema } from '../shared/contracts/repair-session.ts';
 /** HTTP route inputs are used by the handlers, admission and generated clients. */
 export const httpRouteRequests = {
   ...deliveryHttpRequests,
+  ...foundryHttpRequests,
+  ...appRouteRequests,
+  ...dataHttpRequests,
   'backups.legacy.post.vms.vmId.backup-download': z.object({ backupId: z.uuid() }).strict(),
   'backups.legacy.post.vms.vmId.backups': z
     .object({

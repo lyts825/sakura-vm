@@ -14,6 +14,9 @@ export const pageLabels: Record<string, string> = {
   tasks: '任务中心',
   library: '实例管理',
   features: '能力中心',
+  foundry: '环境镜像工坊',
+  'app-runtime': '应用运行与运维',
+  'data-lab': '数据与实验工作台',
 };
 export const tabLabels: Record<string, string> = {
   terminal: '终端',

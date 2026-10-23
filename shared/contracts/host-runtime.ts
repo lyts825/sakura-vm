@@ -14,6 +14,8 @@ export type ResourceIdentity = {
   pluginInstanceId?: string;
   pluginGeneration?: string;
   callerPluginInstanceId?: string;
+  /** 最近的非系统服务消费者；系统适配器保留该归属。 */
+  serviceConsumerPluginInstanceId?: string;
   callerPluginGeneration?: string;
   vmId?: string;
   projectId?: string;

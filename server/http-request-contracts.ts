@@ -26,6 +26,10 @@ import { syncSchema } from './sync.ts';
 import { toolchainInstallRequest } from './toolchains.ts';
 import { extensionCodeInput } from './browser-extensions.ts';
 import { deliveryScopeSchema } from '../shared/contracts/delivery-common.ts';
+import { foundryHttpQueries } from '../shared/contracts/foundry-http.ts';
+import { appRouteQueries } from '../shared/contracts/app-http.ts';
+import { dataPluginIds } from '../shared/contracts/data-http.ts';
+import { dataScopeSchema } from '../shared/contracts/data-common.ts';
 
 export type HttpRequestContract = {
   kind: 'none' | 'json' | 'form' | 'binary';
@@ -230,6 +234,9 @@ const project = () => z.string().regex(/^(default|[a-f0-9]{16})$/);
 const flag = () => z.enum(['0', '1']);
 type QueryShape = Record<string, z.ZodType>;
 const queries: Readonly<Record<string, QueryShape>> = {
+  ...foundryHttpQueries,
+  ...Object.fromEntries(Object.entries(appRouteQueries).map(([key, schema]) => [key, schema.shape])),
+  ...Object.fromEntries(dataPluginIds.flatMap(id => ['view', 'act'].map(action => [`${id}.${action}`, dataScopeSchema.shape]))),
   'delivery-artifacts.view': deliveryScopeSchema.shape,
   'delivery-artifacts.act': deliveryScopeSchema.shape,
   'delivery-inputs.view': deliveryScopeSchema.shape,

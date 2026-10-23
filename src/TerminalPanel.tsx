@@ -6,6 +6,7 @@
  */
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
+import '@xterm/xterm/css/xterm.css';
 import { Minus, Play, Plus, RefreshCw, TerminalSquare, Trash2, Unplug } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { VMView } from '../shared/contracts/vm.ts';

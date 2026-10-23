@@ -1,6 +1,6 @@
 # 文档索引
 
-核对日期：2026-10-23；应用与内置包版本：**2.5.0**；宿主插件 API：**5**；公共服务契约：**V1**。
+核对日期：2026-10-23；应用与内置包版本：**2.6.0**；宿主插件 API：**5**；公共服务契约保留 **V1**，Notebook 增加显式作用域的 **V2**。
 
 | 使用场景 | 从这里开始 |
 | --- | --- |
@@ -23,7 +23,7 @@
 - [最小核心、插件与整合包](plugin-architecture.md)
 - [插件设计契约与统管层接口](plugin-design-contract.md)
 - [项目交付工作台插件包设计](delivery-pack-design.md)
-- [三个插件包的产品与实施设计](plugin-pack-roadmap.md)：[环境镜像工坊](foundry-pack-design.md)、[应用运行与运维](app-runtime-pack-design.md)、[数据与实验工作台](data-lab-pack-design.md)（设计提案，未实现）
+- [三个插件包的产品与实施设计](plugin-pack-roadmap.md)：[环境镜像工坊](foundry-pack-design.md)、[应用运行与运维](app-runtime-pack-design.md)、[数据与实验工作台](data-lab-pack-design.md)；实现使用指南见下方三个插件包
 - [插件与整合包协议](plugin-protocol.md)
 - [独立运行包自更新](self-update.md)
 - [受管存储与恢复](storage-runtime.md)
@@ -38,6 +38,9 @@
 - [工作区恢复与自动化功能](development-next.md)
 - [开发工作台与安全维护](development-workbench.md)
 - [项目交付工作台](delivery-workbench.md) 与 [交付 CLI](delivery-cli.md)
+- [环境镜像工坊](foundry-workbench.md)
+- [应用运行与运维](app-runtime-pack.md)
+- [数据与实验工作台](data-lab.md)
 - [开发工作区与数据互通](development-workspaces.md)
 - [工程操作的项目账号](engineering-project-identity.md)
 - [文件锁](file-locks.md)

@@ -38,3 +38,4 @@ id_ed25519
 
 # Local verification only; tracked CI tests keep their existing paths.
 /tests/*.local.*
+/tsconfig.tsbuildinfo

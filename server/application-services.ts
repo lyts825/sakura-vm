@@ -43,6 +43,9 @@ import { MobileCompanion } from './mobile-companion.ts';
 import { NativeClipboard } from './native-clipboard.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 import { NotebookEnvironments } from './notebook-environments.ts';
+import { ImageAssets } from './image-assets.ts';
+import { EgressRules } from './egress-rules.ts';
+import { DataNotebookSessions } from './data-notebook-sessions.ts';
 import { Passkeys } from './passkeys.ts';
 import { DATA, PORT } from './paths.ts';
 import { join } from 'node:path';
@@ -330,11 +333,25 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   releaseRuntimeOwnership();
   await machines.init();
   plugins.system.ready('@machines', machines);
+  await plugins.system.start({
+    id: 'imageAssets',
+    startup: 'required',
+    requires: ['@machines'],
+    create: (dependencies) => new ImageAssets(dependencies.vm()),
+    initialize: (value) => value.init(),
+    dispose: (value) => value?.close(),
+    disposePhase: ClosePhase.services,
+  });
   resources.defer(
     'plugin-directory-events',
     plugins.directory.subscribe(() => machines.emit('change')),
     1,
   );
+  await plugins.system.start({
+    id: 'egressRules', startup: 'required', requires: ['@machines'],
+    create: dependencies => new EgressRules(dependencies.vm()),
+    initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
+  });
   const terminalSharing = await plugins.system.startDegradable({
     id: 'terminalSharing',
     startup: 'degradable',
@@ -1721,7 +1738,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   let haHostFailover: HaHostFailoverV1 | undefined;
   let notebooks: NotebookEnvironmentsV1 | undefined;
   let browserIde: BrowserIdeV1 | undefined;
-  if (features.next) {
+  if (features.workspaces) {
     notebooks = await plugins.system.start({
       id: 'notebookEnvironments',
       startup: 'required',
@@ -1761,6 +1778,13 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       disposePhase: 370,
     });
 
+    await plugins.system.start({
+      id: 'notebookEnvironmentsV2', startup: 'required', requires: ['@machines', '@plugins', 'notebookEnvironments', 'imageAssets'],
+      create: dependencies => new DataNotebookSessions(() => dependencies.get('notebookEnvironments'), dependencies.vm(), dependencies.get('@plugins').workspaces, dependencies.get('imageAssets')),
+      initialize: () => {}, dispose: () => {}, disposePhase: 369,
+    });
+  }
+  if (features.next) {
     browserIde = await plugins.system.start({
       id: 'browserIde',
       startup: 'required',

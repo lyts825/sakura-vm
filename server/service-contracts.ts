@@ -8,6 +8,38 @@ import type { ServiceContract } from './service-ref.ts';
 
 /** Stable descriptor IDs are independent of implementation names and paths. */
 export const serviceContracts = {
+  FoundrySources: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-sources.v1'] as ServiceContract<V1.FoundrySourcesV1>,
+  FoundryBlueprints: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-blueprints.v1'] as ServiceContract<V1.FoundryBlueprintsV1>,
+  FoundryDepot: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-depot.v1'] as ServiceContract<V1.FoundryDepotV1>,
+  FoundryBuilders: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-builders.v1'] as ServiceContract<V1.FoundryBuildersV1>,
+  FoundrySanitizers: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-sanitizers.v1'] as ServiceContract<V1.FoundrySanitizersV1>,
+  FoundryChecks: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-checks.v1'] as ServiceContract<V1.FoundryChecksV1>,
+  FoundryCatalog: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-catalog.v1'] as ServiceContract<V1.FoundryCatalogV1>,
+  FoundryExchange: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-exchange.v1'] as ServiceContract<V1.FoundryExchangeV1>,
+  FoundryWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-workbench.v1'] as ServiceContract<V1.FoundryWorkbenchV1>,
+  AppTargets: PUBLIC_SERVICE_CONTRACTS['sakura.service.app-targets.v1'] as ServiceContract<V1.AppTargetsV1>,
+  AppPackages: PUBLIC_SERVICE_CONTRACTS['sakura.service.app-packages.v1'] as ServiceContract<V1.AppPackagesV1>,
+  AppConfig: PUBLIC_SERVICE_CONTRACTS['sakura.service.app-config.v1'] as ServiceContract<V1.AppConfigV1>,
+  AppData: PUBLIC_SERVICE_CONTRACTS['sakura.service.app-data.v1'] as ServiceContract<V1.AppDataV1>,
+  AppObserve: PUBLIC_SERVICE_CONTRACTS['sakura.service.app-observe.v1'] as ServiceContract<V1.AppObserveV1>,
+  AppRoutes: PUBLIC_SERVICE_CONTRACTS['sakura.service.app-routes.v1'] as ServiceContract<V1.AppRoutesV1>,
+  AppRecovery: PUBLIC_SERVICE_CONTRACTS['sakura.service.app-recovery.v1'] as ServiceContract<V1.AppRecoveryV1>,
+  AppDeploy: PUBLIC_SERVICE_CONTRACTS['sakura.service.app-deploy.v1'] as ServiceContract<V1.AppDeployV1>,
+  AppWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.app-workbench.v1'] as ServiceContract<V1.AppWorkbenchV1>,
+  DataRuntime: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-runtime.v1'] as ServiceContract<V1.DataRuntimeV1>,
+  DataSources: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-sources.v1'] as ServiceContract<V1.DataSourcesV1>,
+  DataDatasets: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-datasets.v1'] as ServiceContract<V1.DataDatasetsV1>,
+  DataTransforms: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-transforms.v1'] as ServiceContract<V1.DataTransformsV1>,
+  DataQuality: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-quality.v1'] as ServiceContract<V1.DataQualityV1>,
+  DataNotebooks: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-notebooks.v1'] as ServiceContract<V1.DataNotebooksV1>,
+  DataExperiments: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-experiments.v1'] as ServiceContract<V1.DataExperimentsV1>,
+  DataLineage: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-lineage.v1'] as ServiceContract<V1.DataLineageV1>,
+  DataExchange: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-exchange.v1'] as ServiceContract<V1.DataExchangeV1>,
+  DataWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.data-workbench.v1'] as ServiceContract<V1.DataWorkbenchV1>,
+  ImageAssets: PUBLIC_SERVICE_CONTRACTS['sakura.service.image-assets.v1'] as ServiceContract<V1.ImageAssetsV1>,
+  EgressRules: PUBLIC_SERVICE_CONTRACTS['sakura.service.egress-rules.v1'] as ServiceContract<V1.EgressRulesV1>,
+  NotebookEnvironmentsV2: PUBLIC_SERVICE_CONTRACTS['sakura.service.notebook-environments.v2'] as ServiceContract<V1.NotebookEnvironmentsV2>,
+
   DeliveryArtifacts: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-artifacts.v1'] as ServiceContract<V1.DeliveryArtifactsV1>,
   DeliveryInputs: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-inputs.v1'] as ServiceContract<V1.DeliveryInputsV1>,
   DeliveryRunners: PUBLIC_SERVICE_CONTRACTS['sakura.service.delivery-runners.v1'] as ServiceContract<V1.DeliveryRunnersV1>,
@@ -175,6 +207,9 @@ export const officialServiceContracts: Readonly<Record<string, ServiceContract<a
 };
 
 export const systemServiceContracts: Readonly<Record<string, ServiceContract<any>>> = {
+  'imageAssets': serviceContracts.ImageAssets,
+  'egressRules': serviceContracts.EgressRules,
+  'notebookEnvironmentsV2': serviceContracts.NotebookEnvironmentsV2,
   'session': serviceContracts.SessionLock,
   'access': serviceContracts.AccessControl,
   'passkeys': serviceContracts.Passkeys,
@@ -224,6 +259,9 @@ export const systemServiceContracts: Readonly<Record<string, ServiceContract<any
 
 /** System assembly returns these contracts; raw values stay in initialization callbacks. */
 export interface SystemServiceContracts {
+  'imageAssets': V1.ImageAssetsV1;
+  'egressRules': V1.EgressRulesV1;
+  'notebookEnvironmentsV2': V1.NotebookEnvironmentsV2;
   'session': V1.SessionLockV1;
   'access': V1.AccessControlV1;
   'passkeys': V1.PasskeysV1;

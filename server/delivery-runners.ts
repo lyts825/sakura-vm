@@ -78,8 +78,9 @@ export class DeliveryRunners {
     private inputs: DeliveryInputsV1,
     private metadata: PluginMetadata,
     private authorize: (scope: DeliveryScope) => void | Promise<void> = () => {},
+    images?: import('./service-contracts/image-assets.ts').ImageAssetsV1,
   ) {
-    this.executor = new DeliveryExecutor(machines, workspaces, artifacts);
+    this.executor = new DeliveryExecutor(machines, workspaces, artifacts, images);
   }
   /** 恢复持久记录，旧运行必须按原身份核销。 Restores records with interrupted runs requiring identity-bound recovery. */
   async init() {
@@ -94,7 +95,7 @@ export class DeliveryRunners {
           if (cell.state !== 'finished') {
             cell.state = 'finished';
             cell.result = 'interrupted';
-            cell.cleanup = cell.vmId ? 'unknown' : 'verified';
+            cell.cleanup = cell.vmId || cell.imageOwner ? 'unknown' : 'verified';
           }
       }
     await this.persist();
@@ -263,7 +264,7 @@ export class DeliveryRunners {
               if (cell.state !== 'finished') {
                 cell.state = 'finished';
                 cell.result = signal.aborted ? 'cancelled' : 'failed';
-                cell.cleanup = cell.vmId ? 'unknown' : 'verified';
+                cell.cleanup = cell.vmId || cell.imageOwner ? 'unknown' : 'verified';
                 cell.error = String(error);
               }
           }
@@ -330,12 +331,20 @@ export class DeliveryRunners {
       await check();
       cell.state = 'preparing';
       cell.cleanup = 'pending';
+      if (cell.environment.imageRef) cell.imageOwner = 'delivery-runners:' + run.id + ':' + cell.id;
       await this.persist();
-      space = await this.executor.create(cell.environment, 120, signal, async (vmId, createdAt) => {
-        cell.vmId = vmId;
-        cell.vmCreatedAt = createdAt;
-        await this.persist();
-      });
+      space = await this.executor.create(
+        cell.environment,
+        120,
+        signal,
+        async (vmId, createdAt, receipt) => {
+          cell.vmId = vmId;
+          cell.vmCreatedAt = createdAt;
+          cell.imageReceipt = receipt;
+          await this.persist();
+        },
+        cell.imageOwner,
+      );
       await this.executor.stage(space, run.scope, manifest, signal);
       cell.environmentEvidence = await this.executor.environment(space, signal);
       cell.environmentVerified = true;
@@ -409,7 +418,10 @@ export class DeliveryRunners {
     } finally {
       cell.cleanup = 'pending';
       try {
-        if (cell.vmId && cell.vmCreatedAt) await this.executor.destroy(cell.vmId, cell.vmCreatedAt);
+        if (cell.imageOwner) {
+          const receipts = await this.executor.destroyOwned(cell.imageOwner);
+          cell.imageReceipt = receipts.find((r) => r.vmId === cell.vmId) || cell.imageReceipt;
+        } else if (cell.vmId && cell.vmCreatedAt) await this.executor.destroy(cell.vmId, cell.vmCreatedAt);
         cell.cleanup = 'verified';
       } catch (error) {
         cell.cleanup = 'unknown';
@@ -434,7 +446,10 @@ export class DeliveryRunners {
     if (run.state !== 'finished') throw new AppError('请先取消正在执行的运行', 409);
     for (const cell of run.cells)
       if (cell.cleanup !== 'verified') {
-        if (cell.vmId && cell.vmCreatedAt) await this.executor.destroy(cell.vmId, cell.vmCreatedAt);
+        if (cell.imageOwner) {
+          const receipts = await this.executor.destroyOwned(cell.imageOwner);
+          cell.imageReceipt = receipts.find((r) => r.vmId === cell.vmId) || cell.imageReceipt;
+        } else if (cell.vmId && cell.vmCreatedAt) await this.executor.destroy(cell.vmId, cell.vmCreatedAt);
         cell.cleanup = 'verified';
       }
     run.cleanup = 'verified';

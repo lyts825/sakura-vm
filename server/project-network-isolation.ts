@@ -99,10 +99,10 @@ export function projectPrivateShellCommand(project: Project) {
  * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
  * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
  */
-export function ensureProjectNetworkScript(project: Project, distro: string) {
+export function ensureProjectNetworkScript(project: Project, distro: string, installMissing = true) {
   const namespace = projectNetworkNamespace(project);
   if (!namespace) return '';
-  const install = distro === 'alpine'
+  const install = !installMissing ? 'echo "已准备项目缺少网络工具，未安装软件" >&2; exit 1' : distro === 'alpine'
     ? 'apk add --no-cache --timeout 30 iproute2'
     : 'export DEBIAN_FRONTEND=noninteractive; apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update && apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y iproute2';
   return `if ! ip netns list >/dev/null 2>&1; then ${install}; fi\n` +

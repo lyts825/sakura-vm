@@ -636,8 +636,31 @@
       "src/delivery-*.ts",
       "server/delivery-*.ts",
       "shared/contracts/delivery-*.ts",
-      "plugins/delivery-*/manifest.ts"
+      "plugins/delivery-*/manifest.ts",
+      "server/artifact-store.ts",
+      "server/project-task-executor.ts"
     ],
     "Sakura Serif": []
-  }
+  },
+  "lazySources": [
+    "src/FoundryPanel.tsx",
+    "src/AppRuntimePanel.tsx",
+    "src/DataLabPanel.tsx",
+    "server/foundry.ts",
+    "server/image-assets.ts",
+    "server/egress-rules.ts",
+    "server/app-*.ts",
+    "server/data-*.ts",
+    "shared/contracts/foundry*.ts",
+    "shared/contracts/image-assets.ts",
+    "shared/contracts/egress-rules.ts",
+    "shared/contracts/app-*.ts",
+    "shared/contracts/data-*.ts",
+    "plugins/foundry-*/manifest.ts",
+    "plugins/app-*/manifest.ts",
+    "plugins/data-*/manifest.ts",
+    "plugins/packs/foundry.ts",
+    "plugins/packs/app-runtime.ts",
+    "plugins/packs/data-lab.ts"
+  ]
 }

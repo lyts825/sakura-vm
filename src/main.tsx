@@ -9,7 +9,6 @@ import { App } from './app/App';
 import { SessionBoundary } from './SessionLock';
 import { AccessBoundary } from './AccessControl';
 import { installLanguagePack } from './localization';
-import '@xterm/xterm/css/xterm.css';
 import './fonts.css';
 import './style.css';
 

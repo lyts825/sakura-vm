@@ -18,6 +18,7 @@ export async function activate(host: PluginContext) {
     host.use(artifactServices.artifacts),
     host.capabilities.metadata.reference('previews', () => []),
     deliveryAuthorize(host),
+    host.system.optional('imageAssets'),
   );
   await service.init();
   host.provide(services.previews, service);

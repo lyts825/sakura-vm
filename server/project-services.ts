@@ -151,13 +151,13 @@ export function envPrefix(values: Record<string, string> = {}) {
  * 拒绝 / Refusals: 条件 / conditions `dependencies.code !== 0`; 异常 / errors `new AppError('无法准备运行归属工具 python3/tmux；项目代码未执行', 409, prefix + '_SCOPE_UNAVAILABLE')`.
  */
 export async function prepareProjectScopeTools(machines: Machines, id: string, signal: AbortSignal,
-  kind: 'service' | 'main' = 'service') {
+  kind: 'service' | 'main' = 'service', installMissing = true) {
   const prefix = kind === 'main' ? 'PROJECT_MAIN' : 'SERVICE';
   const distro = machines.get(id).distro;
   const dependencies = await guestTask(machines, id,
     `# SAKURA_PROJECT_${kind === 'main' ? 'MAIN' : 'SERVICE'}_DEPENDENCIES\nset -eu\n` +
     `if [ -x /usr/bin/python3 ] && [ -x /usr/bin/tmux ]; then exit 0; fi\n` +
-    (distro === 'alpine'
+    (!installMissing ? 'echo "已准备项目缺少 python3/tmux，未安装软件" >&2; exit 1\n' : distro === 'alpine'
       ? `apk add --no-cache --timeout 30 python3 tmux\n`
       : `export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n` +
         `apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends python3 tmux\n`) +
@@ -191,10 +191,11 @@ export async function runServices(
   log: (s: string) => void,
   signal: AbortSignal,
   only?: string,
+  installMissing = true,
 ) {
   const services = project.services || [];
   const order = serviceOrder(services, only);
-  if (action === 'start' && order.length) await prepareProjectScopeTools(machines, id, signal);
+  if (action === 'start' && order.length) await prepareProjectScopeTools(machines, id, signal, 'service', installMissing);
   const scopes = new ProjectServiceScopes(machines, id, project);
   const { ProjectRunScopes, projectIdentityTask } = await import('./project-run-scope.ts');
   const identities = new ProjectRunScopes(machines);

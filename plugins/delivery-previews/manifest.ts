@@ -6,6 +6,7 @@ export const manifest = definePlugin({
   name: '候选预览',
   description: '启动制品并验证独立入口、健康与到期回收。',
   category: 'development',
+  systemDependencies: ['imageAssets'],
   requires: [pin('delivery-artifacts'), pin('projects')],
   services: ['previews'],
   contributes: {

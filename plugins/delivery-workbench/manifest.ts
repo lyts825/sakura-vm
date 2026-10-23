@@ -6,6 +6,7 @@ export const manifest = definePlugin({
   name: '交付工作台',
   description: '从定义和输入到验证、预览及离线交接。',
   category: 'development',
+  optional: [pin('foundry-catalog')],
   requires: [
     pin('delivery-artifacts'),
     pin('delivery-inputs'),

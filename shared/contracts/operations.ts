@@ -41,6 +41,7 @@ const identity = z.object({ operationId: z.string(), owner: z.string(), actorId:
   pluginId: z.string().optional(), vmId: z.string().optional(), projectId: z.string().optional(),
   pluginInstanceId: z.string().optional(), pluginGeneration: z.string().optional(), recoveryId: z.string().optional(),
   callerPluginInstanceId: z.string().optional(), callerPluginGeneration: z.string().optional(),
+  serviceConsumerPluginInstanceId: z.string().optional(),
   jobId: z.string().optional(), vmProcessId: z.string().optional(), executionGeneration: z.string().optional(),
   bootId: z.string().optional(), networkGeneration: z.string().optional(), traceId: z.string().optional(), spanId: z.string().optional() }).strict();
 const resource = z.object({ id: z.string(), owner: z.string(), kind: z.string(), label: z.string(),

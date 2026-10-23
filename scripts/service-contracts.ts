@@ -93,9 +93,12 @@ assertSystemServiceFactories(parsed.fileNames, parsed.options);
 const descriptors: Record<string, { id: string; version: number; members: string[]; optional?: string[]; methods?: string[]; properties?: Record<string, string>; returns?: Record<string, string> }> = {};
 const known = new Map<ts.Type, string>();
 const assigned = new Map<ts.Type, string>();
-/** 从版本接口名生成稳定 sakura.service.*.v1 ID，保持名称与公开能力关系可追踪。
- * Derive stable sakura.service.*.v1 IDs from versioned interface names for traceable capability relations. */
-const idFor = (name: string) => 'sakura.service.' + name.replace(/V1$/, '').replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase() + '.v1';
+/** 从接口后缀生成独立服务版本；保留所有既有 V1 ID。
+ * Derive independent service versions from interface suffixes while preserving existing V1 IDs. */
+const idFor = (name: string) => {
+  const version = name.match(/V([1-9][0-9]*)$/)?.[1] ?? '1';
+  return 'sakura.service.' + name.replace(/V[1-9][0-9]*$/, '').replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase() + '.v' + version;
+};
 for (const node of source.statements)
   if (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node))
     known.set(checker.getTypeAtLocation(node), idFor(node.name.text));
@@ -134,7 +137,7 @@ function shape(raw: ts.Type, suggested: string, force = false): string | undefin
   if (assigned.has(type)) return assigned.get(type);
   if (descriptors[id]) return id;
   assigned.set(type, id);
-  const descriptor = descriptors[id] = { id, version: 1, members: members.map((member) => member.name).sort() } as (typeof descriptors)[string];
+  const descriptor = descriptors[id] = { id, version: Number(id.match(/\.v([1-9][0-9]*)(?:\/|$)/)?.[1] ?? 1), members: members.map((member) => member.name).sort() } as (typeof descriptors)[string];
   const optional = members.filter((member) => member.flags & ts.SymbolFlags.Optional).map((member) => member.name).sort();
   if (optional.length) descriptor.optional = optional;
   const methods = members.filter((member) => checker.getSignaturesOfType(checker.getTypeOfSymbolAtLocation(member, source), ts.SignatureKind.Call).length).map((member) => member.name).sort();

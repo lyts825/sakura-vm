@@ -16,7 +16,7 @@ import type {
 } from './plugin-schema.ts';
 
 export const PLUGIN_API_VERSION = 5;
-export const BUILTIN_PLUGIN_VERSION = '2.5.0';
+export const BUILTIN_PLUGIN_VERSION = '2.6.0';
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type PluginPack = z.infer<typeof pluginPackSchema>;
 export type PluginSelection = z.infer<typeof pluginSelectionSchema>;
@@ -100,6 +100,30 @@ export const http = (
   methods: HttpContribution['methods'],
   projectScoped = false,
 ): HttpContribution => ({ path, methods, projectScoped });
+
+/** 独立领域的所有者查询与写入入口；每次生成新的显式策略对象。 */
+export const ownerDomainRoutes = (path: string): PluginManifest['contributes']['routes'] =>
+  (['view', 'act'] as const).map((id) => ({
+    id,
+    method: id === 'view' ? 'GET' : 'POST',
+    path,
+    handler: 'route',
+    status: 200,
+    policy: {
+      access: 'controller',
+      roles: ['owner'],
+      projectScoped: false,
+      identity: 'host',
+      maintenance: id === 'view' ? 'allow' : 'block',
+      transport: 'json',
+      mutating: id === 'act',
+      session: 'required',
+      vmLock: 'allow-locked',
+      projectBinding: 'none',
+      approval: 'none',
+      extensionAuth: 'none',
+    },
+  }));
 /**
  * 中文：声明精确 operation ID、方法、路径及成功状态，把路由认领与响应契约连接起来。
  * English: Declare an exact operation ID/method/path/success status, linking route ownership to the response contract.
@@ -137,7 +161,11 @@ export function definePack(
  * 中文：结果：PluginPack['members'][number]，包含上述计算或传输完成值；抛错分支不提供成功结果
  * English: Result: PluginPack['members'][number] carrying the described computation/transport result; throwing branches do not provide success
  */
-export const member = (id: string, kind: 'plugin' | 'pack' = 'plugin', version = BUILTIN_PLUGIN_VERSION): PluginPack['members'][number] => ({
+export const member = (
+  id: string,
+  kind: 'plugin' | 'pack' = 'plugin',
+  version = BUILTIN_PLUGIN_VERSION,
+): PluginPack['members'][number] => ({
   ...pin(id, version),
   kind,
 });

@@ -11,6 +11,9 @@ export const pack = definePack({
   name: '完整兼容',
   description: '全部内置可选插件，包括实验能力和后台任务。',
   members: [
+    member('foundry', 'pack'),
+    member('app-runtime', 'pack'),
+    member('data-lab', 'pack'),
     member('delivery', 'pack'),
     member('transfers'),
     member('files'),

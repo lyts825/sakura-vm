@@ -3,6 +3,7 @@
  * Module purpose: Protects secrets with the Windows user account, resolves references and redacts resolved values from logs.
  */
 import { hostExecFile } from './host-process.ts';
+import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
@@ -19,6 +20,7 @@ export const secretRefsSchema = z
 type SecretRecord = {
   name: string;
   ciphertext: string;
+  revision?: string;
   updatedAt: string;
   lastChangedAt?: string;
   rotation?: RotationPolicy;
@@ -215,6 +217,7 @@ export class Secrets {
         {
           name: value.name,
           ciphertext,
+          revision: randomUUID(),
           updatedAt: now,
           lastChangedAt: unchanged ? previous.lastChangedAt || previous.updatedAt : now,
           ...(previous?.rotation ? { rotation: previous.rotation } : {}),
@@ -280,6 +283,50 @@ export class Secrets {
         ]),
       ),
     );
+  }
+
+  /** 返回不含秘密值的强内容版本；旧记录使用受保护密文的域分隔摘要。
+   * Return an opaque reference version without decrypting the secret or hashing its plaintext. */
+  async references(id: string, refs: Record<string, string> = {}) {
+    const parsed = secretRefsSchema.parse(refs);
+    return this.machines.locked(`secrets:${id}`, async () => {
+      const records = await this.records(id);
+      return Object.fromEntries(Object.entries(parsed).map(([key, name]) => {
+        const item = records.find(record => record.name === name);
+        if (!item) throw new AppError(`缺少私密配置：${name}`, 404);
+        return [key, { name, version: this.referenceVersion(id, item) }];
+      }));
+    });
+  }
+
+  /** 在同一写锁内核对全部版本并解析；轮换、删除或重建使旧计划失效。
+   * Check the complete reference set under the writer lock before resolving any protected values. */
+  async resolveVersioned(id: string, refs: Record<string, string>, versions: Record<string, string>) {
+    const parsed = secretRefsSchema.parse(refs);
+    const expected = z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)).parse(versions);
+    if (Object.keys(parsed).sort().join('\n') !== Object.keys(expected).sort().join('\n'))
+      throw new AppError('私密配置引用集合已变化，请重新生成计划', 409, 'SECRET_REFERENCE_CHANGED');
+    return this.machines.locked(`secrets:${id}`, async () => {
+      const records = await this.records(id);
+      const selected = Object.entries(parsed).map(([key, name]) => {
+        const item = records.find(record => record.name === name);
+        if (!item || this.referenceVersion(id, item) !== expected[key])
+          throw new AppError('私密配置版本已变化，请重新生成计划', 409, 'SECRET_REFERENCE_CHANGED');
+        return [key, item] as const;
+      });
+      const values: Record<string, string> = Object.create(null);
+      for (const [key, item] of selected)
+        values[key] = Buffer.from(await this.protect('unprotect', item.ciphertext), 'base64').toString('utf8');
+      return values;
+    });
+  }
+
+  /** 版本绑定 VM、引用名、写入修订和密文，防止同名替换沿用授权。
+   * Bind versions to scope, reference name, write revision and protected bytes. */
+  private referenceVersion(id: string, item: SecretRecord) {
+    return createHash('sha256')
+      .update(JSON.stringify(['sakura-secret-reference-v1', id, item.name, item.revision ?? null, item.ciphertext]))
+      .digest('hex');
   }
 }
 /**

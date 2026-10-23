@@ -2,6 +2,7 @@
  * Delivery workbench with explicit mutations and draft/request disposal across scope changes. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { foundryViewSchema, type FoundryRecord } from '../shared/contracts/foundry';
 import { Feedback, formatBytes, useAction, useRemote, type FeatureProps } from './feature-shared';
 import {
   deliveryCandidateSchema,
@@ -431,7 +432,7 @@ function DeliveryWorkspace({
               </select>
             </label>
           </div>
-          <DefinitionEditor value={draft} onChange={edit} />
+          <DefinitionEditor value={draft} onChange={edit} request={request} />
           <div className="delivery-toolbar">
             <button
               disabled={blocked}
@@ -512,7 +513,7 @@ function DeliveryWorkspace({
       )}
       {tab === 'inputs' && (
         <>
-          <DefinitionEditor value={draft} onChange={edit} />
+          <DefinitionEditor value={draft} onChange={edit} request={request} />
           <p className="subtle-note">
             捕获需要源实例正在运行且已安装 Git、Python 3。提交模式固定 Git
             对象；草稿模式必须逐项审阅。子模块、未物化 LFS 和链接会明确拒绝。
@@ -1468,12 +1469,19 @@ function DeliveryWorkspace({
 function DefinitionEditor({
   value,
   onChange,
+  request,
 }: {
   value: DeliveryDefinition;
   onChange: (value: DeliveryDefinition) => void;
+  request: FeatureProps['request'];
 }) {
   const [advanced, setAdvanced] = useState(''),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [foundrySpace, setFoundrySpace] = useState('local'),
+    [foundryRows, setFoundryRows] = useState<FoundryRecord[]>([]),
+    [loadingImages, setLoadingImages] = useState(false);
+  const imageRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => imageRequest.current?.abort(), []);
   return (
     <>
       <div className="delivery-grid">
@@ -1516,6 +1524,100 @@ function DefinitionEditor({
           </select>
         </label>
       </div>
+      <fieldset>
+        <legend>可选：使用工坊已发布镜像</legend>
+        <label>
+          工坊空间
+          <input
+            value={foundrySpace}
+            onChange={(e) => {
+              imageRequest.current?.abort();
+              setFoundrySpace(e.target.value);
+              setFoundryRows([]);
+              setLoadingImages(false);
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={loadingImages}
+          onClick={async () => {
+            imageRequest.current?.abort();
+            const controller = new AbortController();
+            imageRequest.current = controller;
+            setLoadingImages(true);
+            setError('');
+            try {
+              const result = foundryViewSchema.parse(
+                await request(
+                  '/foundry-catalog?workspaceId=' + encodeURIComponent(foundrySpace),
+                  'GET',
+                  undefined,
+                  controller.signal,
+                ),
+              );
+              if (!controller.signal.aborted)
+                setFoundryRows(
+                  result.rows.filter(
+                    (r) => r.section === 'catalog' && r.state === 'published' && r.cleanup === 'confirmed',
+                  ),
+                );
+            } catch (e) {
+              if (!controller.signal.aborted) setError('工坊目录不可用，当前镜像选择保留：' + String(e));
+            } finally {
+              if (!controller.signal.aborted) setLoadingImages(false);
+            }
+          }}
+        >
+          读取已发布镜像
+        </button>
+        <select
+          aria-label="选择已发布镜像"
+          value=""
+          onChange={(e) => {
+            const selected = foundryRows.find((r) => r.id === e.target.value);
+            if (!selected?.image) return;
+            onChange({
+              ...value,
+              environment: {
+                ...value.environment,
+                distro: selected.image.distro,
+                architecture: selected.image.architecture,
+                imageSha256: selected.image.digest,
+                imageRef: { assetId: selected.image.id, digest: selected.image.digest },
+                foundry: { workspaceId: foundrySpace, id: selected.id, revisionDigest: selected.digest },
+              },
+            });
+          }}
+        >
+          <option value="">选择修订；修改后需重新审阅定义</option>
+          {foundryRows.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name} · {r.image?.digest.slice(0, 16)}
+            </option>
+          ))}
+        </select>
+        {value.environment.imageRef && (
+          <>
+            <p>
+              固定镜像：<code>{value.environment.imageRef.digest}</code>。镜像缺失或修订失效会拒绝执行。
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const environment = { ...value.environment };
+                delete environment.imageRef;
+                delete environment.foundry;
+                delete environment.imageSha256;
+                onChange({ ...value, environment });
+              }}
+            >
+              明确改回基础镜像并重新审阅
+            </button>
+          </>
+        )}
+        <p>未启用工坊时可继续使用基础镜像。高级 JSON 也可填写本体已注册的 imageRef；矩阵项各自固定镜像。</p>
+      </fieldset>
       <label>
         源码路径（每行一项；空白为提交中的全部文件）
         <textarea

@@ -7,6 +7,7 @@
 import { createServer, createConnection } from 'node:net';
 import { lookup } from 'node:dns/promises';
 import { randomBytes } from 'node:crypto';
+import { BoundedQmpPolicy } from './bounded-qmp-policy.mjs';
 
 const limit = Number(process.env.SAKURA_NETWORK_WORKER_LIMIT || 128);
 if (!Number.isInteger(limit) || limit < 1 || limit > 1024) process.exit(1);
@@ -20,6 +21,7 @@ let backend,
   qmpInput = '',
   qmpSequence = 0;
 const qmpPending = new Map();
+const boundedPolicies = new BoundedQmpPolicy((execute, args) => qmp(execute, args), () => { void shutdown(1); });
 /**
  * 入口 / Entry: failed.
  * 功能：从当前输入或状态计算 `Object.assign(new Error(message), { code })`，供调用方后续验证或使用。
@@ -467,6 +469,12 @@ process.on('message', async (message) => {
         expiresAt: Date.now() + timeoutMs,
       });
       value = { token };
+    } else if (command === 'qmp-policy' || command === 'qmp-policy-observe' || command === 'qmp-policy-forget') {
+      if (!backend || message.backendId !== backend.id) throw failed('Network backend is not authorized');
+      await backend.ready;
+      value = command === 'qmp-policy' ? await boundedPolicies.apply(message)
+        : command === 'qmp-policy-observe' ? await boundedPolicies.observe(message.id)
+        : await boundedPolicies.forget(message.id);
     } else if (command === 'qmp') {
       if (!backend || message.backendId !== backend.id) throw failed('Network backend is not authorized');
       await backend.ready;
@@ -504,6 +512,7 @@ function shutdown(exitCode = 0) {
    */
   return (shutdownTask ||= (async () => {
     closing = true;
+      boundedPolicies.close();
     const fallback = setTimeout(() => {
       process.exit(1);
     }, 1500);

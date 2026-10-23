@@ -46,7 +46,6 @@ import type { NativeHandoff } from '../../shared/native-integration';
 import { AccessSettings, AccountLogoutButton } from '../AccessControl';
 import { SakuraArt } from '../SakuraArt';
 import { SessionLockButton, SessionLockSettings } from '../SessionLock';
-import { TerminalPanel } from '../TerminalPanel';
 import { api, controllerSession } from '../controller-session';
 import { ConfigPanel, CreateModal } from './InstanceForms';
 import { readSessionState } from './session-state';
@@ -81,6 +80,8 @@ import {
 } from '../shortcuts';
 import { workspaceCommandDefinitions, type WorkspaceCommandDefinition } from '../workspace-navigation';
 import { workspacePath } from '../workspace-request';
+
+const TerminalPanel = lazy(() => import('../TerminalPanel').then(module => ({ default: module.TerminalPanel })));
 
 const TerminalWorkspace = lazy(/** 中文：懒加载 ../TerminalWorkspace 并将指定导出适配为默认 React 组件，延后下载该功能界面所需代码 | English: Lazily load ../TerminalWorkspace and adapt its selected export as the default React component, deferring this feature's UI code download */ () =>
   import('../TerminalWorkspace').then((module) => ({ default: module.TerminalWorkspace })),
@@ -1348,6 +1349,7 @@ export function App() {
                         aria-labelledby={`tab-${tab}`}
                       >
                         <div className="terminal-panel-slot" hidden={tab !== 'terminal'}>
+                          <Suspense fallback={<p role="status">正在加载终端…</p>}>
                           {hasProjects && !projectId ? (
                             <div className="terminal-offline" role="status">
                               <p>{projectLoadError || '正在加载工作项目…'}</p>
@@ -1378,6 +1380,7 @@ export function App() {
                               projectId={projectId}
                             />
                           )}
+                          </Suspense>
                         </div>
                         {tab === 'development' && (
                           <DevelopmentPanel

@@ -393,8 +393,8 @@ export class NotebookEnvironments {
    * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
    * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
    */
-  private context(id: string) {
-    const vm = this.machines.get(id), projectId = this.workspaces.projects.current(id);
+  private context(id: string, explicitProjectId?: string) {
+    const vm = this.machines.get(id), projectId = explicitProjectId ?? this.workspaces.projects.current(id);
     return { vm, projectId, session: this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId) };
   }
   /**
@@ -671,9 +671,9 @@ export class NotebookEnvironments {
    * 失败处理：catch 分支执行 `signal?.throwIfAborted();`; `await this.bridges.stop(id, projectId);`，是否吞掉错误或重新拒绝由这些语句决定。
    * Failure handling: Catch paths execute `signal?.throwIfAborted();`; `await this.bridges.stop(id, projectId);`; these statements determine whether a failure is absorbed or rejected again.
    */
-  async view(id: string, input: unknown = {}, signal?: AbortSignal) {
+  async view(id: string, input: unknown = {}, signal?: AbortSignal, explicitProjectId?: string) {
     if (this.closed) throw new AppError('Notebook 服务已关闭', 409);
-    const options = notebookInput.parse(input), { projectId, session } = this.context(id), project = await this.config(id, projectId);
+    const options = notebookInput.parse(input), { projectId, session } = this.context(id, explicitProjectId), project = await this.config(id, projectId);
     const running = this.machines.state(id) === 'running';
     const known = this.state!.environments.find(item => item.vmId === id && item.projectId === projectId && item.provider === options.provider);
     const identity = known?.identity || (session?.provider === options.provider ? session.execution?.identity : undefined);
@@ -707,11 +707,12 @@ export class NotebookEnvironments {
    * 失败处理：catch 分支执行 `if (metadata.phase !== 'closed') { metadata.phase = 'review'; await writeStore(leaseFile, metadata); }`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
    * Failure handling: Catch paths execute `if (metadata.phase !== 'closed') { metadata.phase = 'review'; await writeStore(leaseFile, metadata); }`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
    */
-  private async install(id: string, captured: Capture, provider: NotebookProvider, log: (line: string) => void) {
+  private async install(id: string, captured: Capture, provider: NotebookProvider, log: (line: string) => void, allowDownload = true) {
     await this.assertCaptured(id, captured);
     const identity = await this.scopes.identity(id, captured.project, captured.signal);
     await this.assertCaptured(id, captured);
     if (await this.installed(id, identity, provider, captured.signal)) return identity;
+    if (!allowDownload) throw new AppError('离线 Notebook 环境未准备，未执行安装', 409, 'NOTEBOOK_OFFLINE_NOT_READY');
     const admin = this.options.adminTask || guestTask;
     const tools = await admin(this.machines, id, notebookToolsScript(this.machines.get(id).distro || 'alpine', captured.bootId), captured.signal, undefined, 180000);
     if (tools.code !== 0) throw new AppError('Notebook 系统依赖准备失败', 409, 'NOTEBOOK_PREPARE_FAILED');
@@ -813,7 +814,7 @@ export class NotebookEnvironments {
    * 失败处理：catch 分支执行 `try { if (session && this.current(session)) await this.stop(id, session, new AbortController().signal); else await process.st…`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
    * Failure handling: Catch paths execute `try { if (session && this.current(session)) await this.stop(id, session, new AbortController().signal); else await process.st…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
    */
-  private async start(id: string, input: Input, captured: Capture, log: (line: string) => void) {
+  private async start(id: string, input: Input, captured: Capture, log: (line: string) => void, offline = false) {
     const { project, projectId, signal } = captured;
     let prior = this.state!.sessions.find(item => item.vmId === id && item.projectId === projectId);
     if (prior && prior.status === 'running' && prior.execution?.run) {
@@ -824,7 +825,7 @@ export class NotebookEnvironments {
       return { ready: true, executed: true, session: { provider: prior.provider, status: 'running', hostPort: prior.hostPort, guestPort: prior.guestPort }, message: 'Notebook 会话已经运行。' };
     }
     if (prior) await this.stop(id, prior, signal);
-    const identity = await this.install(id, captured, input.provider, log);
+    const identity = await this.install(id, captured, input.provider, log, !offline);
     await this.assertCaptured(id, captured);
     if (this.machines.get(id).forwards.some(item => item.host === input.hostPort))
       throw new AppError('所选本机端口已有实例转发，请选择独立回环端口', 409);
@@ -873,6 +874,12 @@ export class NotebookEnvironments {
           const run = await this.identities.runReadonly(id, identity, intent.runId, signal);
           if (!nativeMatches(run, identity, started)) throw changed();
           if (!session.execution!.run) session = await this.change(state => { const row = state.sessions.find(item => keyOf(item) === keyOf(session!))!; row.execution!.run = run; return row; });
+          // The task domain can be alive before Jupyter has opened its listener.
+          // Keep the same immutable identity while waiting; never open an unproven bridge.
+          if (!await this.prove(session, captured.raw, signal)) {
+            await delay(500, undefined, { signal });
+            continue;
+          }
           await this.restoreBridge(session, captured.raw, signal);
           if (await this.probeHttp(session)) {
             await this.assertCaptured(id, captured);
@@ -906,9 +913,9 @@ export class NotebookEnvironments {
    * 副作用 / Effects: `this.active.add`; `AbortSignal.any`; `this.pending.add`.
    * 拒绝 / Refusals: 条件 / conditions `this.closed`; `this.active.has(key)`; `options.mode !== 'status' && this.state!.sessions.some(item => item.vmId === id && item.projectId === projectId && !item.exec…`; 异常 / errors `new AppError('Notebook 服务已关闭', 409)`; `new AppError('此项目的 Notebook 操作仍在进行', 409)`.
    */
-  async run(id: string, input: unknown, signal: AbortSignal, log: (line: string) => void): Promise<NotebookResponse> {
+  async run(id: string, input: unknown, signal: AbortSignal, log: (line: string) => void, explicitProjectId?: string, offline = false): Promise<NotebookResponse> {
     if (this.closed) throw new AppError('Notebook 服务已关闭', 409);
-    const options = notebookInput.parse(input), { projectId } = this.context(id), key = `${id}:${projectId}`;
+    const options = notebookInput.parse(input), { projectId } = this.context(id, explicitProjectId), key = `${id}:${projectId}`;
     if (this.active.has(key)) throw new AppError('此项目的 Notebook 操作仍在进行', 409);
     if (options.mode !== 'status' && this.state!.sessions.some(item => item.vmId === id && item.projectId === projectId && !item.execution))
       throw legacy();
@@ -924,9 +931,9 @@ export class NotebookEnvironments {
      * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
      */
     const operation = (async () => {
-      abort.throwIfAborted(); if (options.mode === 'status') return this.view(id, options, abort);
+      abort.throwIfAborted(); if (options.mode === 'status') return this.view(id, options, abort, projectId);
       if (options.mode === 'start' || options.mode === 'install') return this.prepared(id, projectId, abort, async captured => {
-        if (options.mode === 'start') return this.start(id, options, captured, log);
+        if (options.mode === 'start') return this.start(id, options, captured, log, offline);
         await this.install(id, captured, options.provider, log);
         return { ready: true, executed: true, installed: true, provider: options.provider, message: 'Notebook 环境已安装；现在可启动会话。' };
       });
@@ -953,9 +960,9 @@ export class NotebookEnvironments {
    * 失败处理：catch 分支执行 `await this.bridges.stop(id, session.projectId);`; `throw error;`，是否吞掉错误或重新拒绝由这些语句决定。
    * Failure handling: Catch paths execute `await this.bridges.stop(id, session.projectId);`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
    */
-  async link(id: string) {
+  async link(id: string, explicitProjectId?: string) {
     if (this.closed) throw new AppError('Notebook 服务已关闭', 409);
-    const { session } = this.context(id); if (!session || !session.execution) throw session ? legacy() : changed();
+    const { session } = this.context(id, explicitProjectId); if (!session || !session.execution) throw session ? legacy() : changed();
     try {
       await this.restoreBridge(session, await this.config(id, session.projectId));
       if (!await this.probeHttp(session) || !this.current(session)) throw changed();

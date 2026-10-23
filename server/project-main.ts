@@ -82,9 +82,9 @@ const unmanaged = () => new AppError('旧项目主命令 tmux 缺少可验证归
  * Failure handling: Catch paths execute `try { await scope.stop(intent, log); } catch (cleanupError) { throw new AppError(`项目主命令启动失败：${error instanceof Error ? error.…`; `throw error;`; these statements determine whether a failure is absorbed or rejected again.
  */
 export async function runProjectMain(machines: Machines, id: string, project: Project,
-  log: (text: string) => void, signal: AbortSignal, prepare: () => Promise<void>) {
+  log: (text: string) => void, signal: AbortSignal, prepare: () => Promise<void>, installMissing = true) {
   if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
-  await prepareProjectScopeTools(machines, id, signal, 'main');
+  await prepareProjectScopeTools(machines, id, signal, 'main', installMissing);
   const scope = new ProjectMainScope(machines, id, project);
   const identities = new (await import('./project-run-scope.ts')).ProjectRunScopes(machines);
   /**

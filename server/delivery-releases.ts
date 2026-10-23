@@ -153,6 +153,47 @@ export class DeliveryReleases {
     if (!candidate) throw new AppError('候选不存在或尚在隔离区', 404);
     return candidate;
   }
+  /** 消费固定版本前重新校验当前证据与撤销状态，复用通道晋级的核验逻辑。 */
+  async authorizeUse(scope: DeliveryScope, input: { id: string; releaseCoreDigest: string }) {
+    const state = await this.view(scope),
+      release = state.releases.find((r) => r.id === input.id);
+    if (!release || release.status !== 'registered' || release.releaseCoreDigest !== input.releaseCoreDigest)
+      throw new AppError('交付来源已撤回、归档或摘要不一致', 409);
+    const { decision, policy } = await this.gates.assertCurrent(
+      scope,
+      release.decision.id,
+      release.candidate.digest,
+    );
+    if (decision.status !== 'passed') throw new AppError('应用导入要求通过的交付判定', 409);
+    const run = decision.runId ? await this.runners.get(scope, decision.runId) : undefined;
+    if (
+      !run ||
+      run.result !== 'success' ||
+      run.state !== 'finished' ||
+      run.cleanup !== 'verified' ||
+      run.exitCode !== 0
+    )
+      throw new AppError('交付来源运行或清理证据失效', 409);
+    const manifest = await this.artifacts.get(scope, release.candidate.manifestId);
+    if (manifest.digest !== release.candidate.manifestDigest) throw new AppError('交付来源制品身份变化', 409);
+    await this.artifacts.verify(scope, manifest.id);
+    await this.previewEvidence(scope, release.candidate, policy.requirePreview);
+    const imported = state.imports.find((i) => i.candidate.id === release.candidate.id);
+    if (imported && imported.status !== 'accepted') throw new AppError('交付来源仍在隔离区', 409);
+    if (
+      policy.requireTrusted &&
+      !(await this.currentTrust(scope, release.candidate, state)) &&
+      !this.trustedSignature(state.signatures[release.id], state)
+    )
+      throw new AppError('交付来源签名未知或已撤销', 409);
+    const latestState = await this.view(scope),
+      latest = latestState.releases.find((r) => r.id === release.id);
+    if (latestState.trustRevision !== state.trustRevision)
+      throw new AppError('来源核验期间信任配置变化', 409);
+    if (latest?.status !== 'registered' || latest.releaseCoreDigest !== release.releaseCoreDigest)
+      throw new AppError('来源核验期间版本已变化', 409);
+    return structuredClone(release);
+  }
   /** 从 input 的服务端输入、运行和制品引用创建候选，保存后授予精确摘要的执行引用并返回候选。 Create a candidate from input's server-side snapshot/run/artifact references; persist before granting its exact-digest execution reference. */
   async createCandidate(
     scope: DeliveryScope,

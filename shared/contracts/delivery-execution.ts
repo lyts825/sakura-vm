@@ -1,5 +1,6 @@
 /** 交付执行与预览证据；执行结论与资源回收分别记录。 */
 import { z } from 'zod';
+import { imageOwnerSchema, ownedImageVmSchema } from './image-assets.ts';
 import {
   deliveryScopeSchema,
   deliveryDigestSchema,
@@ -26,6 +27,8 @@ export const deliveryCellSchema = z
     cleanup: deliveryCleanupSchema,
     vmId: z.string().optional(),
     vmCreatedAt: z.string().optional(),
+    imageOwner: imageOwnerSchema.optional(),
+    imageReceipt: ownedImageVmSchema.optional(),
     exitCode: z.number().int().optional(),
     environmentVerified: z.boolean(),
     environmentEvidence: z.string(),
@@ -86,6 +89,8 @@ export const deliveryPreviewSchema = z
     cleanup: deliveryCleanupSchema,
     vmId: z.string().optional(),
     vmCreatedAt: z.string().optional(),
+    imageOwner: imageOwnerSchema.optional(),
+    imageReceipt: ownedImageVmSchema.optional(),
     jobId: z.uuid().optional(),
     expiresAt: z.iso.datetime(),
     createdAt: z.iso.datetime(),

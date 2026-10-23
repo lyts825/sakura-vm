@@ -764,7 +764,7 @@ export interface VmStoragePort {
    * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
    * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
    */
-  importDisk(input: unknown, disk: string, options?: { signal?: AbortSignal; pendingResize?: boolean; storage?: StorageLease }): Promise<VMView>;
+  importDisk(input: unknown, disk: string, options?: { signal?: AbortSignal; pendingResize?: boolean; storage?: StorageLease; sandbox?: SandboxPolicy; network?: 'isolated' | 'nat'; record?: (vm: Pick<VMRecord, 'id' | 'createdAt'>) => Promise<void> }): Promise<VMView>;
   /**
    * 签名 / Signature: VmStoragePort.adopt.
    * 功能：为声明虚拟机目录、锁、执行和文件等领域端口声明 adopt 的输入与结果契约，所属容器为 VmStoragePort。
@@ -793,6 +793,10 @@ export type VmHotplugResult =
       devices: unknown; guestMemoryKiB: number | null; warning?: string; slots?: undefined;
       canAdd?: undefined; accelerator?: undefined; guestPossible?: undefined };
 export interface VmHardwarePort {
+  /** 只对精确创建身份且停止的实例固化隔离，供恢复副本首次启动前调用。 */
+  isolateStopped(id: string, createdAt: string): Promise<VMView>;
+  /** 仅受管隔离基线可临时联网；到期由网络工作器独立撤回。 */
+  networkIsolation(id: string, createdAt: string, startedAt: string, isolated?: boolean, expiresAt?: number): Promise<{ isolated: boolean | null; expiresAt: number | null; observedAt: string }>;
   /**
    * 签名 / Signature: VmHardwarePort.configureHardware.
    * 功能：为声明虚拟机目录、锁、执行和文件等领域端口声明 configureHardware 的输入与结果契约，所属容器为 VmHardwarePort。

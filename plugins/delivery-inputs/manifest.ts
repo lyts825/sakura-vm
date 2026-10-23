@@ -7,6 +7,8 @@ export const manifest = definePlugin({
   description: '审阅并固定源码、命令与声明环境。',
   category: 'development',
   requires: [pin('delivery-artifacts'), pin('projects')],
+  optional: [pin('foundry-catalog')],
+  systemDependencies: ['imageAssets'],
   services: ['inputs'],
   contributes: {
     tabs: ['development'],

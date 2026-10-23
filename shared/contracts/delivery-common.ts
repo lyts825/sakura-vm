@@ -1,5 +1,6 @@
 /** 交付包共享身份、输入定义和不可变候选。Shared delivery identities, definitions and immutable candidates. */
 import { z } from 'zod';
+import { imageRefSchema } from './image-assets.ts';
 
 export const deliveryDigestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const deliveryScopeSchema = z
@@ -54,6 +55,15 @@ export const deliveryEnvironmentSchema = z
     distro: z.enum(['alpine', 'debian', 'ubuntu']).default('alpine'),
     architecture: z.enum(['x86_64', 'aarch64']).default('x86_64'),
     imageSha256: deliveryDigestSchema.optional(),
+    imageRef: imageRefSchema.optional(),
+    foundry: z
+      .object({
+        workspaceId: z.string().regex(/^[A-Za-z0-9_.-]{1,128}$/),
+        id: z.uuid(),
+        revisionDigest: deliveryDigestSchema,
+      })
+      .strict()
+      .optional(),
     nodeVersion: z.string().max(80).optional(),
     pythonVersion: z.string().max(80).optional(),
     network: z.enum(['isolated', 'nat']).default('isolated'),

@@ -1,0 +1,119 @@
+.app-runtime-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.app-runtime-panel header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+.app-runtime-panel h3,
+.app-runtime-panel h4 {
+  margin: 0 0 10px;
+}
+.app-runtime-panel p {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.app-runtime-panel nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.app-runtime-panel nav button[aria-pressed='true'] {
+  background: var(--accent, #cd597c);
+  color: white;
+}
+.app-runtime-selection,
+.app-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.app-runtime-panel label {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+.app-runtime-panel input:not([type='checkbox']),
+.app-runtime-panel select,
+.app-runtime-panel textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 7px;
+  background: var(--surface, #fff);
+  color: inherit;
+}
+.app-runtime-panel textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+.app-runtime-panel .app-runtime-review {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface-secondary, #f8f5f6);
+  border-radius: 8px;
+}
+.app-runtime-card {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 12px;
+  padding: 18px;
+  min-width: 0;
+}
+.app-runtime-card article {
+  margin-top: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border, #ddd);
+}
+.app-runtime-panel button {
+  padding: 7px 12px;
+  margin: 4px 6px 4px 0;
+}
+.app-runtime-panel code {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.app-runtime-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+}
+.app-runtime-panel details {
+  margin-top: 14px;
+}
+.app-runtime-error {
+  color: #b3261e;
+}
+.app-runtime-summary {
+  padding: 10px;
+  border-left: 3px solid #cd597c;
+}
+.app-runtime-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+@media (max-width: 480px) {
+  .app-runtime-card {
+    padding: 12px;
+  }
+  .app-runtime-selection,
+  .app-runtime-grid {
+    grid-template-columns: 1fr;
+  }
+  .app-runtime-panel header {
+    display: block;
+  }
+  .app-runtime-panel nav button {
+    flex: 1 0 40%;
+  }
+}

@@ -15,8 +15,16 @@ import { prepareGpgAgentHostAssets } from './build-gpg-agent-host.mjs';
 const root = process.cwd();
 const target = join(root, '.sakura-server', 'assets');
 await mkdir(target, { recursive: true });
+// Both Sans subsets share one license; preserve all three upstream font licenses in the runtime.
+const fontLicenses = join(root, 'dist', 'licenses', 'fonts');
+await mkdir(fontLicenses, { recursive: true });
+for (const file of ['sakura-sans-ui-OFL.txt', 'sakura-serif-ui-OFL.txt', 'sakura-mono-OFL.txt'])
+  await cp(join(root, 'src', 'assets', 'fonts', file), join(fontLicenses, file));
 await cp(join(root, 'server/compute-worker.mjs'), join(target, 'compute-worker.mjs'));
+// 数据任务通过 import.meta.url 定位客户机工作器，发行包须与服务器入口同目录。
+await cp(join(root, 'server/data-worker.py'), join(root, '.sakura-server/data-worker.py'));
 await cp(join(root, 'server/network/worker.mjs'), join(target, 'network-worker.mjs'));
+await cp(join(root, 'server/network/bounded-qmp-policy.mjs'), join(target, 'bounded-qmp-policy.mjs'));
 await cp(join(root, 'server/network/parent-exec.py'), join(target, 'network-parent-exec.py'));
 await mkdir(join(root, '.sakura-server/docs'), { recursive: true });
 await cp(join(root, 'docs/network-runtime.md'), join(root, '.sakura-server/docs/network-runtime.md'));
@@ -27,6 +35,7 @@ const networkSources = [
   'server/network/host-pool.ts',
   'server/network/vm-backend.ts',
   'server/network/worker.mjs',
+  'server/network/bounded-qmp-policy.mjs',
   'server/network/parent-exec.py',
 ];
 /** 读取指定资源并返回相对文件名、字节长度和 SHA-256，供打包来源清单校验。
@@ -46,7 +55,7 @@ await writeFile(
     {
       version: 1,
       files: await Promise.all(
-        ['network-entry.js', 'assets/network-worker.mjs', 'assets/network-parent-exec.py'].map((file) =>
+        ['network-entry.js', 'assets/network-worker.mjs', 'assets/bounded-qmp-policy.mjs', 'assets/network-parent-exec.py'].map((file) =>
           describe(join(root, '.sakura-server'), file),
         ),
       ),

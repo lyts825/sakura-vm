@@ -101,6 +101,8 @@ export type VMRecord = VMConfig & {
   id: string;
   diskEncryption?: DiskEncryptionConfig;
   sandbox?: SandboxPolicy;
+  /** 本体镜像资产创建的持久网络约束，不由通用配置更新降级。 */
+  managedNetwork?: 'isolated' | 'nat';
   // Only the rescue executor creates these disposable guests. They cannot be restarted.
   rescueOf?: string;
   createdAt: string;

@@ -63,6 +63,11 @@ export interface DeliveryGatesV1 {
   }>;
 }
 export interface DeliveryReleasesV1 {
+  /** 为明确版本复核当前判定、运行、清理和信任，不修改通道或授予新版本。 */
+  authorizeUse(
+    scope: DeliveryScope,
+    input: { id: string; releaseCoreDigest: string },
+  ): Promise<DeliveryRelease>;
   /** 请求 scope 的版本、候选、隔离和信任视图，无写入。 Request releases, candidates, quarantine and trust for scope without writes. */
   view(scope: DeliveryScope): Promise<DeliveryReleaseView>;
   /** 请求本机或已接受的 scope/id 候选；隔离记录不得返回为可执行候选。 Request local or accepted scope/id candidate; quarantine must not be returned as executable authority. */

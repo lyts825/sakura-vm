@@ -930,6 +930,7 @@ function SharedTerminal({ grant, token }: { grant: TerminalGrantView; token: str
     let active = true;
     let socket: WebSocket | undefined;
     let terminal: import('@xterm/xterm').Terminal | undefined;
+    void import('@xterm/xterm/css/xterm.css');
     void import('@xterm/xterm').then(/**
      * 中文功能：终端库加载完成且视图仍有效时建立只读 xterm 与 terminal-view WebSocket，按消息更新输出和连接状态。
      * English: Create readonly xterm and a terminal-view WebSocket after the terminal library loads and the view remains active, updating output/connection status from messages.

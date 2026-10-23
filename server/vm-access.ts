@@ -47,6 +47,8 @@ const methods = [
   'resize',
   'completeResize',
   'setForwards',
+  'networkIsolation',
+  'isolateStopped',
   'setMemoryTarget',
   'setIncidentLockdown',
   'exec',

@@ -840,7 +840,19 @@ export class Workspaces {
    * 副作用 / Effects: `this.jobs.start`.
    * 拒绝 / Refusals: 条件 / conditions `this.machines.state(id) !== 'running'`; `(action === 'setup' || action === 'start') && await readProjectQuotaRecord(id, this.projects.current(id))`; `!quota.ready || !quota.active`; 异常 / errors `new AppError('请先启动发行版', 409)`; `new AppError('项目配额未挂载；拒绝在未受限的目录中启动项目', 409)`.
    */
-  private async runInternal(id: string, action: 'setup' | 'start' | 'stop' | 'terminal', service?: string) {
+  /** 运行已准备的项目：保留同一运行归属与停止流程，不安装软件或执行准备钩子。 */
+  async runPrepared(id: string, action: 'start' | 'stop') {
+    if (action !== 'start' && action !== 'stop') throw new AppError('已准备项目仅支持启动或停止', 400);
+    return this.machines.locked(id, async () => {
+      const finish = await this.prepareAction(id, action);
+      try {
+        const job = await this.runInternal(id, action, undefined, true);
+        void this.jobs.wait(this.projects.key(id)).then(() => finish(job.status === 'done'));
+        return job;
+      } catch (error) { finish(false); throw error; }
+    });
+  }
+  private async runInternal(id: string, action: 'setup' | 'start' | 'stop' | 'terminal', service?: string, prepared = false) {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
     if ((action === 'setup' || action === 'start') &&
         await readProjectQuotaRecord(id, this.projects.current(id))) {
@@ -851,6 +863,9 @@ export class Workspaces {
     const project =
       action === 'stop' || action === 'terminal' ? await this.config(id) : await this.resolvedConfig(id);
     const distro = this.machines.get(id).distro;
+    if (prepared && action === 'start' &&
+        (project.template !== 'none' || project.repository || project.setup.trim() || Object.keys(project.runtimes || {}).length))
+      throw new AppError('已准备项目必须使用 none 模板，且不声明仓库、准备命令或待安装的运行时', 409, 'PROJECT_NOT_PREPARED');
     if (service && !project.services?.some((s) => s.name === service)) throw new AppError('服务不存在');
     /**
      * 入口 / Entry: Workspaces.runInternal.callback@474.
@@ -896,10 +911,12 @@ export class Workspaces {
           // Reject old retirement intent before admitting any such mutation.
           await new ProjectRunScopes(this.machines).assertAdmission(id, this.projects.current(id));
           const install =
-            action === 'setup'
+            prepared
+              ? 'for tool in python3 tmux cc ip openssl useradd groupadd nft; do command -v "$tool" >/dev/null || { echo "已准备项目缺少工具: $tool" >&2; exit 1; }; done'
+              : action === 'setup'
               ? provisionScript(project.template, distro)
               : `if [ ! -f /etc/sakura/template-${project.template} ] || ! command -v tmux >/dev/null; then\n${provisionScript(project.template, distro)}\nfi\n`;
-          const network = ensureProjectNetworkScript(project, distro || 'alpine');
+          const network = ensureProjectNetworkScript(project, distro || 'alpine', !prepared);
           // Previous markers certify a root setup, not setup by this account.
           const marker = `/etc/sakura/project-setup-uid1-${setupFingerprint(project)}`;
           log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
@@ -947,10 +964,10 @@ export class Workspaces {
             if (setupNeeded) await this.execute(id, `set -eu\ntouch ${marker}`, log, signal);
           };
           if (action === 'start' && !project.services?.length)
-            await runProjectMain(this.machines, id, project, log, signal, prepareProject);
+            await runProjectMain(this.machines, id, project, log, signal, prepareProject, !prepared);
           else await prepareProject();
           if (action === 'start' && project.services?.length)
-            await runServices(this.machines, id, project, 'start', log, signal, service);
+            await runServices(this.machines, id, project, 'start', log, signal, service, !prepared);
           log('操作完成。\n');
         } catch (error) {
           throw new AppError(redactValues((error as Error).message, privateValues),

@@ -29,8 +29,9 @@ export class DeliveryPreviews {
     private artifacts: DeliveryArtifactsV1,
     private metadata: PluginMetadata,
     private authorize: (scope: DeliveryScope) => void | Promise<void> = () => {},
+    images?: import('./service-contracts/image-assets.ts').ImageAssetsV1,
   ) {
-    this.executor = new DeliveryExecutor(machines, workspaces, artifacts);
+    this.executor = new DeliveryExecutor(machines, workspaces, artifacts, images);
   }
   /** 重启后不恢复入口，保留原实例身份供核销。 Never restores ingress on restart; preserves original cleanup identity. */
   async init() {
@@ -113,6 +114,7 @@ export class DeliveryPreviews {
       healthPath: candidate.startup.healthPath,
       log: '',
     };
+    if (candidate.environment.imageRef) row.imageOwner = 'delivery-previews:' + row.id;
     const check = captureOperationCheck();
     await this.artifacts.retain(scope, manifest.id, 'preview:' + row.id);
     if (
@@ -138,11 +140,13 @@ export class DeliveryPreviews {
               candidate.environment,
               minutes,
               combined,
-              async (vmId, vmCreatedAt) => {
+              async (vmId, vmCreatedAt, receipt) => {
                 row.vmId = vmId;
                 row.vmCreatedAt = vmCreatedAt;
+                row.imageReceipt = receipt;
                 await this.persist();
               },
+              row.imageOwner,
             );
             await this.executor.stage(space, scope, manifest, combined);
             await this.executor.environment(space, combined);
@@ -256,7 +260,10 @@ export class DeliveryPreviews {
             await service;
             row.cleanup = 'pending';
             try {
-              if (row.vmId && row.vmCreatedAt) await this.executor.destroy(row.vmId, row.vmCreatedAt);
+              if (row.imageOwner) {
+                const receipts = await this.executor.destroyOwned(row.imageOwner);
+                row.imageReceipt = receipts.find((r) => r.vmId === row.vmId) || row.imageReceipt;
+              } else if (row.vmId && row.vmCreatedAt) await this.executor.destroy(row.vmId, row.vmCreatedAt);
               if (ingressError) throw ingressError;
               row.cleanup = 'verified';
             } catch (error) {
@@ -277,7 +284,7 @@ export class DeliveryPreviews {
         row.cleanup = 'unknown';
       } else {
         row.state = 'failed';
-        row.cleanup = row.vmId ? 'unknown' : 'verified';
+        row.cleanup = row.vmId || row.imageOwner ? 'unknown' : 'verified';
       }
       row.error = String(error);
       await this.persist();
@@ -313,7 +320,10 @@ export class DeliveryPreviews {
     const row = this.own(scope, id);
     if (this.ingress.has(id) || ['preparing', 'starting', 'healthy', 'unhealthy'].includes(row.state))
       throw new AppError('请先停止原预览', 409);
-    if (row.vmId && row.vmCreatedAt) await this.executor.destroy(row.vmId, row.vmCreatedAt);
+    if (row.imageOwner) {
+      const receipts = await this.executor.destroyOwned(row.imageOwner);
+      row.imageReceipt = receipts.find((r) => r.vmId === row.vmId) || row.imageReceipt;
+    } else if (row.vmId && row.vmCreatedAt) await this.executor.destroy(row.vmId, row.vmCreatedAt);
     row.cleanup = 'verified';
     await this.persist();
     return this.get(scope, id);

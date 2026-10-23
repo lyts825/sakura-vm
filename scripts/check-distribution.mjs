@@ -8,6 +8,11 @@ import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 
 const root = process.cwd();
+for (const file of ['sakura-sans-ui-OFL.txt', 'sakura-serif-ui-OFL.txt', 'sakura-mono-OFL.txt']) {
+  const original = await readFile(join(root, 'src', 'assets', 'fonts', file));
+  if (!original.equals(await readFile(join(root, 'dist', 'licenses', 'fonts', file))))
+    throw new Error(`Runtime font license differs from its upstream copy: ${file}`);
+}
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 if (!Object.hasOwn(manifest.dependencies, 'undici'))
   throw new Error('Managed fetch requires the production undici dependency');
@@ -31,6 +36,8 @@ for (const file of [
   '.sakura-server/assets/compute-worker.mjs',
   '.sakura-server/assets/compute-runtime.json',
   '.sakura-server/assets/network-worker.mjs',
+  '.sakura-server/assets/bounded-qmp-policy.mjs',
+  '.sakura-server/data-worker.py',
   '.sakura-server/assets/network-parent-exec.py',
   '.sakura-server/assets/network-runtime.json',
   '.sakura-server/docs/network-runtime.md',
@@ -85,9 +92,10 @@ for (const file of [
     'server/network/host-pool.ts',
     'server/network/vm-backend.ts',
     'server/network/worker.mjs',
+    'server/network/bounded-qmp-policy.mjs',
     'server/network/parent-exec.py',
   ];
-  const files = ['network-entry.js', 'assets/network-worker.mjs', 'assets/network-parent-exec.py'];
+  const files = ['network-entry.js', 'assets/network-worker.mjs', 'assets/bounded-qmp-policy.mjs', 'assets/network-parent-exec.py'];
   if (
     metadata.version !== 1 ||
     !Array.isArray(metadata.files) ||
@@ -110,7 +118,8 @@ for (const file of [
     }
   }
   if (metadata.files[1].sha256 !== metadata.sources.find((item) => item.file === 'server/network/worker.mjs').sha256 ||
-      metadata.files[2].sha256 !== metadata.sources.find((item) => item.file === 'server/network/parent-exec.py').sha256)
+      metadata.files[2].sha256 !== metadata.sources.find((item) => item.file === 'server/network/bounded-qmp-policy.mjs').sha256 ||
+      metadata.files[3].sha256 !== metadata.sources.find((item) => item.file === 'server/network/parent-exec.py').sha256)
     throw new Error('Distributed network worker differs from its source');
 }
 if (process.platform === 'win32') {

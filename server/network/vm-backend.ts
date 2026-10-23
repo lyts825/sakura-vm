@@ -28,6 +28,8 @@ export type VmNetworkOptions = {
   onFailure(error: Error): void;
 };
 export type VmNetworkLease = {
+  setIsolation?(isolated: boolean, expiresAt?: number): Promise<{ isolated: boolean | null; expiresAt: number | null; observedAt: string }>;
+  observeIsolation?(): Promise<{ isolated: boolean | null; expiresAt: number | null; observedAt: string }>;
   readonly vmId: string;
   readonly generation: string;
   readonly netdev: string;
@@ -157,6 +159,8 @@ export class VmNetworkBackend {
     const command = (execute: string, args: Record<string, unknown>) =>
       pin.call('qmp', { binary, execute, args });
     const added = new Set<string>();
+    let bounded = false;
+    let isolated = options.isolated;
     let forwards = [{ host: options.sshPort, guest: 22 }, ...options.forwards].map((p) => ({ ...p }));
     let netdev = '';
     /**
@@ -172,11 +176,11 @@ export class VmNetworkBackend {
       type: 'user',
       id: id + 'u',
       ipv4: true,
-      ipv6: !options.isolated && options.ipv6 !== false,
+      ipv6: !isolated && !bounded && options.ipv6 !== false,
       net: '10.0.2.0/24',
       host: '10.0.2.2',
       dns: '10.0.2.3',
-      restrict: options.isolated,
+      restrict: isolated,
       hostfwd: forwards.map((p) => ({ str: `tcp:127.0.0.1:${p.host}-:${p.guest}` })),
     });
     /**
@@ -279,6 +283,24 @@ export class VmNetworkBackend {
        * Failure handling: Catch paths execute `const error = new Error('VM network link transition failed', { cause });`; `abort.abort(error);`; these statements determine whether a failure is absorbed or rejected again.
        */
       const lease: VmNetworkLease = {
+        setIsolation: (value, expiresAt) => serial(async () => {
+          epoch.signal.throwIfAborted();
+          if (!options.isolated) throw new Error('Bounded egress requires an isolated VM baseline');
+          bounded = true;
+          const state = await pin.call('qmp-policy', { binary, config: userConfig(),
+            hub: { type: 'hubport', id: id + 'hu', hubid, netdev: id + 'u' }, isolated: value, expiresAt });
+          if (!state || typeof state.isolated !== 'boolean') throw new Error('Unknown network policy state');
+          isolated = state.isolated;
+          return state;
+        }),
+        observeIsolation: () => serial(async () => {
+          epoch.signal.throwIfAborted();
+          if (!bounded) return { isolated, expiresAt: null, observedAt: new Date().toISOString() };
+          const state = await pin.call('qmp-policy-observe', { binary, id: id + 'u' });
+          if (!state || typeof state.isolated !== 'boolean') throw new Error('Unknown network policy state');
+          isolated = state.isolated;
+          return state;
+        }),
         vmId: options.vmId,
         generation,
         /**
@@ -358,8 +380,8 @@ export class VmNetworkBackend {
          */
         get policy() {
           return Object.freeze({
-            isolated: options.isolated,
-            ipv6: !options.isolated && options.ipv6 !== false,
+            isolated,
+            ipv6: !isolated && !bounded && options.ipv6 !== false,
             forwards: Object.freeze(forwards.map((p) => Object.freeze({ ...p }))),
           });
         },
@@ -388,6 +410,7 @@ export class VmNetworkBackend {
               )
             )
               throw new Error('Invalid forwarding port');
+            if (bounded && !isolated) throw new Error('Revoke bounded egress before changing forwards');
             const result = await command('human-monitor-command', {
               'command-line':
                 verb === 'add'
@@ -424,6 +447,9 @@ export class VmNetworkBackend {
             abort = new AbortController();
             try {
               // Keep the stream and its current hub attachment state, but discard old flows.
+              if (bounded) await pin.call('qmp-policy-forget', { binary, id: id + 'u' });
+              isolated = options.isolated;
+              bounded = false;
               await remove(id + 'hu');
               await remove(id + 'u');
               await add(userConfig());
@@ -469,6 +495,7 @@ export class VmNetworkBackend {
             epoch.abort(new Error('VM network lease released'));
             this.leases.delete(options.vmId);
             const errors: unknown[] = [];
+            if (bounded && !workerFailed) await pin.call('qmp-policy-forget', { binary, id: id + 'u' }).catch(error => errors.push(error));
             if (!workerFailed)
               for (const name of [...added].reverse())
                 await remove(name).catch((error) => errors.push(error));

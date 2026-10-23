@@ -37,7 +37,7 @@ flowchart TB
 
 ## 插件划分
 
-当前有 **41 个插件、10 个整合包**。每个插件在 `plugins/<id>/` 内维护 `manifest.ts`、`server.ts` 和可选的 `client.tsx`。运行 `npm run plugins:sync` 从目录生成共享声明与可信加载器；路由和项目作用域直接从声明生成。插件标识不会与磁盘导入导出的 `.sakura` 包混用。协议和 JSON Schema 见 [插件协议](plugin-protocol.md)。
+当前有 **69 个插件、13 个整合包**。每个插件在 `plugins/<id>/` 内维护 `manifest.ts`、`server.ts` 和可选的 `client.tsx`。运行 `npm run plugins:sync` 从目录生成共享声明与可信加载器；路由和项目作用域直接从声明生成。插件标识不会与磁盘导入导出的 `.sakura` 包混用。协议和 JSON Schema 见 [插件协议](plugin-protocol.md)。
 
 | 插件标识               | 业务范围                                                              | 直接依赖                      |
 | ---------------------- | --------------------------------------------------------------------- | ----------------------------- |
@@ -83,6 +83,35 @@ flowchart TB
 | `delivery-releases` | 本地版本、通道、签名与交接 | delivery-artifacts、delivery-inputs、delivery-runners、delivery-reports、delivery-gates、delivery-previews；可选 secrets |
 | `delivery-workbench` | 定义管理与完整交付工作台 | 其余 7 个 delivery 插件 |
 
+| `app-config` | 应用配置 | app-targets、secrets |
+| `app-data` | 应用持久数据 | app-targets、projects |
+| `app-deploy` | 应用安装变更 | app-targets、app-packages、app-config、app-data、app-observe、app-routes、app-recovery、projects |
+| `app-observe` | 应用观测 | app-targets、projects、service-health |
+| `app-packages` | 应用安装制品 | 无 |
+| `app-recovery` | 应用冷备恢复 | app-targets、app-routes、app-data、projects、backups |
+| `app-routes` | 应用入口 | app-targets、app-observe、network |
+| `app-targets` | 应用运行目标 | projects |
+| `app-workbench` | 应用运行工作台 | app-targets、app-packages、app-config、app-data、app-observe、app-routes、app-recovery、app-deploy |
+| `data-datasets` | 数据版本 | data-runtime、data-sources、delivery-artifacts |
+| `data-exchange` | 数据交接 | data-datasets、delivery-artifacts |
+| `data-experiments` | 参数实验 | data-transforms、data-notebooks |
+| `data-lineage` | 血缘与比较 | data-datasets、data-transforms、data-quality、data-notebooks、data-runtime |
+| `data-notebooks` | Notebook | data-runtime、data-datasets、delivery-artifacts、projects |
+| `data-quality` | 质量验证 | data-runtime、data-datasets、delivery-artifacts |
+| `data-runtime` | 数据环境 | projects、delivery-artifacts |
+| `data-sources` | 数据来源 | projects、delivery-artifacts |
+| `data-transforms` | SQL 变换 | data-runtime、data-datasets、delivery-artifacts |
+| `data-workbench` | 数据工作台 | data-runtime、data-sources、data-datasets、data-transforms、data-quality、data-notebooks、data-experiments、data-lineage、data-exchange、delivery-artifacts |
+| `foundry-blueprints` | 环境蓝图 | foundry-sources |
+| `foundry-builders` | 镜像制作 | foundry-sources、foundry-blueprints、foundry-depot |
+| `foundry-catalog` | 环境镜像库 | foundry-sources、foundry-builders、foundry-sanitizers、foundry-checks |
+| `foundry-checks` | 镜像验收 | foundry-sanitizers |
+| `foundry-depot` | 离线材料 | foundry-sources、foundry-blueprints |
+| `foundry-exchange` | 镜像交接 | foundry-sources、foundry-catalog、foundry-checks |
+| `foundry-sanitizers` | 身份清理 | foundry-builders |
+| `foundry-sources` | 镜像来源 | 无 |
+| `foundry-workbench` | 镜像工坊 | foundry-sources、foundry-blueprints、foundry-depot、foundry-builders、foundry-sanitizers、foundry-checks、foundry-catalog、foundry-exchange |
+
 `transfers` 只拥有下载票据、流式传输与任务服务。`Files` 和文件历史属于 `files`，`Bundles` 属于 `snapshots`；传输服务通过延迟读取的可选提供者复用它们，单独启用传输不会创建文件或磁盘包服务。下载票据签发再次检查具体业务所属插件；已有导出任务的重试也必须启用 `snapshots`。
 
 项目、文件、快照等界面只挂载已启用的配套插件：例如文件插件不要求 Git 或开发工具，快照插件不启动备份定时器，项目插件不自动启动健康检查。配置了私密引用的项目在 `secrets` 未启用时明确报错，不静默丢弃引用。
@@ -103,8 +132,11 @@ flowchart TB
 | `environment` 环境互通组合 | 项目环境与 IDE        | recipes、ide                                                                                               |
 | `monitoring` 监控组合      | 资源与服务监控        | metrics、service-health                                                                                    |
 | `delivery` 项目交付工作台 | 从固定输入到离线交接 | 8 个 delivery 插件、command-palette |
+| `foundry` 环境镜像工坊 | 从材料准备到验证发布 | 9 个 foundry 插件 |
+| `app-runtime` 应用运行与运维 | 从制品部署到持续观察和恢复 | 9 个 app 插件 |
+| `data-lab` 数据与实验工作台 | 从固定数据到研究材料交接 | 10 个 data 插件 |
 
-没有默认整合包。`complete` 是迁移便利选项，不是首次启动配置。整合包通过带 `kind` 的成员引用，精确锁定插件或子整合包的版本。当前插件和整合包版本均为 `2.5.0`，声明格式版本为 `1`，宿主插件 API 为 `5`。解析前校验完整目录，包括未选包的声明、服务/路由/操作冲突、版本和循环；必需依赖先于消费者初始化，可选配套不会自动启用。
+没有默认整合包。`complete` 是迁移便利选项，不是首次启动配置。整合包通过带 `kind` 的成员引用，精确锁定插件或子整合包的版本。当前插件和整合包版本均为 `2.6.0`，声明格式版本为 `1`，宿主插件 API 为 `5`。解析前校验完整目录，包括未选包的声明、服务/路由/操作冲突、版本和循环；必需依赖先于消费者初始化，可选配套不会自动启用。
 
 整合包不复制插件代码，不覆盖插件配置，也不代表新的运行实例。两个整合包引用同一插件时只激活一次。停用整合包后，独立选择及其他整合包所需的插件继续保留；只有不再被引用的依赖才从下次启动清单移除。
 

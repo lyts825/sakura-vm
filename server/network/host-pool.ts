@@ -727,7 +727,7 @@ class HostWorker {
       await (signal ? abortable(this.ready, signal) : this.ready);
       signal?.throwIfAborted();
       if (this.unavailable || !this.child.connected) throw failure('Network worker is unavailable');
-      if (command === 'qmp')
+      if (command === 'qmp' || command.startsWith('qmp-policy'))
         data = { ...data, backendId: this.ensureBackend(data.binary), binary: undefined };
       const requestId = randomUUID();
       /**

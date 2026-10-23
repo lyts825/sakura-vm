@@ -9,6 +9,7 @@ import { services } from './services.ts';
 import { DeliveryInputs } from '../../server/delivery-inputs.ts';
 import { services as artifactServices } from '../delivery-artifacts/services.ts';
 import { services as projectServices } from '../projects/services.ts';
+import { services as foundryServices } from '../foundry-catalog/services.ts';
 export { manifest } from './manifest.ts';
 /** 借用声明的依赖并注册领域服务；受管资源随插件寿命关闭。
  * Borrow declared dependencies and register services; managed resources follow the plugin lifetime. */
@@ -19,6 +20,8 @@ export async function activate(host: PluginContext) {
     host.vm,
     host.use(projectServices.workspaces),
     deliveryAuthorize(host),
+    host.system.optional('imageAssets'),
+    () => host.optional(foundryServices.foundryCatalog),
   );
   host.provide(services.inputs, service);
 }

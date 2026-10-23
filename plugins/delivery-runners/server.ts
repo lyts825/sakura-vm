@@ -21,6 +21,7 @@ export async function activate(host: PluginContext) {
     host.use(inputServices.inputs),
     host.capabilities.metadata.reference('runs', () => []),
     deliveryAuthorize(host),
+    host.system.optional('imageAssets'),
   );
   await service.init();
   host.provide(services.runners, service);

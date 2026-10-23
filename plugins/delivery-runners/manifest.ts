@@ -6,6 +6,7 @@ export const manifest = definePlugin({
   name: '隔离执行',
   description: '使用固定输入执行矩阵流程并保留真实输出。',
   category: 'development',
+  systemDependencies: ['imageAssets'],
   requires: [pin('delivery-artifacts'), pin('delivery-inputs'), pin('projects')],
   services: ['runners'],
   contributes: {

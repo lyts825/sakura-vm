@@ -8,7 +8,7 @@ import { writeReleaseManifest } from './release-manifest.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
-for (const name of ['graphql', 'selfsigned', 'ssh2', 'ws', 'zod', 'undici'])
+for (const name of ['graphql', 'selfsigned', 'ssh2', 'ws', 'zod', 'undici', 'pg'])
   if (!Object.hasOwn(manifest.dependencies, name)) throw new Error(`缺少运行依赖：${name}`);
 // Validate the completed build before creating a package or release manifest.
 const checked = spawnSync(process.execPath, [join(root, 'scripts/check-distribution.mjs')], {
@@ -33,6 +33,9 @@ manifest.scripts = {
   'check:wsl': manifest.scripts['check:wsl'],
   sakura: manifest.scripts.sakura,
   delivery: manifest.scripts.delivery,
+  foundry: manifest.scripts.foundry,
+  'app-runtime': manifest.scripts['app-runtime'],
+  data: manifest.scripts.data,
   tray: manifest.scripts.tray,
   'update:status': manifest.scripts['update:status'],
   'update:check': manifest.scripts['update:check'],
@@ -54,6 +57,10 @@ for (const file of [
   'guest-cli.mjs',
   'development-cli.mjs',
   'delivery.mjs',
+  'foundry.mjs',
+  'app-runtime.mjs',
+  'data.mjs',
+  'study-verify.mjs',
   'sandbox-cli.mjs',
   'resumable-download.mjs',
   'native-open.mjs',
@@ -69,6 +76,15 @@ for (const file of [
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
 await cp(join(root, 'docs', 'delivery-cli.md'), join(output, '.sakura-server', 'docs', 'delivery-cli.md'));
+for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md'])
+  await cp(join(root, 'docs', file), join(output, '.sakura-server', 'docs', file));
+for (const [command, file] of [['foundry', 'foundry.mjs'], ['app-runtime', 'app-runtime.mjs'], ['data', 'data.mjs']]) {
+  if (manifest.scripts[command] !== `node scripts/${file}`) throw new Error(`${command} CLI 必须使用纯 Node 入口`);
+  const result = spawnSync(process.execPath, [join(output, 'scripts', file), 'help'], {
+    cwd: output, encoding: 'utf8', windowsHide: true, env: { ...process.env, NODE_OPTIONS: '' },
+  });
+  if (result.status !== 0 || !result.stdout.trim()) throw new Error(`运行包 ${command} CLI 不可用：${result.stderr || result.error?.message || result.status}`);
+}
 if (manifest.scripts.delivery !== 'node scripts/delivery.mjs')
   throw new Error('交付 CLI 必须使用无开发依赖的纯 Node 入口');
 const deliveryCheck = spawnSync(process.execPath, [join(output, 'scripts', 'delivery.mjs'), 'help'], {
@@ -91,6 +107,7 @@ const readme = [
   '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行依赖以随包 `package.json` 为准。',
   '已配置含 Linux QEMU、swtpm、virtiofsd 和 OVMF 的 WSL 发行版时，也可先运行 `npm run check:wsl`，再用 `npm run start:wsl` 启动可用 TPM 与 Virtio-FS 的 Linux 后端；数据单独保存在该发行版的 Linux 文件系统中。',
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
+  '可分别启用 foundry（9 个插件）、app-runtime（9 个插件）和 data-lab（10 个插件）。三个包分别完成镜像制作、应用部署维护和数据实验，互不要求安装对方。纯 Node CLI 入口为 npm run foundry -- help、npm run app-runtime -- help、npm run data -- help；完整使用指南随包保存在 .sakura-server/docs/foundry-workbench.md、app-runtime-pack.md 和 data-lab.md。依赖准备与实际执行均由用户显式提交。',
   '启用 `delivery` 插件包并重启后，可在本目录运行 `npm run delivery -- help`。CLI 使用随包的受管网络入口和运行依赖，不需要源码、TypeScript、tsx 或开发依赖。设置 `SAKURA_TOKEN` 后，显式传入 `--vm` 和 `--project`，通过本机服务保存定义、捕获输入、运行构建及分块导入导出交付包。完整步骤见 `.sakura-server/docs/delivery-cli.md`。CLI 不自动启用插件、执行包内命令或发布外部系统。',
   '统一网络运行时属于基础设施，始终启用。宿主 TCP/DNS 使用有界 Node worker 池；VM 使用单独的 Node worker 与无客户机 CPU 的 QEMU user/slirp 后端。默认最多 4 个宿主 worker、2 个 VM worker 及其最多 2 个 QEMU 网络进程，不需要管理员权限或额外网络驱动。每个 VM 固定在一个 worker；该 worker 故障会停止受影响的 VM，不自动重放连接。配置、诊断接口、退出顺序及限制见 `.sakura-server/docs/network-runtime.md`。',
   '升级注意：旧网络后端的内存快照因运行时指纹变化不能恢复；磁盘快照保持兼容。远程审计现在须向服务显式提供 AWS_ACCESS_KEY_ID、AWS_SECRET_ACCESS_KEY，以及临时凭据所需的 AWS_SESSION_TOKEN，不再自动调用 AWS 默认 IAM/元数据凭据链。',

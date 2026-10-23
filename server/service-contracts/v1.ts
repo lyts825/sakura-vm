@@ -1,3 +1,41 @@
+import type * as FoundryContracts from './foundry.ts';
+export interface FoundrySourcesV1 extends FoundryContracts.FoundrySourcesV1 {}
+export interface FoundryBlueprintsV1 extends FoundryContracts.FoundryBlueprintsV1 {}
+export interface FoundryDepotV1 extends FoundryContracts.FoundryDepotV1 {}
+export interface FoundryBuildersV1 extends FoundryContracts.FoundryBuildersV1 {}
+export interface FoundrySanitizersV1 extends FoundryContracts.FoundrySanitizersV1 {}
+export interface FoundryChecksV1 extends FoundryContracts.FoundryChecksV1 {}
+export interface FoundryCatalogV1 extends FoundryContracts.FoundryCatalogV1 {}
+export interface FoundryExchangeV1 extends FoundryContracts.FoundryExchangeV1 {}
+export interface FoundryWorkbenchV1 extends FoundryContracts.FoundryWorkbenchV1 {}
+import type * as AppContracts from './app-runtime.ts';
+export interface AppTargetsV1 extends AppContracts.AppTargetsV1 {}
+export interface AppPackagesV1 extends AppContracts.AppPackagesV1 {}
+export interface AppConfigV1 extends AppContracts.AppConfigV1 {}
+export interface AppDataV1 extends AppContracts.AppDataV1 {}
+export interface AppObserveV1 extends AppContracts.AppObserveV1 {}
+export interface AppRoutesV1 extends AppContracts.AppRoutesV1 {}
+export interface AppRecoveryV1 extends AppContracts.AppRecoveryV1 {}
+export interface AppDeployV1 extends AppContracts.AppDeployV1 {}
+export interface AppWorkbenchV1 extends AppContracts.AppWorkbenchV1 {}
+import type * as DataContracts from './data-lab.ts';
+export interface DataRuntimeV1 extends DataContracts.DataRuntimeV1 {}
+export interface DataSourcesV1 extends DataContracts.DataSourcesV1 {}
+export interface DataDatasetsV1 extends DataContracts.DataDatasetsV1 {}
+export interface DataTransformsV1 extends DataContracts.DataTransformsV1 {}
+export interface DataQualityV1 extends DataContracts.DataQualityV1 {}
+export interface DataNotebooksV1 extends DataContracts.DataNotebooksV1 {}
+export interface DataExperimentsV1 extends DataContracts.DataExperimentsV1 {}
+export interface DataLineageV1 extends DataContracts.DataLineageV1 {}
+export interface DataExchangeV1 extends DataContracts.DataExchangeV1 {}
+export interface DataWorkbenchV1 extends DataContracts.DataWorkbenchV1 {}
+import type * as ImageContracts from './image-assets.ts';
+export interface ImageAssetsV1 extends ImageContracts.ImageAssetsV1 {}
+import type * as EgressContracts from './egress-rules.ts';
+export interface EgressRulesV1 extends EgressContracts.EgressRulesV1 {}
+import type * as NotebookV2Contracts from './data-notebook-sessions.ts';
+export interface NotebookEnvironmentsV2 extends NotebookV2Contracts.NotebookEnvironmentsV2 {}
+
 /**
  * 模块职责：维护独立于实现的 V1 公共服务接口；成员变化属于显式契约修订，初始化仍由提供者负责。
  * Module purpose: Owns public V1 interfaces independently of implementations; member changes require explicit revision and initialization stays with providers.
@@ -7676,6 +7714,8 @@ export interface WorkspacesV1 {
    * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
    */
   "run": (id: string, action: "start" | "stop" | "setup" | "terminal", service?: string | undefined, automatic?: boolean) => Promise<import("../../shared/contracts/jobs.ts").JobView>;
+  /** 启停已准备的 none 模板项目；启动拒绝软件安装、仓库拉取及准备钩子。 */
+  "runPrepared": (id: string, action: "start" | "stop") => Promise<import("../../shared/contracts/jobs.ts").JobView>;
   /**
    * 签名 / Signature: WorkspacesV1.runtime.
    * 功能：为维护独立于实现的 V1 公共服务接口声明 runtime 的输入与结果契约，所属容器为 WorkspacesV1。
@@ -8132,6 +8172,9 @@ export interface SandboxesV1 {
 }
 
 export interface SecretsV1 {
+  /** Inspect opaque versions without decrypting; resolve only the same complete reference set. */
+  references(id: string, refs?: Record<string, string>): Promise<Record<string, { name: string; version: string }>>;
+  resolveVersioned(id: string, refs: Record<string, string>, versions: Record<string, string>): Promise<Record<string, string>>;
   /**
    * 签名 / Signature: SecretsV1.list.
    * 功能：为维护独立于实现的 V1 公共服务接口声明 list 的输入与结果契约，所属容器为 SecretsV1。
@@ -8997,7 +9040,7 @@ export interface FolderSyncV1 {
 }
 
 export interface ProjectTerminalsV1 {
-  "workspaces": Readonly<Pick<WorkspacesV1, "view" | "jobs" | "projects" | "beforeAction" | "onConfigChange" | "beforeConfigChange" | "config" | "readCommittedConfig" | "networkEnvironment" | "dependencyDownloadAuthentication" | "repositoryDownloadAuthentication" | "resolvedConfig" | "resolveProject" | "save" | "run" | "runtime" | "metrics">>;
+  "workspaces": Readonly<Pick<WorkspacesV1, "view" | "jobs" | "projects" | "beforeAction" | "onConfigChange" | "beforeConfigChange" | "config" | "readCommittedConfig" | "networkEnvironment" | "dependencyDownloadAuthentication" | "repositoryDownloadAuthentication" | "resolvedConfig" | "resolveProject" | "save" | "run" | "runPrepared" | "runtime" | "metrics">>;
   "preparation": ProjectPreparationV1;
   /**
    * 签名 / Signature: ProjectTerminalsV1.prepareTask.
@@ -15912,7 +15955,7 @@ export type SyncManualMergesV1 = {
 };
 
 export interface ProjectPreparationV1 {
-  readonly "workspaces": Readonly<Pick<WorkspacesV1, "view" | "jobs" | "projects" | "beforeAction" | "onConfigChange" | "beforeConfigChange" | "config" | "readCommittedConfig" | "networkEnvironment" | "dependencyDownloadAuthentication" | "repositoryDownloadAuthentication" | "resolvedConfig" | "resolveProject" | "save" | "run" | "runtime" | "metrics">>;
+  readonly "workspaces": Readonly<Pick<WorkspacesV1, "view" | "jobs" | "projects" | "beforeAction" | "onConfigChange" | "beforeConfigChange" | "config" | "readCommittedConfig" | "networkEnvironment" | "dependencyDownloadAuthentication" | "repositoryDownloadAuthentication" | "resolvedConfig" | "resolveProject" | "save" | "run" | "runPrepared" | "runtime" | "metrics">>;
   readonly "signal": AbortSignal;
   /**
    * 签名 / Signature: ProjectPreparationV1.serial.

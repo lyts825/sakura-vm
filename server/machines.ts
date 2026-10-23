@@ -371,6 +371,7 @@ export class Machines extends EventEmitter {
           template: r.template,
           hardware: r.hardware,
         });
+        if (r.managedNetwork !== undefined) r.managedNetwork = z.enum(['isolated', 'nat']).parse(r.managedNetwork);
         if (r.sandbox !== undefined) {
           r.sandbox = sandboxPolicySchema.parse(r.sandbox);
           if (r.forwards.length) throw new Error('沙箱不允许额外端口转发');
@@ -2036,7 +2037,7 @@ export class Machines extends EventEmitter {
         const attachments: BootAttachment[] = [];
         try {
           live.network = await this.network.attachVm({
-            vmId: id, generation: randomUUID(), isolated: vm.sandbox?.network === 'isolated',
+            vmId: id, generation: randomUUID(), isolated: vm.managedNetwork === 'isolated' || vm.sandbox?.network === 'isolated',
             ipv6: vm.hardware?.ipv6, sshPort, forwards: vm.forwards,
             managementPorts: { qmp: qmpPort, serial: serialPort, agent: agentPort },
             /**
@@ -3756,6 +3757,32 @@ export class Machines extends EventEmitter {
    * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
    * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
    */
+  async networkIsolation(id: string, createdAt: string, startedAt: string, isolated?: boolean, expiresAt?: number) {
+    return this.locked(`bounded-network:${id}`, async () => {
+      const vm = this.get(id), live = this.live.get(id);
+      if (vm.createdAt !== createdAt || !live?.network || live.startedAt !== startedAt || live.abort.signal.aborted)
+        throw new AppError('出站策略的实例运行身份已改变', 409);
+      if (vm.managedNetwork !== 'isolated' && vm.sandbox?.network !== 'isolated')
+        throw new AppError('有限出站策略要求实例默认隔离', 409);
+      if (!live.network.setIsolation || !live.network.observeIsolation) throw new AppError('网络后端不支持有限出站策略', 409);
+      if (isolated === false && (!Number.isFinite(expiresAt) || expiresAt! <= Date.now() || expiresAt! > Date.now() + 86400000))
+        throw new AppError('出站策略必须具有 24 小时以内的绝对期限', 409);
+      const state = isolated === undefined ? await live.network.observeIsolation() : await live.network.setIsolation(isolated, expiresAt);
+      if (this.live.get(id) !== live) throw new AppError('策略切换期间实例身份变化', 409);
+      return state;
+    });
+  }
+  async isolateStopped(id: string, createdAt: string) {
+    return this.locked(id, async () => {
+      this.requireStopped(id);
+      this.requireUnlocked(id);
+      const vm = this.get(id);
+      if (vm.createdAt !== createdAt) throw new AppError('恢复副本创建身份已改变', 409);
+      vm.managedNetwork = 'isolated';
+      await this.save();
+      return this.view(id);
+    });
+  }
   async setForwards(id: string, input: unknown, expected?: VMConfig['forwards']) {
     /**
      * 入口 / Entry: Machines.setForwards.callback@2045.
@@ -3916,7 +3943,7 @@ export class Machines extends EventEmitter {
   async importDisk(
     input: unknown,
     disk: string,
-    options: { signal?: AbortSignal; pendingResize?: boolean; storage?: StorageLease } = {},
+    options: { signal?: AbortSignal; pendingResize?: boolean; storage?: StorageLease; sandbox?: SandboxPolicy; network?: 'isolated' | 'nat'; record?: (vm: Pick<VMRecord, 'id' | 'createdAt'>) => Promise<void> } = {},
   ) {
     /**
      * 入口 / Entry: Machines.importDisk.callback@2130.
@@ -3936,6 +3963,8 @@ export class Machines extends EventEmitter {
      */
     async () => {
       const { signal, pendingResize } = options;
+      const sandbox = options.sandbox ? sandboxPolicySchema.parse(options.sandbox) : undefined;
+      if (sandbox && sandboxExpired(sandbox)) throw new AppError('镜像实例期限必须晚于当前时间');
       const config = createSchema.parse(input);
       if (config.firmware === 'uefi') await requireUefiSupport(config.architecture);
       if (!config.distro || (config.template && config.template !== 'none'))
@@ -3954,7 +3983,11 @@ export class Machines extends EventEmitter {
         snapshots: [],
         bootstrapped: false,
         pendingResize: !!pendingResize,
+        ...(sandbox ? { sandbox } : {}),
+        ...(options.network ? { managedNetwork: z.enum(['isolated', 'nat']).parse(options.network) } : {}),
       };
+      if (sandbox && config.forwards.length) throw new AppError('镜像沙箱不允许额外端口转发');
+      await options.record?.(vm);
       const destination = this.storagePools.directory(vm.id, vm.storagePoolId || 'default');
       /**
        * 入口 / Entry: Machines.importDisk.callback@2154.
