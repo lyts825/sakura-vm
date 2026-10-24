@@ -624,20 +624,87 @@ type Contract553 = { "from": string; "to"?: ("current") | (string); "partition"?
 type Contract554 = { "runs": Array<{ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }>; "persistenceError"?: string; "branchOrigin"?: { "sourceVmId": string; "snapshotId": string; "createdAt": string }; "sourceName"?: string };
 type Contract555 = { "mode": "preview" | "apply"; "name"?: string; "partition"?: number; "path"?: string };
 type Contract556 = { "name": string; "snapshot"?: string };
-type Contract557 = { "projectId": string; "config": (null) | ({ "host": string; "guest": string; "auto": boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": ("readonly") | ("push") | ("both") | ("pull"); "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text") }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> }); "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "queue": (null) | ({ "id": string; "requestedAt": string; "attempts": number; "nextAttemptAt": number; "jobId"?: string; "lastError"?: string }); "maintenance": boolean; "history": Array<{ "error"?: string; "status": ("failed") | ("done") | ("pending") | ("rolled-back"); "id": string; "bytes": number; "createdAt": string; "changes": number }>; "watching": (null) | ({ "host": ("watching") | ("polling"); "guest": ("offline") | ("watching") | ("polling"); "reason"?: string; "lastEvent"?: string }) };
-type Contract558 = { "host": string; "guest": string; "auto"?: boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": "both" | "push" | "pull" | "readonly"; "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": "manual" | "keep-both" | "prefer-host" | "prefer-guest" | "merge-text" }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> };
-type Contract559 = { "host": string; "guest": string; "auto": boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": ("readonly") | ("push") | ("both") | ("pull"); "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text") }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> };
-type Contract560 = { "direction": "both" | "push" | "pull"; "token"?: string; "decisions"?: { [key: string]: ("push" | "pull" | "both" | "skip" | "merge" | "manual" | "delete-host" | "delete-guest" | "restore-host" | "restore-guest") }; "merges"?: { [key: string]: (string) } };
-type Contract561 = { "token": string; "changes": Array<{ "path": string; "from"?: string; "driver"?: ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text"); "suggestedDecision"?: ("push") | ("merge") | ("both") | ("skip") | ("pull"); "action": ("push") | ("skip") | ("pull") | ("delete-host") | ("delete-guest") | ("conflict") | ("mkdir-host") | ("mkdir-guest") | ("rename-host") | ("rename-guest") }>; "unchanged": number };
-type Contract562 = { "path": string; "token": string };
-type Contract563 = { "path": string; "token": string; "base": string; "ours": string; "theirs": string };
-type Contract564 = { "queue": (null) | ({ "id": string; "requestedAt": string; "attempts": number; "nextAttemptAt": number; "jobId"?: string; "lastError"?: string }) };
-type Contract565 = { "checkpoint": string };
-type Contract566 = ({ "session": string }) | ({ "action": "stop-all" });
-type Contract567 = { "ok": boolean; "projectId": string };
-type Contract568 = { "tools": Array<{ "id": string; "name": ("Go") | ("Git") | ("Node.js / npm") | ("Python / pip") | ("Rust / Cargo") | ("Java JDK") | ("PHP"); "installed": boolean; "version": string; "required": boolean }>; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
-type Contract569 = { "tools": Array<"git" | "node" | "python" | "rust" | "go" | "java" | "php"> };
-type Contract570 = ({ "type": "file"; "path": string }) | ({ "type": "export" });
+type Contract557 = { "workspaceId": string; "cursor"?: number; "limit"?: number; "history"?: boolean; "archived"?: boolean };
+type Contract558Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract558Ref1>) | ({ [key: string]: (Contract558Ref1) });
+type Contract558 = { "items": Array<{ "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract558Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string }>; "next": (number) | (null) };
+type Contract559 = { "workspaceId": string; "id": string; "revision": string };
+type Contract560Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract560Ref1>) | ({ [key: string]: (Contract560Ref1) });
+type Contract560 = { "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract560Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string };
+type Contract561 = { "holders": Array<string> };
+type Contract562 = { "workspaceId": string; "references": Array<{ "domain": string; "id": string; "revision": string }> };
+type Contract563Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract563Ref1>) | ({ [key: string]: (Contract563Ref1) });
+type Contract563 = { "id": string; "workspaceId": string; "actor": string; "binding": string; "action": string; "input": Contract563Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "digest": string; "createdAt": string; "expiresAt": string; "workspacePolicyRevision": number; "permissions": Array<{ "ref": { "domain": string; "id": string; "revision": string }; "policyRevision": number; "policyDigest": string }>; "state": "ready" | "consumed" | "completed" | "failed"; "result": ({ "domain": string; "id": string; "revision": string }) | (null) };
+type Contract564 = { "workspaceId": string; "planId": string; "digest": string };
+type Contract565 = { "workspaceId": string; "planId": string };
+type Contract566 = { "workspaceId": string; "source": { "domain": string; "id": string; "revision": string } };
+type Contract567 = { "workspaceId": string; "inventory": { "domain": string; "id": string; "revision": string }; "dataset": { "domain": string; "id": string; "revision": string } };
+type Contract568 = { "workspaceId": string; "dataset": { "domain": string; "id": string; "revision": string } };
+type Contract569 = { "collectedAt": string; "ageSeconds": number; "sourceAuthenticated": boolean };
+type Contract570 = { "workspaceId": string; "references": Array<{ "domain": string; "id": string; "revision": string }> };
+type Contract571 = { "workspaceId": string; "id": string; "revision": string; "offset": number; "length": number };
+type Contract572 = { "data": string; "offset": number; "eof": boolean };
+type Contract573 = { "workspaceId": string; "name": string; "bytes": number; "digest": string };
+type Contract574 = { "workspaceId": string; "name": string; "format": "json" | "csv" | "text" | "png" | "jpeg" | "webp" | "wav" | "mp4" | "site" | "image" | "bundle"; "bytes": number; "digest": string; "allowExport": boolean; "sourceId"?: string; "expectedRevision"?: string; "id": string; "actor": string; "offset": number; "state": "uploading" | "ready" | "unknown" | "discarded"; "reservationId": string; "source": ({ "domain": string; "id": string; "revision": string }) | (null); "createdAt": string; "identity": ({ "ino": string; "dev": string; "bytes": number; "mtimeMs": number; "ctimeMs": number }) | (null) };
+type Contract575 = { "workspaceId": string; "id": string; "offset": number; "data": string };
+type Contract576 = { "workspaceId": string };
+type Contract577 = Array<{ "workspaceId": string; "name": string; "format": "json" | "csv" | "text" | "png" | "jpeg" | "webp" | "wav" | "mp4" | "site" | "image" | "bundle"; "bytes": number; "digest": string; "allowExport": boolean; "sourceId"?: string; "expectedRevision"?: string; "id": string; "actor": string; "offset": number; "state": "uploading" | "ready" | "unknown" | "discarded"; "reservationId": string; "source": ({ "domain": string; "id": string; "revision": string }) | (null); "createdAt": string; "identity": ({ "ino": string; "dev": string; "bytes": number; "mtimeMs": number; "ctimeMs": number }) | (null) }>;
+type Contract578 = { "workspaceId": string; "id": string };
+type Contract579Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract579Ref1>) | ({ [key: string]: (Contract579Ref1) });
+type Contract579 = { "inspection": { "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract579Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string }; "plan": { "id": string; "workspaceId": string; "actor": string; "binding": string; "action": string; "input": Contract579Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "digest": string; "createdAt": string; "expiresAt": string; "workspacePolicyRevision": number; "permissions": Array<{ "ref": { "domain": string; "id": string; "revision": string }; "policyRevision": number; "policyDigest": string }>; "state": "ready" | "consumed" | "completed" | "failed"; "result": ({ "domain": string; "id": string; "revision": string }) | (null) } };
+type Contract580Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract580Ref1>) | ({ [key: string]: (Contract580Ref1) });
+type Contract580 = Array<{ "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract580Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string }>;
+type Contract581 = { "workspaceId": string; "before": { "domain": string; "id": string; "revision": string }; "after": { "domain": string; "id": string; "revision": string } };
+type Contract582 = { "workspaceId": string; "inventory": { "domain": string; "id": string; "revision": string } };
+type Contract583 = { "workspaceId": string; "inventory": { "domain": string; "id": string; "revision": string }; "expression": string; "note": string; "acceptedForUse": boolean };
+type Contract584 = { "workspaceId": string; "id"?: string; "expectedRevision"?: string; "name": string; "content": { "name": string; "blockAt": "low" | "medium" | "high" | "critical"; "maxAgeDays": number; "unknown": "block" | "review"; "allowedLicenses": Array<string>; "requireTrustedProvenance": boolean }; "references"?: Array<{ "domain": string; "id": string; "revision": string }> };
+type Contract585 = { "workspaceId": string; "inventory": { "domain": string; "id": string; "revision": string }; "matching": { "domain": string; "id": string; "revision": string }; "licenses": { "domain": string; "id": string; "revision": string }; "provenance": { "domain": string; "id": string; "revision": string }; "policy": { "domain": string; "id": string; "revision": string } };
+type Contract586 = { "workspaceId": string; "reference": { "domain": string; "id": string; "revision": string } };
+type Contract587 = { "workspaceId": string; "id"?: string; "expectedRevision"?: string; "name": string; "content": { "publishers": Array<{ "id": string; "publicKey": string; "trusted": boolean }> }; "references"?: Array<{ "domain": string; "id": string; "revision": string }> };
+type Contract588 = { "workspaceId": string; "inventory": { "domain": string; "id": string; "revision": string }; "proof": { "domain": string; "id": string; "revision": string }; "trust": { "domain": string; "id": string; "revision": string } };
+type Contract589 = { "workspaceId": string; "evaluation": { "domain": string; "id": string; "revision": string }; "review": { "domain": string; "id": string; "revision": string } };
+type Contract590 = { "workspaceId": string; "evaluation": { "domain": string; "id": string; "revision": string } };
+type Contract591 = { "workspaceId": string; "review": { "domain": string; "id": string; "revision": string }; "decision": "accept" | "reject"; "note": string; "exceptions": Array<{ "findingId": string; "reason": string; "expiresAt": string }> };
+type Contract592 = { "workspaceId": string; "review": { "domain": string; "id": string; "revision": string } };
+type Contract593 = { "valid": boolean; "expired": Array<string>; "reviewer": string; "singleOwnerReview": boolean };
+type Contract594 = { "name": string };
+type Contract595 = { "id": string; "name": string; "owner": string; "createdAt": string; "revoked": boolean; "policyRevision": number; "quarantined": boolean };
+type Contract596 = Array<{ "id": string; "name": string; "owner": string; "createdAt": string; "revoked": boolean; "policyRevision": number; "quarantined": boolean }>;
+type Contract597 = { "workspaceId": string; "expectedRevision": number; "revoked": boolean };
+type Contract598 = { "used": number; "reserved": number; "limit": number; "metadataLimit": number };
+type Contract599 = { "allowRead": boolean; "allowExport": boolean; "revision": number };
+type Contract600 = { "workspaceId": string; "name": string; "text": string; "format": "text" | "json" | "csv"; "allowExport"?: boolean };
+type Contract601 = { "workspaceId": string; "name": string; "format": "json" | "csv" | "text" | "png" | "jpeg" | "webp" | "wav" | "mp4" | "site" | "image" | "bundle"; "bytes": number; "digest": string; "allowExport"?: boolean; "sourceId"?: string; "expectedRevision"?: string };
+type Contract602 = { "workspaceId": string; "id": string; "revision": string; "purpose"?: "read" | "export" };
+type Contract603 = { "id": string; "workspaceId": string; "actor": string; "binding": string; "reference": { "domain": string; "id": string; "revision": string }; "purpose": "read" | "export"; "policyRevision": number; "workspacePolicyRevision": number; "expiresAt": string; "state": "active" | "released" };
+type Contract604 = { "workspaceId": string; "id": string; "offset": number; "length": number };
+type Contract605 = { "workspaceId": string; "id": string; "revision": string; "offset": number; "length": number; "purpose"?: "read" | "export" };
+type Contract606 = { "workspaceId": string; "id": string; "revision": string; "expectedPolicyRevision": number; "allowRead": boolean; "allowExport": boolean };
+type Contract607 = { "workspaceId": string; "request": { "vmId": string; "projectId": string; "configRevision": string; "relativePaths": Array<string>; "maxBytes": number }; "allowExport"?: boolean };
+type Contract608Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract608Ref1>) | ({ [key: string]: (Contract608Ref1) });
+type Contract608 = Array<{ "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract608Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string }>;
+type Contract609 = Array<{ "id": string; "name": string; "description": string }>;
+type Contract610 = { "name": string; "template": "npm-lock" | "python-lock" | "advisory-update" };
+type Contract611Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract611Ref1>) | ({ [key: string]: (Contract611Ref1) });
+type Contract611 = { "workspace": { "id": string; "name": string; "owner": string; "createdAt": string; "revoked": boolean; "policyRevision": number; "quarantined": boolean }; "example": { "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract611Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string } };
+type Contract612 = { "workspaceId": string; "source": { "domain": string; "id": string; "revision": string }; "advisorySource": { "domain": string; "id": string; "revision": string }; "policy": { "domain": string; "id": string; "revision": string } };
+type Contract613Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract613Ref1>) | ({ [key: string]: (Contract613Ref1) });
+type Contract613 = { "run": { "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract613Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string }; "evaluation": { "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract613Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string }; "review": { "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract613Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string } };
+type Contract614Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract614Ref1>) | ({ [key: string]: (Contract614Ref1) });
+type Contract614 = { "workspaces": Array<{ "id": string; "name": string; "owner": string; "createdAt": string; "revoked": boolean; "policyRevision": number; "quarantined": boolean }>; "workspace": ({ "id": string; "name": string; "owner": string; "createdAt": string; "revoked": boolean; "policyRevision": number; "quarantined": boolean }) | (null); "capacity": ({ "used": number; "reserved": number; "limit": number; "metadataLimit": number }) | (null); "domains": Array<{ "id": string; "records": Array<{ "id": string; "workspaceId": string; "domain": string; "name": string; "sequence": number; "revision": string; "parent": (string) | (null); "actor": string; "createdAt": string; "state": "draft" | "sealed" | "archived"; "kind": "definition" | "source" | "result" | "review" | "import"; "origin": "local" | "imported"; "content": Contract614Ref1; "references": Array<{ "domain": string; "id": string; "revision": string }>; "policyRevision": number; "authorizationDigest"?: string }>; "error": string | null }> };
+type Contract615 = { "projectId": string; "config": (null) | ({ "host": string; "guest": string; "auto": boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": ("readonly") | ("push") | ("both") | ("pull"); "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text") }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> }); "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "queue": (null) | ({ "id": string; "requestedAt": string; "attempts": number; "nextAttemptAt": number; "jobId"?: string; "lastError"?: string }); "maintenance": boolean; "history": Array<{ "error"?: string; "status": ("failed") | ("done") | ("pending") | ("rolled-back"); "id": string; "bytes": number; "createdAt": string; "changes": number }>; "watching": (null) | ({ "host": ("watching") | ("polling"); "guest": ("offline") | ("watching") | ("polling"); "reason"?: string; "lastEvent"?: string }) };
+type Contract616 = { "host": string; "guest": string; "auto"?: boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": "both" | "push" | "pull" | "readonly"; "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": "manual" | "keep-both" | "prefer-host" | "prefer-guest" | "merge-text" }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> };
+type Contract617 = { "host": string; "guest": string; "auto": boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": ("readonly") | ("push") | ("both") | ("pull"); "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text") }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> };
+type Contract618 = { "direction": "both" | "push" | "pull"; "token"?: string; "decisions"?: { [key: string]: ("push" | "pull" | "both" | "skip" | "merge" | "manual" | "delete-host" | "delete-guest" | "restore-host" | "restore-guest") }; "merges"?: { [key: string]: (string) } };
+type Contract619 = { "token": string; "changes": Array<{ "path": string; "from"?: string; "driver"?: ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text"); "suggestedDecision"?: ("push") | ("merge") | ("both") | ("skip") | ("pull"); "action": ("push") | ("skip") | ("pull") | ("delete-host") | ("delete-guest") | ("conflict") | ("mkdir-host") | ("mkdir-guest") | ("rename-host") | ("rename-guest") }>; "unchanged": number };
+type Contract620 = { "path": string; "token": string };
+type Contract621 = { "path": string; "token": string; "base": string; "ours": string; "theirs": string };
+type Contract622 = { "queue": (null) | ({ "id": string; "requestedAt": string; "attempts": number; "nextAttemptAt": number; "jobId"?: string; "lastError"?: string }) };
+type Contract623 = { "checkpoint": string };
+type Contract624 = ({ "session": string }) | ({ "action": "stop-all" });
+type Contract625 = { "ok": boolean; "projectId": string };
+type Contract626 = { "tools": Array<{ "id": string; "name": ("Go") | ("Git") | ("Node.js / npm") | ("Python / pip") | ("Rust / Cargo") | ("Java JDK") | ("PHP"); "installed": boolean; "version": string; "required": boolean }>; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
+type Contract627 = { "tools": Array<"git" | "node" | "python" | "rust" | "go" | "java" | "php"> };
+type Contract628 = ({ "type": "file"; "path": string }) | ({ "type": "export" });
 /** 操作 ID 到 wire 形状的映射；input 联合约束 bodylessQuery 与请求体互斥。这里只描述类型，运行时校验由服务端操作契约执行。
  * Map operation IDs to wire shapes; input unions enforce bodylessQuery/body exclusivity. These are type declarations; server operation contracts perform runtime validation. */
 export type OperationContractMap = {
@@ -1144,18 +1211,153 @@ export type OperationContractMap = {
   "snapshots.legacy.get.vms.vmId.export": { request: undefined; response: Response; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
   "snapshots.legacy.post.vms.vmId.clone": { request: Contract556; response: Contract139; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
   "snapshots.rescue-artifact": { request: undefined; response: Contract206; path: { "vmId": string }; query: Contract205; headers: Contract0; method: "GET"; contract: "declared" };
-  "sync.legacy.get.vms.vmId.sync": { request: undefined; response: Contract557; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "sync.legacy.put.vms.vmId.sync": { request: Contract558; response: Contract559; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync": { request: Contract560; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync-preview": { request: undefined; response: Contract561; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync-merge": { request: Contract562; response: Contract563; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync-queue": { request: undefined; response: Contract564; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "sync.legacy.delete.vms.vmId.sync-queue": { request: undefined; response: Contract564; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync-rollback": { request: Contract565; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "terminal-workspace.legacy.post.vms.vmId.terminal-session": { request: Contract566; response: Contract567; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "toolchains.legacy.get.vms.vmId.tools": { request: undefined; response: Contract568; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "toolchains.legacy.post.vms.vmId.tools": { request: Contract569; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "transfers.legacy.post.vms.vmId.download": { request: Contract570; response: Contract202; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.importDataset": { request: Contract566; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.match": { request: Contract567; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-advisories.freshness": { request: Contract568; response: Contract569; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.previewExport": { request: Contract570; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.export": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.download": { request: Contract571; response: Contract572; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.beginImport": { request: Contract573; response: Contract574; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.appendImport": { request: Contract575; response: Contract574; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.transfers": { request: Contract576; response: Contract577; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.discardImport": { request: Contract578; response: Contract574; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.inspectImport": { request: Contract578; response: Contract579; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.acceptImport": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-exchange.imports": { request: Contract576; response: Contract580; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.parse": { request: Contract566; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-inventory.compare": { request: Contract581; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.classify": { request: Contract582; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-licenses.reviewExpression": { request: Contract583; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.save": { request: Contract584; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.seal": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.evaluate": { request: Contract585; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-policies.explain": { request: Contract586; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.save": { request: Contract587; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.seal": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.inspect": { request: Contract582; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-provenance.verify": { request: Contract588; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.seal": { request: Contract589; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reports.compare": { request: Contract581; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.open": { request: Contract590; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.decide": { request: Contract591; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-reviews.recheck": { request: Contract592; response: Contract593; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.createWorkspace": { request: Contract594; response: Contract595; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.listWorkspaces": { request: Contract0; response: Contract596; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.workspace": { request: Contract576; response: Contract595; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.revokeWorkspace": { request: Contract597; response: Contract595; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.capacity": { request: Contract576; response: Contract598; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.policy": { request: Contract559; response: Contract599; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.upload": { request: Contract600; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.pin": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.beginUpload": { request: Contract601; response: Contract574; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.appendUpload": { request: Contract575; response: Contract574; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.finishUpload": { request: Contract578; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.discardUpload": { request: Contract578; response: Contract574; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.openRead": { request: Contract602; response: Contract603; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.readLease": { request: Contract604; response: Contract572; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.closeRead": { request: Contract578; response: Contract603; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.uploads": { request: Contract576; response: Contract577; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.readSource": { request: Contract605; response: Contract572; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.planPolicy": { request: Contract606; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.applyPolicy": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.planCapture": { request: Contract607; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-sources.capture": { request: Contract564; response: Contract608; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.list": { request: Contract557; response: Contract558; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.get": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.archive": { request: Contract559; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.references": { request: Contract559; response: Contract561; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.previewCleanup": { request: Contract562; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.cleanup": { request: Contract564; response: Contract560; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.inspectPlan": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.previewRecovery": { request: Contract565; response: Contract563; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.templates": { request: Contract0; response: Contract609; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.createExample": { request: Contract610; response: Contract611; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.runChecks": { request: Contract612; response: Contract613; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "supply-workbench.view": { request: Contract306; response: Contract614; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.get.vms.vmId.sync": { request: undefined; response: Contract615; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "sync.legacy.put.vms.vmId.sync": { request: Contract616; response: Contract617; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync": { request: Contract618; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync-preview": { request: undefined; response: Contract619; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync-merge": { request: Contract620; response: Contract621; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync-queue": { request: undefined; response: Contract622; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.delete.vms.vmId.sync-queue": { request: undefined; response: Contract622; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync-rollback": { request: Contract623; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "terminal-workspace.legacy.post.vms.vmId.terminal-session": { request: Contract624; response: Contract625; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "toolchains.legacy.get.vms.vmId.tools": { request: undefined; response: Contract626; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "toolchains.legacy.post.vms.vmId.tools": { request: Contract627; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "transfers.legacy.post.vms.vmId.download": { request: Contract628; response: Contract202; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
 };
 /** 从统一操作目录选择合法操作 ID，作为下列请求/响应类型索引。
  * Select valid operation IDs from the shared catalog for the request/response projections below. */
@@ -8727,6 +8929,2031 @@ export const operationRoutes = {
     "session": "required",
     "body": "none",
     "bodyRequired": false
+  },
+  "supply-advisories.list": {
+    "path": "/api/supply-advisories/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.get": {
+    "path": "/api/supply-advisories/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.archive": {
+    "path": "/api/supply-advisories/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.references": {
+    "path": "/api/supply-advisories/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.previewCleanup": {
+    "path": "/api/supply-advisories/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.cleanup": {
+    "path": "/api/supply-advisories/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.inspectPlan": {
+    "path": "/api/supply-advisories/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.previewRecovery": {
+    "path": "/api/supply-advisories/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.importDataset": {
+    "path": "/api/supply-advisories/import-dataset",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.match": {
+    "path": "/api/supply-advisories/match",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-advisories.freshness": {
+    "path": "/api/supply-advisories/freshness",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.list": {
+    "path": "/api/supply-exchange/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.get": {
+    "path": "/api/supply-exchange/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.archive": {
+    "path": "/api/supply-exchange/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.references": {
+    "path": "/api/supply-exchange/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.previewCleanup": {
+    "path": "/api/supply-exchange/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.cleanup": {
+    "path": "/api/supply-exchange/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.inspectPlan": {
+    "path": "/api/supply-exchange/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.previewRecovery": {
+    "path": "/api/supply-exchange/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.previewExport": {
+    "path": "/api/supply-exchange/preview-export",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.export": {
+    "path": "/api/supply-exchange/export",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.download": {
+    "path": "/api/supply-exchange/download",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.beginImport": {
+    "path": "/api/supply-exchange/begin-import",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.appendImport": {
+    "path": "/api/supply-exchange/append-import",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.transfers": {
+    "path": "/api/supply-exchange/transfers",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.discardImport": {
+    "path": "/api/supply-exchange/discard-import",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.inspectImport": {
+    "path": "/api/supply-exchange/inspect-import",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.acceptImport": {
+    "path": "/api/supply-exchange/accept-import",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-exchange.imports": {
+    "path": "/api/supply-exchange/imports",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.list": {
+    "path": "/api/supply-inventory/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.get": {
+    "path": "/api/supply-inventory/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.archive": {
+    "path": "/api/supply-inventory/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.references": {
+    "path": "/api/supply-inventory/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.previewCleanup": {
+    "path": "/api/supply-inventory/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.cleanup": {
+    "path": "/api/supply-inventory/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.inspectPlan": {
+    "path": "/api/supply-inventory/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.previewRecovery": {
+    "path": "/api/supply-inventory/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.parse": {
+    "path": "/api/supply-inventory/parse",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-inventory.compare": {
+    "path": "/api/supply-inventory/compare",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.list": {
+    "path": "/api/supply-licenses/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.get": {
+    "path": "/api/supply-licenses/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.archive": {
+    "path": "/api/supply-licenses/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.references": {
+    "path": "/api/supply-licenses/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.previewCleanup": {
+    "path": "/api/supply-licenses/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.cleanup": {
+    "path": "/api/supply-licenses/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.inspectPlan": {
+    "path": "/api/supply-licenses/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.previewRecovery": {
+    "path": "/api/supply-licenses/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.classify": {
+    "path": "/api/supply-licenses/classify",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-licenses.reviewExpression": {
+    "path": "/api/supply-licenses/review-expression",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.list": {
+    "path": "/api/supply-policies/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.get": {
+    "path": "/api/supply-policies/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.archive": {
+    "path": "/api/supply-policies/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.references": {
+    "path": "/api/supply-policies/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.previewCleanup": {
+    "path": "/api/supply-policies/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.cleanup": {
+    "path": "/api/supply-policies/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.inspectPlan": {
+    "path": "/api/supply-policies/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.previewRecovery": {
+    "path": "/api/supply-policies/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.save": {
+    "path": "/api/supply-policies/save",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.seal": {
+    "path": "/api/supply-policies/seal",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.evaluate": {
+    "path": "/api/supply-policies/evaluate",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-policies.explain": {
+    "path": "/api/supply-policies/explain",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.list": {
+    "path": "/api/supply-provenance/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.get": {
+    "path": "/api/supply-provenance/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.archive": {
+    "path": "/api/supply-provenance/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.references": {
+    "path": "/api/supply-provenance/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.previewCleanup": {
+    "path": "/api/supply-provenance/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.cleanup": {
+    "path": "/api/supply-provenance/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.inspectPlan": {
+    "path": "/api/supply-provenance/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.previewRecovery": {
+    "path": "/api/supply-provenance/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.save": {
+    "path": "/api/supply-provenance/save",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.seal": {
+    "path": "/api/supply-provenance/seal",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.inspect": {
+    "path": "/api/supply-provenance/inspect",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-provenance.verify": {
+    "path": "/api/supply-provenance/verify",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.list": {
+    "path": "/api/supply-reports/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.get": {
+    "path": "/api/supply-reports/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.archive": {
+    "path": "/api/supply-reports/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.references": {
+    "path": "/api/supply-reports/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.previewCleanup": {
+    "path": "/api/supply-reports/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.cleanup": {
+    "path": "/api/supply-reports/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.inspectPlan": {
+    "path": "/api/supply-reports/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.previewRecovery": {
+    "path": "/api/supply-reports/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.seal": {
+    "path": "/api/supply-reports/seal",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reports.compare": {
+    "path": "/api/supply-reports/compare",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.list": {
+    "path": "/api/supply-reviews/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.get": {
+    "path": "/api/supply-reviews/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.archive": {
+    "path": "/api/supply-reviews/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.references": {
+    "path": "/api/supply-reviews/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.previewCleanup": {
+    "path": "/api/supply-reviews/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.cleanup": {
+    "path": "/api/supply-reviews/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.inspectPlan": {
+    "path": "/api/supply-reviews/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.previewRecovery": {
+    "path": "/api/supply-reviews/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.open": {
+    "path": "/api/supply-reviews/open",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.decide": {
+    "path": "/api/supply-reviews/decide",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-reviews.recheck": {
+    "path": "/api/supply-reviews/recheck",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.list": {
+    "path": "/api/supply-sources/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.get": {
+    "path": "/api/supply-sources/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.archive": {
+    "path": "/api/supply-sources/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.references": {
+    "path": "/api/supply-sources/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.previewCleanup": {
+    "path": "/api/supply-sources/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.cleanup": {
+    "path": "/api/supply-sources/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.inspectPlan": {
+    "path": "/api/supply-sources/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.previewRecovery": {
+    "path": "/api/supply-sources/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.createWorkspace": {
+    "path": "/api/supply-sources/create-workspace",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.listWorkspaces": {
+    "path": "/api/supply-sources/list-workspaces",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.workspace": {
+    "path": "/api/supply-sources/workspace",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.revokeWorkspace": {
+    "path": "/api/supply-sources/revoke-workspace",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.capacity": {
+    "path": "/api/supply-sources/capacity",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.policy": {
+    "path": "/api/supply-sources/policy",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.upload": {
+    "path": "/api/supply-sources/upload",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.pin": {
+    "path": "/api/supply-sources/pin",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.beginUpload": {
+    "path": "/api/supply-sources/begin-upload",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.appendUpload": {
+    "path": "/api/supply-sources/append-upload",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.finishUpload": {
+    "path": "/api/supply-sources/finish-upload",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.discardUpload": {
+    "path": "/api/supply-sources/discard-upload",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.openRead": {
+    "path": "/api/supply-sources/open-read",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.readLease": {
+    "path": "/api/supply-sources/read-lease",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.closeRead": {
+    "path": "/api/supply-sources/close-read",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.uploads": {
+    "path": "/api/supply-sources/uploads",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.readSource": {
+    "path": "/api/supply-sources/read-source",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.planPolicy": {
+    "path": "/api/supply-sources/plan-policy",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.applyPolicy": {
+    "path": "/api/supply-sources/apply-policy",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.planCapture": {
+    "path": "/api/supply-sources/plan-capture",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-sources.capture": {
+    "path": "/api/supply-sources/capture",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.list": {
+    "path": "/api/supply-workbench/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.get": {
+    "path": "/api/supply-workbench/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.archive": {
+    "path": "/api/supply-workbench/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.references": {
+    "path": "/api/supply-workbench/references",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.previewCleanup": {
+    "path": "/api/supply-workbench/preview-cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.cleanup": {
+    "path": "/api/supply-workbench/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.inspectPlan": {
+    "path": "/api/supply-workbench/inspect-plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.previewRecovery": {
+    "path": "/api/supply-workbench/preview-recovery",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.templates": {
+    "path": "/api/supply-workbench/templates",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.createExample": {
+    "path": "/api/supply-workbench/create-example",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.runChecks": {
+    "path": "/api/supply-workbench/run-checks",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "supply-workbench.view": {
+    "path": "/api/supply-workbench/view",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
   },
   "sync.legacy.get.vms.vmId.sync": {
     "path": "/api/vms/{vmId}/sync",

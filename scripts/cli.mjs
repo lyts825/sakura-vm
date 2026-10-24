@@ -14,19 +14,34 @@ const [action = 'help', name, ...args] = process.argv.slice(2);
 /** 解析 CLI 命令并通过已认证本机 API 调用基础或可选插件能力；交互终端接管输入与窗口尺寸，长任务响应取消。参数和服务错误向顶层传播，退出时释放终端状态。
  * Dispatch CLI arguments through authenticated local APIs to core or optional plugin capabilities; interactive terminals take over input/size and long work supports cancellation. Argument/service errors propagate and exit restores terminal state. */
 async function main() {
+  if (action === 'supply' && ['help', '--help', 'verify'].includes(name || 'help')) {
+    try {
+      const value = await (await import('./supply-cli.mjs')).supplyCli([name, ...args].filter(Boolean));
+      console.log(value?.help || JSON.stringify(value, null, 2));
+    } catch (error) {
+      console.error(error.message);
+      process.exitCode = error.exitCode || 2;
+    }
+    return;
+  }
   if (action === 'knowledge') {
     process.argv.splice(2, 1);
     await import('./knowledge.mjs');
     return;
   }
   if (action === 'integration' && ['help', '--help', 'verify'].includes(name || 'help')) {
-    const result = await (await import('./integration-cli.mjs')).integrationCli([name, ...args].filter(Boolean));
+    const result = await (
+      await import('./integration-cli.mjs')
+    ).integrationCli([name, ...args].filter(Boolean));
     console.log(result?.help || JSON.stringify(result, null, 2));
     return;
   }
   if (action === 'resilience' && ['help', '--help', 'verify'].includes(name || 'help')) {
-    const result = await (await import('./resilience-cli.mjs')).resilienceCommand(action, !name || name === '--help' ? 'help' : name, args,
-      () => { throw new Error('离线命令不能调用服务'); });
+    const result = await (
+      await import('./resilience-cli.mjs')
+    ).resilienceCommand(action, !name || name === '--help' ? 'help' : name, args, () => {
+      throw new Error('离线命令不能调用服务');
+    });
     console.log(typeof result.value === 'string' ? result.value : JSON.stringify(result.value, null, 2));
     return;
   }
@@ -40,7 +55,9 @@ async function main() {
     const { developmentHelp } = await import('./development-cli.mjs');
     console.log('Plugin packs:\n  integration help\n  resilience help\n  knowledge help');
     const { sandboxHelp } = await import('./sandbox-cli.mjs');
-    console.log('Project commands:\n  shell <name> [--project <id>]\n  exec <name> [--project <id> | --instance] [--timeout <seconds>] -- <command> [args...]\n  Commands use the saved active project by default. Account mode accepts SAKURA_TOKEN.');
+    console.log(
+      'Project commands:\n  shell <name> [--project <id>]\n  exec <name> [--project <id> | --instance] [--timeout <seconds>] -- <command> [args...]\n  Commands use the saved active project by default. Account mode accepts SAKURA_TOKEN.',
+    );
     console.log(
       '\nNew workspace features\n  projects <name> [list|create|select|rename]\n  history <name> [path|restore|purge]\n  pipeline <name> [list|save|run|remove]\n  runtimes <name> [inspect|probe|select|install]\n  code-check <name> [path]\n  compact <name>\n  events',
     );
@@ -62,7 +79,10 @@ async function main() {
     const abort = new AbortController();
     /** 取消本轮请求的 AbortController；中断长任务分支还设置 130 退出码，使调用方能区分用户中断。
      * Abort this request controller; the long-task branch also sets exit code 130 so callers can distinguish user interruption. */
-    const cancel = () => { process.exitCode = 130; abort.abort(); };
+    const cancel = () => {
+      process.exitCode = 130;
+      abort.abort();
+    };
     process.on('SIGINT', cancel);
     process.on('SIGTERM', cancel);
     let bootstrap = { token: process.env.SAKURA_TOKEN || '' };
@@ -70,8 +90,10 @@ async function main() {
     if (!bootstrap.token) {
       const authentication = await fetch(`${base}/api/bootstrap`, { signal: abort.signal });
       bootstrap = await authentication.json();
-      if (!authentication.ok) throw new Error(bootstrap.error || '无法获取控制凭证；账户模式请设置 SAKURA_TOKEN');
-      if (typeof bootstrap.token !== 'string' || !bootstrap.token) throw new Error('服务返回了无效的访问凭证');
+      if (!authentication.ok)
+        throw new Error(bootstrap.error || '无法获取控制凭证；账户模式请设置 SAKURA_TOKEN');
+      if (typeof bootstrap.token !== 'string' || !bootstrap.token)
+        throw new Error('服务返回了无效的访问凭证');
     }
     /** 把路径、HTTP 方法与可选 JSON 发送到当前 bootstrap 令牌对应的本机 API，共享取消信号；解析结果并在 HTTP 失败时抛出服务错误。
      * Send path/method/optional JSON to the local API with the current bootstrap token and shared cancellation signal; parse the result and throw the service error on HTTP failure. */
@@ -83,12 +105,22 @@ async function main() {
         signal: abort.signal,
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
+      if (!response.ok)
+        throw Object.assign(new Error(result.error), { code: result.code, status: response.status });
       return result;
     }
     if (action === 'integration') {
-      const result = await (await import('./integration-cli.mjs')).integrationCli([name, ...args].filter(Boolean), { api });
+      const result = await (
+        await import('./integration-cli.mjs')
+      ).integrationCli([name, ...args].filter(Boolean), { api });
       console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (action === 'supply') {
+      const value = await (
+        await import('./supply-cli.mjs')
+      ).supplyCli([name, ...args].filter(Boolean), { api });
+      console.log(JSON.stringify(value, null, 2));
       return;
     }
     if (action === 'resilience') {
@@ -368,7 +400,9 @@ async function main() {
       const kind = args[0] || 'inspect';
       if (kind === 'inspect') console.log(JSON.stringify(await api(`/vms/${vm.id}/runtimes`), null, 2));
       else if (kind === 'probe')
-        console.log(JSON.stringify(await api(`/vms/${vm.id}/runtimes`, 'POST', { action: 'probe' }), null, 2));
+        console.log(
+          JSON.stringify(await api(`/vms/${vm.id}/runtimes`, 'POST', { action: 'probe' }), null, 2),
+        );
       else if (kind === 'select') {
         if (!args[1]) throw new Error('Usage: runtimes <name> select <runtime.json>');
         console.log(
@@ -639,7 +673,10 @@ async function main() {
     socket.on('message', (data) => {
       const msg = JSON.parse(data.toString());
       if (msg.type === 'data') process.stdout.write(msg.data);
-      if (msg.type === 'error') { console.error(msg.data); process.exitCode = 1; }
+      if (msg.type === 'error') {
+        console.error(msg.data);
+        process.exitCode = 1;
+      }
       if (msg.type === 'ready') {
         resize();
         if (rawMode) process.stdin.setRawMode(true);
@@ -671,7 +708,7 @@ async function main() {
     console.error(
       `Sakura: ${error.message}. ${error.message === 'fetch failed' ? 'Run npm start first.' : ''}`,
     );
-    process.exitCode = 1;
+    process.exitCode = action === 'supply' ? error.exitCode || (error.status === 409 ? 3 : 2) : 1;
   }
 }
 await main();

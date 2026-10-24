@@ -1,0 +1,64 @@
+/** 固定领域计算在受管工作线程执行，正文读取也计入计算准入。 */
+import { computeRuntime } from './compute-runtime.ts';
+import type { SuiteMaterialsV1, SuiteScope, SuiteRef, SuiteJson } from '../shared/contracts/suite-common.ts';
+import { suiteMaterial } from '../shared/contracts/suite-common.ts';
+import { suiteFail } from './suite-store.ts';
+
+export type SupplyComputation = 'inventory' | 'dataset' | 'advisories' | 'licenses';
+export async function readSuiteText(
+  source: SuiteMaterialsV1,
+  scope: SuiteScope,
+  ref: SuiteRef,
+  maximum = 32 * 1024 ** 2,
+) {
+  const row = await source.get({ ...scope, id: ref.id, revision: ref.revision });
+  const material = suiteMaterial.parse(row.content);
+  if (material.bytes > maximum) suiteFail('SUITE_COMPUTE_INPUT_LIMIT', '材料超过此计算的输入上限', 413);
+  const parts: Buffer[] = [];
+  const lease = await source.openRead({ ...scope, id: ref.id, revision: ref.revision });
+  try {
+    if (!material.bytes) await source.readLease({ ...scope, id: lease.id, offset: 0, length: 1 });
+    for (let offset = 0; offset < material.bytes;) {
+      const chunk = await source.readLease({
+        ...scope,
+        id: lease.id,
+        offset,
+        length: Math.min(512 * 1024, material.bytes - offset),
+      });
+      const bytes = Buffer.from(chunk.data, 'base64');
+      if (!bytes.length || chunk.offset !== offset + bytes.length) suiteFail('SUITE_MATERIAL_PROTOCOL');
+      parts.push(bytes);
+      offset = chunk.offset;
+    }
+  } finally {
+    await source.closeRead({ ...scope, id: lease.id });
+  }
+  return {
+    text: new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(parts)),
+    format: material.format,
+  };
+}
+export function computeSupply<T>(
+  domain: string,
+  operation: SupplyComputation,
+  prepare: () => Promise<SuiteJson>,
+  signal?: AbortSignal,
+): Promise<T> {
+  return computeRuntime.run<T>(
+    {
+      owner: domain,
+      label: 'supply-' + operation,
+      memoryBytes: 256 * 1024 ** 2,
+      timeoutMs: 60000,
+      signal,
+      partition: { key: 'supply-audit', limit: 2 },
+    },
+    async () => ({
+      source: new URL('./compute-worker.mjs', import.meta.url),
+      options: {
+        workerData: { task: 'supply-audit', operation, input: await prepare() },
+        resourceLimits: { maxOldGenerationSizeMb: 192, maxYoungGenerationSizeMb: 32, stackSizeMb: 4 },
+      },
+    }),
+  );
+}

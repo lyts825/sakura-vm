@@ -196,6 +196,26 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'service-health': () => import('../../plugins/service-health/server.ts'),
   /** 按需加载 snapshots 的固定服务入口，无外部路径参数。 / Load the fixed snapshots service entry on demand, with no external path input. */
   'snapshots': () => import('../../plugins/snapshots/server.ts'),
+  /** 按需加载 supply-advisories 的固定服务入口，无外部路径参数。 / Load the fixed supply-advisories service entry on demand, with no external path input. */
+  'supply-advisories': () => import('../../plugins/supply-advisories/server.ts'),
+  /** 按需加载 supply-exchange 的固定服务入口，无外部路径参数。 / Load the fixed supply-exchange service entry on demand, with no external path input. */
+  'supply-exchange': () => import('../../plugins/supply-exchange/server.ts'),
+  /** 按需加载 supply-inventory 的固定服务入口，无外部路径参数。 / Load the fixed supply-inventory service entry on demand, with no external path input. */
+  'supply-inventory': () => import('../../plugins/supply-inventory/server.ts'),
+  /** 按需加载 supply-licenses 的固定服务入口，无外部路径参数。 / Load the fixed supply-licenses service entry on demand, with no external path input. */
+  'supply-licenses': () => import('../../plugins/supply-licenses/server.ts'),
+  /** 按需加载 supply-policies 的固定服务入口，无外部路径参数。 / Load the fixed supply-policies service entry on demand, with no external path input. */
+  'supply-policies': () => import('../../plugins/supply-policies/server.ts'),
+  /** 按需加载 supply-provenance 的固定服务入口，无外部路径参数。 / Load the fixed supply-provenance service entry on demand, with no external path input. */
+  'supply-provenance': () => import('../../plugins/supply-provenance/server.ts'),
+  /** 按需加载 supply-reports 的固定服务入口，无外部路径参数。 / Load the fixed supply-reports service entry on demand, with no external path input. */
+  'supply-reports': () => import('../../plugins/supply-reports/server.ts'),
+  /** 按需加载 supply-reviews 的固定服务入口，无外部路径参数。 / Load the fixed supply-reviews service entry on demand, with no external path input. */
+  'supply-reviews': () => import('../../plugins/supply-reviews/server.ts'),
+  /** 按需加载 supply-sources 的固定服务入口，无外部路径参数。 / Load the fixed supply-sources service entry on demand, with no external path input. */
+  'supply-sources': () => import('../../plugins/supply-sources/server.ts'),
+  /** 按需加载 supply-workbench 的固定服务入口，无外部路径参数。 / Load the fixed supply-workbench service entry on demand, with no external path input. */
+  'supply-workbench': () => import('../../plugins/supply-workbench/server.ts'),
   /** 按需加载 sync 的固定服务入口，无外部路径参数。 / Load the fixed sync service entry on demand, with no external path input. */
   'sync': () => import('../../plugins/sync/server.ts'),
   /** 按需加载 terminal-workspace 的固定服务入口，无外部路径参数。 / Load the fixed terminal-workspace service entry on demand, with no external path input. */

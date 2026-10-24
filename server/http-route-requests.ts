@@ -8,6 +8,7 @@ import { foundryHttpRequests } from '../shared/contracts/foundry-http.ts';
 import { appRouteRequests } from '../shared/contracts/app-http.ts';
 import { dataHttpRequests } from '../shared/contracts/data-http.ts';
 import { knowledgeHttpRequests } from '../shared/contracts/knowledge-http.ts';
+import { supplyHttpRequests } from '../shared/contracts/supply-http.ts';
 import { resilienceHttpRequests } from '../shared/contracts/resilience-http-registry.ts';
 import { integrationHttpRequests } from '../shared/contracts/integration-http-registry.ts';
 import { cleanupPreviewRequest, cleanupExecuteRequest } from '../shared/contracts/cleanup-plan.ts';
@@ -30,6 +31,7 @@ export const httpRouteRequests = {
   ...appRouteRequests,
   ...dataHttpRequests,
   ...knowledgeHttpRequests,
+  ...supplyHttpRequests,
   ...resilienceHttpRequests,
   ...integrationHttpRequests,
   'backups.legacy.post.vms.vmId.backup-download': z.object({ backupId: z.uuid() }).strict(),

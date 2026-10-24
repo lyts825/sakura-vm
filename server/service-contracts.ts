@@ -8,6 +8,16 @@ import type { ServiceContract } from './service-ref.ts';
 
 /** Stable descriptor IDs are independent of implementation names and paths. */
 export const serviceContracts = {
+  SupplySources: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-sources.v1'] as ServiceContract<V1.SupplySourcesV1>,
+  SupplyInventory: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-inventory.v1'] as ServiceContract<V1.SupplyInventoryV1>,
+  SupplyAdvisories: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-advisories.v1'] as ServiceContract<V1.SupplyAdvisoriesV1>,
+  SupplyLicenses: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-licenses.v1'] as ServiceContract<V1.SupplyLicensesV1>,
+  SupplyProvenance: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-provenance.v1'] as ServiceContract<V1.SupplyProvenanceV1>,
+  SupplyPolicies: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-policies.v1'] as ServiceContract<V1.SupplyPoliciesV1>,
+  SupplyReviews: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-reviews.v1'] as ServiceContract<V1.SupplyReviewsV1>,
+  SupplyReports: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-reports.v1'] as ServiceContract<V1.SupplyReportsV1>,
+  SupplyExchange: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-exchange.v1'] as ServiceContract<V1.SupplyExchangeV1>,
+  SupplyWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-workbench.v1'] as ServiceContract<V1.SupplyWorkbenchV1>,
   IntegrationSpecs: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-specs.v1'] as ServiceContract<V1.IntegrationSpecsV1>,
   IntegrationEnvironments: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-environments.v1'] as ServiceContract<V1.IntegrationEnvironmentsV1>,
   IntegrationFixtures: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-fixtures.v1'] as ServiceContract<V1.IntegrationFixturesV1>,

@@ -20,6 +20,7 @@ export const pageLabels: Record<string, string> = {
   'integration-lab': '接口集成验证',
   'resilience-workbench': '可靠性演练',
   'knowledge-studio': '项目知识与文档',
+  'supply-audit': '软件供应审查',
 };
 export const tabLabels: Record<string, string> = {
   terminal: '终端',

@@ -1,0 +1,32 @@
+/** 装配独立存储并注册明确的业务方法。 */
+import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
+import { suiteAuthorize, suiteRoute, suiteService } from '../../server/suite-http.ts';
+import { supplyHttpSchemas } from '../../shared/contracts/supply-http.ts';
+import { SupplyAdvisories } from '../../server/suite-supply.ts';
+import { services } from './services.ts';
+import { services as sourcesServices } from '../supply-sources/services.ts';
+import { services as inventoryServices } from '../supply-inventory/services.ts';
+
+export { manifest } from './manifest.ts';
+export async function activate(host: PluginContext) {
+  const authorize = suiteAuthorize(host),
+    meta = (name: string) => host.capabilities.metadata.reference(name, () => null);
+  const service = new SupplyAdvisories(
+    meta('state'),
+    authorize,
+    host.use(sourcesServices.sources),
+    host.use(inventoryServices.inventory),
+  );
+  host.provide(services.advisories, suiteService(supplyHttpSchemas.advisories, service));
+  host.onDispose(() => service.close());
+}
+export const route = suiteRoute('supply-advisories', supplyHttpSchemas.advisories, services.advisories);
+export const httpHandlers: Record<string, PluginRoute> = Object.fromEntries(
+  Object.keys(supplyHttpSchemas.advisories).map((id) => [id, route]),
+);
+export const responseContracts = Object.fromEntries(
+  Object.entries(supplyHttpSchemas.advisories).map(([id, { response }]) => [
+    id,
+    { kind: 'json' as const, statuses: [200], schema: response },
+  ]),
+);

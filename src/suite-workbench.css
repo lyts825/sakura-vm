@@ -1,0 +1,185 @@
+/* 复用宿主语义色的插件包工作台。 */
+.suite-workbench {
+  overflow-wrap: anywhere;
+  --suite-line: color-mix(in srgb, currentColor 16%, transparent);
+  max-width: 1480px;
+  margin: auto;
+  padding: 28px;
+  line-height: 1.65;
+}
+.suite-workbench header,
+.suite-space,
+.suite-toolbar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.suite-workbench header,
+.suite-toolbar {
+  justify-content: space-between;
+}
+.suite-workbench h1 {
+  font-size: 28px;
+  margin: 0;
+}
+.suite-workbench h2 {
+  font-size: 20px;
+}
+.suite-workbench small {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  opacity: 0.6;
+}
+.suite-workbench nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 24px 0 12px;
+}
+.suite-workbench button {
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--suite-line);
+  border-radius: 7px;
+  padding: 8px 14px;
+  cursor: pointer;
+  margin: 4px;
+}
+.suite-workbench button.active {
+  background: #36594f;
+  color: white;
+}
+.suite-workbench button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.suite-space {
+  padding: 18px 0;
+  border-block: 1px solid var(--suite-line);
+  margin: 20px 0;
+}
+.suite-space label {
+  flex: 1;
+  min-width: 150px;
+}
+.suite-workbench label {
+  display: block;
+  margin: 12px 0;
+}
+.suite-workbench input:not([type='checkbox']),
+.suite-workbench select,
+.suite-workbench textarea {
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  padding: 9px;
+  border: 1px solid var(--suite-line);
+  border-radius: 6px;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  max-width: 760px;
+}
+.suite-workbench select option {
+  color: CanvasText;
+  background: Canvas;
+}
+.suite-workbench textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+.suite-workbench .suite-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.suite-workbench input[type='checkbox'] {
+  width: auto;
+}
+.suite-body {
+  border: 0;
+  padding: 0;
+  margin-top: 20px;
+  min-width: 0;
+}
+.suite-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.suite-workbench article,
+.suite-card,
+.suite-empty {
+  border: 1px solid var(--suite-line);
+  padding: 20px;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.suite-card {
+  margin: 12px 0;
+  padding: 14px;
+}
+.suite-empty {
+  background: color-mix(in srgb, #709683 9%, transparent);
+}
+.suite-chip {
+  border: 1px solid var(--suite-line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.suite-workbench code {
+  display: block;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  opacity: 0.75;
+}
+.suite-workbench pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 480px;
+  overflow: auto;
+  font-size: 12px;
+}
+.suite-workbench .suite-code {
+  font-family: monospace;
+  min-height: 220px;
+}
+.suite-error {
+  color: #c55945;
+}
+.suite-result {
+  margin: 24px 0;
+  border-top: 1px solid var(--suite-line);
+  padding: 16px 0;
+}
+.suite-dialog::backdrop {
+  background: #0006;
+}
+.suite-dialog {
+  background: var(--surface, Canvas);
+  color: inherit;
+  max-width: 760px;
+  width: calc(100% - 36px);
+  box-sizing: border-box;
+  padding: 24px;
+  border-radius: 14px;
+  max-height: 85vh;
+  overflow: auto;
+  border: 1px solid var(--suite-line);
+}
+@media (max-width: 800px) {
+  .suite-grid {
+    grid-template-columns: 1fr;
+  }
+  .suite-workbench {
+    padding: 16px;
+  }
+  .suite-space {
+    align-items: stretch;
+  }
+  .suite-workbench h1 {
+    font-size: 24px;
+  }
+}

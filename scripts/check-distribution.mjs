@@ -33,6 +33,7 @@ for (const file of [
   'scripts/network-client.mjs',
   '.sakura-server/network-entry.js',
   '.sakura-server/compute-task.js',
+  '.sakura-server/supply-offline.js',
   '.sakura-server/assets/compute-worker.mjs',
   '.sakura-server/assets/compute-runtime.json',
   '.sakura-server/assets/network-worker.mjs',
@@ -75,7 +76,9 @@ if (process.platform === 'win32') {
   const metadata = JSON.parse(await readFile(join(root, '.sakura-server/assets/compute-runtime.json'), 'utf8'));
   const files = ['compute-task.js', 'assets/compute-worker.mjs'];
   const sources = ['server/compute-task.ts', 'server/compute-worker.mjs', 'server/file-preview.ts',
-    'server/file-preview-runtime.ts', 'server/compute-runtime.ts'];
+    'server/file-preview-runtime.ts', 'server/compute-runtime.ts', 'server/suite-supply-analysis.ts',
+    'shared/contracts/supply-audit.ts', 'shared/contracts/suite-common.ts', 'shared/suite-json.ts',
+    'shared/errors.ts'];
   if (metadata.version !== 1 || !Array.isArray(metadata.files) || !Array.isArray(metadata.sources) ||
       metadata.files.map((entry) => entry.file).join(',') !== files.join(',') ||
       metadata.sources.map((entry) => entry.file).join(',') !== sources.join(','))

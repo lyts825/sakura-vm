@@ -1,3 +1,14 @@
+import type * as SupplyContracts from './supply-audit.ts';
+export interface SupplySourcesV1 extends SupplyContracts.SupplySourcesV1 {}
+export interface SupplyInventoryV1 extends SupplyContracts.SupplyInventoryV1 {}
+export interface SupplyAdvisoriesV1 extends SupplyContracts.SupplyAdvisoriesV1 {}
+export interface SupplyLicensesV1 extends SupplyContracts.SupplyLicensesV1 {}
+export interface SupplyProvenanceV1 extends SupplyContracts.SupplyProvenanceV1 {}
+export interface SupplyPoliciesV1 extends SupplyContracts.SupplyPoliciesV1 {}
+export interface SupplyReviewsV1 extends SupplyContracts.SupplyReviewsV1 {}
+export interface SupplyReportsV1 extends SupplyContracts.SupplyReportsV1 {}
+export interface SupplyExchangeV1 extends SupplyContracts.SupplyExchangeV1 {}
+export interface SupplyWorkbenchV1 extends SupplyContracts.SupplyWorkbenchV1 {}
 import type * as IntegrationContracts from './integration-lab.ts';
 export interface IntegrationSpecsV1 extends IntegrationContracts.IntegrationSpecsV1 {}
 export interface IntegrationEnvironmentsV1 extends IntegrationContracts.IntegrationEnvironmentsV1 {}

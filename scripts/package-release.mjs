@@ -39,6 +39,7 @@ manifest.scripts = {
   integration: manifest.scripts.integration,
   resilience: manifest.scripts.resilience,
   knowledge: manifest.scripts.knowledge,
+  supply: manifest.scripts.supply,
   tray: manifest.scripts.tray,
   'update:status': manifest.scripts['update:status'],
   'update:check': manifest.scripts['update:check'],
@@ -70,6 +71,10 @@ for (const file of [
   'resilience-verify.mjs',
   'knowledge.mjs',
   'knowledge-verify.mjs',
+  'supply-cli.mjs',
+  'supply-verify.mjs',
+  'suite-bundle.mjs',
+  'suite-files.mjs',
   'sandbox-cli.mjs',
   'resumable-download.mjs',
   'native-open.mjs',
@@ -85,7 +90,7 @@ for (const file of [
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
 await cp(join(root, 'docs', 'delivery-cli.md'), join(output, '.sakura-server', 'docs', 'delivery-cli.md'));
-for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md', 'integration-lab.md', 'resilience-lab.md', 'knowledge-studio.md'])
+for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md', 'integration-lab.md', 'resilience-lab.md', 'knowledge-studio.md', 'supply-audit.md'])
   await cp(join(root, 'docs', file), join(output, '.sakura-server', 'docs', file));
 for (const [command, file] of [['foundry', 'foundry.mjs'], ['app-runtime', 'app-runtime.mjs'], ['data', 'data.mjs'], ['knowledge', 'knowledge.mjs']]) {
   if (manifest.scripts[command] !== `node scripts/${file}`) throw new Error(`${command} CLI 必须使用纯 Node 入口`);
@@ -94,7 +99,7 @@ for (const [command, file] of [['foundry', 'foundry.mjs'], ['app-runtime', 'app-
   });
   if (result.status !== 0 || !result.stdout.trim()) throw new Error(`运行包 ${command} CLI 不可用：${result.stderr || result.error?.message || result.status}`);
 }
-for (const command of ['integration', 'resilience']) {
+for (const command of ['integration', 'resilience', 'supply']) {
   if (manifest.scripts[command] !== `node scripts/cli.mjs ${command}`)
     throw new Error(`${command} CLI 缺少固定分发入口`);
   const result = spawnSync(process.execPath, [join(output, 'scripts', 'cli.mjs'), command, 'help'], {
