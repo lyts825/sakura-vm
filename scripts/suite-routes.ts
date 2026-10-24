@@ -4,6 +4,21 @@ import { supplyHttpSchemas } from '../shared/contracts/supply-http.ts';
 import { localeHttpSchemas } from '../shared/contracts/locale-http.ts';
 const suites = { supply: supplyHttpSchemas, locale: localeHttpSchemas };
 const checking = process.argv.includes('--check');
+const registrySource =
+  '/** 由 scripts/suite-routes.ts 生成的轻量领域路由索引。 */\n' +
+  Object.keys(suites)
+    .map((prefix) => `import { ${prefix}RouteMetadata } from './${prefix}-routes.generated.ts';`)
+    .join('\n') +
+  '\nexport const suiteRouteRegistry = {\n' +
+  Object.keys(suites)
+    .map((prefix) => `  ${prefix}: ${prefix}RouteMetadata,`)
+    .join('\n') +
+  '\n} as const;\n';
+const registryTarget = new URL('../shared/contracts/suite-routes.registry.generated.ts', import.meta.url);
+if (checking) {
+  if ((await readFile(registryTarget, 'utf8')).replaceAll('\r\n', '\n') !== registrySource)
+    throw new Error('Suite route registry is stale');
+} else await writeFile(registryTarget, registrySource);
 for (const [prefix, domains] of Object.entries(suites)) {
   const metadata = Object.fromEntries(
     Object.entries(domains as Record<string, Record<string, { read: boolean }>>).map(([domain, methods]) => [

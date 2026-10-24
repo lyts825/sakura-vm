@@ -3,65 +3,214 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { operationEntries } from '../server/operation-catalog.ts';
+import { suiteRouteRegistry } from '../shared/contracts/suite-routes.registry.generated.ts';
 import { requireWireShape as requireShape, schemaTypeRegistry } from './json-schema-types.ts';
 
 const checking = process.argv.includes('--check');
-const entries = operationEntries.filter(entry => entry.declaration.method !== 'UPGRADE');
+const entries = operationEntries.filter((entry) => entry.declaration.method !== 'UPGRADE');
 const types = schemaTypeRegistry();
-for (const entry of entries) if (entry.responseContract?.kind === 'json')
-  requireShape(entry.response, entry.declaration.id);
+for (const entry of entries)
+  if (entry.responseContract?.kind === 'json') requireShape(entry.response, entry.declaration.id);
 for (const entry of entries) {
   if (['json', 'form'].includes(entry.requestContract!.kind))
     requireShape(entry.body, entry.declaration.id + '/request');
-  requireShape(z.toJSONSchema(entry.requestContract!.query, { io: 'input' }), entry.declaration.id + '/query');
-  requireShape(z.toJSONSchema(entry.requestContract!.headers, { io: 'input' }), entry.declaration.id + '/headers');
+  requireShape(
+    z.toJSONSchema(entry.requestContract!.query, { io: 'input' }),
+    entry.declaration.id + '/query',
+  );
+  requireShape(
+    z.toJSONSchema(entry.requestContract!.headers, { io: 'input' }),
+    entry.declaration.id + '/headers',
+  );
 }
-const map = entries.map(/** 从每个正式操作的请求/响应契约生成静态映射；区分无正文、二进制及可选正文，并将 bodylessQuery 投影成互斥联合，禁止类型层接受运行时不允许的正文组合。
- * Project each formal request/response contract into a static map, distinguishing absent/binary/optional bodies and representing bodylessQuery as an exclusive union so types do not admit body combinations rejected at runtime. */ entry => {
-  const { declaration: policy } = entry;
-  const input = entry.requestContract!;
-  const request = input.kind === 'none' ? 'undefined' : input.kind === 'binary' ? 'BodyInit'
-    : types.add(entry.body) + (input.required && !input.bodylessQuery ? '' : ' | undefined');
-  const query = types.add(z.toJSONSchema(input.query, { io: 'input' }));
-  const headers = types.add(z.toJSONSchema(input.headers, { io: 'input' }));
-  let conditionalInput = '';
-  if (input.bodylessQuery) {
-    const key = input.bodylessQuery;
-    const withBody = input.query.extend({ [key]: z.never().optional() });
-    const withoutBody = input.query.extend({ [key]: input.query.shape[key].nonoptional() });
-    const withQuery = types.add(z.toJSONSchema(withBody, { io: 'input' }));
-    const withoutQuery = types.add(z.toJSONSchema(withoutBody, { io: 'input' }));
-    conditionalInput = '; input: ({ query' + (withBody.safeParse({}).success ? '?' : '') + ': ' + withQuery +
-      '; body: ' + types.add(entry.body) + ' } | { query: ' + withoutQuery + '; body?: undefined })';
+const map = entries
+  .map(
+    /** 从每个正式操作的请求/响应契约生成静态映射；区分无正文、二进制及可选正文，并将 bodylessQuery 投影成互斥联合，禁止类型层接受运行时不允许的正文组合。
+     * Project each formal request/response contract into a static map, distinguishing absent/binary/optional bodies and representing bodylessQuery as an exclusive union so types do not admit body combinations rejected at runtime. */ (
+      entry,
+    ) => {
+      const { declaration: policy } = entry;
+      const input = entry.requestContract!;
+      const request =
+        input.kind === 'none'
+          ? 'undefined'
+          : input.kind === 'binary'
+            ? 'BodyInit'
+            : types.add(entry.body) + (input.required && !input.bodylessQuery ? '' : ' | undefined');
+      const query = types.add(z.toJSONSchema(input.query, { io: 'input' }));
+      const headers = types.add(z.toJSONSchema(input.headers, { io: 'input' }));
+      let conditionalInput = '';
+      if (input.bodylessQuery) {
+        const key = input.bodylessQuery;
+        const withBody = input.query.extend({ [key]: z.never().optional() });
+        const withoutBody = input.query.extend({ [key]: input.query.shape[key].nonoptional() });
+        const withQuery = types.add(z.toJSONSchema(withBody, { io: 'input' }));
+        const withoutQuery = types.add(z.toJSONSchema(withoutBody, { io: 'input' }));
+        conditionalInput =
+          '; input: ({ query' +
+          (withBody.safeParse({}).success ? '?' : '') +
+          ': ' +
+          withQuery +
+          '; body: ' +
+          types.add(entry.body) +
+          ' } | { query: ' +
+          withoutQuery +
+          '; body?: undefined })';
+      }
+      const kind = entry.responseContract?.kind;
+      const response = !kind
+        ? 'unknown'
+        : kind === 'empty'
+          ? 'undefined'
+          : kind === 'text'
+            ? 'string'
+            : kind === 'json'
+              ? types.add(entry.response)
+              : 'Response';
+      const parameters = [...policy.path.matchAll(/\{([^}]+)\}/g)].map(
+        (match) => JSON.stringify(match[1]) + ': string',
+      );
+      return (
+        '  ' +
+        JSON.stringify(policy.id) +
+        ': { request: ' +
+        request +
+        '; response: ' +
+        response +
+        '; path: ' +
+        (parameters.length ? '{ ' + parameters.join('; ') + ' }' : 'Record<never, never>') +
+        '; query: ' +
+        query +
+        '; headers: ' +
+        headers +
+        '; method: ' +
+        JSON.stringify(policy.method) +
+        '; contract: ' +
+        JSON.stringify(policy.contract) +
+        conditionalInput +
+        ' };'
+      );
+    },
+  )
+  .join('\n');
+const routes = Object.fromEntries(
+  entries.map((entry) => [
+    entry.declaration.id,
+    {
+      path: entry.declaration.path,
+      method: entry.declaration.method,
+      transport: entry.declaration.transport,
+      contract: entry.declaration.contract,
+      status: entry.status,
+      response: entry.responseContract?.kind || 'json',
+      statuses: entry.responseContract?.statuses || [entry.status],
+      access: entry.declaration.access,
+      session: entry.declaration.session,
+      body: entry.requestContract!.kind,
+      bodyRequired: entry.requestContract!.required,
+      ...(entry.requestContract!.bodylessQuery
+        ? { bodylessQuery: entry.requestContract!.bodylessQuery }
+        : {}),
+    },
+  ]),
+);
+// 相同传输形状共享一个档案；领域 ID 和路径从同一份清单派生，保持所有公开字段及字面量类型。
+type Route = (typeof routes)[string];
+const profiles: Omit<Route, 'path'>[] = [],
+  profileIds = new Map<string, number>();
+const indexed = Object.entries(routes).map(([id, route]) => {
+  const { path, ...profile } = route,
+    key = JSON.stringify(profile);
+  let index = profileIds.get(key);
+  if (index === undefined) {
+    index = profiles.length;
+    profiles.push(profile);
+    profileIds.set(key, index);
   }
-  const kind = entry.responseContract?.kind;
-  const response = !kind ? 'unknown' : kind === 'empty' ? 'undefined' : kind === 'text' ? 'string' :
-    kind === 'json' ? types.add(entry.response) : 'Response';
-  const parameters = [...policy.path.matchAll(/\{([^}]+)\}/g)].map(match => JSON.stringify(match[1]) + ': string');
-  return '  ' + JSON.stringify(policy.id) + ': { request: ' + request + '; response: ' + response +
-    '; path: ' + (parameters.length ? '{ ' + parameters.join('; ') + ' }' : 'Record<never, never>') +
-    '; query: ' + query + '; headers: ' + headers + '; method: ' + JSON.stringify(policy.method) +
-    '; contract: ' + JSON.stringify(policy.contract) + conditionalInput + ' };';
-}).join('\n');
-const routes = Object.fromEntries(entries.map(entry => [entry.declaration.id, {
-  path: entry.declaration.path, method: entry.declaration.method, transport: entry.declaration.transport,
-  contract: entry.declaration.contract, status: entry.status,
-  response: entry.responseContract?.kind || 'json', statuses: entry.responseContract?.statuses || [entry.status],
-  access: entry.declaration.access, session: entry.declaration.session,
-  body: entry.requestContract!.kind, bodyRequired: entry.requestContract!.required,
-  ...(entry.requestContract!.bodylessQuery ? { bodylessQuery: entry.requestContract!.bodylessQuery } : {}),
-}]));
+  return [id, path, index] as const;
+});
+const byId = new Map(indexed.map((entry) => [entry[0], entry]));
+const positions = new Map(indexed.map((entry, index) => [entry[0], index]));
+const suiteGroups: { prefix: string; domain: string; methods: string[] }[] = [];
+const suiteCandidates = new Map<string, number>(),
+  suiteProfiles = new Map<number, number>();
+for (const [prefix, domains] of Object.entries(
+  suiteRouteRegistry as Record<string, Record<string, Record<string, boolean>>>,
+))
+  for (const [domain, methods] of Object.entries(domains)) {
+    suiteGroups.push({ prefix, domain, methods: Object.keys(methods) });
+    for (const method of Object.keys(methods)) {
+      const id = `${prefix}-${domain}.${method}`,
+        entry = byId.get(id),
+        path = `/api/${prefix}-${domain}/${method.replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase())}`;
+      if (!entry || entry[1] !== path)
+        throw new Error(`Suite client route differs from its declaration: ${id}`);
+      suiteCandidates.set(id, entry[2]);
+      suiteProfiles.set(entry[2], (suiteProfiles.get(entry[2]) ?? 0) + 1);
+    }
+  }
+const suiteProfile =
+  [...suiteProfiles].sort(([a, countA], [b, countB]) => countB - countA || a - b)[0]?.[0] ?? 0;
+const groupRuns = new Map<number, { prefix: string; domain: string; length: number }>();
+for (const group of suiteGroups) {
+  const ids = group.methods.map((method) => `${group.prefix}-${group.domain}.${method}`),
+    start = positions.get(ids[0]);
+  if (
+    start !== undefined &&
+    ids.every((id, offset) => indexed[start + offset]?.[0] === id && suiteCandidates.get(id) === suiteProfile)
+  )
+    groupRuns.set(start, { prefix: group.prefix, domain: group.domain, length: ids.length });
+}
+const compact: (readonly [string, string, number | string])[] = [];
+for (let index = 0; index < indexed.length;) {
+  const group = groupRuns.get(index);
+  if (group) {
+    compact.push(['$suite', group.prefix, group.domain]);
+    index += group.length;
+  } else compact.push(indexed[index++]);
+}
+const routeIndexType =
+  'type OperationRouteIndex = {\n' +
+  Object.entries(routes)
+    .map(
+      ([id, route]) =>
+        '  readonly ' +
+        JSON.stringify(id) +
+        ': { ' +
+        Object.entries(route)
+          .map(([key, value]) => {
+            if (
+              value === undefined ||
+              (Array.isArray(value) && value.some((item) => !Number.isInteger(item)))
+            )
+              throw new Error(`Unsupported client route field: ${id}/${key}`);
+            const type = Array.isArray(value)
+              ? 'readonly [' + value.map((item) => JSON.stringify(item)).join(', ') + ']'
+              : JSON.stringify(value);
+            return 'readonly ' + JSON.stringify(key) + ': ' + type;
+          })
+          .join('; ') +
+        ' };',
+    )
+    .join('\n') +
+  '\n};\n';
+const compactSource = `const routeProfiles = ${JSON.stringify(profiles, null, 2)} as const;\nconst compactRoutes = ${JSON.stringify(compact, null, 2)} as const;\nfunction expandRoute(path: string, profile: number) { const source = routeProfiles[profile]; return { path, ...source, statuses: [...source.statuses] as readonly number[] }; }\nconst routeEntries: [string, ReturnType<typeof expandRoute>][] = [];\nfor (const [id, path, profile] of compactRoutes) { if (id === '$suite') { const methods = (suiteRouteRegistry as Record<string, Record<string, Record<string, boolean>>>)[path][profile]; for (const method of Object.keys(methods)) routeEntries.push([path + '-' + profile + '.' + method, expandRoute('/api/' + path + '-' + profile + '/' + method.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase()), ${suiteProfile})]); } else routeEntries.push([id, expandRoute(path, profile)]); }\nexport const operationRoutes = Object.fromEntries(routeEntries) as OperationRouteIndex;\n`;
 const typeSource = types.source();
 // JSON string literals may legitimately contain the word "unknown"; a type token may not.
 if (/\bunknown\b/.test(typeSource.replace(/"(?:\\.|[^"\\])*"/g, '')))
   throw new Error('HTTP wire types contain an unsupported schema that generated unknown');
-const content = '// Generated by scripts/api-contracts.ts. Do not edit directly.\n' +
+const content =
+  '// Generated by scripts/api-contracts.ts. Do not edit directly.\n' +
   '// HTTP 客户端契约：由公开操作目录统一生成请求、响应、路径/查询/头部类型与路由元数据。\n' +
   '// Request bodies, query/header inputs, response types and transports share the published wire contracts.\n' +
-  typeSource + '\n' +
+  "import { suiteRouteRegistry } from './suite-routes.registry.generated.ts';\n" +
+  typeSource +
+  '\n' +
   '/** 操作 ID 到 wire 形状的映射；input 联合约束 bodylessQuery 与请求体互斥。这里只描述类型，运行时校验由服务端操作契约执行。\n' +
   ' * Map operation IDs to wire shapes; input unions enforce bodylessQuery/body exclusivity. These are type declarations; server operation contracts perform runtime validation. */\n' +
-  'export type OperationContractMap = {\n' + map + '\n};\n' +
+  'export type OperationContractMap = {\n' +
+  map +
+  '\n};\n' +
   '/** 从统一操作目录选择合法操作 ID，作为下列请求/响应类型索引。\n * Select valid operation IDs from the shared catalog for the request/response projections below. */\n' +
   'export type OperationId = keyof OperationContractMap;\n' +
   '/** 按 Id 提取请求体，保留无体、二进制和可选 JSON 的区别；查询与头部需分别提供。\n * Project the body by Id, preserving bodyless/binary/optional JSON distinctions; query and headers are supplied separately. */\n' +
@@ -74,11 +223,20 @@ const content = '// Generated by scripts/api-contracts.ts. Do not edit directly.
   "export type OperationHeaders<Id extends OperationId> = OperationContractMap[Id]['headers'];\n" +
   "export type OperationMethod<Id extends OperationId> = OperationContractMap[Id]['method'];\n" +
   '/** 客户端构造 URL/方法/传输和状态检查的只读元数据；访问与 session 字段描述准入要求，不能代替服务端授权。\n * Read-only metadata for client URL/method/transport/status checks; access/session describe admission requirements and never replace server authorization. */\n' +
-  'export const operationRoutes = ' + JSON.stringify(routes, null, 2) + ' as const;\n';
+  routeIndexType +
+  compactSource;
 const file = new URL('../shared/contracts/api-client.generated.ts', import.meta.url);
 if (checking) {
   if ((await readFile(file, 'utf8')).replaceAll('\r\n', '\n') !== content)
     throw new Error('HTTP client contracts are stale; run tsx scripts/api-contracts.ts');
 } else await writeFile(file, content);
-const declared = entries.filter(entry => entry.declaration.contract === 'declared').length;
-console.log('HTTP contracts: ' + declared + ' declared, ' + (entries.length - declared) + ' partial; ' + (checking ? 'verified' : 'generated') + '.');
+const declared = entries.filter((entry) => entry.declaration.contract === 'declared').length;
+console.log(
+  'HTTP contracts: ' +
+    declared +
+    ' declared, ' +
+    (entries.length - declared) +
+    ' partial; ' +
+    (checking ? 'verified' : 'generated') +
+    '.',
+);
