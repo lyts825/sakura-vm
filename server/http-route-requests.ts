@@ -1,3 +1,4 @@
+import { localeHttpRequests } from '../shared/contracts/locale-http.ts';
 /**
  * 模块职责：汇集 HTTP 路由的线路输入模式，为请求契约选择提供明确的参数结构。
  * Module purpose: Collects route wire-input schemas, providing explicit parameter shapes for request contract selection.
@@ -32,6 +33,7 @@ export const httpRouteRequests = {
   ...dataHttpRequests,
   ...knowledgeHttpRequests,
   ...supplyHttpRequests,
+  ...localeHttpRequests,
   ...resilienceHttpRequests,
   ...integrationHttpRequests,
   'backups.legacy.post.vms.vmId.backup-download': z.object({ backupId: z.uuid() }).strict(),

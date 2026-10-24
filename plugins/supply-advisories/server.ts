@@ -2,6 +2,7 @@
 import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 import { suiteAuthorize, suiteRoute, suiteService } from '../../server/suite-http.ts';
 import { supplyHttpSchemas } from '../../shared/contracts/supply-http.ts';
+import { supplyRouteMetadata } from '../../shared/contracts/supply-routes.generated.ts';
 import { SupplyAdvisories } from '../../server/suite-supply.ts';
 import { services } from './services.ts';
 import { services as sourcesServices } from '../supply-sources/services.ts';
@@ -20,7 +21,7 @@ export async function activate(host: PluginContext) {
   host.provide(services.advisories, suiteService(supplyHttpSchemas.advisories, service));
   host.onDispose(() => service.close());
 }
-export const route = suiteRoute('supply-advisories', supplyHttpSchemas.advisories, services.advisories);
+export const route = suiteRoute('supply-advisories', supplyHttpSchemas.advisories, services.advisories, supplyRouteMetadata.advisories);
 export const httpHandlers: Record<string, PluginRoute> = Object.fromEntries(
   Object.keys(supplyHttpSchemas.advisories).map((id) => [id, route]),
 );

@@ -1,6 +1,6 @@
 /** 软件供应审查独立领域入口。 */
 import { definePlugin, pin } from '../../shared/plugin-protocol.ts';
-import { supplyRoutes, supplyHttp } from '../../shared/contracts/supply-http.ts';
+import { supplyRoutes, supplyHttp } from '../../shared/contracts/supply-routes.generated.ts';
 export const manifest = definePlugin({
   id: 'supply-exchange',
   name: '离线交接',

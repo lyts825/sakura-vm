@@ -19,6 +19,7 @@ export function SuitePlanDialog({
     const element = dialog.current!,
       previous = document.activeElement;
     element.showModal();
+    if (!busy) cancel.current?.focus();
     return () => {
       element.close();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();

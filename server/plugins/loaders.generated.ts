@@ -146,6 +146,26 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'knowledge-workbench': () => import('../../plugins/knowledge-workbench/server.ts'),
   /** 按需加载 library 的固定服务入口，无外部路径参数。 / Load the fixed library service entry on demand, with no external path input. */
   'library': () => import('../../plugins/library/server.ts'),
+  /** 按需加载 locale-catalogs 的固定服务入口，无外部路径参数。 / Load the fixed locale-catalogs service entry on demand, with no external path input. */
+  'locale-catalogs': () => import('../../plugins/locale-catalogs/server.ts'),
+  /** 按需加载 locale-checks 的固定服务入口，无外部路径参数。 / Load the fixed locale-checks service entry on demand, with no external path input. */
+  'locale-checks': () => import('../../plugins/locale-checks/server.ts'),
+  /** 按需加载 locale-contexts 的固定服务入口，无外部路径参数。 / Load the fixed locale-contexts service entry on demand, with no external path input. */
+  'locale-contexts': () => import('../../plugins/locale-contexts/server.ts'),
+  /** 按需加载 locale-exchange 的固定服务入口，无外部路径参数。 / Load the fixed locale-exchange service entry on demand, with no external path input. */
+  'locale-exchange': () => import('../../plugins/locale-exchange/server.ts'),
+  /** 按需加载 locale-previews 的固定服务入口，无外部路径参数。 / Load the fixed locale-previews service entry on demand, with no external path input. */
+  'locale-previews': () => import('../../plugins/locale-previews/server.ts'),
+  /** 按需加载 locale-releases 的固定服务入口，无外部路径参数。 / Load the fixed locale-releases service entry on demand, with no external path input. */
+  'locale-releases': () => import('../../plugins/locale-releases/server.ts'),
+  /** 按需加载 locale-reviews 的固定服务入口，无外部路径参数。 / Load the fixed locale-reviews service entry on demand, with no external path input. */
+  'locale-reviews': () => import('../../plugins/locale-reviews/server.ts'),
+  /** 按需加载 locale-terminology 的固定服务入口，无外部路径参数。 / Load the fixed locale-terminology service entry on demand, with no external path input. */
+  'locale-terminology': () => import('../../plugins/locale-terminology/server.ts'),
+  /** 按需加载 locale-translations 的固定服务入口，无外部路径参数。 / Load the fixed locale-translations service entry on demand, with no external path input. */
+  'locale-translations': () => import('../../plugins/locale-translations/server.ts'),
+  /** 按需加载 locale-workbench 的固定服务入口，无外部路径参数。 / Load the fixed locale-workbench service entry on demand, with no external path input. */
+  'locale-workbench': () => import('../../plugins/locale-workbench/server.ts'),
   /** 按需加载 maintenance 的固定服务入口，无外部路径参数。 / Load the fixed maintenance service entry on demand, with no external path input. */
   'maintenance': () => import('../../plugins/maintenance/server.ts'),
   /** 按需加载 metrics 的固定服务入口，无外部路径参数。 / Load the fixed metrics service entry on demand, with no external path input. */

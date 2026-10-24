@@ -35,7 +35,9 @@ export function suiteService<T extends object>(schemas: SuiteMethods, implementa
     },
   });
 }
-export function suiteRoute<T>(pluginId: string, schemas: SuiteMethods, service: ServiceRef<T>): PluginRoute {
+export function suiteRoute<T>(pluginId: string, schemas: SuiteMethods, service: ServiceRef<T>, metadata: Readonly<Record<string, boolean>>): PluginRoute {
+  if (Object.keys(metadata).length !== Object.keys(schemas).length || Object.entries(schemas).some(([method, schema]) => !Object.hasOwn(metadata, method) || metadata[method] !== schema.read))
+    throw new Error(`领域路由读写策略与校验器不同步：${pluginId}`);
   const prefix = `/api/${pluginId}/`;
   const names = new Map(
     Object.keys(schemas).map((name) => [

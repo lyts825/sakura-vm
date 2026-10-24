@@ -3,7 +3,6 @@ import { z } from 'zod';
 import * as S from './suite-common.ts';
 import * as A from './supply-audit.ts';
 import { captureRequestSchema } from './files-capture.ts';
-import { http, type PluginManifest } from '../plugin-protocol.ts';
 const method = (request: z.ZodType, response: z.ZodType, read = false) => ({ request, response, read });
 const empty = z.object({}).strict(),
   record = S.suiteRecord,
@@ -263,30 +262,7 @@ export const supplyHttpSchemas = {
 export type SupplyDomain = keyof typeof supplyHttpSchemas;
 export const supplyMethodPath = (method: string) =>
   method.replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase());
-export function supplyRoutes(domain: SupplyDomain): PluginManifest['contributes']['routes'] {
-  return Object.entries(supplyHttpSchemas[domain]).map(([id, schema]) => ({
-    id,
-    method: 'POST',
-    path: `/api/supply-${domain}/${supplyMethodPath(id)}`,
-    handler: 'route',
-    status: 200,
-    policy: {
-      access: 'controller',
-      roles: ['owner'],
-      projectScoped: false,
-      identity: 'host',
-      maintenance: schema.read ? 'allow' : 'block',
-      transport: 'json',
-      mutating: !schema.read,
-      session: 'required',
-      vmLock: 'allow-locked',
-      projectBinding: 'none',
-      approval: 'none',
-      extensionAuth: 'none',
-    },
-  }));
-}
-export const supplyHttp = (domain: SupplyDomain) => [http(`/api/supply-${domain}`, ['POST'])];
+export { supplyRoutes, supplyHttp } from './supply-routes.generated.ts';
 export const supplyHttpRequests = Object.fromEntries(
   Object.entries(supplyHttpSchemas).flatMap(([domain, methods]) =>
     Object.entries(methods).map(([method, contract]) => [`supply-${domain}.${method}`, contract.request]),

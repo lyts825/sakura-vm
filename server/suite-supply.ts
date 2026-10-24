@@ -157,8 +157,8 @@ export class SupplyInventory extends SuiteStore {
     const input = A.supplyInput.parse(raw),
       material = await this.fixed(scope(input), input.source);
     if (input.source.domain !== 'supply-sources') suiteFail('SUPPLY_SOURCE_REQUIRED');
-    const result = await computeSupply('supply-inventory', 'inventory', async () =>
-      json(await readSuiteText(this.sources, scope(input), input.source)),
+    const result = await computeSupply('supply-inventory', 'inventory', () =>
+      readSuiteText(this.sources, scope(input), input.source),
     );
     return this.put(
       {

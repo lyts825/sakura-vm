@@ -8,6 +8,16 @@ import type { ServiceContract } from './service-ref.ts';
 
 /** Stable descriptor IDs are independent of implementation names and paths. */
 export const serviceContracts = {
+  LocaleCatalogs: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-catalogs.v1'] as ServiceContract<V1.LocaleCatalogsV1>,
+  LocaleContexts: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-contexts.v1'] as ServiceContract<V1.LocaleContextsV1>,
+  LocaleTerminology: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-terminology.v1'] as ServiceContract<V1.LocaleTerminologyV1>,
+  LocaleTranslations: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-translations.v1'] as ServiceContract<V1.LocaleTranslationsV1>,
+  LocaleChecks: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-checks.v1'] as ServiceContract<V1.LocaleChecksV1>,
+  LocalePreviews: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-previews.v1'] as ServiceContract<V1.LocalePreviewsV1>,
+  LocaleReviews: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-reviews.v1'] as ServiceContract<V1.LocaleReviewsV1>,
+  LocaleReleases: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-releases.v1'] as ServiceContract<V1.LocaleReleasesV1>,
+  LocaleExchange: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-exchange.v1'] as ServiceContract<V1.LocaleExchangeV1>,
+  LocaleWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-workbench.v1'] as ServiceContract<V1.LocaleWorkbenchV1>,
   SupplySources: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-sources.v1'] as ServiceContract<V1.SupplySourcesV1>,
   SupplyInventory: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-inventory.v1'] as ServiceContract<V1.SupplyInventoryV1>,
   SupplyAdvisories: PUBLIC_SERVICE_CONTRACTS['sakura.service.supply-advisories.v1'] as ServiceContract<V1.SupplyAdvisoriesV1>,

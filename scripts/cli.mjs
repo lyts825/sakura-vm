@@ -14,9 +14,9 @@ const [action = 'help', name, ...args] = process.argv.slice(2);
 /** 解析 CLI 命令并通过已认证本机 API 调用基础或可选插件能力；交互终端接管输入与窗口尺寸，长任务响应取消。参数和服务错误向顶层传播，退出时释放终端状态。
  * Dispatch CLI arguments through authenticated local APIs to core or optional plugin capabilities; interactive terminals take over input/size and long work supports cancellation. Argument/service errors propagate and exit restores terminal state. */
 async function main() {
-  if (action === 'supply' && ['help', '--help', 'verify'].includes(name || 'help')) {
+  if (['supply', 'locale'].includes(action) && ['help', '--help', 'verify'].includes(name || 'help')) {
     try {
-      const value = await (await import('./supply-cli.mjs')).supplyCli([name, ...args].filter(Boolean));
+      const value = await (action === 'locale' ? (await import('./locale-cli.mjs')).localeCli : (await import('./supply-cli.mjs')).supplyCli)([name, ...args].filter(Boolean));
       console.log(value?.help || JSON.stringify(value, null, 2));
     } catch (error) {
       console.error(error.message);
@@ -114,6 +114,11 @@ async function main() {
         await import('./integration-cli.mjs')
       ).integrationCli([name, ...args].filter(Boolean), { api });
       console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (action === 'locale') {
+      const value = await (await import('./locale-cli.mjs')).localeCli([name, ...args].filter(Boolean), { api });
+      console.log(JSON.stringify(value, null, 2));
       return;
     }
     if (action === 'supply') {
@@ -708,7 +713,7 @@ async function main() {
     console.error(
       `Sakura: ${error.message}. ${error.message === 'fetch failed' ? 'Run npm start first.' : ''}`,
     );
-    process.exitCode = action === 'supply' ? error.exitCode || (error.status === 409 ? 3 : 2) : 1;
+    process.exitCode = ['supply', 'locale'].includes(action) ? error.exitCode || (error.status === 409 ? 3 : 2) : 1;
   }
 }
 await main();

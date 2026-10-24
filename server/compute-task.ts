@@ -12,9 +12,63 @@ import {
   importSupplyDataset,
 } from './suite-supply-analysis.ts';
 import { z } from 'zod';
+import { parseLocaleCatalog, evaluateLocale, renderLocale } from './suite-locale-analysis.ts';
+import * as L from '../shared/contracts/locale-studio.ts';
+import { suiteRef } from '../shared/contracts/suite-common.ts';
 
 try {
-  if (workerData?.task === 'supply-audit') {
+  if (workerData?.task === 'localization-studio') {
+    const operation = z.enum(['catalog', 'checks', 'preview']).parse(workerData.operation);
+    let result: unknown;
+    if (operation === 'catalog')
+      result = parseLocaleCatalog(
+        z
+          .object({
+            text: z.string().max(32 * 1024 ** 2),
+            language: L.localeLanguage,
+            role: z.enum(['source', 'target']),
+            source: suiteRef,
+            originalDigest: z
+              .string()
+              .regex(/^[a-f0-9]{64}$/)
+              .optional(),
+            originalBytes: z
+              .number()
+              .int()
+              .min(0)
+              .max(32 * 1024 ** 2)
+              .optional(),
+          })
+          .strict()
+          .parse(workerData.input),
+      );
+    else if (operation === 'checks')
+      result = evaluateLocale(
+        z
+          .object({
+            catalog: L.localeCatalog,
+            translation: L.localeTranslation,
+            terminology: L.localeTerminology,
+            contexts: L.localeContexts.nullable(),
+            references: z.object({ catalog: suiteRef, translation: suiteRef }).strict(),
+          })
+          .strict()
+          .parse(workerData.input),
+      );
+    else
+      result = renderLocale(
+        z
+          .object({
+            preview: L.localePreviewInput,
+            check: L.localeCheck,
+            catalog: L.localeCatalog,
+            translation: L.localeTranslation,
+          })
+          .strict()
+          .parse(workerData.input),
+      );
+    parentPort!.postMessage({ ok: true, result });
+  } else if (workerData?.task === 'supply-audit') {
     const operation = z.enum(['inventory', 'dataset', 'advisories', 'licenses']).parse(workerData.operation);
     let result: unknown;
     if (operation === 'inventory')
@@ -55,5 +109,6 @@ try {
     ok: false,
     error: error instanceof Error ? error.message : String(error),
     ...(error instanceof AppError ? { status: error.status, code: error.code } : {}),
+    ...(error instanceof z.ZodError ? { status: 400, code: 'COMPUTE_INPUT' } : {}),
   });
 }

@@ -1,4 +1,17 @@
 /* 复用宿主语义色的插件包工作台。 */
+.locale-fixed-preview,
+.locale-editor {
+  min-width: 0;
+  max-width: 100%;
+}
+.locale-fixed-preview article,
+.locale-editor article {
+  padding: 16px;
+  margin-block: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 12px;
+  white-space: pre-wrap;
+}
 .suite-workbench {
   overflow-wrap: anywhere;
   --suite-line: color-mix(in srgb, currentColor 16%, transparent);

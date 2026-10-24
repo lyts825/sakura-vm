@@ -40,6 +40,7 @@ manifest.scripts = {
   resilience: manifest.scripts.resilience,
   knowledge: manifest.scripts.knowledge,
   supply: manifest.scripts.supply,
+  locale: manifest.scripts.locale,
   tray: manifest.scripts.tray,
   'update:status': manifest.scripts['update:status'],
   'update:check': manifest.scripts['update:check'],
@@ -72,6 +73,11 @@ for (const file of [
   'knowledge.mjs',
   'knowledge-verify.mjs',
   'supply-cli.mjs',
+  'locale-cli.mjs',
+  'locale-verify.mjs',
+  'suite-cli.mjs',
+  'suite-commands.generated.mjs',
+  'suite-verify.mjs',
   'supply-verify.mjs',
   'suite-bundle.mjs',
   'suite-files.mjs',
@@ -90,7 +96,7 @@ for (const file of [
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
 await cp(join(root, 'docs', 'delivery-cli.md'), join(output, '.sakura-server', 'docs', 'delivery-cli.md'));
-for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md', 'integration-lab.md', 'resilience-lab.md', 'knowledge-studio.md', 'supply-audit.md'])
+for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md', 'integration-lab.md', 'resilience-lab.md', 'knowledge-studio.md', 'supply-audit.md', 'localization-studio.md'])
   await cp(join(root, 'docs', file), join(output, '.sakura-server', 'docs', file));
 for (const [command, file] of [['foundry', 'foundry.mjs'], ['app-runtime', 'app-runtime.mjs'], ['data', 'data.mjs'], ['knowledge', 'knowledge.mjs']]) {
   if (manifest.scripts[command] !== `node scripts/${file}`) throw new Error(`${command} CLI 必须使用纯 Node 入口`);

@@ -1,3 +1,14 @@
+import type * as LocaleContracts from './locale-studio.ts';
+export interface LocaleCatalogsV1 extends LocaleContracts.LocaleCatalogsV1 {}
+export interface LocaleContextsV1 extends LocaleContracts.LocaleContextsV1 {}
+export interface LocaleTerminologyV1 extends LocaleContracts.LocaleTerminologyV1 {}
+export interface LocaleTranslationsV1 extends LocaleContracts.LocaleTranslationsV1 {}
+export interface LocaleChecksV1 extends LocaleContracts.LocaleChecksV1 {}
+export interface LocalePreviewsV1 extends LocaleContracts.LocalePreviewsV1 {}
+export interface LocaleReviewsV1 extends LocaleContracts.LocaleReviewsV1 {}
+export interface LocaleReleasesV1 extends LocaleContracts.LocaleReleasesV1 {}
+export interface LocaleExchangeV1 extends LocaleContracts.LocaleExchangeV1 {}
+export interface LocaleWorkbenchV1 extends LocaleContracts.LocaleWorkbenchV1 {}
 import type * as SupplyContracts from './supply-audit.ts';
 export interface SupplySourcesV1 extends SupplyContracts.SupplySourcesV1 {}
 export interface SupplyInventoryV1 extends SupplyContracts.SupplyInventoryV1 {}

@@ -61,6 +61,7 @@ export class SuiteExchange extends SuiteStore {
     peers: Readonly<Record<string, S.SuiteRecordsV1>>,
     private format: string,
     private sanitize: (domain: string, kind: S.SuiteRecord['kind'], value: S.SuiteJson) => S.SuiteJson,
+    private options: { sourceDomain?: string; receivedName?: string } = {},
   ) {
     super(domain, metadata, auth, sources, peers);
     this.files = new SuiteMaterials(
@@ -180,7 +181,7 @@ export class SuiteExchange extends SuiteStore {
     return encodeSuiteBundle(this.format, entries);
   }
   private sourcesDomain() {
-    return this.domain.split('-')[0] + '-sources';
+    return this.options.sourceDomain ?? this.domain.split('-')[0] + '-sources';
   }
   protected override async releaseOwned(scope: S.SuiteScope, record: S.SuiteRecord): Promise<void> {
     return this.serializeTransfer(() => this.releaseOwnedTransfer(scope, record));
@@ -491,7 +492,7 @@ export class SuiteExchange extends SuiteStore {
     if (suiteSha(bytes) !== inspection.digest || graph.manifestDigest !== input.manifestDigest)
       suiteFail('SUITE_IMPORT_CHANGED');
     let receipt: S.SuiteRecord | undefined;
-    const accepted = await this.sources.acceptWorkspace({ name: '接收的审查档案' }, async (destination) => {
+    const accepted = await this.sources.acceptWorkspace({ name: this.options.receivedName ?? '接收的档案' }, async (destination) => {
       const ids = new Map<string, S.SuiteRef>();
       for (const row of graph.rows) {
         let result: S.SuiteRecord;

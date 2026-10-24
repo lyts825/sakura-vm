@@ -47,8 +47,8 @@ export async function suiteDigest(bytes: Uint8Array) {
     x.toString(16).padStart(2, '0'),
   ).join('');
 }
-export function suiteDownload(bytes: Uint8Array, filename: string) {
-  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes).buffer], { type: 'application/zip' }));
+export function suiteDownload(bytes: Uint8Array, filename: string, type = 'application/zip') {
+  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes).buffer], { type }));
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;

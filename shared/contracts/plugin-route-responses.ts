@@ -1,3 +1,4 @@
+import { localeHttpResponses } from './locale-http.ts';
 /**
  * 模块职责（中文）：把插件 HTTP 路由标识映射到响应 Schema 和传输模式，供运行时校验与客户端契约生成使用。
  * Module responsibility (English): mapping exact plugin routes to response schemas and transport modes.
@@ -4901,7 +4902,7 @@ export const pluginRouteResponses = {
   'repair.view': { kind: 'json', statuses: [200], media: 'application/json', schema: repairSessionSchema },
   ...deliveryHttpResponses,
   ...foundryHttpResponses,
-  ...Object.fromEntries<HttpResponseContract>(Object.entries({ ...appRouteResponses, ...dataHttpResponses, ...knowledgeHttpResponses, ...resilienceHttpResponses, ...integrationHttpResponses, ...supplyHttpResponses }).map(([key, schema]) => [key, { kind: 'json' as const, statuses: [200], media: 'application/json', schema }])),
+  ...Object.fromEntries<HttpResponseContract>(Object.entries({ ...appRouteResponses, ...dataHttpResponses, ...knowledgeHttpResponses, ...resilienceHttpResponses, ...integrationHttpResponses, ...supplyHttpResponses, ...localeHttpResponses }).map(([key, schema]) => [key, { kind: 'json' as const, statuses: [200], media: 'application/json', schema }])),
   'repair.act': { kind: 'json', statuses: [200], media: 'application/json', schema: repairActionResponseSchema },
   'recipes.post.vms.vmId.recipe.apply-plan': {
     kind: 'json', statuses: [200], media: 'application/json', schema: projectsGetVmsVmIdProjectResponseSchema,

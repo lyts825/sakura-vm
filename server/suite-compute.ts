@@ -1,10 +1,11 @@
 /** 固定领域计算在受管工作线程执行，正文读取也计入计算准入。 */
 import { computeRuntime } from './compute-runtime.ts';
-import type { SuiteMaterialsV1, SuiteScope, SuiteRef, SuiteJson } from '../shared/contracts/suite-common.ts';
+import type { SuiteMaterialsV1, SuiteScope, SuiteRef } from '../shared/contracts/suite-common.ts';
 import { suiteMaterial } from '../shared/contracts/suite-common.ts';
 import { suiteFail } from './suite-store.ts';
 
 export type SupplyComputation = 'inventory' | 'dataset' | 'advisories' | 'licenses';
+export type LocaleComputation = 'catalog' | 'checks' | 'preview';
 export async function readSuiteText(
   source: SuiteMaterialsV1,
   scope: SuiteScope,
@@ -41,22 +42,39 @@ export async function readSuiteText(
 export function computeSupply<T>(
   domain: string,
   operation: SupplyComputation,
-  prepare: () => Promise<SuiteJson>,
+  prepare: () => Promise<unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  return computeSuite('supply-audit', domain, operation, prepare, signal);
+}
+export function computeLocale<T>(
+  domain: string,
+  operation: LocaleComputation,
+  prepare: () => Promise<unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  return computeSuite('localization-studio', domain, operation, prepare, signal);
+}
+function computeSuite<T>(
+  task: 'supply-audit' | 'localization-studio',
+  domain: string,
+  operation: SupplyComputation | LocaleComputation,
+  prepare: () => Promise<unknown>,
   signal?: AbortSignal,
 ): Promise<T> {
   return computeRuntime.run<T>(
     {
       owner: domain,
-      label: 'supply-' + operation,
+      label: task + '-' + operation,
       memoryBytes: 256 * 1024 ** 2,
       timeoutMs: 60000,
       signal,
-      partition: { key: 'supply-audit', limit: 2 },
+      partition: { key: task, limit: 2 },
     },
     async () => ({
       source: new URL('./compute-worker.mjs', import.meta.url),
       options: {
-        workerData: { task: 'supply-audit', operation, input: await prepare() },
+        workerData: { task, operation, input: await prepare() },
         resourceLimits: { maxOldGenerationSizeMb: 192, maxYoungGenerationSizeMb: 32, stackSizeMb: 4 },
       },
     }),
