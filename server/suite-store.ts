@@ -58,6 +58,13 @@ const holdSchema = z
     consumer: z.string(),
   })
   .strict();
+const publicationSchema = S.suitePublication
+  .extend({
+    binding: z.string().min(1),
+    references: z.array(S.suiteRef).max(1000),
+    row: S.suiteRecord.nullable(),
+  })
+  .strict();
 const stateSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -79,6 +86,7 @@ const stateSchema = z
           .strict(),
       )
       .max(50000),
+    publications: z.array(publicationSchema).max(2000).default([]),
   })
   .strict();
 type State = z.infer<typeof stateSchema>;
@@ -91,9 +99,16 @@ const empty = (): State => ({
   workspaces: [],
   quota: [],
   policies: [],
+  publications: [],
 });
 export class SuiteStore implements S.SuiteRecordsV1 {
   private tail: Promise<unknown> = Promise.resolve();
+  private publicationTail: Promise<unknown> = Promise.resolve();
+  private serializePublication<T>(work: () => Promise<T>): Promise<T> {
+    const pending = this.publicationTail.then(work);
+    this.publicationTail = pending.catch(() => {});
+    return pending;
+  }
   constructor(
     readonly domain: string,
     protected metadata: PluginMetadata,
@@ -139,13 +154,14 @@ export class SuiteStore implements S.SuiteRecordsV1 {
       await check();
       const snapshot = await this.metadata.read(),
         state = stateSchema.parse(snapshot.value ?? empty());
-      const beforeDigest = this.root ? suiteHash(state) : '',
-        result = await work(state),
-        after = persistedBytes(state);
+      const beforeDigest = this.root ? suiteHash(snapshot.value ?? empty()) : '',
+        beforeBytes = persistedBytes(snapshot.value ?? empty()),
+        result = await work(state);
+      this.validateState(state, beforeBytes);
+      const after = persistedBytes(state);
       const publishedDigest = this.root ? suiteHash(state) : '';
       if (after > (control ? 128 : 96) * 1024 ** 2)
         suiteFail('SUITE_METADATA_LIMIT', '领域元数据容量不足', 413);
-      this.validateState(state, persistedBytes(stateSchema.parse(snapshot.value ?? empty())));
       const workspaceId =
         scope?.workspaceId ??
         (result && typeof result === 'object' && 'workspaceId' in result
@@ -156,7 +172,7 @@ export class SuiteStore implements S.SuiteRecordsV1 {
           workspaceId,
           slot: this.domain + '/' + this.metadata.name,
           payloadDigest: beforeDigest,
-          bytes: persistedBytes(stateSchema.parse(snapshot.value ?? empty())),
+          bytes: beforeBytes,
         });
       const reservation =
         this.root && workspaceId && publishedDigest !== beforeDigest
@@ -290,6 +306,8 @@ export class SuiteStore implements S.SuiteRecordsV1 {
     const scope = { workspaceId: p.workspaceId };
     await this.access(scope);
     for (const ref of p.references) await this.fixed(scope, ref, origin === 'imported');
+    if (p.references.some((reference) => reference.domain !== this.domain))
+      return this.serializePublication(() => this.publishReferenced(p, kind, seal, origin));
     const id = p.id ?? randomUUID();
     const stored = await this.edit(async (state) => {
       const versions = state.rows.filter((r) => r.workspaceId === p.workspaceId && r.id === id);
@@ -348,6 +366,346 @@ export class SuiteStore implements S.SuiteRecordsV1 {
     for (const ref of stored.references) await this.fixed(scope, ref, origin === 'imported');
     await this.access(scope);
     return stored;
+  }
+  private publicationDigest(intent: z.infer<typeof publicationSchema>): string {
+    if (
+      intent.domain !== this.domain ||
+      intent.reference.domain !== this.domain ||
+      intent.referenceCount !== intent.references.length
+    )
+      suiteFail('SUITE_PUBLICATION_CORRUPT', '原发布意图的领域或引用数量不一致');
+    return suiteHash({
+      id: intent.id,
+      actor: intent.actor,
+      workspaceId: intent.workspaceId,
+      reference: intent.reference,
+      references: intent.references,
+      binding: intent.binding,
+      createdAt: intent.createdAt,
+    });
+  }
+  private publishedRecord(
+    state: State,
+    intent: z.infer<typeof publicationSchema>,
+  ): S.SuiteRecord | undefined {
+    const row = state.rows.find(
+      (row) =>
+        row.workspaceId === intent.workspaceId &&
+        row.actor === intent.actor &&
+        row.id === intent.reference.id &&
+        row.revision === intent.reference.revision,
+    );
+    if (
+      row &&
+      (row.revision !==
+        suiteHash({
+          id: row.id,
+          parent: row.parent,
+          sequence: row.sequence,
+          content: row.content,
+          references: row.references,
+        }) ||
+        suiteHash(row.references) !== suiteHash(intent.references))
+    )
+      suiteFail('SUITE_PUBLICATION_CORRUPT', '原发布对象的持久内容与修订不一致，保留保护引用等待核对');
+    return row;
+  }
+  private async publishReferenced(
+    p: S.SuiteSave,
+    kind: S.SuiteRecord['kind'],
+    seal: boolean,
+    origin: 'local' | 'imported',
+  ): Promise<S.SuiteRecord> {
+    const scope = { workspaceId: p.workspaceId },
+      id = p.id ?? randomUUID();
+    const intent = await this.edit(
+      (state) => {
+        const versions = state.rows.filter((row) => row.workspaceId === p.workspaceId && row.id === id),
+          head = versions.at(-1);
+        if ((p.id && (!head || head.revision !== p.expectedRevision)) || (!p.id && p.expectedRevision))
+          suiteFail('SUITE_REVISION_CONFLICT');
+        if (versions.length >= 100) suiteFail('SUITE_REVISION_LIMIT');
+        const body = {
+          id,
+          parent: head?.revision ?? null,
+          sequence: versions.length + 1,
+          content: p.content,
+          references: p.references,
+        };
+        const row: S.SuiteRecord = {
+          ...body,
+          domain: this.domain,
+          workspaceId: p.workspaceId,
+          policyRevision: head?.policyRevision ?? 1,
+          actor: suiteActor(),
+          createdAt: new Date().toISOString(),
+          revision: suiteHash(body),
+          name: p.name,
+          state: seal ? 'sealed' : 'draft',
+          kind,
+          origin,
+        };
+        const holder = `${this.domain}:${id}:${row.revision}`;
+        for (const reference of p.references.filter((reference) => reference.domain === this.domain)) {
+          const original = state.rows.find(
+            (original) =>
+              original.id === reference.id &&
+              original.revision === reference.revision &&
+              original.workspaceId === p.workspaceId &&
+              original.actor === suiteActor() &&
+              original.state === 'sealed',
+          );
+          if (!original) suiteFail('SUITE_INPUT_NOT_SEALED');
+          state.holds.push({ id: reference.id, revision: reference.revision, holder, consumer: this.domain });
+        }
+        const intent = publicationSchema.parse({
+          id: randomUUID(),
+          domain: this.domain,
+          workspaceId: p.workspaceId,
+          actor: suiteActor(),
+          reference: { domain: this.domain, id, revision: row.revision },
+          referenceCount: p.references.length,
+          references: p.references,
+          status: 'pending',
+          createdAt: row.createdAt,
+          completedAt: null,
+          binding: suiteBinding(),
+          row,
+        });
+        if (state.publications.length >= 1500) {
+          const keep = new Set(
+            state.publications
+              .filter((item) => ['published', 'rolled-back'].includes(item.status))
+              .slice(-500)
+              .map((item) => item.id),
+          );
+          state.publications = state.publications.filter(
+            (item) => !['published', 'rolled-back'].includes(item.status) || keep.has(item.id),
+          );
+        }
+        if (state.publications.length >= 2000)
+          suiteFail('SUITE_PUBLICATION_LIMIT', '待核对发布数量超限，请先恢复原发布');
+        state.publications.push(intent);
+        return intent;
+      },
+      false,
+      scope,
+    );
+    let stored: S.SuiteRecord;
+    try {
+      for (const reference of intent.references.filter((reference) => reference.domain !== this.domain))
+        await this.peers[reference.domain].retain({
+          ...scope,
+          id: reference.id,
+          revision: reference.revision,
+          holder: `${this.domain}:${id}:${intent.reference.revision}`,
+        });
+      stored = await this.edit(
+        (state) => {
+          const current = state.publications.find(
+            (item) =>
+              item.id === intent.id && item.actor === suiteActor() && item.workspaceId === p.workspaceId,
+          );
+          if (!current?.row || current.status !== 'pending') suiteFail('SUITE_PUBLICATION_CHANGED');
+          const head = state.rows.filter((row) => row.id === id && row.workspaceId === p.workspaceId).at(-1);
+          if ((head?.revision ?? null) !== current.row.parent) suiteFail('SUITE_REVISION_CONFLICT');
+          const row = current.row;
+          state.rows.push(row);
+          current.row = null;
+          current.status = 'published';
+          current.completedAt = new Date().toISOString();
+          return row;
+        },
+        false,
+        scope,
+      );
+    } catch (error) {
+      // 发布槽可能已经原子落盘，先读回证据，不能凭抛错释放正式对象的保护引用。
+      const snapshot = await this.readState().catch(() => null),
+        published = snapshot ? this.publishedRecord(snapshot, intent) : undefined;
+      if (published) stored = published;
+      else {
+        try {
+          await this.releasePublication(scope, intent);
+        } catch {
+          await this.edit(
+            (state) => {
+              const current = state.publications.find((item) => item.id === intent.id);
+              if (current && !['published', 'rolled-back'].includes(current.status))
+                current.status = 'unknown';
+            },
+            true,
+            scope,
+          ).catch(() => {});
+          suiteFail('SUITE_PUBLICATION_PENDING', `发布未确认，恢复入口中的原发布 ID：${intent.id}`);
+        }
+        throw error;
+      }
+    }
+    for (const reference of stored.references) await this.fixed(scope, reference, origin === 'imported');
+    await this.access(scope);
+    return stored;
+  }
+  private async releasePublication(scope: S.SuiteScope, intent: z.infer<typeof publicationSchema>) {
+    const before = await this.readState();
+    if (
+      before.rows.some(
+        (row) =>
+          row.workspaceId === scope.workspaceId &&
+          row.id === intent.reference.id &&
+          row.revision === intent.reference.revision,
+      )
+    )
+      suiteFail('SUITE_PUBLICATION_ALREADY_PUBLISHED');
+    const holder = `${this.domain}:${intent.reference.id}:${intent.reference.revision}`;
+    for (const reference of intent.references.filter((reference) => reference.domain !== this.domain)) {
+      const peer = Object.hasOwn(this.peers, reference.domain) ? this.peers[reference.domain] : undefined;
+      if (!peer) suiteFail('SUITE_PUBLICATION_PROVIDER_UNAVAILABLE');
+      const released = await peer.retain({
+        ...scope,
+        id: reference.id,
+        revision: reference.revision,
+        holder,
+        release: true,
+      });
+      if (released.holders.includes(holder))
+        suiteFail('SUITE_PUBLICATION_RELEASE_UNKNOWN', '原消费者的保护引用尚未确认释放');
+    }
+    await this.edit(
+      (state) => {
+        if (
+          state.rows.some(
+            (row) =>
+              row.workspaceId === scope.workspaceId &&
+              row.id === intent.reference.id &&
+              row.revision === intent.reference.revision,
+          )
+        )
+          suiteFail('SUITE_PUBLICATION_ALREADY_PUBLISHED');
+        const current = state.publications.find(
+          (item) =>
+            item.id === intent.id && item.actor === suiteActor() && item.workspaceId === scope.workspaceId,
+        );
+        if (!current || this.publicationDigest(current) !== this.publicationDigest(intent))
+          suiteFail('SUITE_PUBLICATION_CHANGED');
+        state.holds = state.holds.filter((hold) => hold.consumer !== this.domain || hold.holder !== holder);
+        current.status = 'rolled-back';
+        current.row = null;
+        current.completedAt = new Date().toISOString();
+      },
+      true,
+      scope,
+    );
+  }
+  async publications(raw: z.input<typeof S.suitePublicationList>): Promise<S.SuitePublicationPage> {
+    const p = S.suitePublicationList.parse(raw);
+    await this.access({ workspaceId: p.workspaceId });
+    const rows = (await this.readState()).publications
+      .filter((item) => item.actor === suiteActor() && item.workspaceId === p.workspaceId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
+    const items = rows.slice(p.cursor, p.cursor + p.limit).map((item) => {
+      this.publicationDigest(item);
+      return S.suitePublication.parse({
+        id: item.id,
+        domain: item.domain,
+        workspaceId: item.workspaceId,
+        actor: item.actor,
+        reference: item.reference,
+        referenceCount: item.referenceCount,
+        status: item.status,
+        createdAt: item.createdAt,
+        completedAt: item.completedAt,
+      });
+    });
+    await this.access({ workspaceId: p.workspaceId });
+    return { items, next: p.cursor + items.length < rows.length ? p.cursor + items.length : null };
+  }
+  async previewPublicationRecovery(raw: S.SuiteScope & { id: string }): Promise<S.SuitePlan> {
+    const p = S.suiteScope.extend({ id: S.suiteId }).strict().parse(raw);
+    await this.access({ workspaceId: p.workspaceId });
+    const state = await this.readState(),
+      intent = state.publications.find(
+        (item) => item.id === p.id && item.workspaceId === p.workspaceId && item.actor === suiteActor(),
+      );
+    if (!intent) suiteFail('SUITE_PUBLICATION_NOT_FOUND', '原发布不存在', 404);
+    const published = Boolean(this.publishedRecord(state, intent));
+    if (!published && intent.status === 'published')
+      suiteFail('SUITE_PUBLICATION_FINALIZED', '原对象曾正式发布；不能按未发布对象释放引用');
+    return this.plan(
+      { workspaceId: p.workspaceId },
+      'publication-recovery',
+      {
+        publicationId: intent.id,
+        intentDigest: this.publicationDigest(intent),
+        reference: intent.reference,
+        references: intent.references,
+        mode: published ? 'confirm' : 'release-protection',
+        createsResources: false,
+      },
+      [],
+    );
+  }
+  async recoverPublication(raw: S.SuiteApproval): Promise<S.SuiteRecord> {
+    return this.serializePublication(async () => {
+      const plan = await this.consume(raw, 'publication-recovery', true),
+        scope = { workspaceId: plan.workspaceId };
+      if (plan.state === 'completed' && plan.result)
+        return this.get({ ...scope, id: plan.result.id, revision: plan.result.revision });
+      const input = z
+        .object({
+          publicationId: S.suiteId,
+          intentDigest: S.suiteDigest,
+          reference: S.suiteRef,
+          references: z.array(S.suiteRef).max(1000),
+          mode: z.enum(['confirm', 'release-protection']),
+          createsResources: z.literal(false),
+        })
+        .strict()
+        .parse(plan.input);
+      const state = await this.readState(),
+        intent = state.publications.find(
+          (item) =>
+            item.id === input.publicationId &&
+            item.workspaceId === plan.workspaceId &&
+            item.actor === suiteActor(),
+        );
+      if (!intent || this.publicationDigest(intent) !== input.intentDigest)
+        suiteFail('SUITE_PUBLICATION_CHANGED');
+      const published = Boolean(this.publishedRecord(state, intent));
+      if (!published && intent.status === 'published')
+        suiteFail('SUITE_PUBLICATION_FINALIZED', '原对象曾正式发布；不能按未发布对象释放引用');
+      if (!published && intent.status !== 'rolled-back') await this.releasePublication(scope, intent);
+      if (published)
+        await this.edit(
+          (state) => {
+            const current = state.publications.find((item) => item.id === intent.id)!;
+            current.status = 'published';
+            current.row = null;
+            current.completedAt ??= new Date().toISOString();
+          },
+          true,
+          scope,
+        );
+      const receipt = await this.put(
+        {
+          ...scope,
+          name: '原发布核对回执',
+          references: [],
+          content: {
+            format: 'sakura-suite-publication-recovery/1',
+            publicationId: intent.id,
+            reference: intent.reference,
+            status: published ? 'published' : 'rolled-back',
+            createdResources: false,
+            releasedOnlyOwnedProtection: !published,
+          },
+        },
+        'result',
+        true,
+      );
+      await this.complete(plan, receipt);
+      return receipt;
+    });
   }
   async save(raw: S.SuiteSave): Promise<S.SuiteRecord> {
     if (!raw || !S.isSuiteJsonBounded(raw.content))
@@ -712,6 +1070,7 @@ export class SuiteStore implements S.SuiteRecordsV1 {
     }, true);
   }
   async close(): Promise<void> {
+    await this.publicationTail;
     await this.tail;
   }
 }

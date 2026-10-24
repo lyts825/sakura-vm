@@ -2,6 +2,9 @@
 export const suiteCommands = Object.freeze({
   "supply": {
     "sources": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -33,6 +36,9 @@ export const suiteCommands = Object.freeze({
       "capture"
     ],
     "inventory": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -45,6 +51,9 @@ export const suiteCommands = Object.freeze({
       "compare"
     ],
     "advisories": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -58,6 +67,9 @@ export const suiteCommands = Object.freeze({
       "freshness"
     ],
     "licenses": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -70,6 +82,9 @@ export const suiteCommands = Object.freeze({
       "review-expression"
     ],
     "provenance": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -84,6 +99,9 @@ export const suiteCommands = Object.freeze({
       "verify"
     ],
     "policies": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -98,6 +116,9 @@ export const suiteCommands = Object.freeze({
       "explain"
     ],
     "reviews": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -111,6 +132,9 @@ export const suiteCommands = Object.freeze({
       "recheck"
     ],
     "reports": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -123,6 +147,9 @@ export const suiteCommands = Object.freeze({
       "compare"
     ],
     "exchange": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -143,6 +170,9 @@ export const suiteCommands = Object.freeze({
       "imports"
     ],
     "workbench": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -159,6 +189,9 @@ export const suiteCommands = Object.freeze({
   },
   "locale": {
     "catalogs": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -191,6 +224,9 @@ export const suiteCommands = Object.freeze({
       "capture"
     ],
     "contexts": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -203,6 +239,9 @@ export const suiteCommands = Object.freeze({
       "inspect"
     ],
     "terminology": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -217,6 +256,9 @@ export const suiteCommands = Object.freeze({
       "lookup"
     ],
     "translations": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -230,6 +272,9 @@ export const suiteCommands = Object.freeze({
       "suggest-from-memory"
     ],
     "checks": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -242,6 +287,9 @@ export const suiteCommands = Object.freeze({
       "explain"
     ],
     "previews": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -254,6 +302,9 @@ export const suiteCommands = Object.freeze({
       "compare"
     ],
     "reviews": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -267,6 +318,9 @@ export const suiteCommands = Object.freeze({
       "recheck"
     ],
     "releases": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -283,6 +337,9 @@ export const suiteCommands = Object.freeze({
       "make-patch"
     ],
     "exchange": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",
@@ -303,6 +360,9 @@ export const suiteCommands = Object.freeze({
       "imports"
     ],
     "workbench": [
+      "publications",
+      "preview-publication-recovery",
+      "recover-publication",
       "list",
       "get",
       "archive",

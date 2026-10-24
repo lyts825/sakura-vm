@@ -15,6 +15,7 @@ import {
 import { SuiteRecordSelect } from './SuiteRecordSelect';
 import { SuitePlanDialog } from './SuitePlanDialog';
 import { SuiteExchangePanel } from './SuiteExchangePanel';
+import { SuitePublicationRecoveryPanel } from './SuitePublicationRecoveryPanel';
 import './suite-workbench.css';
 const domains: Record<LocaleDomain, string> = {
   catalogs: '语言目录',
@@ -951,6 +952,14 @@ function LocaleWorkspace({
         {tab === '历史与清理' && (
           <section>
             <h2>历史、许可与原对象清理</h2>
+            <SuitePublicationRecoveryPanel
+              key={domain}
+              domain={domain}
+              workspaceId={workspaceId}
+              invoke={invoke}
+              run={(work, message) => run(work, message, false)}
+              preview={preview}
+            />
             <label>
               领域
               <select

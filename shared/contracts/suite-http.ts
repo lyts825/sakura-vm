@@ -32,6 +32,9 @@ export const suiteReadInput = S.suitePin
   })
   .strict();
 export const suiteControls = (definition?: z.ZodType) => ({
+  publications: suiteMethod(S.suitePublicationList, S.suitePublicationPage, true),
+  previewPublicationRecovery: suiteMethod(S.suiteScope.extend({ id: S.suiteId }).strict(), S.suitePlan),
+  recoverPublication: suiteMethod(S.suiteApproval, S.suiteRecord),
   list: suiteMethod(S.suiteList, S.suitePage, true),
   get: suiteMethod(S.suitePin, S.suiteRecord, true),
   archive: suiteMethod(S.suitePin, S.suiteRecord),

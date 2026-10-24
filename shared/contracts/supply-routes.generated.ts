@@ -2,6 +2,9 @@
 import { suiteRoutes, suiteHttp } from '../suite-routes.ts';
 export const supplyRouteMetadata = {
   "sources": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -33,6 +36,9 @@ export const supplyRouteMetadata = {
     "capture": false
   },
   "inventory": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -45,6 +51,9 @@ export const supplyRouteMetadata = {
     "compare": false
   },
   "advisories": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -58,6 +67,9 @@ export const supplyRouteMetadata = {
     "freshness": true
   },
   "licenses": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -70,6 +82,9 @@ export const supplyRouteMetadata = {
     "reviewExpression": false
   },
   "provenance": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -84,6 +99,9 @@ export const supplyRouteMetadata = {
     "verify": false
   },
   "policies": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -98,6 +116,9 @@ export const supplyRouteMetadata = {
     "explain": true
   },
   "reviews": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -111,6 +132,9 @@ export const supplyRouteMetadata = {
     "recheck": true
   },
   "reports": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -123,6 +147,9 @@ export const supplyRouteMetadata = {
     "compare": false
   },
   "exchange": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -143,6 +170,9 @@ export const supplyRouteMetadata = {
     "imports": true
   },
   "workbench": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,

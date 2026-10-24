@@ -15,6 +15,7 @@ import {
 } from './suite-client';
 import './suite-workbench.css';
 import { SuitePlanDialog } from './SuitePlanDialog';
+import { SuitePublicationRecoveryPanel } from './SuitePublicationRecoveryPanel';
 const names: Record<SupplyDomain, string> = {
   sources: '材料与许可',
   inventory: '依赖清单',
@@ -891,6 +892,14 @@ function SupplyWorkspace({
         {tab === '历史与清理' && (
           <section>
             <h2>固定历史与原资源清理</h2>
+            <SuitePublicationRecoveryPanel
+              key={domain}
+              domain={domain}
+              workspaceId={workspaceId}
+              invoke={invoke}
+              run={(work, message) => run(work, message, false)}
+              preview={(d, action, input, apply) => preview(d as SupplyDomain, action, input, apply)}
+            />
             <label>
               领域
               <select

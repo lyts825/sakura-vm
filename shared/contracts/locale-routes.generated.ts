@@ -2,6 +2,9 @@
 import { suiteRoutes, suiteHttp } from '../suite-routes.ts';
 export const localeRouteMetadata = {
   "catalogs": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -34,6 +37,9 @@ export const localeRouteMetadata = {
     "capture": false
   },
   "contexts": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -46,6 +52,9 @@ export const localeRouteMetadata = {
     "inspect": true
   },
   "terminology": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -60,6 +69,9 @@ export const localeRouteMetadata = {
     "lookup": true
   },
   "translations": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -73,6 +85,9 @@ export const localeRouteMetadata = {
     "suggestFromMemory": true
   },
   "checks": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -85,6 +100,9 @@ export const localeRouteMetadata = {
     "explain": true
   },
   "previews": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -97,6 +115,9 @@ export const localeRouteMetadata = {
     "compare": false
   },
   "reviews": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -110,6 +131,9 @@ export const localeRouteMetadata = {
     "recheck": true
   },
   "releases": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -126,6 +150,9 @@ export const localeRouteMetadata = {
     "makePatch": false
   },
   "exchange": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,
@@ -146,6 +173,9 @@ export const localeRouteMetadata = {
     "imports": true
   },
   "workbench": {
+    "publications": true,
+    "previewPublicationRecovery": false,
+    "recoverPublication": false,
     "list": true,
     "get": true,
     "archive": false,

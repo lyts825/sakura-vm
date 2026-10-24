@@ -121,6 +121,27 @@ export const suitePlan = z
 export type SuitePlan = z.infer<typeof suitePlan>;
 export const suiteApproval = suiteScope.extend({ planId: suiteId, digest: suiteDigest }).strict();
 export type SuiteApproval = z.infer<typeof suiteApproval>;
+export const suitePublication = z
+  .object({
+    id: suiteId,
+    domain: suiteRef.shape.domain,
+    workspaceId: suiteId,
+    actor: suiteId,
+    reference: suiteRef,
+    referenceCount: z.number().int().min(0).max(1000),
+    status: z.enum(['pending', 'published', 'rolled-back', 'unknown']),
+    createdAt: z.iso.datetime(),
+    completedAt: z.iso.datetime().nullable(),
+  })
+  .strict();
+export type SuitePublication = z.infer<typeof suitePublication>;
+export const suitePublicationList = suiteScope
+  .extend({ cursor: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(50) })
+  .strict();
+export const suitePublicationPage = z
+  .object({ items: z.array(suitePublication).max(100), next: z.number().int().min(0).nullable() })
+  .strict();
+export type SuitePublicationPage = z.infer<typeof suitePublicationPage>;
 export const suiteQuota = z
   .object({
     id: suiteId,
@@ -149,6 +170,9 @@ export type SuiteSettlement = SuiteScope & {
   payloadDigest?: string;
 };
 export interface SuiteRecordsV1 {
+  publications(input: z.input<typeof suitePublicationList>): Promise<SuitePublicationPage>;
+  previewPublicationRecovery(input: SuiteScope & { id: string }): Promise<SuitePlan>;
+  recoverPublication(input: SuiteApproval): Promise<SuiteRecord>;
   list(input: z.input<typeof suiteList>): Promise<SuitePage>;
   get(input: SuitePin): Promise<SuiteRecord>;
   save(input: SuiteSave): Promise<SuiteRecord>;

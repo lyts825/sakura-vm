@@ -11,6 +11,9 @@ const empty = z.object({}).strict(),
 const inventory = scope.extend({ inventory: ref }).strict(),
   query = scope.extend({ reference: ref }).strict();
 const controls = (definition?: z.ZodType) => ({
+  publications: method(S.suitePublicationList, S.suitePublicationPage, true),
+  previewPublicationRecovery: method(scope.extend({ id: S.suiteId }).strict(), S.suitePlan),
+  recoverPublication: method(S.suiteApproval, record),
   list: method(S.suiteList, S.suitePage, true),
   get: method(S.suitePin, record, true),
   archive: method(S.suitePin, record),
