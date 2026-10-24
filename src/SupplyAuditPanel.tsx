@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Request } from './feature-shared';
 import type * as S from '../shared/contracts/suite-common';
+import type { SuiteHostCapacity } from '../shared/contracts/suite-capacity';
 import * as A from '../shared/contracts/supply-audit';
 import { supplyHttpSchemas, type SupplyDomain } from '../shared/contracts/supply-http';
 import {
@@ -14,6 +15,7 @@ import {
 import './suite-workbench.css';
 import { SuitePlanDialog } from './SuitePlanDialog';
 import { SuiteExchangePanel } from './SuiteExchangePanel';
+import { SuiteHostCapacityStatus } from './SuiteHostCapacityStatus';
 import { SuitePublicationRecoveryPanel } from './SuitePublicationRecoveryPanel';
 const names: Record<SupplyDomain, string> = {
   sources: '材料与许可',
@@ -222,6 +224,7 @@ function SupplyWorkspace({
     [input, setInput] = useState('{}');
   const [plan, setPlan] = useState<{ value: S.SuitePlan; domain: SupplyDomain; method: string }>();
   const [capacity, setCapacity] = useState<{ used: number; reserved: number; limit: number }>();
+  const [hostCapacity, setHostCapacity] = useState<SuiteHostCapacity>();
   const [transfers, setTransfers] = useState<S.SuiteUpload[]>([]);
   const list = (d: SupplyDomain) => rows[d]?.items ?? [];
   const find = (d: SupplyDomain, value: string) => list(d).find((r) => key(r) === value);
@@ -236,8 +239,14 @@ function SupplyWorkspace({
       ),
     );
     setRows(Object.fromEntries(entries));
-    setCapacity(await invoke('sources', 'capacity', s));
-    setTransfers(await invoke('exchange', 'transfers', s));
+    const [nextCapacity, nextTransfers, nextHost] = await Promise.all([
+      invoke<typeof capacity>('sources', 'capacity', s),
+      invoke<S.SuiteUpload[]>('exchange', 'transfers', s),
+      invoke<SuiteHostCapacity>('sources', 'hostCapacity', s),
+    ]);
+    setCapacity(nextCapacity);
+    setTransfers(nextTransfers);
+    setHostCapacity(nextHost);
   };
   useEffect(() => {
     alive.current = true;
@@ -292,6 +301,7 @@ function SupplyWorkspace({
         setError((e as Error).message);
         if (/401|403|许可|撤销|认证/.test((e as Error).message)) {
           setRows({});
+          setHostCapacity(undefined);
           setResult(undefined);
           setPlan(undefined);
         }
@@ -372,6 +382,7 @@ function SupplyWorkspace({
           刷新
         </button>
       </div>
+      <SuiteHostCapacityStatus value={hostCapacity} />
       {error && (
         <p className="suite-error" role="alert">
           {error}
@@ -440,7 +451,7 @@ function SupplyWorkspace({
                       {r.state === 'archived' ? '已归档' : '固定材料'} · 修订 {r.sequence}
                     </p>
                     <button onClick={() => setResult(r)}>查看记录</button>
-                    <button
+          <button
                       onClick={() =>
                         void run(async () => {
                           const p = await invoke<{

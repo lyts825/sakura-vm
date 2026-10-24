@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Request } from './feature-shared';
 import type * as S from '../shared/contracts/suite-common';
+import type { SuiteHostCapacity } from '../shared/contracts/suite-capacity';
 import * as L from '../shared/contracts/locale-studio';
 import { localeHttpSchemas, type LocaleDomain } from '../shared/contracts/locale-http';
 import {
@@ -15,6 +16,7 @@ import {
 import { SuiteRecordSelect } from './SuiteRecordSelect';
 import { SuitePlanDialog } from './SuitePlanDialog';
 import { SuiteExchangePanel } from './SuiteExchangePanel';
+import { SuiteHostCapacityStatus } from './SuiteHostCapacityStatus';
 import { SuitePublicationRecoveryPanel } from './SuitePublicationRecoveryPanel';
 import './suite-workbench.css';
 const domains: Record<LocaleDomain, string> = {
@@ -216,6 +218,7 @@ function LocaleWorkspace({
     previewSequence = useRef(0);
   const [plan, setPlan] = useState<{ value: S.SuitePlan; domain: string; action: string }>();
   const [capacity, setCapacity] = useState<{ used: number; reserved: number; limit: number }>();
+  const [hostCapacity, setHostCapacity] = useState<SuiteHostCapacity>();
   const [catalogId, setCatalogId] = useState(''),
     [translationId, setTranslationId] = useState(''),
     [termId, setTermId] = useState(''),
@@ -255,16 +258,18 @@ function LocaleWorkspace({
           ] as const,
       ),
     );
-    const [nextCapacity, nextTransfers, nextUploads] = await Promise.all([
+    const [nextCapacity, nextTransfers, nextUploads, nextHostCapacity] = await Promise.all([
       invoke<typeof capacity>('catalogs', 'capacity', s),
       invoke<S.SuiteUpload[]>('exchange', 'transfers', s),
       invoke<S.SuiteUpload[]>('catalogs', 'uploads', s),
+      invoke<SuiteHostCapacity>('catalogs', 'hostCapacity', s),
     ]);
     if (alive.current) {
       setPages(Object.fromEntries(data));
       setCapacity(nextCapacity);
       setTransfers(nextTransfers);
       setUploads(nextUploads);
+      setHostCapacity(nextHostCapacity);
     }
   };
   const run = async (work: () => Promise<unknown>, message = '操作已保存', reload = true) => {
@@ -285,6 +290,7 @@ function LocaleWorkspace({
         setError((error as Error).message);
         if (/401|403|许可|撤销|认证/.test((error as Error).message)) {
           setPages({});
+          setHostCapacity(undefined);
           setResult(undefined);
           setPlan(undefined);
           setTransfers([]);
@@ -417,6 +423,7 @@ function LocaleWorkspace({
           刷新
         </button>
       </div>
+      <SuiteHostCapacityStatus value={hostCapacity} />
       {error && (
         <p role="alert" className="suite-error">
           {error}

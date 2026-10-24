@@ -13,6 +13,7 @@ export const localeRouteMetadata = {
     "cleanup": false,
     "inspectPlan": true,
     "previewRecovery": false,
+    "hostCapacity": true,
     "createWorkspace": false,
     "listWorkspaces": true,
     "workspace": true,

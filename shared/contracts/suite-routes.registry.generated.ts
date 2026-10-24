@@ -5,3 +5,7 @@ export const suiteRouteRegistry = {
   supply: supplyRouteMetadata,
   locale: localeRouteMetadata,
 } as const;
+export const suiteRootRegistry = {
+  "supply": "supply-sources",
+  "locale": "locale-catalogs"
+} as const;

@@ -1,5 +1,6 @@
 /** 第三批领域共用的固定修订、材料及计划协议，不包含资源实现。 */
 import { z } from 'zod';
+import type { SuiteHostCapacity } from './suite-capacity.ts';
 
 export type SuiteJson = null | boolean | number | string | SuiteJson[] | { [key: string]: SuiteJson };
 export function isSuiteJsonBounded(value: unknown, maxDepth = 24): value is SuiteJson {
@@ -184,6 +185,7 @@ export type SuiteReservation = SuiteScope & {
   kind: SuiteQuota['kind'];
   slot?: string;
   payloadDigest?: string;
+  control?: boolean;
 };
 export type SuiteSettlement = SuiteScope & {
   id: string;
@@ -216,6 +218,7 @@ export interface SuiteRecordsV1 {
   ): Promise<SuiteRecord>;
 }
 export interface SuiteWorkspacePortV1 {
+  hostCapacity(input: SuiteScope): Promise<SuiteHostCapacity>;
   quarantines(): Promise<SuiteQuarantine[]>;
   withQuarantine(
     input: SuiteScope & { expectedRevision: number },

@@ -224,6 +224,7 @@ export class SuiteStore implements S.SuiteRecordsV1 {
               kind: 'metadata',
               slot: this.domain + '/' + this.metadata.name,
               payloadDigest: publishedDigest,
+              control,
             })
           : undefined;
       const beforeCommit = async () => {
@@ -247,6 +248,7 @@ export class SuiteStore implements S.SuiteRecordsV1 {
       await this.metadata.replace(stateSchema.parse(state), {
         expectedRevision: snapshot.revision,
         beforeCommit,
+        suiteControl: control,
       });
       if (reservation)
         await this.root!.settle({
@@ -1377,19 +1379,21 @@ export class SuiteRoot extends SuiteStore implements S.SuiteWorkspacePortV1 {
           .regex(/^[a-z][a-z0-9-]{0,79}\/[a-zA-Z0-9_.-]{1,80}$/)
           .optional(),
         payloadDigest: S.suiteDigest.optional(),
+        control: z.boolean().default(false),
       })
       .strict()
       .parse(raw);
     await this.access({ workspaceId: p.workspaceId });
     if (p.kind === 'metadata' && (!p.slot || !p.payloadDigest)) suiteFail('SUITE_METADATA_RECEIPT_REQUIRED');
-    if (p.kind !== 'metadata' && (p.slot || p.payloadDigest)) suiteFail('SUITE_RESERVATION_KIND');
+    if (p.kind !== 'metadata' && (p.slot || p.payloadDigest || p.control)) suiteFail('SUITE_RESERVATION_KIND');
     return this.edit((state) => {
       const occupied = state.quota.filter((q) => q.state !== 'released'),
         own = persistedBytes(state);
       if (occupied.reduce((n, q) => n + q.bytes, own + 32 * 1024 ** 2) + p.bytes > this.totalLimit)
         suiteFail('SUITE_QUOTA_EXCEEDED', '材料、元数据或恢复预算不足', 413);
+      const { control: _control, ...reservation } = p;
       const ticket: S.SuiteQuota = {
-        ...p,
+        ...reservation,
         slot: p.slot ?? null,
         payloadDigest: p.payloadDigest ?? null,
         sequence:
@@ -1406,7 +1410,7 @@ export class SuiteRoot extends SuiteStore implements S.SuiteWorkspacePortV1 {
       };
       state.quota.push(ticket);
       return ticket;
-    });
+    }, p.control);
   }
   async settle(raw: S.SuiteSettlement): Promise<S.SuiteQuota> {
     return this.settleFor(raw, quotaConsumer());
@@ -1508,6 +1512,15 @@ export class SuiteRoot extends SuiteStore implements S.SuiteWorkspacePortV1 {
       ticket.state = p.release ? 'released' : 'committed';
       return ticket;
     }, true);
+  }
+  async hostCapacity(raw: S.SuiteScope) {
+    const scope = S.suiteScope.parse(raw);
+    await this.access(scope);
+    if (!this.root && !this.metadata.suiteCapacity)
+      suiteFail('SUITE_HOST_CAPACITY_UNAVAILABLE', '此账本没有宿主容量句柄', 503);
+    const result = this.root ? await this.root.hostCapacity(scope) : await this.metadata.suiteCapacity!();
+    await this.access(scope);
+    return result;
   }
   async capacity(raw: S.SuiteScope) {
     const p = S.suiteScope.parse(raw);

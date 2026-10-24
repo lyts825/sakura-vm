@@ -9,9 +9,14 @@ import type { PluginScope } from './plugin-scope.ts';
 import { storageRuntime } from './storage-runtime.ts';
 import { randomUUID } from 'node:crypto';
 import { pluginCleanup } from './plugin-authority.ts';
+import { suiteCapacityFor } from './suite-capacity.ts';
+import type { SuiteHostCapacity } from '../shared/contracts/suite-capacity.ts';
+
+export type PluginMetadataWriteOptions = MetadataWriteOptions & { suiteControl?: boolean };
 
 export type PluginMetadata<T = unknown> = Readonly<{
   name: string;
+  suiteCapacity?: (signal?: AbortSignal) => Promise<SuiteHostCapacity>;
   /**
    * 签名 / Signature: PluginMetadata.read.
    * 功能：为保存插件元数据回执声明 read 的输入与结果契约，所属容器为 PluginMetadata。
@@ -31,7 +36,7 @@ export type PluginMetadata<T = unknown> = Readonly<{
    * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
    * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
    */
-  replace(value: T, options?: MetadataWriteOptions): Promise<MetadataSnapshot<T>>;
+  replace(value: T, options?: PluginMetadataWriteOptions): Promise<MetadataSnapshot<T>>;
 }>;
 const references = new WeakMap<object, string>();
 /** Only host-side domain constructors resolve an opaque metadata reference. */
@@ -77,7 +82,8 @@ export function pluginMetadata(pluginId: string, owner: string, scope: PluginSco
      */
     reference<T = unknown>(name: string, fallback: () => T = () => null as T): PluginMetadata<T> {
       run('metadata', () => {});
-      const file = pluginDataFile(pluginId, name), store = new MetadataStore(file, { fallback });
+      const file = pluginDataFile(pluginId, name), store = new MetadataStore(file, { fallback }),
+        capacity = suiteCapacityFor(pluginId, file);
       // Only an existing reference can settle under its original instance's cleanup authority.
       const cleaning = () => {
         const instance = pluginCleanup();
@@ -103,6 +109,7 @@ export function pluginMetadata(pluginId: string, owner: string, scope: PluginSco
       const signal = (input?: AbortSignal) => cleaning() ? input :
         input ? AbortSignal.any([scope.signal, input]) : scope.signal;
       const handle = Object.freeze({ name,
+        ...(capacity ? { suiteCapacity: (input?: AbortSignal) => perform(() => capacity.read(signal(input))) } : {}),
         /**
          * 入口 / Entry: pluginMetadata.reference.read.
          * 功能：把本层请求转交 `scope.run`，沿用该实现的结果与失败路径。
@@ -122,7 +129,10 @@ export function pluginMetadata(pluginId: string, owner: string, scope: PluginSco
          * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
          * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
          */
-        replace: (value: T, options: MetadataWriteOptions = {}) => perform(() => store.replace(value,
+        replace: (value: T, options: PluginMetadataWriteOptions = {}) => {
+          const captured = capacity ? structuredClone(value) : value;
+          return perform(() => {
+          const replace = (captured: T) => store.replace(captured,
           { ...options, signal: signal(options.signal),
           /**
            * 入口 / Entry: pluginMetadata.reference.beforeCommit.
@@ -135,7 +145,12 @@ export function pluginMetadata(pluginId: string, owner: string, scope: PluginSco
            * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
            * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
            */
-          beforeCommit: async () => { await options.beforeCommit?.(); check(); } })),
+          beforeCommit: async () => { await options.beforeCommit?.(); check(); } });
+          return capacity
+            ? capacity.publish(pluginId, file, captured, options.suiteControl === true, signal(options.signal), replace)
+            : replace(captured);
+          });
+        },
       });
       references.set(handle, file); scope.add(() => store.flush()); return handle;
     },

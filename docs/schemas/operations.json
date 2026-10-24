@@ -268576,6 +268576,117 @@
       }
     }
   },
+  "locale-catalogs.hostCapacity": {
+    "id": "hostCapacity",
+    "method": "POST",
+    "path": "/api/locale-catalogs/host-capacity",
+    "handler": "route",
+    "status": 200,
+    "policy": {
+      "access": "controller",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": false,
+      "identity": "host",
+      "maintenance": "allow",
+      "transport": "json",
+      "mutating": false,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "none",
+      "approval": "none",
+      "extensionAuth": "none"
+    },
+    "statuses": [
+      200
+    ],
+    "kind": "json",
+    "media": "application/json",
+    "input": {
+      "kind": "json",
+      "required": true,
+      "media": "application/json",
+      "query": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "headers": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "used": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reserved": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ordinaryLimit": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "recoveryReserve": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "retainedMetadataBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "packs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "used",
+        "reserved",
+        "limit",
+        "ordinaryLimit",
+        "recoveryReserve",
+        "retainedMetadataBytes",
+        "packs"
+      ],
+      "additionalProperties": false
+    }
+  },
   "locale-catalogs.createWorkspace": {
     "id": "createWorkspace",
     "method": "POST",
@@ -398495,6 +398606,117 @@
         "reserved",
         "limit",
         "metadataLimit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "supply-sources.hostCapacity": {
+    "id": "hostCapacity",
+    "method": "POST",
+    "path": "/api/supply-sources/host-capacity",
+    "handler": "route",
+    "status": 200,
+    "policy": {
+      "access": "controller",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": false,
+      "identity": "host",
+      "maintenance": "allow",
+      "transport": "json",
+      "mutating": false,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "none",
+      "approval": "none",
+      "extensionAuth": "none"
+    },
+    "statuses": [
+      200
+    ],
+    "kind": "json",
+    "media": "application/json",
+    "input": {
+      "kind": "json",
+      "required": true,
+      "media": "application/json",
+      "query": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "headers": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "used": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reserved": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ordinaryLimit": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "recoveryReserve": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "retainedMetadataBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "packs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "used",
+        "reserved",
+        "limit",
+        "ordinaryLimit",
+        "recoveryReserve",
+        "retainedMetadataBytes",
+        "packs"
       ],
       "additionalProperties": false
     }

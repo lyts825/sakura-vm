@@ -18,6 +18,7 @@ export const supplyRouteMetadata = {
     "workspace": true,
     "revokeWorkspace": false,
     "capacity": true,
+    "hostCapacity": true,
     "policy": true,
     "upload": false,
     "pin": true,

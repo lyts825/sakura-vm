@@ -3,6 +3,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { supplyHttpSchemas } from '../shared/contracts/supply-http.ts';
 import { localeHttpSchemas } from '../shared/contracts/locale-http.ts';
 const suites = { supply: supplyHttpSchemas, locale: localeHttpSchemas };
+const roots: { [K in keyof typeof suites]: keyof typeof suites[K] } = { supply: 'sources', locale: 'catalogs' };
+for (const [prefix, domain] of Object.entries(roots)) {
+  const domains = suites[prefix as keyof typeof suites] as Record<string, Record<string, unknown>>;
+  const methods = domains[domain];
+  if (!methods || !('createWorkspace' in methods) || !('hostCapacity' in methods))
+    throw new Error(`Suite root capacity contract is missing: ${prefix}-${domain}`);
+}
 const checking = process.argv.includes('--check');
 const registrySource =
   '/** 由 scripts/suite-routes.ts 生成的轻量领域路由索引。 */\n' +
@@ -13,7 +20,9 @@ const registrySource =
   Object.keys(suites)
     .map((prefix) => `  ${prefix}: ${prefix}RouteMetadata,`)
     .join('\n') +
-  '\n} as const;\n';
+  '\n} as const;\nexport const suiteRootRegistry = ' +
+  JSON.stringify(Object.fromEntries(Object.entries(roots).map(([prefix, domain]) => [prefix, prefix + '-' + domain])), null, 2) +
+  ' as const;\n';
 const registryTarget = new URL('../shared/contracts/suite-routes.registry.generated.ts', import.meta.url);
 if (checking) {
   if ((await readFile(registryTarget, 'utf8')).replaceAll('\r\n', '\n') !== registrySource)

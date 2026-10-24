@@ -114,4 +114,4 @@ node scripts/cli.mjs locale verify localization-studio.zip
 
 CLI 的 `exchange quarantines` 查询隔离记录；`exchange preview-quarantine-discard` 接收 `workspaceId/targetWorkspaceId`，`exchange discard-quarantine` 提交批准。接收确认使用 `exchange preview-import-recovery`，输入为 `workspaceId/receipt`，再用 `exchange recover-import` 提交批准。
 
-跨包全局额度仍在开发，详见项目状态。本包暂不计为十包整体完整验收，尚未加入 `complete`。
+本包已接入[新插件包共同容量](suite-capacity.md)，停用后的原占用仍计入总额。十包整体尚未完整验收，本包尚未加入 `complete`。

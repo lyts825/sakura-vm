@@ -96,7 +96,7 @@ for (const file of [
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
 await cp(join(root, 'docs', 'delivery-cli.md'), join(output, '.sakura-server', 'docs', 'delivery-cli.md'));
-for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md', 'integration-lab.md', 'resilience-lab.md', 'knowledge-studio.md', 'supply-audit.md', 'localization-studio.md'])
+for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md', 'integration-lab.md', 'resilience-lab.md', 'knowledge-studio.md', 'supply-audit.md', 'localization-studio.md', 'suite-capacity.md'])
   await cp(join(root, 'docs', file), join(output, '.sakura-server', 'docs', file));
 for (const [command, file] of [['foundry', 'foundry.mjs'], ['app-runtime', 'app-runtime.mjs'], ['data', 'data.mjs'], ['knowledge', 'knowledge.mjs']]) {
   if (manifest.scripts[command] !== `node scripts/${file}`) throw new Error(`${command} CLI 必须使用纯 Node 入口`);

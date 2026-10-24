@@ -1,6 +1,7 @@
 /** 领域共用的记录、材料和交换线路；内部委派与容量端口不在此公开。 */
 import { z } from 'zod';
 import * as S from './suite-common.ts';
+import { suiteHostCapacity } from './suite-capacity.ts';
 export const suiteMethod = (request: z.ZodType, response: z.ZodType, read = false) => ({
   request,
   response,
@@ -55,6 +56,7 @@ export const suiteControls = (definition?: z.ZodType) => ({
 });
 export const suiteMaterialMethods = () => ({
   ...suiteControls(),
+  hostCapacity: suiteMethod(S.suiteScope, suiteHostCapacity, true),
   createWorkspace: suiteMethod(z.object({ name: S.suiteName }).strict(), S.suiteWorkspace),
   listWorkspaces: suiteMethod(suiteEmpty, z.array(S.suiteWorkspace).max(50), true),
   workspace: suiteMethod(S.suiteScope, S.suiteWorkspace, true),

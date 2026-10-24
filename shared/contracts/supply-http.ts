@@ -1,5 +1,6 @@
 /** 供应审查逐方法 HTTP 契约；内部引用、容量和导入回调不注册为路由。 */
 import { z } from 'zod';
+import { suiteHostCapacity } from './suite-capacity.ts';
 import * as S from './suite-common.ts';
 import * as A from './supply-audit.ts';
 import { captureRequestSchema } from './files-capture.ts';
@@ -54,6 +55,7 @@ export const supplyHttpSchemas = {
       S.suiteWorkspace,
     ),
     capacity: method(scope, capacity, true),
+    hostCapacity: method(scope, suiteHostCapacity, true),
     policy: method(
       S.suitePin,
       z
