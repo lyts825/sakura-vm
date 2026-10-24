@@ -345,6 +345,62 @@ export class LocaleTranslations extends SuiteStore {
   constructor(meta: PluginMetadata, auth: SuiteAuthorize, root: S.SuiteMaterialsV1, peers: Peers) {
     super('locale-translations', meta, auth, root, peers);
   }
+  async applyDelta(raw: z.input<typeof L.localeDelta>) {
+    const p = L.localeDelta.parse(raw),
+      row = await this.fixed(scope(p), p.translation),
+      before = L.localeTranslation.parse(row.content),
+      catalog = L.localeCatalog.parse((await this.fixed(scope(p), before.catalog)).content),
+      terminology = p.terminology ?? before.terminology,
+      contexts = p.contexts === undefined ? before.contexts : p.contexts,
+      terms = L.localeTerminology.parse((await this.fixed(scope(p), terminology)).content);
+    if (catalog.role !== 'source' || catalog.language === before.language)
+      suiteFail('LOCALE_TRANSLATION_SOURCE');
+    if (terms.language !== before.language || !validateLocaleTerms(terms).valid)
+      suiteFail('LOCALE_TERM_LANGUAGE');
+    const references = [...row.references];
+    if (!references.some((reference) => same(reference, terminology))) references.push(terminology);
+    if (contexts) {
+      const context = L.localeContexts.parse((await this.fixed(scope(p), contexts)).content);
+      if (!same(context.catalog, before.catalog)) suiteFail('LOCALE_CONTEXT_MISMATCH');
+      if (!references.some((reference) => same(reference, contexts))) references.push(contexts);
+    }
+    const source = new Map(catalog.entries.map((item) => [item.key, item])),
+      items = new Map(before.items.map((item) => [item.key, item])),
+      seen = new Set<string>();
+    for (const item of p.items) {
+      if (!source.has(item.key) || seen.has(item.key)) suiteFail('LOCALE_TRANSLATION_KEY');
+      seen.add(item.key);
+      localePlaceholders(item.text);
+      items.set(item.key, { ...item, sourceDigest: source.get(item.key)!.digest, stale: false });
+    }
+    for (const key of p.remove) {
+      if (seen.has(key) || !items.has(key)) suiteFail('LOCALE_TRANSLATION_KEY');
+      seen.add(key);
+      items.delete(key);
+    }
+    return this.put(
+      {
+        ...scope(p),
+        id: row.id,
+        expectedRevision: row.revision,
+        name: row.name,
+        content: json(
+          L.localeTranslation.parse({
+            ...before,
+            terminology,
+            contexts,
+            provenance: 'manual',
+            items: catalog.entries.flatMap((entry) =>
+              items.has(entry.key) ? [items.get(entry.key)!] : [],
+            ),
+          }),
+        ),
+        references,
+      },
+      'result',
+      true,
+    );
+  }
   async revise(raw: z.infer<typeof L.localeRevise>) {
     const p = L.localeRevise.parse(raw),
       catalog = L.localeCatalog.parse((await this.fixed(scope(p), p.catalog)).content),

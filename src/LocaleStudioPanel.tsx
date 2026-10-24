@@ -232,6 +232,7 @@ function LocaleWorkspace({
     [note, setNote] = useState(''),
     [acknowledged, setAcknowledged] = useState<string[]>([]),
     [fallback, setFallback] = useState<'reject' | 'source'>('reject');
+  const [editorPosition, setEditorPosition] = useState({ offset: 0, search: '' });
   const [width, setWidth] = useState<'320' | '768' | '1280'>('320'),
     [pseudo, setPseudo] = useState(false),
     [before, setBefore] = useState('');
@@ -602,20 +603,37 @@ function LocaleWorkspace({
                 key={catalogId + ':' + translationId}
                 catalog={catalog.data}
                 translation={translation.success ? translation.data : undefined}
+                position={editorPosition}
+                onPosition={setEditorPosition}
                 onSave={(items) =>
                   run(async () => {
-                    const value = await invoke<S.SuiteRecord>('translations', 'revise', {
-                      ...s,
-                      ...(selectedTranslation
-                        ? { id: selectedTranslation.id, expectedRevision: selectedTranslation.revision }
-                        : {}),
-                      name: `${targetLanguage} 译文`,
-                      catalog: ref(selectedCatalog!),
-                      language: targetLanguage,
+                    if (
+                      selectedTranslation &&
+                      (!translation.success ||
+                        key(translation.data.catalog) !== key(selectedCatalog!) ||
+                        translation.data.language !== Intl.getCanonicalLocales(targetLanguage)[0])
+                    )
+                      throw new Error('先核对源文变化；更换目标语言须另建译文');
+                    const bindings = {
                       terminology: ref(choose('terminology', termId)),
                       contexts: contextId ? ref(choose('contexts', contextId)) : null,
-                      items,
-                    });
+                    };
+                    const value = selectedTranslation
+                      ? await invoke<S.SuiteRecord>('translations', 'applyDelta', {
+                          ...s,
+                          translation: ref(selectedTranslation),
+                          ...bindings,
+                          items,
+                          remove: [],
+                        })
+                      : await invoke<S.SuiteRecord>('translations', 'revise', {
+                          ...s,
+                          name: `${targetLanguage} 译文`,
+                          catalog: ref(selectedCatalog!),
+                          language: targetLanguage,
+                          ...bindings,
+                          items,
+                        });
                     setTranslationId(key(value));
                     return value;
                   }, '译文已对应当前源文保存')
@@ -1231,29 +1249,36 @@ function LocaleEditor({
   catalog,
   translation,
   onSave,
+  position,
+  onPosition,
 }: {
   catalog: LCatalog;
   translation?: LTranslation;
   onSave: (items: { key: string; text: string }[]) => Promise<void>;
+  position: { offset: number; search: string };
+  onPosition: (position: { offset: number; search: string }) => void;
 }) {
-  const [edits, setEdits] = useState(
-      () => new Map(translation?.items.map((item) => [item.key, item.text]) ?? []),
-    ),
-    [offset, setOffset] = useState(0),
-    [search, setSearch] = useState('');
+  const [edits, setEdits] = useState(new Map<string, string>()),
+    [dirty, setDirty] = useState(new Set<string>());
+  const saved = useMemo(
+    () => new Map(translation?.items.map((item) => [item.key, item] as const) ?? []),
+    [translation],
+  );
+  const { search } = position;
   const entries = catalog.entries.filter(
     (entry) => !search || entry.key.includes(search) || entry.text.includes(search),
   );
+  const offset = Math.min(position.offset, Math.floor(Math.max(0, entries.length - 1) / 50) * 50);
   return (
     <>
-      <p>{entries.length} 个键，每页 50 个。保存会生成对应当前源文的新修订。</p>
+      <p>{entries.length} 个键，每页 50 个。本页待保存 {dirty.size} 项；保存只更新本页修改，其余译文及过期状态保持。请先保存本页再翻页或搜索。</p>
       <label>
         查找文案
         <input
           value={search}
+          disabled={dirty.size > 0}
           onChange={(event) => {
-            setSearch(event.target.value);
-            setOffset(0);
+            onPosition({ search: event.target.value, offset: 0 });
           }}
         />
       </label>
@@ -1264,34 +1289,41 @@ function LocaleEditor({
             <p>{entry.text}</p>
             <textarea
               aria-label={`译文 ${entry.key}`}
-              value={edits.get(entry.key) ?? ''}
-              onChange={(event) =>
-                setEdits((previous) => new Map(previous).set(entry.key, event.target.value))
-              }
+              value={edits.get(entry.key) ?? saved.get(entry.key)?.text ?? ''}
+              onChange={(event) => {
+                setEdits((previous) => new Map(previous).set(entry.key, event.target.value));
+                setDirty((previous) => new Set(previous).add(entry.key));
+              }}
               maxLength={16384}
             />
-            {translation?.items.find((item) => item.key === entry.key)?.stale && (
-              <small className="suite-error">原译文已过期，请核对新的源文。</small>
+            {saved.get(entry.key)?.stale && (
+              <>
+                <small className="suite-error">原译文已过期，请核对新的源文。</small>
+                <button onClick={() => setDirty((previous) => new Set(previous).add(entry.key))}>
+                  已核对此项 {entry.key}，保留现有译法
+                </button>
+              </>
             )}
           </article>
         ))}
       </div>
-      <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>
+      <button disabled={dirty.size > 0 || offset === 0} onClick={() => onPosition({ search, offset: Math.max(0, offset - 50) })}>
         上一页译文
       </button>
-      <button disabled={offset + 50 >= entries.length} onClick={() => setOffset(offset + 50)}>
+      <button disabled={dirty.size > 0 || offset + 50 >= entries.length} onClick={() => onPosition({ search, offset: offset + 50 })}>
         下一页译文
       </button>
       <button
+        disabled={dirty.size === 0}
         onClick={() =>
           void onSave(
-            catalog.entries
-              .filter((entry) => edits.has(entry.key))
-              .map((entry) => ({ key: entry.key, text: edits.get(entry.key)! })),
+            entries.slice(offset, offset + 50)
+              .filter((entry) => dirty.has(entry.key))
+              .map((entry) => ({ key: entry.key, text: edits.get(entry.key) ?? saved.get(entry.key)?.text ?? '' })),
           )
         }
       >
-        保存当前源文的新译文
+        保存本页修改
       </button>
     </>
   );

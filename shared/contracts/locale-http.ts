@@ -57,6 +57,7 @@ export const localeHttpSchemas = {
     ),
   },
   translations: {
+    applyDelta: method(L.localeDelta, S.suiteRecord),
     ...controls(),
     revise: method(L.localeRevise, S.suiteRecord),
     markStale: method(select('translation').extend({ catalog: S.suiteRef }).strict(), S.suiteRecord),

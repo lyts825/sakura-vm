@@ -99,6 +99,16 @@ export const localeRevise = S.suiteScope
     targetCatalog: S.suiteRef.optional(),
   })
   .strict();
+export const localeDelta = S.suiteScope
+  .extend({
+    translation: S.suiteRef,
+    terminology: S.suiteRef.optional(),
+    contexts: S.suiteRef.nullable().optional(),
+    items: z.array(z.object({ key: localeKey, text: localeText }).strict()).max(50),
+    remove: z.array(localeKey).max(50).default([]),
+  })
+  .strict()
+  .refine((value) => value.items.length + value.remove.length > 0, '至少修改或移除一个键');
 export const localeFinding = z
   .object({
     id: S.suiteDigest,

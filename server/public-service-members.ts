@@ -2643,6 +2643,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
     "id": "sakura.service.locale-translations.v1",
     "version": 1,
     "members": [
+      "applyDelta",
       "archive",
       "cleanup",
       "get",
@@ -2664,6 +2665,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "suggestFromMemory"
     ],
     "methods": [
+      "applyDelta",
       "archive",
       "cleanup",
       "get",

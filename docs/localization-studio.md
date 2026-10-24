@@ -16,7 +16,7 @@ npm run sakura -- pack enable localization-studio
 
 1. 在「目录」上传源语言 JSON，可另行上传已有目标语言目录。
 2. 在「上下文与术语」填写使用说明、字符建议及固定术语。
-3. 在「译文」选择源文、目标语言和术语，逐键编辑并保存。
+3. 在「译文」选择源文、目标语言和术语，逐键编辑，保存本页修改后再翻页。
 4. 在「检查与预览」核对完整检查结果及固定组件窗口。
 5. 在「审阅与版本」填写理由，逐项确认缺项和长度建议，再预览本机版本。
 6. 批准固定计划后，下载语言文件或待应用补丁，也可交接完整材料。
@@ -39,6 +39,8 @@ npm run sakura -- pack enable localization-studio
 占位符支持 `{user}` 这样的标识符，按名称及出现次数比较。复杂复数、额外花括号和 HTML 明确拒绝。不能通过人工接受绕过过期译文、占位符、术语或禁用词错误。
 
 译文固定引用源文修订，并逐键保存源文摘要。源文变化后，使用「核对源文变化」生成新记录，变化项标为过期。重新编辑并显式保存后，才能针对新源文审阅；旧记录仍可查阅。
+
+编辑器每页 50 个键，只保存本页实际修改的键。其余条目的译文、源文摘要及过期状态保持。确认现有译法仍适用时，须逐项点击「已核对此项」，再保存本页修改。尚未保存时，翻页和搜索会暂时禁用；保存后保持当前页。
 
 翻译记忆只记录本空间已经接受且检查通过的本机译文。建议按语言、术语领域、文案键及源文摘要匹配。建议不会自动写入译文，也不会自动获得审阅状态。外来的接受记录不能登记为本机记忆。
 
@@ -74,6 +76,7 @@ npm run locale -- catalogs create-workspace create-space.json
 npm run locale -- upload <workspaceId> en.json --export
 npm run locale -- catalogs import-json catalog-input.json
 npm run locale -- translations revise translation-input.json
+npm run locale -- translations apply-delta delta-input.json
 npm run locale -- workbench run-checks check-input.json
 npm run locale -- reviews decide decision.json
 npm run locale -- releases preview release-input.json
@@ -83,6 +86,8 @@ npm run locale -- releases make-patch release-input-ref.json
 ```
 
 固定引用格式为 `{domain,id,revision}`。发布输入包含 `workspaceId/catalog/translations/reviews/fallback`，批准包含 `workspaceId/planId/digest`。`language-file` 只写入指定的新文件，拒绝覆盖已有路径。
+
+`apply-delta` 输入为 `workspaceId/translation/items/remove`，其中 `translation` 是当前固定引用，`items` 是 `{key,text}` 数组，`remove` 是待移除的键数组。每次最多修改 50 个键、移除 50 个键；重复键、未知键和旧修订覆盖会拒绝。CLI 参数文件限 1 MiB，长文案建议每批最多 25 项。可选 `terminology/contexts` 变更会形成新修订，仍须重新检查和审阅；原材料的许可引用继续保留。
 
 HTTP 为 `POST /api/locale-<领域>/<动作>`，动作使用连字符，例如 `import-json` 和 `publish-local`。每个入口都有严格输入、响应及所有者策略。容量、内部记忆登记和保护引用写入不开放 HTTP。
 
@@ -99,7 +104,7 @@ node scripts/cli.mjs locale verify localization-studio.zip
 
 每包 2 GiB，元数据上限 128 MiB，包含 32 MiB 控制预算。单目录 32 MiB、50,000 个键，单值按 UTF-8 最多 16 KiB。检查在有界工作线程执行，当前限 60 秒。语言版本单文件最多 2 MiB、全部语言文件合计 8 MiB；交接包最多 16 MiB。超限会拒绝，保持原材料，不截断检查或交接结果。
 
-目录原文支持分块上传。译文保存还须满足 2 MiB 的 HTTP 控制请求上限；CLI 参数文件最多 1 MiB。较大的整套译文需要后续的分段修订接口，当前不会拆分后静默丢弃条目。
+目录原文支持分块上传。首次导入整套大译文时，先上传目标语言目录，再用 `revise` 的 `targetCatalog` 引用；后续使用 `apply-delta` 分段修订。整套译文可以大于 2 MiB，单次 HTTP 请求仍限 2 MiB、CLI 参数文件仍限 1 MiB；保留元数据总额限制，超限会拒绝整次修订。
 
 「历史与清理」支持后续分页、保护引用、归档、清理预览和材料暂存取消。未知清理保留原计划，跨代次恢复须重新预览。已被引用的历史不能直接删除。
 

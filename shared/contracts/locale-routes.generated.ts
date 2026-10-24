@@ -69,6 +69,7 @@ export const localeRouteMetadata = {
     "lookup": true
   },
   "translations": {
+    "applyDelta": false,
     "publications": true,
     "previewPublicationRecovery": false,
     "recoverPublication": false,

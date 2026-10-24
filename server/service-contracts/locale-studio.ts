@@ -35,6 +35,7 @@ export interface LocaleTerminologyV1 extends SuiteRecordsV1 {
   ): Promise<z.infer<typeof L.localeTerm>[]>;
 }
 export interface LocaleTranslationsV1 extends SuiteRecordsV1 {
+  applyDelta(input: z.input<typeof L.localeDelta>): Promise<SuiteRecord>;
   revise(input: z.infer<typeof L.localeRevise>): Promise<SuiteRecord>;
   markStale(input: SuiteScope & { translation: SuiteRef; catalog: SuiteRef }): Promise<SuiteRecord>;
   remember(input: z.infer<typeof L.localeMemoryInput>): Promise<SuiteRecord>;

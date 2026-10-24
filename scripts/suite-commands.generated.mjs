@@ -261,6 +261,7 @@ export const suiteCommands = Object.freeze({
       "lookup"
     ],
     "translations": [
+      "apply-delta",
       "publications",
       "preview-publication-recovery",
       "recover-publication",
