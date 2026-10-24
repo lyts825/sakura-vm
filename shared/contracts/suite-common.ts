@@ -329,3 +329,5 @@ export interface SuiteMaterialsV1 extends SuiteWorkspacePortV1, SuiteRecordsV1 {
   ): Promise<SuitePlan>;
   applyPolicy(input: SuiteApproval): Promise<SuiteRecord>;
 }
+/** 仅材料与记录方法；独立字节提供者不代办根账本的容量或空间操作。 */
+export type SuiteByteMaterialsV1 = Omit<SuiteMaterialsV1, keyof SuiteWorkspacePortV1>;
