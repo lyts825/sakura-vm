@@ -184,6 +184,11 @@ export const supplyHttpSchemas = {
   },
   reports: { ...controls(), seal: method(A.supplySeal, record), compare: method(A.supplyCompare, record) },
   exchange: {
+    quarantines: method(scope, z.array(S.suiteQuarantine).max(2050), true),
+    previewQuarantineDiscard: method(scope.extend({ targetWorkspaceId: S.suiteId }).strict(), S.suitePlan),
+    discardQuarantine: method(S.suiteApproval, record),
+    previewImportRecovery: method(scope.extend({ receipt: ref }).strict(), S.suitePlan),
+    recoverImport: method(S.suiteApproval, record),
     ...controls(),
     previewExport: method(scope.extend({ references: z.array(ref).min(1).max(1000) }).strict(), S.suitePlan),
     export: method(S.suiteApproval, record),

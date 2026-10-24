@@ -947,6 +947,7 @@ function LocaleWorkspace({
             run={run}
             preview={preview}
             onAccepted={onSpacesChanged}
+            downloadName="localization-studio.zip"
           />
         )}
         {tab === '历史与清理' && (
@@ -1207,7 +1208,7 @@ function LocaleWorkspace({
                 digest: plan.value.digest,
               });
               if (plan.action === 'publishLocal' || plan.action === 'rollback') setReleaseId(key(value));
-              if (plan.action === 'acceptImport') await onSpacesChanged();
+              if (['acceptImport', 'recoverImport'].includes(plan.action)) await onSpacesChanged();
               setPlan(undefined);
               return value;
             }, '原计划已执行，结果已保存')

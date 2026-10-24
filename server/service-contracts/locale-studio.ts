@@ -13,6 +13,7 @@ import type {
   SuiteMaterialsV1,
   SuiteRecordsV1,
   SuiteUpload,
+  SuiteQuarantine,
 } from '../../shared/contracts/suite-common.ts';
 export interface LocaleCatalogsV1 extends SuiteMaterialsV1 {
   upload(input: SuiteScope & { name: string; text: string; allowExport?: boolean }): Promise<SuiteRecord>;
@@ -53,9 +54,7 @@ export interface LocaleTranslationsV1 extends SuiteRecordsV1 {
 }
 export interface LocaleChecksV1 extends SuiteRecordsV1 {
   evaluate(input: z.infer<typeof L.localeCheckInput>): Promise<SuiteRecord>;
-  explain(
-    input: SuiteScope & { check: SuiteRef; key?: string },
-  ): Promise<{
+  explain(input: SuiteScope & { check: SuiteRef; key?: string }): Promise<{
     total: number;
     translated: number;
     result: 'passed' | 'failed';
@@ -82,6 +81,11 @@ export interface LocaleReleasesV1 extends SuiteRecordsV1 {
   makePatch(input: SuiteScope & { release: SuiteRef }): Promise<SuiteRecord>;
 }
 export interface LocaleExchangeV1 extends SuiteRecordsV1 {
+  quarantines(input: SuiteScope): Promise<SuiteQuarantine[]>;
+  previewQuarantineDiscard(input: SuiteScope & { targetWorkspaceId: string }): Promise<SuitePlan>;
+  discardQuarantine(input: SuiteApproval): Promise<SuiteRecord>;
+  previewImportRecovery(input: SuiteScope & { receipt: SuiteRef }): Promise<SuitePlan>;
+  recoverImport(input: SuiteApproval): Promise<SuiteRecord>;
   previewExport(input: SuiteScope & { references: SuiteRef[] }): Promise<SuitePlan>;
   export(input: SuiteApproval): Promise<SuiteRecord>;
   download(
@@ -109,9 +113,7 @@ export interface LocaleWorkbenchV1 extends SuiteRecordsV1 {
       pseudo?: boolean;
     },
   ): Promise<{ run: SuiteRecord; check: SuiteRecord; preview: SuiteRecord; review: SuiteRecord }>;
-  view(input: {
-    workspaceId?: string;
-  }): Promise<{
+  view(input: { workspaceId?: string }): Promise<{
     workspaces: SuiteWorkspace[];
     workspace: SuiteWorkspace | null;
     capacity: { used: number; reserved: number; limit: number; metadataLimit: number } | null;

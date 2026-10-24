@@ -92,6 +92,10 @@ HTTP 使用 `POST /api/supply-<领域>/<动作>`。URL 中的动作使用连字�
 
 「交接暂存」列出上传和导出暂存。无效或不再使用的上传可取消，核销后保留回执。已有正式交接记录保护的字节须先归档并清理对应记录。下载已生成的 ZIP 时，仍会复核原材料的当前导出许可。
 
+「接收中断恢复」区分两种情况：尚未发布的隔离空间可在核对完整清单后批准核销；已发布空间的待确认回执须复核原 ID、修订、许可和实际字节后确认。未知占用会阻止隔离关闭并保留原账本。核销回执及清理证据保存在原接收空间；代次变化后重新预览。
+
+CLI 的 `exchange quarantines` 查询隔离记录，`exchange preview-quarantine-discard` 接收 `workspaceId/targetWorkspaceId`，再用 `exchange discard-quarantine` 提交批准。接收回执恢复使用 `exchange preview-import-recovery`，输入为 `workspaceId/receipt`，再用 `exchange recover-import` 提交批准。两种恢复均不重新执行业务动作，也不转移外来审批。
+
 ```powershell
 # 不需要启动宿主，不访问网络。
 node scripts/cli.mjs supply verify supply-audit.zip
@@ -110,4 +114,4 @@ node scripts/cli.mjs supply verify supply-audit.zip
 
 每包总额度 2 GiB，元数据上限 128 MiB，另保留 32 MiB 控制预算。普通领域元数据写入限制为 96 MiB。单锁文件解析最多 32 MiB，公告最多 64 MiB。上传按完整声明大小预留，支持分块和取消；多次元数据提交会按实际存储槽位核销。
 
-尚需补齐接收过程在进程中断后的隔离空间核销，以及全局多包额度门禁。这些缺口使本包暂不计为十包整体的完整验收。开发模式另有审计等待复现，编译服务的正常流程已通过实测；排查和后续验证见项目状态。
+全局多包额度门禁仍待补齐，本包暂不计为十包整体的完整验收。开发模式另有审计等待复现，编译服务的正常流程已通过实测；排查和后续验证见项目状态。

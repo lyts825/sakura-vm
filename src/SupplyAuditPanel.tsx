@@ -9,12 +9,11 @@ import {
   suiteReference as ref,
   suiteReferenceKey as key,
   suiteBase64,
-  suiteUnbase64,
   suiteDigest,
-  suiteDownload,
 } from './suite-client';
 import './suite-workbench.css';
 import { SuitePlanDialog } from './SuitePlanDialog';
+import { SuiteExchangePanel } from './SuiteExchangePanel';
 import { SuitePublicationRecoveryPanel } from './SuitePublicationRecoveryPanel';
 const names: Record<SupplyDomain, string> = {
   sources: '材料与许可',
@@ -200,7 +199,8 @@ function SupplyWorkspace({
     [notice, setNotice] = useState(''),
     [busy, setBusy] = useState(false);
   const pending = useRef(false),
-    alive = useRef(true);
+    alive = useRef(true),
+    previewSequence = useRef(0);
   const [source, setSource] = useState(''),
     [advisory, setAdvisory] = useState(''),
     [policy, setPolicy] = useState(''),
@@ -217,9 +217,7 @@ function SupplyWorkspace({
   const [note, setNote] = useState(''),
     [exceptions, setExceptions] = useState<string[]>([]),
     [expires, setExpires] = useState('');
-  const [exportRefs, setExportRefs] = useState<string[]>([]),
-    [bundle, setBundle] = useState<File>(),
-    [domain, setDomain] = useState<SupplyDomain>('sources'),
+  const [domain, setDomain] = useState<SupplyDomain>('sources'),
     [method, setMethod] = useState('list'),
     [input, setInput] = useState('{}');
   const [plan, setPlan] = useState<{ value: S.SuitePlan; domain: SupplyDomain; method: string }>();
@@ -279,6 +277,7 @@ function SupplyWorkspace({
   const run = async (work: () => Promise<unknown>, message = '操作已保存', reload = true) => {
     if (pending.current) return;
     pending.current = true;
+    const beforePreview = previewSequence.current;
     setBusy(true);
     setError('');
     setNotice('');
@@ -286,7 +285,7 @@ function SupplyWorkspace({
       const value = await work();
       if (!alive.current) return;
       if (value && typeof value === 'object' && 'revision' in value) setResult(value as S.SuiteRecord);
-      if (reload) await refresh();
+      if (reload && beforePreview === previewSequence.current) await refresh();
       if (alive.current) setNotice((current) => current || message);
     } catch (e) {
       if (alive.current && (e as Error).name !== 'AbortError') {
@@ -303,7 +302,9 @@ function SupplyWorkspace({
     }
   };
   const preview = async (d: SupplyDomain, action: string, payload: unknown, apply: string) => {
-    setPlan({ value: await invoke<S.SuitePlan>(d, action, payload), domain: d, method: apply });
+    const value = await invoke<S.SuitePlan>(d, action, payload);
+    previewSequence.current++;
+    setPlan({ value, domain: d, method: apply });
   };
   const upload = async () => {
     if (!file)
@@ -729,165 +730,18 @@ function SupplyWorkspace({
           </section>
         )}
         {tab === '离线交接' && (
-          <div className="suite-grid">
-            <article>
-              <h2>导出审查证据</h2>
-              <p>选择报告或检查结果。预览会核对完整引用图、原文导出许可与字节上限；当前交接包上限 16 MiB。</p>
-              {(['reports', 'policies', 'provenance'] as SupplyDomain[]).flatMap((d) =>
-                list(d)
-                  .filter((r) => r.state === 'sealed')
-                  .map((r) => (
-                    <label className="suite-check" key={d + key(r)}>
-                      <input
-                        type="checkbox"
-                        checked={exportRefs.includes(d + ':' + key(r))}
-                        onChange={(e) =>
-                          setExportRefs(
-                            e.target.checked
-                              ? [...exportRefs, d + ':' + key(r)]
-                              : exportRefs.filter((x) => x !== d + ':' + key(r)),
-                          )
-                        }
-                      />
-                      {names[d]} · {r.name} · {r.revision.slice(0, 8)}
-                    </label>
-                  )),
-              )}
-              <button
-                disabled={!exportRefs.length}
-                onClick={() =>
-                  void run(
-                    () =>
-                      preview(
-                        'exchange',
-                        'previewExport',
-                        {
-                          ...s,
-                          references: exportRefs.map((value) => {
-                            const d = value.split(':')[0] as SupplyDomain;
-                            return take(d, value.slice(d.length + 1));
-                          }),
-                        },
-                        'export',
-                      ),
-                    '完整材料已固定，请批准导出',
-                  )
-                }
-              >
-                预览导出
-              </button>
-              {list('exchange')
-                .filter(
-                  (r) =>
-                    r.content &&
-                    typeof r.content === 'object' &&
-                    !Array.isArray(r.content) &&
-                    r.content.format === 'sakura-suite-export/1',
-                )
-                .map((r) => (
-                  <div className="suite-card" key={key(r)}>
-                    <strong>{r.name}</strong>
-                    <button
-                      onClick={() =>
-                        void run(async () => {
-                          const chunks: Uint8Array[] = [];
-                          let offset = 0;
-                          for (;;) {
-                            const part = await invoke<{ data: string; offset: number; eof: boolean }>(
-                              'exchange',
-                              'download',
-                              { ...s, id: r.id, revision: r.revision, offset, length: 512 * 1024 },
-                            );
-                            chunks.push(suiteUnbase64(part.data));
-                            if (!part.eof && part.offset <= offset) throw new Error('下载未前进');
-                            offset = part.offset;
-                            if (offset > 16 * 1024 ** 2) throw new Error('下载超限');
-                            if (part.eof) break;
-                          }
-                          const bytes = new Uint8Array(offset);
-                          let pos = 0;
-                          for (const c of chunks) {
-                            bytes.set(c, pos);
-                            pos += c.length;
-                          }
-                          const content = r.content as Record<string, S.SuiteJson>;
-                          if ((await suiteDigest(bytes)) !== content.digest)
-                            throw new Error('交接包摘要不一致');
-                          suiteDownload(bytes, 'supply-audit.zip');
-                        }, '下载已核对摘要')
-                      }
-                    >
-                      下载 ZIP
-                    </button>
-                  </div>
-                ))}
-            </article>
-            <article>
-              <h2>隔离接收</h2>
-              <label>
-                交接 ZIP
-                <input type="file" accept=".zip" onChange={(e) => setBundle(e.target.files?.[0])} />
-              </label>
-              <button
-                disabled={!bundle}
-                onClick={() =>
-                  void run(async () => {
-                    if (!bundle || bundle.size > 16 * 1024 ** 2) throw new Error('交接包最多 16 MiB');
-                    const bytes = new Uint8Array(await bundle.arrayBuffer()),
-                      upload = await invoke<S.SuiteUpload>('exchange', 'beginImport', {
-                        ...s,
-                        name: bundle.name,
-                        bytes: bytes.length,
-                        digest: await suiteDigest(bytes),
-                      });
-                    for (let offset = 0; offset < bytes.length; offset += 512 * 1024)
-                      await invoke('exchange', 'appendImport', {
-                        ...s,
-                        id: upload.id,
-                        offset,
-                        data: suiteBase64(bytes.subarray(offset, offset + 512 * 1024)),
-                      });
-                    const inspection = await invoke<{ inspection: S.SuiteRecord; plan: S.SuitePlan }>(
-                      'exchange',
-                      'inspectImport',
-                      { ...s, id: upload.id },
-                    );
-                    setResult(inspection.inspection);
-                    setPlan({ value: inspection.plan, domain: 'exchange', method: 'acceptImport' });
-                  }, '完整性核对完成；接受后创建新的空间和 ID')
-                }
-              >
-                上传并核对
-              </button>
-              <p>导入的审批和信任状态不生效，来源保持未认证。重新选择空间可打开已接受的档案。</p>
-              <h3>交接暂存</h3>
-              <p>共 {transfers.length} 项，显示最近 50 项。未被正式记录引用的暂存可取消并核销容量。</p>
-              {transfers
-                .slice(-50)
-                .reverse()
-                .map((transfer) => (
-                  <div className="suite-card" key={transfer.id}>
-                    <strong>{transfer.name}</strong>
-                    <p>
-                      {transfer.state} · {bytesLabel(transfer.offset)} / {bytesLabel(transfer.bytes)}
-                    </p>
-                    <code>{transfer.id}</code>
-                    {transfer.state !== 'discarded' && (
-                      <button
-                        onClick={() =>
-                          void run(
-                            () => invoke('exchange', 'discardImport', { ...s, id: transfer.id }),
-                            '暂存已取消，原资源已核销',
-                          )
-                        }
-                      >
-                        取消暂存
-                      </button>
-                    )}
-                  </div>
-                ))}
-            </article>
-          </div>
+          <SuiteExchangePanel
+            invoke={invoke}
+            workspaceId={workspaceId}
+            domains={names}
+            records={Object.fromEntries((Object.keys(names) as SupplyDomain[]).map((d) => [d, list(d)]))}
+            transfers={transfers}
+            busy={busy}
+            run={run}
+            preview={(d, action, input, apply) => preview(d as SupplyDomain, action, input, apply)}
+            onAccepted={onWorkspacesChanged}
+            downloadName="supply-audit.zip"
+          />
         )}
         {tab === '历史与清理' && (
           <section>
@@ -1078,7 +932,7 @@ function SupplyWorkspace({
                 planId: plan.value.id,
                 digest: plan.value.digest,
               });
-              if (plan.method === 'acceptImport') await onWorkspacesChanged();
+              if (['acceptImport', 'recoverImport'].includes(plan.method)) await onWorkspacesChanged();
               setPlan(undefined);
               return value;
             }, '原计划已执行，结果已保存')

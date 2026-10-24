@@ -1,5 +1,6 @@
 /** 工作台共用交接视图；所有读取和批准仍由所属领域服务核验。 */
 import { useState } from 'react';
+import { SuiteImportRecoveryPanel } from './SuiteImportRecoveryPanel';
 import type * as S from '../shared/contracts/suite-common';
 import {
   suiteReference as ref,
@@ -20,6 +21,7 @@ export function SuiteExchangePanel({
   run,
   preview,
   onAccepted,
+  downloadName,
 }: {
   invoke: Invoke;
   workspaceId: string;
@@ -30,6 +32,7 @@ export function SuiteExchangePanel({
   run: (work: () => Promise<unknown>, message?: string) => Promise<void>;
   preview: (domain: string, action: string, input: unknown, apply: string) => Promise<void>;
   onAccepted: () => Promise<void>;
+  downloadName: string;
 }) {
   const [selected, setSelected] = useState<string[]>([]),
     [bundle, setBundle] = useState<File>();
@@ -132,7 +135,7 @@ export function SuiteExchangePanel({
                     (await suiteDigest(bytes)) !== row.content.digest
                   )
                     throw new Error('交接包摘要不同');
-                  suiteDownload(bytes, 'localization-studio.zip');
+                  suiteDownload(bytes, downloadName);
                 }, '下载已核对摘要')
               }
             >
@@ -211,6 +214,14 @@ export function SuiteExchangePanel({
             </div>
           ))}
       </article>
+      <SuiteImportRecoveryPanel
+        workspaceId={workspaceId}
+        records={records.exchange ?? []}
+        invoke={invoke}
+        busy={busy}
+        run={run}
+        preview={preview}
+      />
     </div>
   );
 }

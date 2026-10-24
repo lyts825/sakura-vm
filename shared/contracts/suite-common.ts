@@ -142,6 +142,28 @@ export const suitePublicationPage = z
   .object({ items: z.array(suitePublication).max(100), next: z.number().int().min(0).nullable() })
   .strict();
 export type SuitePublicationPage = z.infer<typeof suitePublicationPage>;
+export const suiteQuarantine = z
+  .object({
+    workspace: suiteWorkspace,
+    disposition: z.enum(['pending', 'discarded']),
+    discardedAt: z.iso.datetime().nullable(),
+    receipt: z.object({ workspaceId: suiteId, reference: suiteRef }).strict().nullable(),
+    reservations: z
+      .array(
+        z
+          .object({
+            id: suiteId,
+            kind: z.enum(['material', 'temporary']),
+            bytes: z.number().int().min(0),
+            consumer: z.string().max(512),
+            state: z.enum(['reserved', 'committed']),
+          })
+          .strict(),
+      )
+      .max(50000),
+  })
+  .strict();
+export type SuiteQuarantine = z.infer<typeof suiteQuarantine>;
 export const suiteQuota = z
   .object({
     id: suiteId,
@@ -194,6 +216,15 @@ export interface SuiteRecordsV1 {
   ): Promise<SuiteRecord>;
 }
 export interface SuiteWorkspacePortV1 {
+  quarantines(): Promise<SuiteQuarantine[]>;
+  withQuarantine(
+    input: SuiteScope & { expectedRevision: number },
+    work: (scope: SuiteScope) => Promise<SuiteJson>,
+  ): Promise<SuiteJson>;
+  retireQuarantine(
+    input: SuiteScope & { expectedRevision: number; receiptWorkspaceId: string },
+    work: (scope: SuiteScope) => Promise<SuiteRef>,
+  ): Promise<SuiteQuarantine>;
   createWorkspace(input: { name: string }): Promise<SuiteWorkspace>;
   listWorkspaces(): Promise<SuiteWorkspace[]>;
   workspace(input: SuiteScope): Promise<SuiteWorkspace>;

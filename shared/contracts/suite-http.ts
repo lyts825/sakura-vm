@@ -113,6 +113,14 @@ export const suiteMaterialMethods = () => ({
   applyPolicy: suiteMethod(S.suiteApproval, S.suiteRecord),
 });
 export const suiteExchangeMethods = () => ({
+  quarantines: suiteMethod(S.suiteScope, z.array(S.suiteQuarantine).max(2050), true),
+  previewQuarantineDiscard: suiteMethod(
+    S.suiteScope.extend({ targetWorkspaceId: S.suiteId }).strict(),
+    S.suitePlan,
+  ),
+  discardQuarantine: suiteMethod(S.suiteApproval, S.suiteRecord),
+  previewImportRecovery: suiteMethod(S.suiteScope.extend({ receipt: S.suiteRef }).strict(), S.suitePlan),
+  recoverImport: suiteMethod(S.suiteApproval, S.suiteRecord),
   ...suiteControls(),
   previewExport: suiteMethod(
     S.suiteScope.extend({ references: z.array(S.suiteRef).min(1).max(100) }).strict(),

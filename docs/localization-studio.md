@@ -105,4 +105,8 @@ node scripts/cli.mjs locale verify localization-studio.zip
 
 「原发布与引用核对」列出跨插件保存的持久意图。恢复会核对原字节修订，只确认已保存对象，或释放未发布对象自己的保护引用。恢复不重新检查或发布语言版本；代次变化后必须重新预览。
 
-公共接收中断后的隔离空间核销及跨包全局额度仍在开发，详见项目状态。本包暂不计为十包整体完整验收，尚未加入 `complete`。
+「接收中断恢复」可查询尚未发布的隔离空间，预览原对象和容量占用后批准核销。未知占用会阻止关闭，保留账本。已发布但回执未确认时，须复核原对象和实际字节后确认接收，保持原 ID，不重新执行发布或转移审批。核销回执及原清理证据保存在接收空间；代次变化后重新预览。
+
+CLI 的 `exchange quarantines` 查询隔离记录；`exchange preview-quarantine-discard` 接收 `workspaceId/targetWorkspaceId`，`exchange discard-quarantine` 提交批准。接收确认使用 `exchange preview-import-recovery`，输入为 `workspaceId/receipt`，再用 `exchange recover-import` 提交批准。
+
+跨包全局额度仍在开发，详见项目状态。本包暂不计为十包整体完整验收，尚未加入 `complete`。

@@ -147,6 +147,11 @@ export const supplyRouteMetadata = {
     "compare": false
   },
   "exchange": {
+    "quarantines": true,
+    "previewQuarantineDiscard": false,
+    "discardQuarantine": false,
+    "previewImportRecovery": false,
+    "recoverImport": false,
     "publications": true,
     "previewPublicationRecovery": false,
     "recoverPublication": false,

@@ -31,7 +31,8 @@ export const suiteReference = (row: { domain: string; id: string; revision: stri
   id: row.id,
   revision: row.revision,
 });
-export const suiteReferenceKey = (row: { id: string; revision: string }) => row.id + ':' + row.revision;
+export const suiteReferenceKey = (row: { domain: string; id: string; revision: string }) =>
+  row.domain + ':' + row.id + ':' + row.revision;
 export function suiteBase64(bytes: Uint8Array) {
   let text = '';
   for (let offset = 0; offset < bytes.length; offset += 16384)

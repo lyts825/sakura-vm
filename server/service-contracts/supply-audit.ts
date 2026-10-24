@@ -13,6 +13,7 @@ import type {
   SuiteApproval,
   SuiteWorkspace,
   SuiteUpload,
+  SuiteQuarantine,
 } from '../../shared/contracts/suite-common.ts';
 export interface SupplySourcesV1 extends SuiteMaterialsV1 {
   upload(input: z.input<typeof A.supplyUploadText>): Promise<SuiteRecord>;
@@ -59,6 +60,11 @@ export interface SupplyReportsV1 extends SuiteRecordsV1 {
   compare(input: z.infer<typeof A.supplyCompare>): Promise<SuiteRecord>;
 }
 export interface SupplyExchangeV1 extends SuiteRecordsV1 {
+  quarantines(input: SuiteScope): Promise<SuiteQuarantine[]>;
+  previewQuarantineDiscard(input: SuiteScope & { targetWorkspaceId: string }): Promise<SuitePlan>;
+  discardQuarantine(input: SuiteApproval): Promise<SuiteRecord>;
+  previewImportRecovery(input: SuiteScope & { receipt: SuiteRef }): Promise<SuitePlan>;
+  recoverImport(input: SuiteApproval): Promise<SuiteRecord>;
   previewExport(input: SuiteScope & { references: SuiteRef[] }): Promise<SuitePlan>;
   export(input: SuiteApproval): Promise<SuiteRecord>;
   download(
@@ -81,9 +87,7 @@ export interface SupplyWorkbenchV1 extends SuiteRecordsV1 {
   runChecks(
     input: SuiteScope & { source: SuiteRef; advisorySource: SuiteRef; policy: SuiteRef },
   ): Promise<{ run: SuiteRecord; evaluation: SuiteRecord; review: SuiteRecord }>;
-  view(input: {
-    workspaceId?: string;
-  }): Promise<{
+  view(input: { workspaceId?: string }): Promise<{
     workspaces: SuiteWorkspace[];
     workspace: SuiteWorkspace | null;
     capacity: { used: number; reserved: number; limit: number; metadataLimit: number } | null;

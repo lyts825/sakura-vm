@@ -763,4 +763,20 @@ export class SuiteMaterials extends SuiteRoot implements S.SuiteMaterialsV1 {
     await this.uploadTail;
     await super.close();
   }
+  protected override async assertQuarantineEmpty(scope: S.SuiteScope): Promise<void> {
+    await super.assertQuarantineEmpty(scope);
+    const ledger = await this.ledger();
+    if (
+      ledger.uploads.some(
+        (upload) => upload.workspaceId === scope.workspaceId && upload.state !== 'discarded',
+      ) ||
+      ledger.leases.some(
+        (lease) =>
+          lease.workspaceId === scope.workspaceId &&
+          lease.state === 'active' &&
+          Date.parse(lease.expiresAt) > Date.now(),
+      )
+    )
+      suiteFail('SUITE_QUARANTINE_MATERIAL_UNKNOWN', '隔离上传或读取租约尚未确认结束');
+  }
 }

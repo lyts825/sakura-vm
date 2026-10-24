@@ -2,14 +2,8 @@
 import { z } from 'zod';
 import type { PluginMetadata } from './plugin-metadata.ts';
 import * as S from '../shared/contracts/suite-common.ts';
-import {
-  SuiteStore,
-  suiteCanonical,
-  suiteHash,
-  suiteSha,
-  suiteFail,
-  type SuiteAuthorize,
-} from './suite-store.ts';
+import { suiteCanonical, suiteHash, suiteSha, suiteFail, type SuiteAuthorize } from './suite-store.ts';
+import { SuiteQuarantineExchange } from './suite-quarantine.ts';
 import { SuiteMaterials } from './suite-materials.ts';
 import { encodeSuiteBundle, decodeSuiteBundle, SUITE_BUNDLE_LIMIT } from '../scripts/suite-bundle.mjs';
 import { parseSuiteJson } from '../shared/suite-json.ts';
@@ -43,21 +37,49 @@ const importContent = z
   })
   .strict();
 type Graph = { rows: S.SuiteRecord[]; material: Map<string, Buffer>; manifestDigest: string };
-export class SuiteExchange extends SuiteStore {
+const receiptContent = z
+  .object({
+    format: z.literal('sakura-suite-receipt/1'),
+    planId: S.suiteId,
+    workspaceId: S.suiteId,
+    manifestDigest: S.suiteDigest,
+    sourceTrust: z.literal('unauthenticated'),
+    mapping: z
+      .array(z.object({ from: z.string().min(1).max(200), to: S.suiteRef }).strict())
+      .min(1)
+      .max(1000),
+    state: z.enum(['staged', 'accepted']),
+    approvalsTransferred: z.literal(false),
+    workspacePolicyRevision: z.number().int().positive().optional(),
+  })
+  .strict();
+const receiptInput = S.suiteScope.extend({ receipt: S.suiteRef }).strict();
+const acceptedSnapshot = z
+  .object({
+    workspaceRevision: z.number().int().positive(),
+    mappingDigest: S.suiteDigest,
+    guards: z
+      .array(
+        z
+          .object({
+            reference: S.suiteRef,
+            policyRevision: z.number().int().positive(),
+            policyDigest: S.suiteDigest,
+          })
+          .strict(),
+      )
+      .max(1000),
+  })
+  .strict();
+export class SuiteExchange extends SuiteQuarantineExchange {
   private files: SuiteMaterials;
-  private transferTail: Promise<unknown> = Promise.resolve();
-  private serializeTransfer<T>(work: () => Promise<T>): Promise<T> {
-    const pending = this.transferTail.then(work);
-    this.transferTail = pending.catch(() => {});
-    return pending;
-  }
   constructor(
     domain: string,
     metadata: PluginMetadata,
     blobMetadata: PluginMetadata,
     uploads: PluginMetadata,
     auth: SuiteAuthorize,
-    private sources: S.SuiteMaterialsV1,
+    sources: S.SuiteMaterialsV1,
     peers: Readonly<Record<string, S.SuiteRecordsV1>>,
     private format: string,
     private sanitize: (domain: string, kind: S.SuiteRecord['kind'], value: S.SuiteJson) => S.SuiteJson,
@@ -182,6 +204,9 @@ export class SuiteExchange extends SuiteStore {
   }
   private sourcesDomain() {
     return this.options.sourceDomain ?? this.domain.split('-')[0] + '-sources';
+  }
+  protected override sourcesDomainForQuarantine(): string {
+    return this.sourcesDomain();
   }
   protected override async releaseOwned(scope: S.SuiteScope, record: S.SuiteRecord): Promise<void> {
     return this.serializeTransfer(() => this.releaseOwnedTransfer(scope, record));
@@ -475,6 +500,9 @@ export class SuiteExchange extends SuiteStore {
     return value;
   }
   async acceptImport(raw: S.SuiteApproval) {
+    return this.serializeTransfer(() => this.acceptTransfer(raw));
+  }
+  private async acceptTransfer(raw: S.SuiteApproval) {
     const plan = await this.consume(raw, 'accept-import'),
       originalScope = { workspaceId: plan.workspaceId };
     if (plan.state === 'completed' && plan.result)
@@ -492,60 +520,64 @@ export class SuiteExchange extends SuiteStore {
     if (suiteSha(bytes) !== inspection.digest || graph.manifestDigest !== input.manifestDigest)
       suiteFail('SUITE_IMPORT_CHANGED');
     let receipt: S.SuiteRecord | undefined;
-    const accepted = await this.sources.acceptWorkspace({ name: this.options.receivedName ?? '接收的档案' }, async (destination) => {
-      const ids = new Map<string, S.SuiteRef>();
-      for (const row of graph.rows) {
-        let result: S.SuiteRecord;
-        if (row.kind === 'source') {
-          const data = graph.material.get(key(reference(row)))!,
-            material = S.suiteMaterial.parse(row.content);
-          const upload = await this.sources.beginUpload({
-            ...destination,
-            name: row.name,
-            format: S.suiteUploadInput.shape.format.parse(material.format),
-            bytes: data.length,
-            digest: suiteSha(data),
-            allowExport: false,
-          });
-          for (let offset = 0; offset < data.length; offset += 512 * 1024)
-            await this.sources.appendUpload({
+    const accepted = await this.sources.acceptWorkspace(
+      { name: this.options.receivedName ?? '接收的档案' },
+      async (destination) => {
+        const ids = new Map<string, S.SuiteRef>();
+        for (const row of graph.rows) {
+          let result: S.SuiteRecord;
+          if (row.kind === 'source') {
+            const data = graph.material.get(key(reference(row)))!,
+              material = S.suiteMaterial.parse(row.content);
+            const upload = await this.sources.beginUpload({
               ...destination,
-              id: upload.id,
-              offset,
-              data: data.subarray(offset, offset + 512 * 1024).toString('base64'),
+              name: row.name,
+              format: S.suiteUploadInput.shape.format.parse(material.format),
+              bytes: data.length,
+              digest: suiteSha(data),
+              allowExport: false,
             });
-          result = await this.sources.finishUpload({ ...destination, id: upload.id });
-        } else
-          result = await this.peer(row.domain).importRecord({
-            ...destination,
-            name: row.name,
-            kind: row.kind,
-            content: this.sanitize(row.domain, row.kind, this.remap(row.content, ids)),
-            references: row.references.map((r) => ids.get(key(r))!),
-          });
-        ids.set(key(reference(row)), reference(result));
-      }
-      receipt = await this.put(
-        {
-          ...originalScope,
-          name: '接收对象映射',
-          references: [input.inspection],
-          content: {
-            format: 'sakura-suite-receipt/1',
-            planId: plan.id,
-            workspaceId: destination.workspaceId,
-            manifestDigest: graph.manifestDigest,
-            sourceTrust: 'unauthenticated',
-            mapping: [...ids].map(([from, to]) => ({ from, to })),
-            state: 'staged',
-            approvalsTransferred: false,
+            for (let offset = 0; offset < data.length; offset += 512 * 1024)
+              await this.sources.appendUpload({
+                ...destination,
+                id: upload.id,
+                offset,
+                data: data.subarray(offset, offset + 512 * 1024).toString('base64'),
+              });
+            result = await this.sources.finishUpload({ ...destination, id: upload.id });
+          } else
+            result = await this.peer(row.domain).importRecord({
+              ...destination,
+              name: row.name,
+              kind: row.kind,
+              content: this.sanitize(row.domain, row.kind, this.remap(row.content, ids)),
+              references: row.references.map((r) => ids.get(key(r))!),
+            });
+          ids.set(key(reference(row)), reference(result));
+          if (result.id === row.id) suiteFail('SUITE_IMPORT_ID_REUSED');
+        }
+        receipt = await this.put(
+          {
+            ...originalScope,
+            name: '接收对象映射',
+            references: [input.inspection],
+            content: {
+              format: 'sakura-suite-receipt/1',
+              planId: plan.id,
+              workspaceId: destination.workspaceId,
+              manifestDigest: graph.manifestDigest,
+              sourceTrust: 'unauthenticated',
+              mapping: [...ids].map(([from, to]) => ({ from, to })),
+              state: 'staged',
+              approvalsTransferred: false,
+            },
           },
-        },
-        'result',
-        true,
-      );
-      return reference(receipt);
-    });
+          'result',
+          true,
+        );
+        return reference(receipt);
+      },
+    );
     if (!receipt || accepted.workspace.id === originalScope.workspaceId) suiteFail('SUITE_IMPORT_FAILED');
     if (!receipt.content || typeof receipt.content !== 'object' || Array.isArray(receipt.content))
       suiteFail('SUITE_IMPORT_FAILED');
@@ -567,6 +599,153 @@ export class SuiteExchange extends SuiteStore {
     );
     await this.complete(plan, confirmed);
     return confirmed;
+  }
+  private async verifyAccepted(
+    scope: S.SuiteScope,
+    receipt: S.SuiteRecord,
+  ): Promise<z.infer<typeof acceptedSnapshot>> {
+    if (receipt.origin !== 'local' || receipt.domain !== this.domain || receipt.references.length !== 1)
+      suiteFail('SUITE_IMPORT_RECEIPT');
+    const content = receiptContent.parse(receipt.content),
+      inspection = importContent.parse(
+        (await this.get({ ...scope, id: receipt.references[0].id, revision: receipt.references[0].revision }))
+          .content,
+      );
+    const target = { workspaceId: content.workspaceId },
+      workspace = await this.sources.workspace(target);
+    if (workspace.quarantined || workspace.id === scope.workspaceId)
+      suiteFail('SUITE_IMPORT_NOT_PUBLISHED', '接收空间尚未发布；可核对隔离空间后重新接收');
+    const graph = this.validate(await this.bytes(this.files, scope, inspection.bundle, 'read'));
+    if (graph.manifestDigest !== content.manifestDigest || content.mapping.length !== graph.rows.length)
+      suiteFail('SUITE_IMPORT_MAPPING');
+    const ids = new Map(content.mapping.map((item) => [item.from, item.to]));
+    if (
+      ids.size !== graph.rows.length ||
+      new Set(content.mapping.map((item) => key(item.to))).size !== graph.rows.length
+    )
+      suiteFail('SUITE_IMPORT_MAPPING');
+    const verified: S.SuiteRef[] = [];
+    for (const row of graph.rows) {
+      const mapped = ids.get(key(reference(row)));
+      if (!mapped || mapped.domain !== row.domain || mapped.id === row.id) suiteFail('SUITE_IMPORT_MAPPING');
+      const received = await this.peer(mapped.domain).get({
+        ...target,
+        id: mapped.id,
+        revision: mapped.revision,
+      });
+      if (
+        received.state !== 'sealed' ||
+        received.kind !== row.kind ||
+        received.workspaceId !== target.workspaceId ||
+        received.actor !== receipt.actor
+      )
+        suiteFail('SUITE_IMPORT_MAPPING');
+      if (row.kind === 'source') {
+        const before = S.suiteMaterial.parse(row.content),
+          after = S.suiteMaterial.parse(received.content);
+        if (
+          received.origin !== 'local' ||
+          after.bytes !== before.bytes ||
+          after.digest !== before.digest ||
+          after.format !== before.format
+        )
+          suiteFail('SUITE_IMPORT_MAPPING');
+        await this.bytes(this.sources, target, mapped, 'read');
+      } else {
+        if (
+          received.origin !== 'imported' ||
+          suiteHash(received.content) !==
+            suiteHash(this.sanitize(row.domain, row.kind, this.remap(row.content, ids))) ||
+          suiteHash(received.references) !== suiteHash(row.references.map((ref) => ids.get(key(ref))!))
+        )
+          suiteFail('SUITE_IMPORT_MAPPING');
+      }
+      verified.push(mapped);
+    }
+    const guards: z.infer<typeof acceptedSnapshot>['guards'] = [];
+    for (const ref of verified) {
+      const current = await this.peer(ref.domain).get({ ...target, id: ref.id, revision: ref.revision });
+      if (current.state !== 'sealed') suiteFail('SUITE_IMPORT_MAPPING');
+      guards.push({
+        reference: ref,
+        policyRevision: current.policyRevision,
+        policyDigest: current.authorizationDigest ?? suiteHash(current.policyRevision),
+      });
+    }
+    if ((await this.sources.workspace(target)).policyRevision !== workspace.policyRevision)
+      suiteFail('SUITE_POLICY_CHANGED');
+    return { workspaceRevision: workspace.policyRevision, mappingDigest: suiteHash(content.mapping), guards };
+  }
+  async previewImportRecovery(raw: S.SuiteScope & { receipt: S.SuiteRef }): Promise<S.SuitePlan> {
+    return this.serializeTransfer(async () => {
+      const input = receiptInput.parse(raw),
+        scope = { workspaceId: input.workspaceId };
+      if (input.receipt.domain !== this.domain) suiteFail('SUITE_IMPORT_RECEIPT');
+      const receipt = await this.get({ ...scope, id: input.receipt.id, revision: input.receipt.revision }),
+        snapshot = await this.verifyAccepted(scope, receipt);
+      return this.plan(
+        scope,
+        'confirm-import',
+        S.suiteJson.parse({
+          receipt: input.receipt,
+          snapshot,
+          createsResources: false,
+          approvalsTransferred: false,
+        }),
+        [input.receipt],
+      );
+    });
+  }
+  async recoverImport(raw: S.SuiteApproval): Promise<S.SuiteRecord> {
+    return this.serializeTransfer(async () => {
+      const plan = await this.consume(raw, 'confirm-import', true),
+        scope = { workspaceId: plan.workspaceId };
+      if (plan.state === 'completed' && plan.result)
+        return this.get({ ...scope, id: plan.result.id, revision: plan.result.revision });
+      const input = z
+          .object({
+            receipt: S.suiteRef,
+            snapshot: acceptedSnapshot,
+            createsResources: z.literal(false),
+            approvalsTransferred: z.literal(false),
+          })
+          .strict()
+          .parse(plan.input),
+        receipt = await this.get({ ...scope, id: input.receipt.id, revision: input.receipt.revision });
+      const current = await this.verifyAccepted(scope, receipt);
+      if (suiteHash(current) !== suiteHash(input.snapshot)) suiteFail('SUITE_IMPORT_CHANGED');
+      const content = receiptContent.parse(receipt.content),
+        confirmed =
+          content.state === 'accepted'
+            ? receipt
+            : await this.put(
+                {
+                  ...scope,
+                  id: receipt.id,
+                  expectedRevision: receipt.revision,
+                  name: receipt.name,
+                  references: receipt.references,
+                  content: S.suiteJson.parse({
+                    ...content,
+                    state: 'accepted',
+                    workspacePolicyRevision: current.workspaceRevision,
+                  }),
+                },
+                'result',
+                true,
+              );
+      await this.complete(plan, confirmed);
+      const original = (await this.readState()).plans.find(
+        (original) =>
+          original.id === content.planId &&
+          original.actor === receipt.actor &&
+          original.workspaceId === plan.workspaceId &&
+          original.action === 'accept-import' &&
+          original.state === 'consumed',
+      );
+      if (original) await this.complete(original, confirmed);
+      return confirmed;
+    });
   }
   async imports(raw: S.SuiteScope) {
     const scope = S.suiteScope.parse(raw);

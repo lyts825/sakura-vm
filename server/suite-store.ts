@@ -65,13 +65,48 @@ const publicationSchema = S.suitePublication
     row: S.suiteRecord.nullable(),
   })
   .strict();
+const quarantineDisposition = z
+  .object({
+    workspaceId: S.suiteId,
+    actor: S.suiteId,
+    at: z.iso.datetime(),
+    receiptWorkspaceId: S.suiteId,
+    receipt: S.suiteRef,
+  })
+  .strict();
+const cleanupReceipt = z
+  .object({
+    format: z.literal('sakura-suite-cleanup/1').optional(),
+    removed: z.array(S.suiteRef).min(1).max(50),
+    cleanup: z.literal('confirmed'),
+    recoveryOf: S.suiteId.optional(),
+  })
+  .strict();
+const publicationReceipt = z
+  .object({
+    format: z.literal('sakura-suite-publication-recovery/1'),
+    publicationId: S.suiteId,
+    reference: S.suiteRef,
+    status: z.enum(['published', 'rolled-back']),
+    createdResources: z.literal(false),
+    releasedOnlyOwnedProtection: z.boolean(),
+  })
+  .strict();
+export function suiteControlReceipt(record: S.SuiteRecord): boolean {
+  return (
+    record.origin === 'local' &&
+    record.kind === 'result' &&
+    !record.references.length &&
+    (cleanupReceipt.safeParse(record.content).success || publicationReceipt.safeParse(record.content).success)
+  );
+}
 const stateSchema = z
   .object({
     schemaVersion: z.literal(1),
     rows: z.array(S.suiteRecord).max(100000),
     plans: z.array(S.suitePlan).max(2000),
     holds: z.array(holdSchema).max(100000),
-    workspaces: z.array(S.suiteWorkspace).max(50),
+    workspaces: z.array(S.suiteWorkspace).max(2050),
     quota: z.array(S.suiteQuota).max(50000),
     policies: z
       .array(
@@ -87,6 +122,7 @@ const stateSchema = z
       )
       .max(50000),
     publications: z.array(publicationSchema).max(2000).default([]),
+    quarantineDispositions: z.array(quarantineDisposition).max(2000).default([]),
   })
   .strict();
 type State = z.infer<typeof stateSchema>;
@@ -100,6 +136,7 @@ const empty = (): State => ({
   quota: [],
   policies: [],
   publications: [],
+  quarantineDispositions: [],
 });
 export class SuiteStore implements S.SuiteRecordsV1 {
   private tail: Promise<unknown> = Promise.resolve();
@@ -130,7 +167,12 @@ export class SuiteStore implements S.SuiteRecordsV1 {
       else {
         const snap = stateSchema.parse((await this.metadata.read()).value ?? empty());
         const space = snap.workspaces.find((w) => w.id === scope.workspaceId && w.owner === suiteActor());
-        if (!space || space.revoked || (space.quarantined && !this.allowsQuarantine(scope.workspaceId)))
+        if (
+          !space ||
+          space.revoked ||
+          snap.quarantineDispositions.some((item) => item.workspaceId === scope.workspaceId) ||
+          (space.quarantined && !this.allowsQuarantine(scope.workspaceId))
+        )
           suiteFail('SUITE_WORKSPACE_DENIED', '空间不存在或已撤销', 403);
       }
     }
@@ -191,7 +233,12 @@ export class SuiteStore implements S.SuiteRecordsV1 {
           if (this.root) await this.access({ workspaceId });
           else {
             const space = state.workspaces.find((w) => w.id === workspaceId && w.owner === suiteActor());
-            if (!space || space.revoked || (space.quarantined && !this.allowsQuarantine(workspaceId)))
+            if (
+              !space ||
+              space.revoked ||
+              state.quarantineDispositions.some((item) => item.workspaceId === workspaceId) ||
+              (space.quarantined && !this.allowsQuarantine(workspaceId))
+            )
               suiteFail('SUITE_WORKSPACE_DENIED', '原空间已变化', 403);
           }
         }
@@ -949,6 +996,7 @@ export class SuiteStore implements S.SuiteRecordsV1 {
         name: '原资源清理回执',
         references: [],
         content: {
+          format: 'sakura-suite-cleanup/1',
           ...(selection.recoveryOf ? { recoveryOf: selection.recoveryOf } : {}),
           removed: selection.selected.map((x) => x.reference),
           cleanup: 'confirmed',
@@ -1076,7 +1124,17 @@ export class SuiteStore implements S.SuiteRecordsV1 {
 }
 
 export class SuiteRoot extends SuiteStore implements S.SuiteWorkspacePortV1 {
-  private accepting = new AsyncLocalStorage<string>();
+  private accepting = new AsyncLocalStorage<{ workspaceId: string; active: boolean }>();
+  private inQuarantine<T>(workspaceId: string, work: () => Promise<T>): Promise<T> {
+    const permit = { workspaceId, active: true };
+    return this.accepting.run(permit, async () => {
+      try {
+        return await work();
+      } finally {
+        permit.active = false;
+      }
+    });
+  }
   constructor(
     domain: string,
     metadata: PluginMetadata,
@@ -1087,7 +1145,142 @@ export class SuiteRoot extends SuiteStore implements S.SuiteWorkspacePortV1 {
     super(domain, metadata, authorize, undefined, {}, definition);
   }
   protected override allowsQuarantine(workspaceId: string): boolean {
-    return this.accepting.getStore() === workspaceId;
+    const permit = this.accepting.getStore();
+    return permit?.workspaceId === workspaceId && permit.active;
+  }
+  private assertExchange() {
+    const consumer = resourceContext()?.serviceConsumerPluginInstanceId,
+      allowed = 'official:' + this.domain.split('-')[0] + '-exchange';
+    if (!consumer || consumer !== allowed)
+      suiteFail('SUITE_IMPORT_CONSUMER', '隔离接收只允许原交换服务协调', 403);
+  }
+  private quarantineSpace(state: State, workspaceId: string, expectedRevision?: number): S.SuiteWorkspace {
+    const row = state.workspaces.find(
+      (row) => row.id === workspaceId && row.owner === suiteActor() && row.quarantined && !row.revoked,
+    );
+    if (
+      !row ||
+      state.quarantineDispositions.some((item) => item.workspaceId === workspaceId) ||
+      (expectedRevision !== undefined && row.policyRevision !== expectedRevision)
+    )
+      suiteFail('SUITE_QUARANTINE_CHANGED', '隔离空间不存在、已发布或许可已变化');
+    return row;
+  }
+  private workspaceLimit(state: State) {
+    const closed = new Set(state.quarantineDispositions.map((item) => item.workspaceId));
+    if (state.workspaces.length >= 2050 || state.workspaces.filter((row) => !closed.has(row.id)).length >= 50)
+      suiteFail('SUITE_WORKSPACE_LIMIT');
+  }
+  async quarantines(): Promise<S.SuiteQuarantine[]> {
+    this.assertExchange();
+    const state = await this.readState();
+    return state.workspaces
+      .filter((row) => row.owner === suiteActor() && row.quarantined)
+      .map((workspace) => {
+        const closed = state.quarantineDispositions.find((item) => item.workspaceId === workspace.id);
+        return {
+          workspace,
+          disposition: closed ? ('discarded' as const) : ('pending' as const),
+          discardedAt: closed?.at ?? null,
+          receipt: closed ? { workspaceId: closed.receiptWorkspaceId, reference: closed.receipt } : null,
+          reservations: state.quota
+            .filter(
+              (ticket) =>
+                ticket.workspaceId === workspace.id &&
+                ticket.kind !== 'metadata' &&
+                ticket.state !== 'released',
+            )
+            .map((ticket) => ({
+              id: ticket.id,
+              kind: ticket.kind as 'material' | 'temporary',
+              bytes: ticket.bytes,
+              consumer: ticket.consumer,
+              state: ticket.state as 'reserved' | 'committed',
+            })),
+        };
+      });
+  }
+  async withQuarantine(
+    raw: S.SuiteScope & { expectedRevision: number },
+    work: (scope: S.SuiteScope) => Promise<S.SuiteJson>,
+  ): Promise<S.SuiteJson> {
+    this.assertExchange();
+    const input = S.suiteScope.extend({ expectedRevision: z.number().int().positive() }).strict().parse(raw);
+    this.quarantineSpace(await this.readState(), input.workspaceId, input.expectedRevision);
+    return this.inQuarantine(input.workspaceId, async () => {
+      const result = S.suiteJson.parse(await work({ workspaceId: input.workspaceId }));
+      this.quarantineSpace(await this.readState(), input.workspaceId, input.expectedRevision);
+      await this.authorize();
+      return result;
+    });
+  }
+  protected async assertQuarantineEmpty(scope: S.SuiteScope): Promise<void> {
+    const state = await this.readState();
+    if (
+      state.rows.some((row) => row.workspaceId === scope.workspaceId && !suiteControlReceipt(row)) ||
+      state.publications.some(
+        (item) => item.workspaceId === scope.workspaceId && ['pending', 'unknown'].includes(item.status),
+      )
+    )
+      suiteFail('SUITE_QUARANTINE_CONTENT_REMAINS');
+    if (
+      state.quota.some(
+        (ticket) =>
+          ticket.workspaceId === scope.workspaceId &&
+          ticket.kind !== 'metadata' &&
+          ticket.state !== 'released',
+      )
+    )
+      suiteFail('SUITE_QUARANTINE_QUOTA_UNKNOWN', '隔离材料或暂存预留尚未确认核销');
+  }
+  async retireQuarantine(
+    raw: S.SuiteScope & { expectedRevision: number; receiptWorkspaceId: string },
+    work: (scope: S.SuiteScope) => Promise<S.SuiteRef>,
+  ): Promise<S.SuiteQuarantine> {
+    this.assertExchange();
+    const input = S.suiteScope
+      .extend({ expectedRevision: z.number().int().positive(), receiptWorkspaceId: S.suiteId })
+      .strict()
+      .parse(raw);
+    if (input.workspaceId === input.receiptWorkspaceId) suiteFail('SUITE_QUARANTINE_RECEIPT_SCOPE');
+    await this.workspace({ workspaceId: input.receiptWorkspaceId });
+    this.quarantineSpace(await this.readState(), input.workspaceId, input.expectedRevision);
+    return this.inQuarantine(input.workspaceId, async () => {
+      const receipt = S.suiteRef.parse(await work({ workspaceId: input.workspaceId }));
+      if (receipt.domain !== this.domain.split('-')[0] + '-exchange')
+        suiteFail('SUITE_QUARANTINE_RECEIPT_PROVIDER');
+      await this.assertQuarantineEmpty({ workspaceId: input.workspaceId });
+      let closed: S.SuiteQuarantine | undefined;
+      await this.edit((state) => {
+        const workspace = this.quarantineSpace(state, input.workspaceId, input.expectedRevision),
+          destination = state.workspaces.find(
+            (row) =>
+              row.id === input.receiptWorkspaceId &&
+              row.owner === suiteActor() &&
+              !row.revoked &&
+              !row.quarantined,
+          );
+        if (!destination) suiteFail('SUITE_QUARANTINE_RECEIPT_SCOPE');
+        if (state.quarantineDispositions.length >= 2000) suiteFail('SUITE_QUARANTINE_HISTORY_LIMIT');
+        const at = new Date().toISOString();
+        state.quarantineDispositions.push({
+          workspaceId: input.workspaceId,
+          actor: suiteActor(),
+          at,
+          receiptWorkspaceId: input.receiptWorkspaceId,
+          receipt,
+        });
+        workspace.policyRevision++;
+        closed = {
+          workspace: structuredClone(workspace),
+          disposition: 'discarded',
+          discardedAt: at,
+          receipt: { workspaceId: input.receiptWorkspaceId, reference: receipt },
+          reservations: [],
+        };
+      }, true);
+      return closed!;
+    });
   }
   protected override validateState(state: State, priorBytes = 0): void {
     // 保留每个槽位的序号水位，已释放回执只保留最近一千条。
@@ -1129,7 +1322,7 @@ export class SuiteRoot extends SuiteStore implements S.SuiteWorkspacePortV1 {
   async createWorkspace(raw: { name: string }): Promise<S.SuiteWorkspace> {
     const p = z.object({ name: S.suiteName }).strict().parse(raw);
     return this.edit((state) => {
-      if (state.workspaces.length >= 50) suiteFail('SUITE_WORKSPACE_LIMIT');
+      this.workspaceLimit(state);
       const space: S.SuiteWorkspace = {
         id: randomUUID(),
         name: p.name,
@@ -1338,7 +1531,7 @@ export class SuiteRoot extends SuiteStore implements S.SuiteWorkspacePortV1 {
     if (!consumer || (consumer !== allowed && !consumer.startsWith(allowed + ':')))
       suiteFail('SUITE_IMPORT_CONSUMER');
     const space = await this.edit((state) => {
-      if (state.workspaces.length >= 50) suiteFail('SUITE_WORKSPACE_LIMIT');
+      this.workspaceLimit(state);
       const space: S.SuiteWorkspace = {
         id: randomUUID(),
         name: input.name,
@@ -1351,11 +1544,12 @@ export class SuiteRoot extends SuiteStore implements S.SuiteWorkspacePortV1 {
       state.workspaces.push(space);
       return space;
     });
-    return this.accepting.run(space.id, async () => {
+    return this.inQuarantine(space.id, async () => {
       const result = S.suiteJson.parse(await work({ workspaceId: space.id }));
       const workspace = await this.edit((state) => {
         const row = state.workspaces.find((w) => w.id === space.id && w.owner === suiteActor());
-        if (!row || !row.quarantined) suiteFail('SUITE_IMPORT_CHANGED');
+        if (!row || !row.quarantined || row.revoked || row.policyRevision !== space.policyRevision)
+          suiteFail('SUITE_IMPORT_CHANGED');
         row.quarantined = false;
         row.policyRevision++;
         return row;

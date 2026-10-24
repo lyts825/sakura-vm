@@ -147,6 +147,11 @@ export const suiteCommands = Object.freeze({
       "compare"
     ],
     "exchange": [
+      "quarantines",
+      "preview-quarantine-discard",
+      "discard-quarantine",
+      "preview-import-recovery",
+      "recover-import",
       "publications",
       "preview-publication-recovery",
       "recover-publication",
@@ -337,6 +342,11 @@ export const suiteCommands = Object.freeze({
       "make-patch"
     ],
     "exchange": [
+      "quarantines",
+      "preview-quarantine-discard",
+      "discard-quarantine",
+      "preview-import-recovery",
+      "recover-import",
       "publications",
       "preview-publication-recovery",
       "recover-publication",
