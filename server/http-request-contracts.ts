@@ -30,6 +30,8 @@ import { foundryHttpQueries } from '../shared/contracts/foundry-http.ts';
 import { appRouteQueries } from '../shared/contracts/app-http.ts';
 import { dataPluginIds } from '../shared/contracts/data-http.ts';
 import { dataScopeSchema } from '../shared/contracts/data-common.ts';
+import { integrationQuerySchema, integrationRequestSchemas } from '../shared/contracts/integration-http.ts';
+import { resilienceHttpQueries } from '../shared/contracts/resilience-http-registry.ts';
 
 export type HttpRequestContract = {
   kind: 'none' | 'json' | 'form' | 'binary';
@@ -235,6 +237,9 @@ const flag = () => z.enum(['0', '1']);
 type QueryShape = Record<string, z.ZodType>;
 const queries: Readonly<Record<string, QueryShape>> = {
   ...foundryHttpQueries,
+  ...resilienceHttpQueries,
+  ...Object.fromEntries(Object.keys(integrationRequestSchemas).flatMap(domain =>
+    ['view', 'act'].map(method => [`integration-${domain}.${method}`, integrationQuerySchema.shape]))),
   ...Object.fromEntries(Object.entries(appRouteQueries).map(([key, schema]) => [key, schema.shape])),
   ...Object.fromEntries(dataPluginIds.flatMap(id => ['view', 'act'].map(action => [`${id}.${action}`, dataScopeSchema.shape]))),
   'delivery-artifacts.view': deliveryScopeSchema.shape,

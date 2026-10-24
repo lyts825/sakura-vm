@@ -3,6 +3,7 @@
  * Module purpose: Handles status, recovery and operation-result management, restricting receipt archival to administrators.
  */
 import { AppError } from '../shared/errors.ts';
+import { LOCAL_OWNER_ACTOR_ID } from './local-principal.ts';
 import { graphqlInfo, graphqlLimits } from './graphql-api.ts';
 import { hostRuntime } from './host-runtime/index.ts';
 import { sendJson as send, sendDocumentJson } from './http-response.ts';
@@ -106,7 +107,7 @@ export function systemOperationHandlers(
         await operationResults.get(
           resultId,
           access.enabled ? 'account' : 'local-owner',
-          accountPrincipal?.id,
+          access.enabled ? accountPrincipal?.id : LOCAL_OWNER_ACTOR_ID,
         ),
       );
     throw new AppError('处理器与操作路径不一致', 404, 'OPERATION_HANDLER_MISMATCH');

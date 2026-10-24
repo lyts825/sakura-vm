@@ -1,6 +1,6 @@
 # 文档索引
 
-核对日期：2026-10-23；应用与内置包版本：**2.6.0**；宿主插件 API：**5**；公共服务契约保留 **V1**，Notebook 增加显式作用域的 **V2**。
+核对日期：2026-10-24；应用与内置包版本：**2.7.0**；宿主插件 API：**5**；既有公共服务契约保持兼容，Notebook 和 Files 提供显式的 **V2**。
 
 | 使用场景 | 从这里开始 |
 | --- | --- |
@@ -24,7 +24,7 @@
 - [插件设计契约与统管层接口](plugin-design-contract.md)
 - [项目交付工作台插件包设计](delivery-pack-design.md)
 - [三个插件包的产品与实施设计](plugin-pack-roadmap.md)：[环境镜像工坊](foundry-pack-design.md)、[应用运行与运维](app-runtime-pack-design.md)、[数据与实验工作台](data-lab-pack-design.md)；实现使用指南见下方三个插件包
-- [第二批三个完整插件包设计](plugin-pack-expansion-design.md)：[接口集成验证](integration-lab-pack-design.md)、[可靠性演练](resilience-lab-pack-design.md)、[项目知识与文档](knowledge-studio-pack-design.md)；设计版本 2.0.0，31 个拟议插件，运行实现待开始
+- [第二批三个完整插件包设计](plugin-pack-expansion-design.md)：[接口集成验证](integration-lab-pack-design.md)、[可靠性演练](resilience-lab-pack-design.md)、[项目知识与文档](knowledge-studio-pack-design.md)；设计版本 2.0.0，2.7.0 实施与验收状态见项目状态
 - [插件与整合包协议](plugin-protocol.md)
 - [独立运行包自更新](self-update.md)
 - [受管存储与恢复](storage-runtime.md)
@@ -42,6 +42,9 @@
 - [环境镜像工坊](foundry-workbench.md)
 - [应用运行与运维](app-runtime-pack.md)
 - [数据与实验工作台](data-lab.md)
+- [接口集成验证](integration-lab.md)
+- [可靠性演练](resilience-lab.md)
+- [项目知识与文档](knowledge-studio.md)
 - [开发工作区与数据互通](development-workspaces.md)
 - [工程操作的项目账号](engineering-project-identity.md)
 - [文件锁](file-locks.md)

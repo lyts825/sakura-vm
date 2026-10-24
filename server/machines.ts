@@ -19,6 +19,7 @@ import {
   readdir,
   rm,
   stat,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 
@@ -2109,7 +2110,11 @@ export class Machines extends EventEmitter {
          * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
          */
         const escape = (s: string) => s.replaceAll(',', ',,');
+        // QEMU writes this unique run receipt. Supervisors bind the recorded PID to its creation time.
+        live.processRecordFile = join(dir, `run-${lifetime.capture().vmProcessId}.pid`);
         const args = [
+          '-pidfile',
+          live.processRecordFile,
           '-name',
           `sakura-${vm.name}`,
           '-machine',
@@ -2177,6 +2182,7 @@ export class Machines extends EventEmitter {
           `tcp:127.0.0.1:${serialPort},server=on,wait=off`,
           ...(incoming ? ['-incoming', 'defer'] : []),
         ];
+        live.processArguments = Object.freeze([...args]);
         let nativeExited = false;
         /**
          * 入口 / Entry: Machines.startInternal.callback@1100.
@@ -2239,6 +2245,14 @@ export class Machines extends EventEmitter {
             if (active?.abort === live.abort) active.serial?.destroy();
             for (const client of live.clients) client.end();
             await live.bootDone;
+            if (nativeExited && live.processRecordFile) {
+              await unlink(live.processRecordFile).catch(error => {
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                  cleanupFailure ||= error;
+                  this.log(id, `\r\n运行进程回执清理失败：${String(error)}\r\n`);
+                }
+              });
+            }
             if (this.live.get(id)?.abort === live.abort) this.live.delete(id);
             const run = this.migrationRuns.get(id), fence = vm.liveMigrationFence;
             if (nativeExited && run?.live === live && fence &&

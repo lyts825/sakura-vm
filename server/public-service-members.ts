@@ -890,6 +890,42 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "jobs": "sakura.service.jobs.v1"
     }
   },
+  "sakura.service.drill-supervision.v1": {
+    "id": "sakura.service.drill-supervision.v1",
+    "version": 1,
+    "members": [
+      "arm",
+      "authorizeStep",
+      "capabilities",
+      "contain",
+      "delegate",
+      "inject",
+      "observe",
+      "prepare",
+      "probe",
+      "reconcile",
+      "recover",
+      "recoverLease",
+      "release",
+      "retireDelegation"
+    ],
+    "methods": [
+      "arm",
+      "authorizeStep",
+      "capabilities",
+      "contain",
+      "delegate",
+      "inject",
+      "observe",
+      "prepare",
+      "probe",
+      "reconcile",
+      "recover",
+      "recoverLease",
+      "release",
+      "retireDelegation"
+    ]
+  },
   "sakura.service.egress-rules.v1": {
     "id": "sakura.service.egress-rules.v1",
     "version": 1,
@@ -1066,6 +1102,22 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
     "properties": {
       "uploads": "sakura.service.resumable-uploads.v1"
     }
+  },
+  "sakura.service.files.v2": {
+    "id": "sakura.service.files.v2",
+    "version": 2,
+    "members": [
+      "capture",
+      "planCapture",
+      "readCaptured",
+      "releaseCapture"
+    ],
+    "methods": [
+      "capture",
+      "planCapture",
+      "readCaptured",
+      "releaseCapture"
+    ]
   },
   "sakura.service.fleet-policy-rollouts.v1": {
     "id": "sakura.service.fleet-policy-rollouts.v1",
@@ -1535,6 +1587,272 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "view"
     ]
   },
+  "sakura.service.integration-assertions.v1": {
+    "id": "sakura.service.integration-assertions.v1",
+    "version": 1,
+    "members": [
+      "archive",
+      "evaluate",
+      "evaluations",
+      "get",
+      "list",
+      "save",
+      "seal"
+    ],
+    "methods": [
+      "archive",
+      "evaluate",
+      "evaluations",
+      "get",
+      "list",
+      "save",
+      "seal"
+    ]
+  },
+  "sakura.service.integration-environments.v1": {
+    "id": "sakura.service.integration-environments.v1",
+    "version": 1,
+    "members": [
+      "applicationTargets",
+      "archive",
+      "get",
+      "list",
+      "resolve",
+      "revoke",
+      "save",
+      "seal",
+      "versions"
+    ],
+    "methods": [
+      "applicationTargets",
+      "archive",
+      "get",
+      "list",
+      "resolve",
+      "revoke",
+      "save",
+      "seal",
+      "versions"
+    ]
+  },
+  "sakura.service.integration-exchange.v1": {
+    "id": "sakura.service.integration-exchange.v1",
+    "version": 1,
+    "members": [
+      "accept",
+      "appendUpload",
+      "beginUpload",
+      "completeUpload",
+      "discardUpload",
+      "exportBundle",
+      "imports",
+      "quarantine",
+      "uploads"
+    ],
+    "methods": [
+      "accept",
+      "appendUpload",
+      "beginUpload",
+      "completeUpload",
+      "discardUpload",
+      "exportBundle",
+      "imports",
+      "quarantine",
+      "uploads"
+    ]
+  },
+  "sakura.service.integration-fixtures.v1": {
+    "id": "sakura.service.integration-fixtures.v1",
+    "version": 1,
+    "members": [
+      "archive",
+      "generate",
+      "get",
+      "importData",
+      "list",
+      "save",
+      "seal"
+    ],
+    "methods": [
+      "archive",
+      "generate",
+      "get",
+      "importData",
+      "list",
+      "save",
+      "seal"
+    ]
+  },
+  "sakura.service.integration-load.v1": {
+    "id": "sakura.service.integration-load.v1",
+    "version": 1,
+    "members": [
+      "apply",
+      "archive",
+      "get",
+      "list",
+      "preview",
+      "save",
+      "seal"
+    ],
+    "methods": [
+      "apply",
+      "archive",
+      "get",
+      "list",
+      "preview",
+      "save",
+      "seal"
+    ]
+  },
+  "sakura.service.integration-mocks.v1": {
+    "id": "sakura.service.integration-mocks.v1",
+    "version": 1,
+    "members": [
+      "archive",
+      "get",
+      "list",
+      "save",
+      "seal"
+    ],
+    "methods": [
+      "archive",
+      "get",
+      "list",
+      "save",
+      "seal"
+    ]
+  },
+  "sakura.service.integration-reports.v1": {
+    "id": "sakura.service.integration-reports.v1",
+    "version": 1,
+    "members": [
+      "cleanup",
+      "cleanupPlan",
+      "compare",
+      "get",
+      "list",
+      "seal"
+    ],
+    "methods": [
+      "cleanup",
+      "cleanupPlan",
+      "compare",
+      "get",
+      "list",
+      "seal"
+    ]
+  },
+  "sakura.service.integration-runners.v1": {
+    "id": "sakura.service.integration-runners.v1",
+    "version": 1,
+    "members": [
+      "appendImage",
+      "apply",
+      "availableImages",
+      "beginImage",
+      "cancel",
+      "discardImage",
+      "finishImage",
+      "imageUploads",
+      "inspect",
+      "list",
+      "plans",
+      "preview",
+      "recover",
+      "verifyEffect"
+    ],
+    "methods": [
+      "appendImage",
+      "apply",
+      "availableImages",
+      "beginImage",
+      "cancel",
+      "discardImage",
+      "finishImage",
+      "imageUploads",
+      "inspect",
+      "list",
+      "plans",
+      "preview",
+      "recover",
+      "verifyEffect"
+    ]
+  },
+  "sakura.service.integration-scenarios.v1": {
+    "id": "sakura.service.integration-scenarios.v1",
+    "version": 1,
+    "members": [
+      "archive",
+      "compile",
+      "get",
+      "list",
+      "save",
+      "seal"
+    ],
+    "methods": [
+      "archive",
+      "compile",
+      "get",
+      "list",
+      "save",
+      "seal"
+    ]
+  },
+  "sakura.service.integration-specs.v1": {
+    "id": "sakura.service.integration-specs.v1",
+    "version": 1,
+    "members": [
+      "archive",
+      "assertWorkspace",
+      "commitCapacity",
+      "compare",
+      "comparisons",
+      "createWorkspace",
+      "get",
+      "list",
+      "publishWorkspace",
+      "reference",
+      "references",
+      "releaseCapacity",
+      "reserveCapacity",
+      "save",
+      "seal",
+      "workspaces"
+    ],
+    "methods": [
+      "archive",
+      "assertWorkspace",
+      "commitCapacity",
+      "compare",
+      "comparisons",
+      "createWorkspace",
+      "get",
+      "list",
+      "publishWorkspace",
+      "reference",
+      "references",
+      "releaseCapacity",
+      "reserveCapacity",
+      "save",
+      "seal",
+      "workspaces"
+    ]
+  },
+  "sakura.service.integration-workbench.v1": {
+    "id": "sakura.service.integration-workbench.v1",
+    "version": 1,
+    "members": [
+      "create",
+      "templates",
+      "view"
+    ],
+    "methods": [
+      "create",
+      "templates",
+      "view"
+    ]
+  },
   "sakura.service.jit-privileges.v1": {
     "id": "sakura.service.jit-privileges.v1",
     "version": 1,
@@ -1585,6 +1903,244 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "track",
       "view",
       "wait"
+    ]
+  },
+  "sakura.service.knowledge-documents.v1": {
+    "id": "sakura.service.knowledge-documents.v1",
+    "version": 1,
+    "members": [
+      "archive",
+      "compare",
+      "create",
+      "list",
+      "readPinned",
+      "revise",
+      "templates"
+    ],
+    "methods": [
+      "archive",
+      "compare",
+      "create",
+      "list",
+      "readPinned",
+      "revise",
+      "templates"
+    ]
+  },
+  "sakura.service.knowledge-entries.v1": {
+    "id": "sakura.service.knowledge-entries.v1",
+    "version": 1,
+    "members": [
+      "archive",
+      "compare",
+      "create",
+      "list",
+      "readPinned",
+      "revise"
+    ],
+    "methods": [
+      "archive",
+      "compare",
+      "create",
+      "list",
+      "readPinned",
+      "revise"
+    ]
+  },
+  "sakura.service.knowledge-evidence.v1": {
+    "id": "sakura.service.knowledge-evidence.v1",
+    "version": 1,
+    "members": [
+      "check",
+      "create",
+      "inspect",
+      "list",
+      "migrate"
+    ],
+    "methods": [
+      "check",
+      "create",
+      "inspect",
+      "list",
+      "migrate"
+    ]
+  },
+  "sakura.service.knowledge-exchange.v1": {
+    "id": "sakura.service.knowledge-exchange.v1",
+    "version": 1,
+    "members": [
+      "acceptImport",
+      "discardImport",
+      "download",
+      "export",
+      "imports",
+      "inspectImport",
+      "planExport"
+    ],
+    "methods": [
+      "acceptImport",
+      "discardImport",
+      "download",
+      "export",
+      "imports",
+      "inspectImport",
+      "planExport"
+    ]
+  },
+  "sakura.service.knowledge-extract.v1": {
+    "id": "sakura.service.knowledge-extract.v1",
+    "version": 1,
+    "members": [
+      "cancel",
+      "get",
+      "jobs",
+      "list",
+      "plan",
+      "run"
+    ],
+    "methods": [
+      "cancel",
+      "get",
+      "jobs",
+      "list",
+      "plan",
+      "run"
+    ]
+  },
+  "sakura.service.knowledge-index.v1": {
+    "id": "sakura.service.knowledge-index.v1",
+    "version": 1,
+    "members": [
+      "build",
+      "cancel",
+      "coverage",
+      "jobs",
+      "plan",
+      "search"
+    ],
+    "methods": [
+      "build",
+      "cancel",
+      "coverage",
+      "jobs",
+      "plan",
+      "search"
+    ]
+  },
+  "sakura.service.knowledge-publish.v1": {
+    "id": "sakura.service.knowledge-publish.v1",
+    "version": 1,
+    "members": [
+      "apply",
+      "list",
+      "plan",
+      "read",
+      "rollback",
+      "withdraw"
+    ],
+    "methods": [
+      "apply",
+      "list",
+      "plan",
+      "read",
+      "rollback",
+      "withdraw"
+    ]
+  },
+  "sakura.service.knowledge-reviews.v1": {
+    "id": "sakura.service.knowledge-reviews.v1",
+    "version": 1,
+    "members": [
+      "decide",
+      "list",
+      "open",
+      "readPinned",
+      "recheck"
+    ],
+    "methods": [
+      "decide",
+      "list",
+      "open",
+      "readPinned",
+      "recheck"
+    ]
+  },
+  "sakura.service.knowledge-sources.v1": {
+    "id": "sakura.service.knowledge-sources.v1",
+    "version": 1,
+    "members": [
+      "applyPolicy",
+      "capacity",
+      "capture",
+      "check",
+      "cleanup",
+      "commitCapacity",
+      "createSpace",
+      "getSource",
+      "importSpace",
+      "listSources",
+      "listSpaces",
+      "planCapture",
+      "planCleanup",
+      "planPolicy",
+      "read",
+      "readBlob",
+      "redact",
+      "release",
+      "releaseCapacity",
+      "reserveCapacity",
+      "reserveQuarantine",
+      "retain",
+      "revokeSpace",
+      "settleQuarantine",
+      "space",
+      "upload",
+      "verify",
+      "writeDerived"
+    ],
+    "methods": [
+      "applyPolicy",
+      "capacity",
+      "capture",
+      "check",
+      "cleanup",
+      "commitCapacity",
+      "createSpace",
+      "getSource",
+      "importSpace",
+      "listSources",
+      "listSpaces",
+      "planCapture",
+      "planCleanup",
+      "planPolicy",
+      "read",
+      "readBlob",
+      "redact",
+      "release",
+      "releaseCapacity",
+      "reserveCapacity",
+      "reserveQuarantine",
+      "retain",
+      "revokeSpace",
+      "settleQuarantine",
+      "space",
+      "upload",
+      "verify",
+      "writeDerived"
+    ]
+  },
+  "sakura.service.knowledge-workbench.v1": {
+    "id": "sakura.service.knowledge-workbench.v1",
+    "version": 1,
+    "members": [
+      "example",
+      "preferences",
+      "view"
+    ],
+    "methods": [
+      "example",
+      "preferences",
+      "view"
     ]
   },
   "sakura.service.language-services.v1": {
@@ -1982,6 +2538,26 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "release"
     ]
   },
+  "sakura.service.prepared-worker-sessions.v1": {
+    "id": "sakura.service.prepared-worker-sessions.v1",
+    "version": 1,
+    "members": [
+      "inspect",
+      "preview",
+      "start",
+      "stop",
+      "tool",
+      "wait"
+    ],
+    "methods": [
+      "inspect",
+      "preview",
+      "start",
+      "stop",
+      "tool",
+      "wait"
+    ]
+  },
   "sakura.service.process-interop.v1": {
     "id": "sakura.service.process-interop.v1",
     "version": 1,
@@ -2265,6 +2841,204 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
     "properties": {
       "jobs": "sakura.service.jobs.v1"
     }
+  },
+  "sakura.service.resilience-faults.v1": {
+    "id": "sakura.service.resilience-faults.v1",
+    "version": 1,
+    "members": [
+      "catalogue",
+      "inject",
+      "observe"
+    ],
+    "methods": [
+      "catalogue",
+      "inject",
+      "observe"
+    ]
+  },
+  "sakura.service.resilience-fixtures.v1": {
+    "id": "sakura.service.resilience-fixtures.v1",
+    "version": 1,
+    "members": [
+      "appendImport",
+      "authorizeDrill",
+      "beginImport",
+      "checkpoint",
+      "cleanup",
+      "cleanupPreview",
+      "closeInputRead",
+      "finishImport",
+      "get",
+      "openInputRead",
+      "prepare",
+      "prepareBuiltin",
+      "releaseInput",
+      "restore",
+      "retainInput",
+      "sources",
+      "view"
+    ],
+    "methods": [
+      "appendImport",
+      "authorizeDrill",
+      "beginImport",
+      "checkpoint",
+      "cleanup",
+      "cleanupPreview",
+      "closeInputRead",
+      "finishImport",
+      "get",
+      "openInputRead",
+      "prepare",
+      "prepareBuiltin",
+      "releaseInput",
+      "restore",
+      "retainInput",
+      "sources",
+      "view"
+    ]
+  },
+  "sakura.service.resilience-guard.v1": {
+    "id": "sakura.service.resilience-guard.v1",
+    "version": 1,
+    "members": [
+      "arm",
+      "binding",
+      "contain",
+      "handoff",
+      "reconcile",
+      "release",
+      "ticket",
+      "view",
+      "withdraw"
+    ],
+    "methods": [
+      "arm",
+      "binding",
+      "contain",
+      "handoff",
+      "reconcile",
+      "release",
+      "ticket",
+      "view",
+      "withdraw"
+    ]
+  },
+  "sakura.service.resilience-probes.v1": {
+    "id": "sakura.service.resilience-probes.v1",
+    "version": 1,
+    "members": [
+      "collect",
+      "view"
+    ],
+    "methods": [
+      "collect",
+      "view"
+    ]
+  },
+  "sakura.service.resilience-recovery.v1": {
+    "id": "sakura.service.resilience-recovery.v1",
+    "version": 1,
+    "members": [
+      "apply",
+      "preview"
+    ],
+    "methods": [
+      "apply",
+      "preview"
+    ]
+  },
+  "sakura.service.resilience-reports.v1": {
+    "id": "sakura.service.resilience-reports.v1",
+    "version": 1,
+    "members": [
+      "accept",
+      "archive",
+      "compare",
+      "discardImport",
+      "export",
+      "import",
+      "imports",
+      "pin",
+      "retention",
+      "seal",
+      "view"
+    ],
+    "methods": [
+      "accept",
+      "archive",
+      "compare",
+      "discardImport",
+      "export",
+      "import",
+      "imports",
+      "pin",
+      "retention",
+      "seal",
+      "view"
+    ]
+  },
+  "sakura.service.resilience-runs.v1": {
+    "id": "sakura.service.resilience-runs.v1",
+    "version": 1,
+    "members": [
+      "approve",
+      "cancel",
+      "get",
+      "preview",
+      "reconcile",
+      "start",
+      "view"
+    ],
+    "methods": [
+      "approve",
+      "cancel",
+      "get",
+      "preview",
+      "reconcile",
+      "start",
+      "view"
+    ]
+  },
+  "sakura.service.resilience-scenarios.v1": {
+    "id": "sakura.service.resilience-scenarios.v1",
+    "version": 1,
+    "members": [
+      "get",
+      "save",
+      "templates",
+      "view"
+    ],
+    "methods": [
+      "get",
+      "save",
+      "templates",
+      "view"
+    ]
+  },
+  "sakura.service.resilience-targets.v1": {
+    "id": "sakura.service.resilience-targets.v1",
+    "version": 1,
+    "members": [
+      "get",
+      "register",
+      "view"
+    ],
+    "methods": [
+      "get",
+      "register",
+      "view"
+    ]
+  },
+  "sakura.service.resilience-workbench.v1": {
+    "id": "sakura.service.resilience-workbench.v1",
+    "version": 1,
+    "members": [
+      "view"
+    ],
+    "methods": [
+      "view"
+    ]
   },
   "sakura.service.resource-scope.v1": {
     "id": "sakura.service.resource-scope.v1",

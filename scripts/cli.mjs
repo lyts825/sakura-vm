@@ -14,6 +14,22 @@ const [action = 'help', name, ...args] = process.argv.slice(2);
 /** 解析 CLI 命令并通过已认证本机 API 调用基础或可选插件能力；交互终端接管输入与窗口尺寸，长任务响应取消。参数和服务错误向顶层传播，退出时释放终端状态。
  * Dispatch CLI arguments through authenticated local APIs to core or optional plugin capabilities; interactive terminals take over input/size and long work supports cancellation. Argument/service errors propagate and exit restores terminal state. */
 async function main() {
+  if (action === 'knowledge') {
+    process.argv.splice(2, 1);
+    await import('./knowledge.mjs');
+    return;
+  }
+  if (action === 'integration' && ['help', '--help', 'verify'].includes(name || 'help')) {
+    const result = await (await import('./integration-cli.mjs')).integrationCli([name, ...args].filter(Boolean));
+    console.log(result?.help || JSON.stringify(result, null, 2));
+    return;
+  }
+  if (action === 'resilience' && ['help', '--help', 'verify'].includes(name || 'help')) {
+    const result = await (await import('./resilience-cli.mjs')).resilienceCommand(action, !name || name === '--help' ? 'help' : name, args,
+      () => { throw new Error('离线命令不能调用服务'); });
+    console.log(typeof result.value === 'string' ? result.value : JSON.stringify(result.value, null, 2));
+    return;
+  }
   if (action === 'help') {
     if (name !== 'all') {
       console.log(
@@ -22,6 +38,7 @@ async function main() {
       return;
     }
     const { developmentHelp } = await import('./development-cli.mjs');
+    console.log('Plugin packs:\n  integration help\n  resilience help\n  knowledge help');
     const { sandboxHelp } = await import('./sandbox-cli.mjs');
     console.log('Project commands:\n  shell <name> [--project <id>]\n  exec <name> [--project <id> | --instance] [--timeout <seconds>] -- <command> [args...]\n  Commands use the saved active project by default. Account mode accepts SAKURA_TOKEN.');
     console.log(
@@ -68,6 +85,16 @@ async function main() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
       return result;
+    }
+    if (action === 'integration') {
+      const result = await (await import('./integration-cli.mjs')).integrationCli([name, ...args].filter(Boolean), { api });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (action === 'resilience') {
+      const result = await (await import('./resilience-cli.mjs')).resilienceCommand(action, name, args, api);
+      console.log(JSON.stringify(result.value, null, 2));
+      return;
     }
     if (action === 'plugins') {
       console.log(JSON.stringify(await api('/plugins'), null, 2));

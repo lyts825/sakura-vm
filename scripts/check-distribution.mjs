@@ -38,6 +38,10 @@ for (const file of [
   '.sakura-server/assets/network-worker.mjs',
   '.sakura-server/assets/bounded-qmp-policy.mjs',
   '.sakura-server/data-worker.py',
+  '.sakura-server/integration-http-worker.py',
+  '.sakura-server/drill-guest.py',
+  '.sakura-server/assets/knowledge-worker.mjs',
+  '.sakura-server/core-drill-validation-controller.mjs',
   '.sakura-server/assets/network-parent-exec.py',
   '.sakura-server/assets/network-runtime.json',
   '.sakura-server/docs/network-runtime.md',
@@ -50,6 +54,23 @@ for (const file of [
   '.sakura-server/assets/project-repository-broker.py',
 ])
   await stat(join(root, file));
+for (const file of ['integration-http-worker.py', 'drill-guest.py', 'drill-watchdog.cs', 'core-drill-validation-controller.mjs']) {
+  const original = await readFile(join(root, 'server', file));
+  if (!original.equals(await readFile(join(root, '.sakura-server', file))))
+    throw new Error(`Fixed plugin worker differs from its source: ${file}`);
+}
+if (!(await readFile(join(root, 'server', 'knowledge-worker.mjs')))
+    .equals(await readFile(join(root, '.sakura-server', 'assets', 'knowledge-worker.mjs'))))
+  throw new Error('Packaged knowledge parser differs from its source');
+if (process.platform === 'win32') {
+  const folder = join(root, '.sakura-server', 'assets', 'resilience');
+  const metadata = JSON.parse(await readFile(join(folder, 'drill-watchdog.json'), 'utf8'));
+  const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+  if (metadata.version !== 1 || metadata.digest !== hash(await readFile(join(folder, 'drill-watchdog.exe'))) ||
+      metadata.sourceDigest !== hash(await readFile(join(folder, 'drill-watchdog.cs'))) ||
+      metadata.sourceDigest !== hash(await readFile(join(root, 'server', 'drill-watchdog.cs'))))
+    throw new Error('Packaged drill watchdog differs from the verified build inputs');
+}
 {
   const metadata = JSON.parse(await readFile(join(root, '.sakura-server/assets/compute-runtime.json'), 'utf8'));
   const files = ['compute-task.js', 'assets/compute-worker.mjs'];

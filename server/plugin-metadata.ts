@@ -8,6 +8,7 @@ import { pluginDataFile } from './plugin-data.ts';
 import type { PluginScope } from './plugin-scope.ts';
 import { storageRuntime } from './storage-runtime.ts';
 import { randomUUID } from 'node:crypto';
+import { pluginCleanup } from './plugin-authority.ts';
 
 export type PluginMetadata<T = unknown> = Readonly<{
   name: string;
@@ -75,7 +76,21 @@ export function pluginMetadata(pluginId: string, owner: string, scope: PluginSco
      * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
      */
     reference<T = unknown>(name: string, fallback: () => T = () => null as T): PluginMetadata<T> {
+      run('metadata', () => {});
       const file = pluginDataFile(pluginId, name), store = new MetadataStore(file, { fallback });
+      // Only an existing reference can settle under its original instance's cleanup authority.
+      const cleaning = () => {
+        const instance = pluginCleanup();
+        return instance?.scope === scope && instance.pluginId === pluginId && instance.owner === owner &&
+          instance.view().permissions.includes('metadata');
+      };
+      const check = () => { if (!cleaning()) run('metadata', () => {}); };
+      const perform = <R>(work: () => Promise<R>): Promise<R> => {
+        if (!cleaning()) return scope.run(() => run('metadata', work));
+        const pending = Promise.resolve().then(() => { check(); return work(); });
+        scope.observe(pending);
+        return pending;
+      };
       /**
        * 入口 / Entry: pluginMetadata.reference.signal.
        * 功能：从当前输入或状态计算 `input ? AbortSignal.any([scope.signal, input]) : scope.signal`，供调用方后续验证或使用。
@@ -85,7 +100,8 @@ export function pluginMetadata(pluginId: string, owner: string, scope: PluginSco
        * 副作用 / Effects: `AbortSignal.any`.
        * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
        */
-      const signal = (input?: AbortSignal) => input ? AbortSignal.any([scope.signal, input]) : scope.signal;
+      const signal = (input?: AbortSignal) => cleaning() ? input :
+        input ? AbortSignal.any([scope.signal, input]) : scope.signal;
       const handle = Object.freeze({ name,
         /**
          * 入口 / Entry: pluginMetadata.reference.read.
@@ -96,7 +112,7 @@ export function pluginMetadata(pluginId: string, owner: string, scope: PluginSco
          * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
          * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
          */
-        read: (input?: AbortSignal) => scope.run(() => run('metadata', () => store.read(signal(input)))),
+        read: (input?: AbortSignal) => perform(() => store.read(signal(input))),
         /**
          * 入口 / Entry: pluginMetadata.reference.replace.
          * 功能：把本层请求转交 `scope.run`，沿用该实现的结果与失败路径。
@@ -106,7 +122,7 @@ export function pluginMetadata(pluginId: string, owner: string, scope: PluginSco
          * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
          * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
          */
-        replace: (value: T, options: MetadataWriteOptions = {}) => scope.run(() => run('metadata', () => store.replace(value,
+        replace: (value: T, options: MetadataWriteOptions = {}) => perform(() => store.replace(value,
           { ...options, signal: signal(options.signal),
           /**
            * 入口 / Entry: pluginMetadata.reference.beforeCommit.
@@ -119,7 +135,7 @@ export function pluginMetadata(pluginId: string, owner: string, scope: PluginSco
            * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
            * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
            */
-          beforeCommit: async () => { await options.beforeCommit?.(); run('metadata', () => {}); } }))),
+          beforeCommit: async () => { await options.beforeCommit?.(); check(); } })),
       });
       references.set(handle, file); scope.add(() => store.flush()); return handle;
     },

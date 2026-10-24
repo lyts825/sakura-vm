@@ -1,3 +1,44 @@
+import type * as IntegrationContracts from './integration-lab.ts';
+export interface IntegrationSpecsV1 extends IntegrationContracts.IntegrationSpecsV1 {}
+export interface IntegrationEnvironmentsV1 extends IntegrationContracts.IntegrationEnvironmentsV1 {}
+export interface IntegrationFixturesV1 extends IntegrationContracts.IntegrationFixturesV1 {}
+export interface IntegrationMocksV1 extends IntegrationContracts.IntegrationMocksV1 {}
+export interface IntegrationScenariosV1 extends IntegrationContracts.IntegrationScenariosV1 {}
+export interface IntegrationAssertionsV1 extends IntegrationContracts.IntegrationAssertionsV1 {}
+export interface IntegrationRunnersV1 extends IntegrationContracts.IntegrationRunnersV1 {}
+export interface IntegrationLoadV1 extends IntegrationContracts.IntegrationLoadV1 {}
+export interface IntegrationReportsV1 extends IntegrationContracts.IntegrationReportsV1 {}
+export interface IntegrationExchangeV1 extends IntegrationContracts.IntegrationExchangeV1 {}
+export interface IntegrationWorkbenchV1 extends IntegrationContracts.IntegrationWorkbenchV1 {}
+import type * as ResilienceContracts from './resilience-lab.ts';
+export interface ResilienceTargetsV1 extends ResilienceContracts.ResilienceTargetsV1 {}
+export interface ResilienceFixturesV1 extends ResilienceContracts.ResilienceFixturesV1 {}
+export interface ResilienceGuardV1 extends ResilienceContracts.ResilienceGuardV1 {}
+export interface ResilienceFaultsV1 extends ResilienceContracts.ResilienceFaultsV1 {}
+export interface ResilienceProbesV1 extends ResilienceContracts.ResilienceProbesV1 {}
+export interface ResilienceRecoveryV1 extends ResilienceContracts.ResilienceRecoveryV1 {}
+export interface ResilienceScenariosV1 extends ResilienceContracts.ResilienceScenariosV1 {}
+export interface ResilienceRunsV1 extends ResilienceContracts.ResilienceRunsV1 {}
+export interface ResilienceReportsV1 extends ResilienceContracts.ResilienceReportsV1 {}
+export interface ResilienceWorkbenchV1 extends ResilienceContracts.ResilienceWorkbenchV1 {}
+import type * as KnowledgeContracts from './knowledge-studio.ts';
+export interface KnowledgeSourcesV1 extends KnowledgeContracts.KnowledgeSourcesV1 {}
+export interface KnowledgeExtractV1 extends KnowledgeContracts.KnowledgeExtractV1 {}
+export interface KnowledgeIndexV1 extends KnowledgeContracts.KnowledgeIndexV1 {}
+export interface KnowledgeEvidenceV1 extends KnowledgeContracts.KnowledgeEvidenceV1 {}
+export interface KnowledgeEntriesV1 extends KnowledgeContracts.KnowledgeEntriesV1 {}
+export interface KnowledgeDocumentsV1 extends KnowledgeContracts.KnowledgeDocumentsV1 {}
+export interface KnowledgeReviewsV1 extends KnowledgeContracts.KnowledgeReviewsV1 {}
+export interface KnowledgePublishV1 extends KnowledgeContracts.KnowledgePublishV1 {}
+export interface KnowledgeExchangeV1 extends KnowledgeContracts.KnowledgeExchangeV1 {}
+export interface KnowledgeWorkbenchV1 extends KnowledgeContracts.KnowledgeWorkbenchV1 {}
+import type { FilesV2 as FilesV2Contract } from './files-v2.ts';
+export interface FilesV2 extends FilesV2Contract {}
+import type { PreparedWorkerSessionsV1 as PreparedWorkerSessionsContract } from './prepared-worker-sessions.ts';
+export interface PreparedWorkerSessionsV1 extends PreparedWorkerSessionsContract {}
+import type { DrillSupervisionV1 as DrillSupervisionContract } from './drill-supervision.ts';
+export interface DrillSupervisionV1 extends DrillSupervisionContract {}
+
 import type * as FoundryContracts from './foundry.ts';
 export interface FoundrySourcesV1 extends FoundryContracts.FoundrySourcesV1 {}
 export interface FoundryBlueprintsV1 extends FoundryContracts.FoundryBlueprintsV1 {}

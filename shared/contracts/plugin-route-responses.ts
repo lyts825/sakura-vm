@@ -12,6 +12,9 @@ import { deliveryHttpResponses } from './delivery-http.ts';
 import { foundryHttpResponses } from './foundry-http.ts';
 import { appRouteResponses } from './app-http.ts';
 import { dataHttpResponses } from './data-http.ts';
+import { knowledgeHttpResponses } from './knowledge-http.ts';
+import { resilienceHttpResponses } from './resilience-http-registry.ts';
+import { integrationHttpResponses } from './integration-http-registry.ts';
 import type { HttpResponseContract } from './http-response.ts';
 import { jsonValueSchema } from './json-values.ts';
 import { jobViewSchema, vmViewSchema } from './core-dtos.ts';
@@ -4897,7 +4900,7 @@ export const pluginRouteResponses = {
   'repair.view': { kind: 'json', statuses: [200], media: 'application/json', schema: repairSessionSchema },
   ...deliveryHttpResponses,
   ...foundryHttpResponses,
-  ...Object.fromEntries<HttpResponseContract>(Object.entries({ ...appRouteResponses, ...dataHttpResponses }).map(([key, schema]) => [key, { kind: 'json' as const, statuses: [200], media: 'application/json', schema }])),
+  ...Object.fromEntries<HttpResponseContract>(Object.entries({ ...appRouteResponses, ...dataHttpResponses, ...knowledgeHttpResponses, ...resilienceHttpResponses, ...integrationHttpResponses }).map(([key, schema]) => [key, { kind: 'json' as const, statuses: [200], media: 'application/json', schema }])),
   'repair.act': { kind: 'json', statuses: [200], media: 'application/json', schema: repairActionResponseSchema },
   'recipes.post.vms.vmId.recipe.apply-plan': {
     kind: 'json', statuses: [200], media: 'application/json', schema: projectsGetVmsVmIdProjectResponseSchema,

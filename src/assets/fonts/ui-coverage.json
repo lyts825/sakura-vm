@@ -661,6 +661,27 @@
     "plugins/data-*/manifest.ts",
     "plugins/packs/foundry.ts",
     "plugins/packs/app-runtime.ts",
-    "plugins/packs/data-lab.ts"
+    "plugins/packs/data-lab.ts",
+    "src/IntegrationLabPanel.tsx",
+    "src/ResilienceLabPanel.tsx",
+    "src/KnowledgeStudioPanel.tsx",
+    "server/integration-*.ts",
+    "server/resilience-*.ts",
+    "server/knowledge-*.ts",
+    "server/drill-*.ts",
+    "server/core-drill-*.ts",
+    "server/prepared-worker-sessions.ts",
+    "server/files-capture.ts",
+    "shared/contracts/integration-*.ts",
+    "shared/contracts/resilience-*.ts",
+    "shared/contracts/knowledge-*.ts",
+    "shared/contracts/drill-*.ts",
+    "shared/contracts/files-capture.ts",
+    "plugins/integration-*/manifest.ts",
+    "plugins/resilience-*/manifest.ts",
+    "plugins/knowledge-*/manifest.ts",
+    "plugins/packs/integration-lab.ts",
+    "plugins/packs/resilience-lab.ts",
+    "plugins/packs/knowledge-studio.ts"
   ]
 }

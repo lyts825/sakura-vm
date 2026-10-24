@@ -2,9 +2,11 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
-应用与内置包版本：**2.6.0**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+应用与内置包版本：**2.7.0**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
 
-本轮新增 [环境镜像工坊](docs/foundry-workbench.md)、[应用运行与运维](docs/app-runtime-pack.md)、[数据与实验工作台](docs/data-lab.md)，共 28 个插件，覆盖镜像制作、持续应用运行和可复现数据分析。每个包提供独立页面、HTTP 接口与 CLI，并可按需接入已有 [项目交付工作台](docs/delivery-workbench.md)。
+本轮新增 [接口集成验证](docs/integration-lab.md)、[可靠性演练](docs/resilience-lab.md)、[项目知识与文档](docs/knowledge-studio.md)，共 31 个插件，分别完成接口场景与受控负载验证、隔离副本中的故障与恢复演练，以及有来源依据的文档编写和交接。三个包各有页面、HTTP 接口与纯 Node CLI，可独立启用；执行和导入需显式提交。
+
+[环境镜像工坊](docs/foundry-workbench.md)、[应用运行与运维](docs/app-runtime-pack.md)、[数据与实验工作台](docs/data-lab.md)和[项目交付工作台](docs/delivery-workbench.md)继续可用。新增包沿用宿主 API 5，旧服务契约保持兼容。
 
 [环境变更预览](docs/environment-plan.md)、[流水线依赖与局部重跑](docs/pipeline-graph.md)、[安全清理中心](docs/cleanup-center.md)和[任务证据与处理](docs/task-evidence.md)继续可用。[AI 修复会话](docs/repair-sessions.md)为可选插件；[可信更新中心](docs/self-update.md)管理应用发行包，与项目交付签名分别管理信任。
 
@@ -16,7 +18,7 @@
 
 文件、桌面、多终端、项目、Git、同步、备份、监控等均为可选插件。**默认不启用任何插件或整合包**，也不运行它们的后台任务。默认导航为「工作空间 / 插件中心 / 系统设置」，实例标签为「终端 / 配置」。
 
-当前有 **69 个插件、13 个整合包**。在「插件中心」单独选择插件，或按场景选择整合包：
+当前有 **100 个插件、16 个整合包**。在「插件中心」单独选择插件，或按场景选择整合包：
 
 | 整合包                     | 内容                                                   |
 | -------------------------- | ------------------------------------------------------ |
@@ -33,6 +35,9 @@
 | `foundry` 环境镜像工坊     | 来源与蓝图、离线材料、制作、清理、验收、发布与交接     |
 | `app-runtime` 应用运行     | 制品、目标、配置、数据、部署、路由、观察与冷备恢复     |
 | `data-lab` 数据与实验      | 数据来源、不可变数据集、变换、质量、Notebook 与实验交接 |
+| `integration-lab` 接口集成验证 | 规格、环境、样例、模拟接口、场景、执行、断言、负载与报告交接 |
+| `resilience-lab` 可靠性演练 | 隔离夹具、独立监管、故障、业务探测、恢复、报告与清理 |
+| `knowledge-studio` 项目知识与文档 | 固定来源、解析、索引、引用、条目、文档、审阅、阅读发布与交接 |
 
 整合包可引用子整合包；必需依赖自动补齐并去重，可选配套不会自动启用。选择保存后，**退出并重新启动 Sakura 服务才会生效**，仅刷新浏览器无效；重启会停止当前实例。移除整合包时，其他整合包或独立选择仍需要的插件继续保留。
 

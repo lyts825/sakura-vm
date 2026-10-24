@@ -14,6 +14,10 @@ export type Live = {
   incoming?: boolean;
   accelerator: 'tcg' | 'whpx';
   startedAt: string;
+  /** 本体独占的运行 PID 文件与实际启动参数，不暴露给插件运行视图。
+   * Core-only per-run PID receipt and launch arguments, absent from plugin views. */
+  processRecordFile?: string;
+  processArguments?: readonly string[];
   sshPort: number;
   qmpPort: number;
   agentPort: number;

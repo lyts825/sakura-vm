@@ -88,6 +88,9 @@ export const hostProcessAdapters = {
   'gpg-discovery': 'tool',
   'gpg-asset-guard': 'helper',
   'gpg-native-relay': 'helper',
+  'drill-watchdog': 'helper',
+  'drill-probe': 'tool',
+  'drill-validation-controller': 'helper',
 } as const;
 export type HostProcessAdapter = keyof typeof hostProcessAdapters;
 /**

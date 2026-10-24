@@ -5,6 +5,7 @@
 import type { ProjectCatalogV1 } from './service-contracts/v1.ts';
 import type { IncomingMessage } from 'node:http';
 import { AppError } from '../shared/errors.ts';
+import { LOCAL_OWNER_ACTOR_ID } from './local-principal.ts';
 import { ProjectCatalog, projectIdSchema } from './project-catalog.ts';
 import { vmLifetime } from './vm-lifetime.ts';
 import { extensionOrigin, type BrowserExtensions } from './browser-extensions.ts';
@@ -117,7 +118,9 @@ export function createOperationAuthority(options: AuthorityOptions) {
       }
       if (access.enabled) return access.authorize(credential);
       if (!equalToken(credential)) throw new AppError('访问凭证已过期，请刷新页面', 401);
-      return { role: 'owner' as const };
+      // A verified local control token also has a stable principal. Domain ownership
+      // must never infer authority from a missing actor or an arbitrary scope ID.
+      return { role: 'owner' as const, id: LOCAL_OWNER_ACTOR_ID };
     };
     const principal = ['controller', 'socket'].includes(policy.access) ? authenticate() : undefined;
     // Reject before loading project metadata. A GET endpoint still requires its explicit role grant.

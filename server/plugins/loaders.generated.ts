@@ -102,6 +102,48 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'ide': () => import('../../plugins/ide/server.ts'),
   /** 按需加载 images 的固定服务入口，无外部路径参数。 / Load the fixed images service entry on demand, with no external path input. */
   'images': () => import('../../plugins/images/server.ts'),
+  /** 按需加载 integration-assertions 的固定服务入口，无外部路径参数。 / Load the fixed integration-assertions service entry on demand, with no external path input. */
+  'integration-assertions': () => import('../../plugins/integration-assertions/server.ts'),
+  /** 按需加载 integration-environments 的固定服务入口，无外部路径参数。 / Load the fixed integration-environments service entry on demand, with no external path input. */
+  'integration-environments': () => import('../../plugins/integration-environments/server.ts'),
+  /** 按需加载 integration-exchange 的固定服务入口，无外部路径参数。 / Load the fixed integration-exchange service entry on demand, with no external path input. */
+  'integration-exchange': () => import('../../plugins/integration-exchange/server.ts'),
+  /** 按需加载 integration-fixtures 的固定服务入口，无外部路径参数。 / Load the fixed integration-fixtures service entry on demand, with no external path input. */
+  'integration-fixtures': () => import('../../plugins/integration-fixtures/server.ts'),
+  /** 按需加载 integration-load 的固定服务入口，无外部路径参数。 / Load the fixed integration-load service entry on demand, with no external path input. */
+  'integration-load': () => import('../../plugins/integration-load/server.ts'),
+  /** 按需加载 integration-mocks 的固定服务入口，无外部路径参数。 / Load the fixed integration-mocks service entry on demand, with no external path input. */
+  'integration-mocks': () => import('../../plugins/integration-mocks/server.ts'),
+  /** 按需加载 integration-reports 的固定服务入口，无外部路径参数。 / Load the fixed integration-reports service entry on demand, with no external path input. */
+  'integration-reports': () => import('../../plugins/integration-reports/server.ts'),
+  /** 按需加载 integration-runners 的固定服务入口，无外部路径参数。 / Load the fixed integration-runners service entry on demand, with no external path input. */
+  'integration-runners': () => import('../../plugins/integration-runners/server.ts'),
+  /** 按需加载 integration-scenarios 的固定服务入口，无外部路径参数。 / Load the fixed integration-scenarios service entry on demand, with no external path input. */
+  'integration-scenarios': () => import('../../plugins/integration-scenarios/server.ts'),
+  /** 按需加载 integration-specs 的固定服务入口，无外部路径参数。 / Load the fixed integration-specs service entry on demand, with no external path input. */
+  'integration-specs': () => import('../../plugins/integration-specs/server.ts'),
+  /** 按需加载 integration-workbench 的固定服务入口，无外部路径参数。 / Load the fixed integration-workbench service entry on demand, with no external path input. */
+  'integration-workbench': () => import('../../plugins/integration-workbench/server.ts'),
+  /** 按需加载 knowledge-documents 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-documents service entry on demand, with no external path input. */
+  'knowledge-documents': () => import('../../plugins/knowledge-documents/server.ts'),
+  /** 按需加载 knowledge-entries 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-entries service entry on demand, with no external path input. */
+  'knowledge-entries': () => import('../../plugins/knowledge-entries/server.ts'),
+  /** 按需加载 knowledge-evidence 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-evidence service entry on demand, with no external path input. */
+  'knowledge-evidence': () => import('../../plugins/knowledge-evidence/server.ts'),
+  /** 按需加载 knowledge-exchange 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-exchange service entry on demand, with no external path input. */
+  'knowledge-exchange': () => import('../../plugins/knowledge-exchange/server.ts'),
+  /** 按需加载 knowledge-extract 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-extract service entry on demand, with no external path input. */
+  'knowledge-extract': () => import('../../plugins/knowledge-extract/server.ts'),
+  /** 按需加载 knowledge-index 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-index service entry on demand, with no external path input. */
+  'knowledge-index': () => import('../../plugins/knowledge-index/server.ts'),
+  /** 按需加载 knowledge-publish 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-publish service entry on demand, with no external path input. */
+  'knowledge-publish': () => import('../../plugins/knowledge-publish/server.ts'),
+  /** 按需加载 knowledge-reviews 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-reviews service entry on demand, with no external path input. */
+  'knowledge-reviews': () => import('../../plugins/knowledge-reviews/server.ts'),
+  /** 按需加载 knowledge-sources 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-sources service entry on demand, with no external path input. */
+  'knowledge-sources': () => import('../../plugins/knowledge-sources/server.ts'),
+  /** 按需加载 knowledge-workbench 的固定服务入口，无外部路径参数。 / Load the fixed knowledge-workbench service entry on demand, with no external path input. */
+  'knowledge-workbench': () => import('../../plugins/knowledge-workbench/server.ts'),
   /** 按需加载 library 的固定服务入口，无外部路径参数。 / Load the fixed library service entry on demand, with no external path input. */
   'library': () => import('../../plugins/library/server.ts'),
   /** 按需加载 maintenance 的固定服务入口，无外部路径参数。 / Load the fixed maintenance service entry on demand, with no external path input. */
@@ -124,6 +166,26 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'recipes': () => import('../../plugins/recipes/server.ts'),
   /** 按需加载 repair 的固定服务入口，无外部路径参数。 / Load the fixed repair service entry on demand, with no external path input. */
   'repair': () => import('../../plugins/repair/server.ts'),
+  /** 按需加载 resilience-faults 的固定服务入口，无外部路径参数。 / Load the fixed resilience-faults service entry on demand, with no external path input. */
+  'resilience-faults': () => import('../../plugins/resilience-faults/server.ts'),
+  /** 按需加载 resilience-fixtures 的固定服务入口，无外部路径参数。 / Load the fixed resilience-fixtures service entry on demand, with no external path input. */
+  'resilience-fixtures': () => import('../../plugins/resilience-fixtures/server.ts'),
+  /** 按需加载 resilience-guard 的固定服务入口，无外部路径参数。 / Load the fixed resilience-guard service entry on demand, with no external path input. */
+  'resilience-guard': () => import('../../plugins/resilience-guard/server.ts'),
+  /** 按需加载 resilience-probes 的固定服务入口，无外部路径参数。 / Load the fixed resilience-probes service entry on demand, with no external path input. */
+  'resilience-probes': () => import('../../plugins/resilience-probes/server.ts'),
+  /** 按需加载 resilience-recovery 的固定服务入口，无外部路径参数。 / Load the fixed resilience-recovery service entry on demand, with no external path input. */
+  'resilience-recovery': () => import('../../plugins/resilience-recovery/server.ts'),
+  /** 按需加载 resilience-reports 的固定服务入口，无外部路径参数。 / Load the fixed resilience-reports service entry on demand, with no external path input. */
+  'resilience-reports': () => import('../../plugins/resilience-reports/server.ts'),
+  /** 按需加载 resilience-runs 的固定服务入口，无外部路径参数。 / Load the fixed resilience-runs service entry on demand, with no external path input. */
+  'resilience-runs': () => import('../../plugins/resilience-runs/server.ts'),
+  /** 按需加载 resilience-scenarios 的固定服务入口，无外部路径参数。 / Load the fixed resilience-scenarios service entry on demand, with no external path input. */
+  'resilience-scenarios': () => import('../../plugins/resilience-scenarios/server.ts'),
+  /** 按需加载 resilience-targets 的固定服务入口，无外部路径参数。 / Load the fixed resilience-targets service entry on demand, with no external path input. */
+  'resilience-targets': () => import('../../plugins/resilience-targets/server.ts'),
+  /** 按需加载 resilience-workbench 的固定服务入口，无外部路径参数。 / Load the fixed resilience-workbench service entry on demand, with no external path input. */
+  'resilience-workbench': () => import('../../plugins/resilience-workbench/server.ts'),
   /** 按需加载 runtimes 的固定服务入口，无外部路径参数。 / Load the fixed runtimes service entry on demand, with no external path input. */
   'runtimes': () => import('../../plugins/runtimes/server.ts'),
   /** 按需加载 sandbox 的固定服务入口，无外部路径参数。 / Load the fixed sandbox service entry on demand, with no external path input. */

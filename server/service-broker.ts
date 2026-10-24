@@ -431,6 +431,8 @@ export class ServiceBroker {
                 callerPluginInstanceId: before?.callerPluginInstanceId || consumer.identity,
                 serviceConsumerPluginInstanceId: consumer.source === 'system'
                   ? before?.serviceConsumerPluginInstanceId || consumer.identity : consumer.identity,
+                serviceConsumerPluginGeneration: consumer.source === 'system'
+                  ? before?.serviceConsumerPluginGeneration || consumer.generation : consumer.generation,
                 callerPluginGeneration: before?.callerPluginGeneration || consumer.generation,
                 actorId: before?.actorId,
                 vmId: before?.vmId,

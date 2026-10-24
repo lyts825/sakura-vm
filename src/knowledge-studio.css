@@ -1,0 +1,155 @@
+/* 知识工作台的表单、阅读和计划层。 Knowledge forms, reading view and review dialog. */
+.knowledge-studio {
+  --knowledge-line: color-mix(in srgb, currentColor 15%, transparent);
+  padding: 24px;
+  max-width: 1500px;
+  margin: auto;
+  line-height: 1.6;
+}
+.knowledge-studio header,
+.knowledge-space,
+.knowledge-line {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.knowledge-studio header {
+  justify-content: space-between;
+}
+.knowledge-studio h1 {
+  font-size: 28px;
+  margin: 0;
+}
+.knowledge-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  opacity: 0.6;
+}
+.knowledge-space {
+  border-block: 1px solid var(--knowledge-line);
+  padding: 20px 0;
+  margin: 24px 0;
+}
+.knowledge-studio nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 24px 0;
+}
+.knowledge-studio button {
+  padding: 8px 14px;
+  border: 1px solid var(--knowledge-line);
+  border-radius: 7px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  margin: 4px;
+}
+.knowledge-studio button.active {
+  background: #36594f;
+  color: white;
+}
+.knowledge-studio button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.knowledge-studio label {
+  display: block;
+  margin: 12px 0;
+}
+.knowledge-studio input:not([type='checkbox']),
+.knowledge-studio select,
+.knowledge-studio textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 720px;
+  padding: 10px;
+  border: 1px solid var(--knowledge-line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.knowledge-studio textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.knowledge-studio input[type='checkbox'] {
+  width: auto;
+  flex: 0 0 auto;
+  margin-right: 9px;
+}
+.knowledge-studio label:has(> input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+}
+.knowledge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+}
+.knowledge-studio article {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--knowledge-line);
+  border-radius: 12px;
+}
+.knowledge-card {
+  border: 1px solid var(--knowledge-line);
+  padding: 14px;
+  margin: 12px 0;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.knowledge-studio code {
+  display: block;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  opacity: 0.75;
+}
+.knowledge-empty {
+  padding: 36px;
+  background: color-mix(in srgb, #709683 10%, transparent);
+  border-radius: 12px;
+}
+.knowledge-error {
+  color: #bb3b38;
+}
+.knowledge-reader {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.8;
+  max-width: 80ch;
+  margin: 24px auto;
+}
+.knowledge-plan {
+  position: fixed;
+  inset: 12vh max(5vw, calc((100vw - 850px) / 2));
+  padding: 28px;
+  background: var(--surface, #f7f7f5);
+  color: var(--ink);
+  border: 1px solid #b4c6bd;
+  border-radius: 12px;
+  box-shadow: 0 20px 80px #0005;
+  overflow: auto;
+  z-index: 1000;
+}
+.knowledge-plan ul {
+  max-height: 45vh;
+  overflow: auto;
+}
+.knowledge-studio :focus-visible {
+  outline: 2px solid #609a84;
+  outline-offset: 3px;
+}
+@media (max-width: 850px) {
+  .knowledge-grid {
+    grid-template-columns: 1fr;
+  }
+  .knowledge-studio {
+    padding: 14px;
+  }
+}

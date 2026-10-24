@@ -13,7 +13,7 @@ export const manifest = definePlugin({
   category: 'workspace',
   requires: [pin('transfers')],
   optional: [pin('projects'), pin('migration'), pin('code-checks'), pin('project-search'), pin('sync')],
-  services: ['files', 'history', 'fileLocks'],
+  services: ['files', 'history', 'fileLocks', 'capture'],
   contributes: {
     routes: [
       {"id":"legacy.get.vms.vmId.files","method":"GET","path":"/api/vms/{vmId}/files","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"route","status":200},

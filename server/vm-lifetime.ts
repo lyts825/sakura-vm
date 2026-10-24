@@ -232,6 +232,17 @@ type Activity = {
 };
 const legacy = new WeakMap<object, VmLifetime>();
 const exclusiveContext = new AsyncLocalStorage<{ lifetime: VmLifetime; active: boolean }>();
+/** 本体预约只重入当前 VM 排他域；不恢复调用者、资源归属或业务授权上下文。 */
+export function captureVmExclusive(lifetime: VmLifetime) {
+  const context = exclusiveContext.getStore();
+  if (!context?.active || context.lifetime !== lifetime) throw changed();
+  const identity = lifetime.capture();
+  return <T>(work: () => T): T => {
+    if (!context.active) throw changed();
+    lifetime.assert(identity);
+    return exclusiveContext.run(context, work);
+  };
+}
 /**
  * 入口 / Entry: changed.
  * 功能：从当前输入或状态计算 `new AppError('客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED')`，供调用方后续验证或使用。

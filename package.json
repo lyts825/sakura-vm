@@ -1,6 +1,6 @@
 {
   "name": "sakura-vm",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "private": true,
   "type": "module",
   "description": "A WSL-inspired local Linux workspace, powered by PosixLoom and QEMU",
@@ -162,6 +162,9 @@
     "foundry": "node scripts/foundry.mjs",
     "app-runtime": "node scripts/app-runtime.mjs",
     "data": "node scripts/data.mjs",
+    "integration": "node scripts/cli.mjs integration",
+    "resilience": "node scripts/cli.mjs resilience",
+    "knowledge": "node scripts/knowledge.mjs",
     "architecture:check": "tsx scripts/check-architecture.ts",
     "plugins:contracts": "tsx scripts/service-contracts.ts",
     "plugins:contracts:freeze": "tsx scripts/freeze-service-contracts.ts",

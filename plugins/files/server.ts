@@ -22,6 +22,8 @@ import { Files, textVersion } from '../../server/files.ts';
 import { FileHistory } from '../../server/file-history.ts';
 import { FileLocks } from '../../server/file-locks.ts';
 import { downloadManifest } from '../../server/file-chunks.ts';
+import { FilesCapture } from '../../server/files-capture.ts';
+import { services as projectCaptureServices } from '../projects/services.ts';
 
 /**
  * 中文：在本次插件激活中构造 Files、FileHistory、FileLocks，发布 filesServices.files、filesServices.history、filesServices.fileLocks 服务引用；依赖通过 host 获取，登记的任务和清理由本激活寿命拥有
@@ -33,6 +35,9 @@ import { downloadManifest } from '../../server/file-chunks.ts';
  */
 export async function activate(host: PluginContext) {
   const m = host.vm;
+  const capture = new FilesCapture(m, host.optional(projectCaptureServices.workspaces));
+  host.provide(filesServices.capture, capture);
+  host.onDispose(() => capture.close());
   const files = host.provide(filesServices.files, new Files(m));
   const history = host.provide(filesServices.history, new FileHistory(m, files));
   const locks = host.provide(filesServices.fileLocks, new FileLocks());

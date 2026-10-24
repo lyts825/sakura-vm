@@ -16,6 +16,8 @@ export type ResourceIdentity = {
   callerPluginInstanceId?: string;
   /** 最近的非系统服务消费者；系统适配器保留该归属。 */
   serviceConsumerPluginInstanceId?: string;
+  /** 与最近非系统消费者对应的激活代次，不能借外围调用者代次替代。 */
+  serviceConsumerPluginGeneration?: string;
   callerPluginGeneration?: string;
   vmId?: string;
   projectId?: string;

@@ -13,6 +13,7 @@ import { resourceContext } from './host-runtime/context.ts';
 import { pluginAuthority } from './plugin-authority.ts';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess } from './vm-access.ts';
+import { vmHostIdentity } from './vm-reference.ts';
 import type { ImageAssetsV1 } from './service-contracts/image-assets.ts';
 import {
   imageAssetSchema,
@@ -50,6 +51,14 @@ const stateSchema = z
   })
   .strict();
 type State = z.infer<typeof stateSchema>;
+const drillOwnership = new WeakMap<object, ImageAssets>();
+/** 本体内部适配器读取原服务账本，插件公开契约不包含此入口。
+ * Internal adapter access to the originating ledger, outside the public plugin contract. */
+export async function assertImageDrillOwnership(machines: VmAccess, receipt: OwnedImageVm, consumer: string) {
+  const assets = drillOwnership.get(vmHostIdentity(machines));
+  if (!assets) throw new AppError('镜像归属服务尚未就绪', 503, 'DRILL_OWNER_UNAVAILABLE');
+  return assets.assertDrillOwnership(receipt, consumer);
+}
 const empty = (): State => ({
   version: 1,
   assets: [],
@@ -96,6 +105,7 @@ export class ImageAssets implements ImageAssetsV1 {
     private root = join(DATA, 'image-assets'),
   ) {
     this.store = new MetadataStore(join(root, 'index.json'), { fallback: empty });
+    drillOwnership.set(vmHostIdentity(machines), this);
   }
   private async authorize() {
     if (this.closed) throw new AppError('镜像资产服务已关闭', 503);
@@ -572,6 +582,28 @@ export class ImageAssets implements ImageAssetsV1 {
     this.claim(s, owner);
     return structuredClone(s.vms.filter((x) => x.owner === owner));
   }
+  /** 本体装配专用核验，不进入 ImageAssetsV1 或插件服务代理。
+   * Verify the recorded creator and original isolated VM for the core drill adapter only. */
+  async assertDrillOwnership(input: OwnedImageVm, consumerIdentity: string) {
+    const receipt = ownedImageVmSchema.parse(input);
+    const state = (await this.state()).value;
+    if (consumerIdentity !== 'official:resilience-fixtures' ||
+        state.claims[receipt.owner] !== consumerIdentity)
+      throw new AppError('演练实例不属于原夹具消费者', 403, 'DRILL_OWNER_MISMATCH');
+    const row = state.vms.find(value => value.token === receipt.token);
+    if (!row || JSON.stringify(row) !== JSON.stringify(receipt) || row.cleanup !== 'pending')
+      throw new AppError('演练实例原回执不匹配或尚待核销', 409, 'DRILL_RECEIPT_MISMATCH');
+    const vm = this.machines.get(row.vmId), live = this.machines.live.get(row.vmId);
+    if (vm.createdAt !== row.createdAt || !live || this.machines.state(vm.id) !== 'running' ||
+        vm.cpus > 2 || vm.memoryMiB > 2048 || vm.diskGiB > 32 || vm.forwards.length ||
+        vm.managedNetwork !== 'isolated')
+      throw new AppError('演练实例身份、网络或资源限制不匹配', 409, 'DRILL_VM_UNSAFE');
+    const network = await this.machines.networkIsolation(vm.id, vm.createdAt, live.startedAt);
+    if (!network.isolated || this.machines.live.get(vm.id) !== live ||
+        this.machines.get(vm.id).createdAt !== row.createdAt)
+      throw new AppError('演练核验期间实例身份或网络变化', 409, 'DRILL_VM_CHANGED');
+    return structuredClone(row);
+  }
   async destroyOwnedVm(input: OwnedImageVm) {
     ownedImageVmSchema.parse(input);
     const state = (await this.state()).value;
@@ -732,5 +764,7 @@ export class ImageAssets implements ImageAssetsV1 {
     await this.queue;
     await this.store.flush();
     this.closed = true;
+    if (drillOwnership.get(vmHostIdentity(this.machines)) === this)
+      drillOwnership.delete(vmHostIdentity(this.machines));
   }
 }

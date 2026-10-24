@@ -42,7 +42,7 @@ export function captureResourceContext(identity: Partial<ResourceIdentity> = {})
     operationId: identity.operationId ?? inherited?.operationId ?? randomUUID(),
   };
   // 仅按白名单复制身份字段，避免请求正文因对象展开意外进入诊断或后续 IPC 数据。
-  const keys: (keyof ResourceIdentity)[] = ['operationId', 'owner', 'actorId', 'pluginId', 'pluginInstanceId', 'pluginGeneration', 'callerPluginInstanceId', 'callerPluginGeneration', 'serviceConsumerPluginInstanceId', 'vmId',
+  const keys: (keyof ResourceIdentity)[] = ['operationId', 'owner', 'actorId', 'pluginId', 'pluginInstanceId', 'pluginGeneration', 'callerPluginInstanceId', 'callerPluginGeneration', 'serviceConsumerPluginInstanceId', 'serviceConsumerPluginGeneration', 'vmId',
     'projectId', 'jobId', 'vmProcessId', 'executionGeneration', 'bootId', 'networkGeneration', 'traceId', 'spanId', 'recoveryId'];
   for (const key of keys) {
     const value = identity[key];

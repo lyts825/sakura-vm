@@ -326,126 +326,318 @@ type Contract302 = { "action"?: "install" | "stop" };
 type Contract303 = Array<{ "id": string; "name": ("Alpine 3.23") | ("Debian 12") | ("Debian 12 ARM64") | ("Ubuntu 24.04 LTS"); "ready": boolean; "minimumMemory": (256) | (1024); "minimumDisk": (2) | (4); "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) }>;
 type Contract304 = { "name": string; "format": "raw" | "vmdk" | "vhdx" | "ova"; "distro": "alpine" | "debian" | "ubuntu"; "architecture"?: "x86_64" | "aarch64"; "memoryMiB": string; "cpus": string; "accelerator"?: "auto" | "tcg" | "whpx"; "firmware"?: "bios" | "uefi"; "sha256"?: string };
 type Contract305 = { "vm": { "name": string; "memoryMiB": number; "cpus": number; "diskGiB": number; "accelerator": ("auto") | ("tcg") | ("whpx"); "forwards": Array<{ "host": number; "guest": number; "name"?: string }>; "storagePoolId"?: string; "firmware"?: ("bios") | ("uefi"); "distro"?: ("alpine") | ("debian") | ("ubuntu"); "architecture"?: ("x86_64") | ("aarch64"); "template"?: ("none") | ("node") | ("python") | ("rust"); "hardware"?: { "cpu"?: { "sockets": number; "cores": number; "threads": number; "numa"?: Array<{ "memoryMiB": number; "cpus": Array<number> }> }; "devices"?: { "graphics": ("none") | ("virtio-gpu") | ("virgl"); "networkCard": ("virtio-net-pci") | ("e1000"); "randomDevice": boolean; "balloon": boolean; "diskCache": ("none") | ("writeback") | ("writethrough"); "discard": boolean; "graphicsOutputs"?: number; "graphicsWidth"?: number; "graphicsHeight"?: number; "graphicsMemoryMiB"?: number; "audio"?: ("none") | ("hda-duplex"); "audioBackend"?: ("none") | ("dsound") }; "memory"?: { "maxMiB": number; "slots": number }; "ipv6"?: (false) | (true) }; "id": string; "diskEncryption"?: { "format": "luks"; "secretName": string }; "sandbox"?: { "network": ("isolated") | ("nat"); "expiresAt": string; "onExpire": ("stop") | ("delete"); "storage"?: ("persistent") | ("discard-on-stop") }; "rescueOf"?: string; "createdAt": string; "snapshots": Array<{ "id": string; "name": string; "createdAt": string; "note"?: string; "diskGiB"?: number; "pendingResize"?: (false) | (true); "consistency"?: ("offline") | ("filesystem") | ("vmstate"); "stateFingerprint"?: string }>; "bootstrapped"?: (false) | (true); "lastUsedAt"?: string; "lastError"?: string; "organization"?: { "group": string; "tags": Array<string>; "favorite": boolean }; "pendingResize"?: (false) | (true); "migrationOrigin"?: { "sourceHostId": string; "transferId": string; "targetName": string; "sourceVmId"?: string; "snapshotId"?: string; "diskSha256"?: string }; "haPromotion"?: { "peerId": string; "targetHostId": string; "transferId": string; "remoteVmId": string; "snapshotId": string; "sha256": string; "fencedAt": string; "status": "fenced" | "accepted"; "updatedAt": string; "error"?: string }; "haRetirement"?: { "sourceHostId": string; "transferId": string; "sourceVmId": string; "snapshotId": string; "sha256": string; "retiredAt": string }; "haWitnessEnrollment"?: { "targetHostId": string; "failureThreshold": number; "registeredAt": string }; "liveMigrationFence"?: { "targetHostId": string; "targetVmId": string; "transferId": string; "fencedAt": string; "peerId"?: string; "sourceHostId"?: string; "sessionId"?: string; "projectsDigest"?: string; "sourceProcessId"?: string; "origin"?: { "owner": string; "pluginId"?: string; "pluginInstanceId"?: string; "pluginGeneration"?: string; "artifactDigest"?: string; "operationId"?: string; "resourceIds": Array<string> }; "sourceStopped"?: { "sourceProcessId": string; "stoppedAt": string }; "completion"?: { "version": 1; "sourceVmId": string; "sourceHostId": string; "sourceProcessId": string; "targetHostId": string; "targetVmId": string; "transferId": string; "sessionId": string; "projectsDigest": string; "sourceStoppedAt": string; "targetVerifiedAt": string; "confirmedAt": string } }; "liveMigrationOrigin"?: { "sourceHostId": string; "sourceVmId": string; "transferId": string; "status": "prepared" | "received" | "ready"; "completionProtocol"?: 1; "sessionId"?: string; "projectsDigest"?: string; "prepareDigest"?: string; "prepareReceipt"?: { "targetVmId": string; "sessionId": string; "targetDiskNode": string; "diskPort": number; "statePort": number; "completionProtocol"?: 1 }; "createdAt": string; "updatedAt": string }; "branchOrigin"?: { "sourceVmId": string; "snapshotId": string; "createdAt": string }; "mergeOrigin"?: { "branchVmId": string; "targetVmId": string; "snapshotId": string; "path": string; "mergedAt": string; "appliedFiles": number }; "activeAccelerator"?: ("tcg") | ("whpx"); "memoryTargetMiB"?: number; "status": ("error") | ("running") | ("stopped") | ("starting") | ("paused") | ("stopping"); "poweredOn": boolean; "startedAt"?: string; "diskBytes": number }; "source": { "member"?: string; "format": ("raw") | ("vmdk") | ("vhdx") | ("ova"); "bytes": number; "sha256": string; "virtualBytes": number } };
-type Contract306 = { "ids": Array<string>; "action": "start" | "stop" };
-type Contract307 = { "results": Array<({ "id": string; "ok": boolean }) | ({ "id": string; "ok": boolean; "error": string })> };
-type Contract308 = { "group"?: string; "tags"?: Array<string>; "favorite"?: boolean };
-type Contract309 = { "providers": Array<{ "id": "backup-blocks" | "job-logs"; "label": string; "description": string }> };
-type Contract310 = { "provider": "backup-blocks" | "job-logs" };
-type Contract311 = { "revision": string; "entries": Array<{ "id": string; "source": string; "owner": string; "label": string; "bytes": number; "eligible": boolean; "reason": string }>; "notes": Array<string>; "provider": "backup-blocks" | "job-logs"; "token": string; "expiresAt": string; "estimatedBytes": number; "candidateCount": number };
-type Contract312 = { "provider": "backup-blocks" | "job-logs"; "token": string };
-type Contract313 = { "provider": "backup-blocks" | "job-logs"; "removedCount": number; "reclaimedBytes": number };
-type Contract314 = { "total": number; "available": number; "images": Array<{ "id": string; "name": ("Alpine 3.23") | ("Debian 12") | ("Debian 12 ARM64") | ("Ubuntu 24.04 LTS"); "bytes": number }>; "backupBytes": number; "deduplicatedBackups": { "backups": number; "logicalBytes": number; "physicalBytes": number; "referencedBytes": number; "savedBytes": number; "orphanBytes": number; "reclaimedBytes": number; "chunkCount": number; "blockSize": number }; "machines": Array<{ "id": string; "name": string; "bytes": number; "capacity": number; "snapshots": number; "pendingResize": boolean }>; "warning": string };
-type Contract315 = { "report": (null) | ({ "createdAt": string; "checks": Array<{ "name": string; "status": ("error") | ("warning") | ("ok") | ("skip"); "detail": string; "suggestion"?: string }>; "log": string }); "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
-type Contract316 = { "diskGiB"?: number; "finish"?: boolean };
-type Contract317 = ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } });
-type Contract318Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract318Ref1>) | ({ [key: string]: (Contract318Ref1) });
-type Contract318 = { "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "maintenance": boolean; "policy": { "enabled": boolean; "intervalHours": number; "mode": ("trim") | ("compact") | ("both"); "compress": boolean }; "attempts": { "trim"?: { "startedAt": string; "finishedAt"?: string; "error"?: string; "result"?: { [key: string]: (Contract318Ref1) } }; "compact"?: { "startedAt": string; "finishedAt"?: string; "error"?: string; "result"?: { [key: string]: (Contract318Ref1) } } }; "successes": { "trim"?: string; "compact"?: string } };
-type Contract319 = { "enabled"?: boolean; "intervalHours"?: number; "mode"?: "trim" | "compact" | "both"; "compress"?: boolean };
-type Contract320Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract320Ref1>) | ({ [key: string]: (Contract320Ref1) });
-type Contract320 = { "policy": { "enabled": boolean; "intervalHours": number; "mode": ("trim") | ("compact") | ("both"); "compress": boolean }; "attempts": { "trim"?: { "startedAt": string; "finishedAt"?: string; "error"?: string; "result"?: { [key: string]: (Contract320Ref1) } }; "compact"?: { "startedAt": string; "finishedAt"?: string; "error"?: string; "result"?: { [key: string]: (Contract320Ref1) } } }; "successes": { "trim"?: string; "compact"?: string } };
-type Contract321 = { "mode": "trim" | "compact" };
-type Contract322 = { "cpuPercent": number; "memoryUsed": number; "memoryTotal": number; "diskUsed": number; "diskTotal": number; "uptime": number; "sampledAt": string; "networkReceivedBytes": number | null; "networkTransmittedBytes": number | null; "networkInterfaces": Array<{ "name": string; "receivedBytes": number; "transmittedBytes": number }>; "networkReceiveBytesPerSecond": number | null; "networkTransmitBytesPerSecond": number | null; "processes": Array<{ "name": string; "memory": number }> };
-type Contract323 = { "source": string; "target"?: string; "restartRequired": boolean; "blocked": boolean; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "previous": null };
-type Contract324 = { "action": "preview" | "start" | "cancel-activation"; "target"?: string; "token"?: string };
-type Contract325 = ({ "source": string; "target"?: string; "restartRequired": boolean; "blocked": boolean; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "previous": null }) | ({ "source": string; "target": string; "bytes": number; "available": number; "count": number; "token": string }) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } });
-type Contract326 = Array<{ "id": string; "name": string; "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "updatedAt": string }>;
-type Contract327 = { "name": string; "config": { "dnsServers"?: Array<string>; "dnsDomains"?: Array<string>; "dnssec"?: "inherit" | "yes" | "allow-downgrade" | "no"; "forwards"?: Array<{ "name"?: string; "host": number; "guest": number }>; "httpProxy"?: string; "httpsProxy"?: string; "noProxy"?: string; "npmRegistry"?: string; "pipIndex"?: string; "apkMirror"?: string; "aptMirror"?: string; "aptSecurityMirror"?: string; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "id"?: string };
-type Contract328 = { "id": string; "updatedAt": string; "name": string; "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } } };
-type Contract329 = { "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "changes": Array<{ "path": string; "before": null | string; "after": string }>; "forwards"?: { "before": Array<{ "host": number; "guest": number; "name"?: string }>; "after": Array<{ "host": number; "guest": number; "name"?: string }> }; "dnsBackend"?: "resolved"; "resolverLink"?: { "before": string; "after": string }; "appliedAt"?: string };
-type Contract330 = { "action": "preview" | "apply" | "restore" | "test"; "config"?: { "dnsServers"?: Array<string>; "dnsDomains"?: Array<string>; "dnssec"?: "inherit" | "yes" | "allow-downgrade" | "no"; "forwards"?: Array<{ "name"?: string; "host": number; "guest": number }>; "httpProxy"?: string; "httpsProxy"?: string; "noProxy"?: string; "npmRegistry"?: string; "pipIndex"?: string; "apkMirror"?: string; "aptMirror"?: string; "aptSecurityMirror"?: string; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "token"?: string };
-type Contract331 = ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) | ({ "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "changes": Array<{ "path": string; "before": null | string; "after": string }>; "forwards"?: { "before": Array<{ "host": number; "guest": number; "name"?: string }>; "after": Array<{ "host": number; "guest": number; "name"?: string }> }; "dnsBackend"?: "resolved"; "resolverLink"?: { "before": string; "after": string }; "token": string }) | ({ "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "changes": Array<{ "path": string; "before": null | string; "after": string }>; "forwards"?: { "before": Array<{ "host": number; "guest": number; "name"?: string }>; "after": Array<{ "host": number; "guest": number; "name"?: string }> }; "dnsBackend"?: "resolved"; "resolverLink"?: { "before": string; "after": string }; "appliedAt"?: string });
-type Contract332 = { "forwards": Array<{ "listening": boolean; "host": number; "guest": number; "name"?: string }>; "listening": Array<number> };
-type Contract333 = { "forwards": Array<{ "name"?: string; "host": number; "guest": number }> };
-type Contract334 = { "entries": Array<{ "id": string; "name": string; "protocol": "http" | "https"; "domainAlias": boolean; "listenPort": number; "pathPrefix": string; "vmId": string; "upstreamPort": number; "healthPath": string; "stripPrefix": boolean; "clientAuth": ({ "currentPem": string; "currentCaPem"?: string; "replacementPem"?: string; "replacementCaPem"?: string; "rotateAt"?: string }) | (null); "createdAt": string; "updatedAt": string; "health": { "status": "healthy" | "unhealthy" | "stopped" | "unconfigured" | "checking"; "checkedAt"?: string; "httpStatus"?: number; "error"?: string }; "url": string }>; "listenerErrors": { [key: string]: (string) } };
-type Contract335 = ({ "action": "save"; "entry": { "id"?: string; "name": string; "protocol"?: "http" | "https"; "domainAlias"?: boolean; "listenPort": number; "pathPrefix": string; "vmId": string; "upstreamPort": number; "healthPath": string; "stripPrefix": boolean; "clientAuth"?: ({ "currentPem": string; "currentCaPem"?: string; "replacementPem"?: string; "replacementCaPem"?: string; "rotateAt"?: string }) | (null) } }) | ({ "action": "delete"; "id": string }) | ({ "action": "check"; "id"?: string });
-type Contract336 = { "policy": { "autoRotate": boolean; "renewBeforeDays": number }; "certificate": ({ "pem": string; "fingerprint256": string; "validFrom": string; "validTo": string; "generatedAt": string }) | (null); "nextRotationAt": string | null; "rotationError"?: string };
-type Contract337 = ({ "action": "configure"; "policy": { "autoRotate": boolean; "renewBeforeDays": number } }) | ({ "action": "rotate" });
-type Contract338 = { "enabled": boolean; "supported": boolean; "aliases": Array<string>; "installed": Array<string>; "missing": Array<string>; "stale": Array<string>; "error"?: string };
-type Contract339 = ({ "action": "set-enabled"; "enabled": boolean }) | ({ "action": "sync" });
-type Contract340 = { "projectId": string; "pipelines": Array<{ "name": string; "steps": Array<{ "name": string; "command": string; "timeout": number; "id"?: string; "dependsOn"?: Array<string>; "rerunnable"?: boolean }>; "maxConcurrency"?: number; "inputs"?: Array<string>; "artifacts": Array<string>; "id": string }>; "runs": Array<{ "id": string; "pipelineId": string; "sourceRunId"?: string; "selectedStepIds"?: Array<string>; "fingerprint"?: string; "rerunUnavailable"?: string; "name": string; "projectId": string; "startedAt": string; "finishedAt"?: string; "status": ("running") | ("error") | ("cancelled") | ("interrupted") | ("done"); "error"?: string; "errorCode"?: string; "steps": Array<{ "name": string; "id"?: string; "dependsOn"?: Array<string>; "blockedReason"?: string; "status": ("running") | ("error") | ("cancelled") | ("done") | ("pending"); "startedAt"?: string; "finishedAt"?: string; "code"?: number; "errorCode"?: string; "log": string }>; "artifacts": Array<{ "name": string; "bytes": number; "index": number }> }>; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
-type Contract341 = { "id"?: string; "name": string; "steps": Array<{ "name": string; "command": string; "timeout"?: number; "id"?: string; "dependsOn"?: Array<string>; "rerunnable"?: boolean }>; "artifacts"?: Array<string>; "maxConcurrency"?: number; "inputs"?: Array<string> };
-type Contract342 = { "id": string; "name": string; "steps": Array<{ "name": string; "command": string; "timeout": number; "id"?: string; "dependsOn"?: Array<string>; "rerunnable"?: boolean }>; "maxConcurrency"?: number; "inputs"?: Array<string>; "artifacts": Array<string> };
-type Contract343 = { "ok": boolean };
-type Contract344 = ({ "action": "run"; "pipelineId": string }) | ({ "action": "rerun"; "pipelineId": string; "sourceRunId": string; "stepIds": Array<string> });
-type Contract345 = { "runId": string; "index": number };
-type Contract346Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract346Ref1>) | ({ [key: string]: (Contract346Ref1) });
-type Contract346 = { "features": Array<{ "id": ("process-interop") | ("gpu-compute-passthrough") | ("pci-usb-passthrough") | ("vtpm-key-enrollment") | ("service-mesh") | ("acme-renewal") | ("team-templates") | ("wireguard-overlay") | ("object-backup") | ("storage-pools") | ("storage-tiering") | ("disaster-recovery-drill") | ("authenticated-ide-preview") | ("notebook-environment") | ("cross-host-snapshots") | ("maintenance-drain") | ("cold-migration") | ("ebpf-profiler") | ("flamegraph") | ("network-emulation") | ("nat-hairpin") | ("host-disk-health") | ("global-dedup") | ("otel-tracing") | ("dependency-bot") | ("vcpu-hotplug") | ("memory-hotplug") | ("schema-panels") | ("compliance-evidence") | ("proxy-pac") | ("build-cache") | ("branch-preview") | ("onboarding-checklist") | ("review-threads") | ("activity-digest") | ("slo-dashboard") | ("error-budget") | ("capacity-forecast") | ("log-index") | ("test-sharding") | ("network-topology") | ("code-search-index") | ("language-server-catalog") | ("pii-classification") | ("host-pairing") | ("host-cert-rotation") | ("multi-host-inventory") | ("live-migration") | ("resource-scheduler") | ("ha-failover") | ("fleet-policy-rollout") | ("uefi-ovmf") | ("gpu-vgpu-profiles") | ("nested-virtualization") | ("virtio-fs") | ("virtual-media-devices") | ("hardware-compatibility") | ("snapshot-merge") | ("file-level-restore") | ("backup-throttle") | ("rpo-rto-planner") | ("private-dns-dnssec") | ("http-ingress") | ("mtls-policy") | ("passkey-webauthn") | ("oidc-saml") | ("custom-rbac") | ("jit-privilege") | ("dual-approval") | ("signed-policy-bundles") | ("remote-audit-lock") | ("incident-lockdown") | ("log-retention") | ("alert-routing") | ("auto-remediation") | ("build-farm") | ("devcontainer-marketplace") | ("local-ai-assistant") | ("natural-command-planner") | ("shared-terminal") | ("shared-desktop-view") | ("session-handoff") | ("file-locks") | ("project-permissions") | ("change-approval") | ("host-drive-policy") | ("file-associations") | ("clipboard-policy") | ("media-passthrough") | ("usb-hotplug") | ("desktop-recording") | ("plugin-marketplace") | ("signed-plugin-sandbox") | ("graphql-api") | ("webhook-events") | ("automation-dsl") | ("mobile-companion") | ("browser-extension") | ("tray-companion") | ("feature-rollout"); "name": string; "category": string; "priority": string; "summary": string; "state": ("available") | ("experimental") | ("planned") }>; "capabilities": Array<{ "id": string; "name": string; "scope": ("suite") | ("extended") | ("next"); "example": { [key: string]: (Contract346Ref1) }; "note": string; "requiresGuest": boolean; "writes": boolean; "schema": { [key: string]: (Contract346Ref1) } }>; "count": number; "generatedAt": string };
-type Contract347Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract347Ref1>) | ({ [key: string]: (Contract347Ref1) });
-type Contract347 = { "projectId": string; "features": Array<{ "id": ("process-interop") | ("gpu-compute-passthrough") | ("pci-usb-passthrough") | ("vtpm-key-enrollment") | ("service-mesh") | ("acme-renewal") | ("team-templates") | ("wireguard-overlay") | ("object-backup") | ("storage-pools") | ("storage-tiering") | ("disaster-recovery-drill") | ("authenticated-ide-preview") | ("notebook-environment") | ("cross-host-snapshots") | ("maintenance-drain") | ("cold-migration") | ("ebpf-profiler") | ("flamegraph") | ("network-emulation") | ("nat-hairpin") | ("host-disk-health") | ("global-dedup") | ("otel-tracing") | ("dependency-bot") | ("vcpu-hotplug") | ("memory-hotplug") | ("schema-panels") | ("compliance-evidence") | ("proxy-pac") | ("build-cache") | ("branch-preview") | ("onboarding-checklist") | ("review-threads") | ("activity-digest") | ("slo-dashboard") | ("error-budget") | ("capacity-forecast") | ("log-index") | ("test-sharding") | ("network-topology") | ("code-search-index") | ("language-server-catalog") | ("pii-classification") | ("host-pairing") | ("host-cert-rotation") | ("multi-host-inventory") | ("live-migration") | ("resource-scheduler") | ("ha-failover") | ("fleet-policy-rollout") | ("uefi-ovmf") | ("gpu-vgpu-profiles") | ("nested-virtualization") | ("virtio-fs") | ("virtual-media-devices") | ("hardware-compatibility") | ("snapshot-merge") | ("file-level-restore") | ("backup-throttle") | ("rpo-rto-planner") | ("private-dns-dnssec") | ("http-ingress") | ("mtls-policy") | ("passkey-webauthn") | ("oidc-saml") | ("custom-rbac") | ("jit-privilege") | ("dual-approval") | ("signed-policy-bundles") | ("remote-audit-lock") | ("incident-lockdown") | ("log-retention") | ("alert-routing") | ("auto-remediation") | ("build-farm") | ("devcontainer-marketplace") | ("local-ai-assistant") | ("natural-command-planner") | ("shared-terminal") | ("shared-desktop-view") | ("session-handoff") | ("file-locks") | ("project-permissions") | ("change-approval") | ("host-drive-policy") | ("file-associations") | ("clipboard-policy") | ("media-passthrough") | ("usb-hotplug") | ("desktop-recording") | ("plugin-marketplace") | ("signed-plugin-sandbox") | ("graphql-api") | ("webhook-events") | ("automation-dsl") | ("mobile-companion") | ("browser-extension") | ("tray-companion") | ("feature-rollout"); "name": string; "category": string; "priority": string; "summary": string; "state": ("available") | ("experimental") | ("planned") }>; "capabilities": Array<{ "id": string; "name": string; "scope": ("suite") | ("extended") | ("next"); "example": { [key: string]: (Contract347Ref1) }; "note": string; "requiresGuest": boolean; "writes": boolean; "schema": { [key: string]: (Contract347Ref1) } }>; "settings": { [key: string]: ({ "enabled": boolean; "options": { [key: string]: (Contract347Ref1) }; "updatedAt": string }) }; "records": { [key: string]: (Contract347Ref1) }; "haFailoverMonitor": (null) | ({ "suspected": boolean; "sampleIntervalSeconds": number; "armed": boolean; "consecutiveFailures": number; "observedState": ("running") | ("error") | ("stopped") | ("starting") | ("paused") | ("stopping"); "observedAt": string; "policyVersion"?: string; "lastHealthyAt"?: string; "suspectedAt"?: string }); "haPromotion": (null) | ({ "peerId": string; "targetHostId": string; "transferId": string; "remoteVmId": string; "snapshotId": string; "sha256": string; "fencedAt": string; "status": ("fenced") | ("accepted"); "updatedAt": string; "error"?: string }); "haLocalFailover": (null) | ({ "error": null | string }); "haHostFailover": (null) | ({ "configured": boolean; "armed": boolean; "phase": null | string; "targetVmId": null | string; "failback": (null) | ("pending") | ("completed"); "recoveryHeld": boolean; "statusPending": boolean; "error": null | string }); "executions": Array<{ "featureId": ("process-interop") | ("gpu-compute-passthrough") | ("pci-usb-passthrough") | ("vtpm-key-enrollment") | ("service-mesh") | ("acme-renewal") | ("team-templates") | ("wireguard-overlay") | ("object-backup") | ("storage-pools") | ("storage-tiering") | ("disaster-recovery-drill") | ("authenticated-ide-preview") | ("notebook-environment") | ("cross-host-snapshots") | ("maintenance-drain") | ("cold-migration") | ("ebpf-profiler") | ("flamegraph") | ("network-emulation") | ("nat-hairpin") | ("host-disk-health") | ("global-dedup") | ("otel-tracing") | ("dependency-bot") | ("vcpu-hotplug") | ("memory-hotplug") | ("schema-panels") | ("compliance-evidence") | ("proxy-pac") | ("build-cache") | ("branch-preview") | ("onboarding-checklist") | ("review-threads") | ("activity-digest") | ("slo-dashboard") | ("error-budget") | ("capacity-forecast") | ("log-index") | ("test-sharding") | ("network-topology") | ("code-search-index") | ("language-server-catalog") | ("pii-classification") | ("host-pairing") | ("host-cert-rotation") | ("multi-host-inventory") | ("live-migration") | ("resource-scheduler") | ("ha-failover") | ("fleet-policy-rollout") | ("uefi-ovmf") | ("gpu-vgpu-profiles") | ("nested-virtualization") | ("virtio-fs") | ("virtual-media-devices") | ("hardware-compatibility") | ("snapshot-merge") | ("file-level-restore") | ("backup-throttle") | ("rpo-rto-planner") | ("private-dns-dnssec") | ("http-ingress") | ("mtls-policy") | ("passkey-webauthn") | ("oidc-saml") | ("custom-rbac") | ("jit-privilege") | ("dual-approval") | ("signed-policy-bundles") | ("remote-audit-lock") | ("incident-lockdown") | ("log-retention") | ("alert-routing") | ("auto-remediation") | ("build-farm") | ("devcontainer-marketplace") | ("local-ai-assistant") | ("natural-command-planner") | ("shared-terminal") | ("shared-desktop-view") | ("session-handoff") | ("file-locks") | ("project-permissions") | ("change-approval") | ("host-drive-policy") | ("file-associations") | ("clipboard-policy") | ("media-passthrough") | ("usb-hotplug") | ("desktop-recording") | ("plugin-marketplace") | ("signed-plugin-sandbox") | ("graphql-api") | ("webhook-events") | ("automation-dsl") | ("mobile-companion") | ("browser-extension") | ("tray-companion") | ("feature-rollout"); "action": ("check") | ("run"); "startedAt": string; "finishedAt": string; "ready": boolean; "executed": boolean; "result": { [key: string]: (Contract347Ref1) } }>; "jobs": Array<{ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }> };
-type Contract348Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract348Ref1>) | ({ [key: string]: (Contract348Ref1) });
-type Contract348 = ({ "action": "configure"; "featureId": "host-pairing" | "host-cert-rotation" | "multi-host-inventory" | "live-migration" | "cold-migration" | "resource-scheduler" | "ha-failover" | "cross-host-snapshots" | "fleet-policy-rollout" | "maintenance-drain" | "uefi-ovmf" | "vtpm-key-enrollment" | "pci-usb-passthrough" | "gpu-vgpu-profiles" | "nested-virtualization" | "vcpu-hotplug" | "memory-hotplug" | "virtio-fs" | "virtual-media-devices" | "hardware-compatibility" | "storage-pools" | "storage-tiering" | "object-backup" | "snapshot-merge" | "file-level-restore" | "global-dedup" | "backup-throttle" | "rpo-rto-planner" | "host-disk-health" | "disaster-recovery-drill" | "wireguard-overlay" | "private-dns-dnssec" | "http-ingress" | "acme-renewal" | "mtls-policy" | "network-topology" | "nat-hairpin" | "proxy-pac" | "network-emulation" | "service-mesh" | "passkey-webauthn" | "oidc-saml" | "custom-rbac" | "jit-privilege" | "dual-approval" | "signed-policy-bundles" | "remote-audit-lock" | "compliance-evidence" | "pii-classification" | "incident-lockdown" | "otel-tracing" | "ebpf-profiler" | "flamegraph" | "log-index" | "log-retention" | "alert-routing" | "slo-dashboard" | "error-budget" | "capacity-forecast" | "auto-remediation" | "build-cache" | "build-farm" | "language-server-catalog" | "devcontainer-marketplace" | "branch-preview" | "test-sharding" | "dependency-bot" | "code-search-index" | "local-ai-assistant" | "natural-command-planner" | "shared-terminal" | "shared-desktop-view" | "session-handoff" | "file-locks" | "review-threads" | "project-permissions" | "team-templates" | "onboarding-checklist" | "change-approval" | "activity-digest" | "process-interop" | "host-drive-policy" | "file-associations" | "clipboard-policy" | "media-passthrough" | "usb-hotplug" | "gpu-compute-passthrough" | "notebook-environment" | "authenticated-ide-preview" | "desktop-recording" | "plugin-marketplace" | "signed-plugin-sandbox" | "schema-panels" | "graphql-api" | "webhook-events" | "automation-dsl" | "mobile-companion" | "browser-extension" | "tray-companion" | "feature-rollout"; "enabled": boolean; "options"?: { [key: string]: (Contract348Ref1) } }) | ({ "action": "check"; "featureId": "host-pairing" | "host-cert-rotation" | "multi-host-inventory" | "live-migration" | "cold-migration" | "resource-scheduler" | "ha-failover" | "cross-host-snapshots" | "fleet-policy-rollout" | "maintenance-drain" | "uefi-ovmf" | "vtpm-key-enrollment" | "pci-usb-passthrough" | "gpu-vgpu-profiles" | "nested-virtualization" | "vcpu-hotplug" | "memory-hotplug" | "virtio-fs" | "virtual-media-devices" | "hardware-compatibility" | "storage-pools" | "storage-tiering" | "object-backup" | "snapshot-merge" | "file-level-restore" | "global-dedup" | "backup-throttle" | "rpo-rto-planner" | "host-disk-health" | "disaster-recovery-drill" | "wireguard-overlay" | "private-dns-dnssec" | "http-ingress" | "acme-renewal" | "mtls-policy" | "network-topology" | "nat-hairpin" | "proxy-pac" | "network-emulation" | "service-mesh" | "passkey-webauthn" | "oidc-saml" | "custom-rbac" | "jit-privilege" | "dual-approval" | "signed-policy-bundles" | "remote-audit-lock" | "compliance-evidence" | "pii-classification" | "incident-lockdown" | "otel-tracing" | "ebpf-profiler" | "flamegraph" | "log-index" | "log-retention" | "alert-routing" | "slo-dashboard" | "error-budget" | "capacity-forecast" | "auto-remediation" | "build-cache" | "build-farm" | "language-server-catalog" | "devcontainer-marketplace" | "branch-preview" | "test-sharding" | "dependency-bot" | "code-search-index" | "local-ai-assistant" | "natural-command-planner" | "shared-terminal" | "shared-desktop-view" | "session-handoff" | "file-locks" | "review-threads" | "project-permissions" | "team-templates" | "onboarding-checklist" | "change-approval" | "activity-digest" | "process-interop" | "host-drive-policy" | "file-associations" | "clipboard-policy" | "media-passthrough" | "usb-hotplug" | "gpu-compute-passthrough" | "notebook-environment" | "authenticated-ide-preview" | "desktop-recording" | "plugin-marketplace" | "signed-plugin-sandbox" | "schema-panels" | "graphql-api" | "webhook-events" | "automation-dsl" | "mobile-companion" | "browser-extension" | "tray-companion" | "feature-rollout"; "options"?: { [key: string]: (Contract348Ref1) } }) | ({ "action": "run"; "featureId": "host-pairing" | "host-cert-rotation" | "multi-host-inventory" | "live-migration" | "cold-migration" | "resource-scheduler" | "ha-failover" | "cross-host-snapshots" | "fleet-policy-rollout" | "maintenance-drain" | "uefi-ovmf" | "vtpm-key-enrollment" | "pci-usb-passthrough" | "gpu-vgpu-profiles" | "nested-virtualization" | "vcpu-hotplug" | "memory-hotplug" | "virtio-fs" | "virtual-media-devices" | "hardware-compatibility" | "storage-pools" | "storage-tiering" | "object-backup" | "snapshot-merge" | "file-level-restore" | "global-dedup" | "backup-throttle" | "rpo-rto-planner" | "host-disk-health" | "disaster-recovery-drill" | "wireguard-overlay" | "private-dns-dnssec" | "http-ingress" | "acme-renewal" | "mtls-policy" | "network-topology" | "nat-hairpin" | "proxy-pac" | "network-emulation" | "service-mesh" | "passkey-webauthn" | "oidc-saml" | "custom-rbac" | "jit-privilege" | "dual-approval" | "signed-policy-bundles" | "remote-audit-lock" | "compliance-evidence" | "pii-classification" | "incident-lockdown" | "otel-tracing" | "ebpf-profiler" | "flamegraph" | "log-index" | "log-retention" | "alert-routing" | "slo-dashboard" | "error-budget" | "capacity-forecast" | "auto-remediation" | "build-cache" | "build-farm" | "language-server-catalog" | "devcontainer-marketplace" | "branch-preview" | "test-sharding" | "dependency-bot" | "code-search-index" | "local-ai-assistant" | "natural-command-planner" | "shared-terminal" | "shared-desktop-view" | "session-handoff" | "file-locks" | "review-threads" | "project-permissions" | "team-templates" | "onboarding-checklist" | "change-approval" | "activity-digest" | "process-interop" | "host-drive-policy" | "file-associations" | "clipboard-policy" | "media-passthrough" | "usb-hotplug" | "gpu-compute-passthrough" | "notebook-environment" | "authenticated-ide-preview" | "desktop-recording" | "plugin-marketplace" | "signed-plugin-sandbox" | "schema-panels" | "graphql-api" | "webhook-events" | "automation-dsl" | "mobile-companion" | "browser-extension" | "tray-companion" | "feature-rollout"; "options"?: { [key: string]: (Contract348Ref1) } });
-type Contract349Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract349Ref1>) | ({ [key: string]: (Contract349Ref1) });
-type Contract349 = ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) | ({ "enabled": boolean; "options": { [key: string]: (Contract349Ref1) }; "updatedAt": string; [key: string]: (Contract349Ref1) | (boolean) | ({ [key: string]: (Contract349Ref1) }) | (string) }) | ({ "ready": boolean; "executed"?: boolean; "reason"?: string; "adapter"?: (string) | ({ "id": string; "enabled"?: boolean; "options"?: { [key: string]: (Contract349Ref1) }; "actions"?: Array<string>; [key: string]: (Contract349Ref1) | (string) | (boolean) | ({ [key: string]: (Contract349Ref1) }) | (Array<string>) | (undefined) }); [key: string]: (Contract349Ref1) | (boolean) | (string) | ((string) | ({ "id": string; "enabled"?: boolean; "options"?: { [key: string]: (Contract349Ref1) }; "actions"?: Array<string>; [key: string]: (Contract349Ref1) | (string) | (boolean) | ({ [key: string]: (Contract349Ref1) }) | (Array<string>) | (undefined) })) | (undefined) });
-type Contract350 = { "provider": "jupyter" | "marimo"; "url": string };
-type Contract351 = { "url": string; "password": string; "expiresAt": string };
-type Contract352 = { "project"?: string; "q"?: string; "content"?: "0" | "1" };
-type Contract353 = { "root": string; "files": Array<{ "path": string; "directory": boolean; "size": number }>; "matches": Array<{ "path": string; "line": number; "text": string }>; "scanned": number; "truncated": boolean };
-type Contract354 = { "active": string; "projects": Array<{ "id": string; "name": string }> };
-type Contract355 = ({ "action": "create"; "name": string; "config": { "directory"?: string; "template"?: "none" | "node" | "python" | "rust"; "repository"?: ("") | (string); "setup"?: string; "command"?: string; "previewPort"?: number; "networkIsolation"?: "host" | "private"; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "node"?: string; "python"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn"?: Array<string>; "ready"?: string; "timeout"?: number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval"?: number; "timeout"?: number; "failures"?: number; "restart"?: boolean; "maxRestarts"?: number; "backoff"?: number } }> } }) | ({ "action": "select"; "projectId": string }) | ({ "action": "rename"; "projectId": string; "name": string });
-type Contract356 = { "project": { "directory": string; "template": ("none") | ("node") | ("python") | ("rust"); "repository": string; "setup": string; "command": string; "previewPort"?: number; "networkIsolation"?: ("host") | ("private"); "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "python"?: string; "node"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn": Array<string>; "ready": string; "timeout": number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval": number; "timeout": number; "failures": number; "restart": boolean; "maxRestarts": number; "backoff": number } }>; "_workspace"?: string }; "version": string; "projectId": string; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
-type Contract357 = { "directory"?: string; "template"?: "none" | "node" | "python" | "rust"; "repository"?: ("") | (string); "setup"?: string; "command"?: string; "previewPort"?: number; "networkIsolation"?: "host" | "private"; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "node"?: string; "python"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn"?: Array<string>; "ready"?: string; "timeout"?: number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval"?: number; "timeout"?: number; "failures"?: number; "restart"?: boolean; "maxRestarts"?: number; "backoff"?: number } }> };
-type Contract358 = { "directory": string; "template": ("none") | ("node") | ("python") | ("rust"); "repository": string; "setup": string; "command": string; "previewPort"?: number; "networkIsolation"?: ("host") | ("private"); "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "python"?: string; "node"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn": Array<string>; "ready": string; "timeout": number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval": number; "timeout": number; "failures": number; "restart": boolean; "maxRestarts": number; "backoff": number } }> };
-type Contract359 = { "action": "setup" | "start" | "stop" | "terminal"; "service"?: string };
-type Contract360 = { "status": string; "log": string; "services"?: Array<{ "name": string; "status": string; "log": string }>; "main"?: { "status": string } };
-type Contract361 = { "version": 1; "projectId": string; "plan": (null) | ({ "version": 1; "proposal": { "version": 1; "planId": string; "createdAt": string; "vmId": string; "projectId": string; "bootId": string; "identity": { "version": 1; "phase": ("active") | ("intent"); "registryId": string; "projectId": string; "identityId": string; "revision": number; "account": string; "uid": number; "gid": number; "home": string; "directory": string; "directoryDevice": string; "directoryInode": string; "homeDevice": string; "homeInode": string; "networkIsolation": ("host") | ("private") }; "directory": string; "networkIsolation": ("host") | ("private"); "configSha256": string; "projectsSha256": string; "policy": "private-owner-v1"; "entries": Array<{ "path": string; "kind": ("file") | ("directory"); "device": string; "inode": string; "mountId": string; "filesystemId": string; "uid": number; "gid": number; "mode": number; "links": number; "size": number; "mtimeNs": string; "ctimeNs": string; "sha256": null | string; "targetMode": number }>; "summary": { "files": number; "directories": number; "bytes": number } }; "sha256": string; "state": ("failed") | ("preview") | ("applying") | ("directory-applied") | ("applied"); "completed": Array<string>; "attempt": null | string; "lastError": (null) | ({ "code": string; "path"?: string }); "activatedIdentity": (null) | ({ "version": 1; "phase": ("active") | ("intent"); "registryId": string; "projectId": string; "identityId": string; "revision": number; "account": string; "uid": number; "gid": number; "home": string; "directory": string; "directoryDevice": string; "directoryInode": string; "homeDevice": string; "homeInode": string; "networkIsolation": ("host") | ("private") }) }); "lastFailure": (null) | ({ "code": string; "path"?: string; "at": string }) };
-type Contract362 = ({ "action": "preview"; "version": 1 }) | ({ "action": "apply"; "version": 1; "planId": string; "sha256": string; "reviewed": true });
-type Contract363Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract363Ref1>) | ({ [key: string]: (Contract363Ref1) });
-type Contract363 = { "version": 1; "resources"?: { "cpus"?: number; "memoryMiB"?: number; "diskGiB"?: number; "accelerator"?: "auto" | "tcg" | "whpx"; "distro"?: "alpine" | "debian" | "ubuntu"; "template"?: "none" | "node" | "python" | "rust"; "forwards"?: Array<{ "name"?: string; "host": number; "guest": number; [key: string]: (Contract363Ref1) | (string) | (number) | (undefined) }> }; "project": { "directory"?: string; "template"?: "none" | "node" | "python" | "rust"; "repository"?: ("") | (string); "setup"?: string; "command"?: string; "previewPort"?: number; "networkIsolation"?: "host" | "private"; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "node"?: string; "python"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn"?: Array<string>; "ready"?: string; "timeout"?: number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval"?: number; "timeout"?: number; "failures"?: number; "restart"?: boolean; "maxRestarts"?: number; "backoff"?: number } }> } };
-type Contract364 = { "token": string; "expiresAt": string; "vmId": string; "projectId": string; "inputSha256": string; "configurationSha256": string; "resourceDeclarationSha256": string; "canApply": boolean; "unchanged": boolean; "changes": Array<{ "field": string; "before": string; "after": string; "disposition": "apply" | "stop-required" | "rebuild-required" | "separate-operation" | "unsupported"; "reason": string }>; "runtimeVerification": "not-probed"; "dependencyVerification": "not-probed"; "imageVerification": "not-probed"; "warnings": Array<string> };
-type Contract365 = { "token": string };
-type Contract366Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract366Ref1>) | ({ [key: string]: (Contract366Ref1) });
-type Contract366 = { "name": string; "recipe": { "version": 1; "resources"?: { "cpus"?: number; "memoryMiB"?: number; "diskGiB"?: number; "accelerator"?: "auto" | "tcg" | "whpx"; "distro"?: "alpine" | "debian" | "ubuntu"; "template"?: "none" | "node" | "python" | "rust"; "forwards"?: Array<{ "name"?: string; "host": number; "guest": number; [key: string]: (Contract366Ref1) | (string) | (number) | (undefined) }> }; "project": { "directory"?: string; "template"?: "none" | "node" | "python" | "rust"; "repository"?: ("") | (string); "setup"?: string; "command"?: string; "previewPort"?: number; "networkIsolation"?: "host" | "private"; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "node"?: string; "python"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn"?: Array<string>; "ready"?: string; "timeout"?: number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval"?: number; "timeout"?: number; "failures"?: number; "restart"?: boolean; "maxRestarts"?: number; "backoff"?: number } }> } } };
-type Contract367 = { "version": 1; "resources": { "cpus"?: number; "memoryMiB"?: number; "diskGiB"?: number; "accelerator"?: ("auto") | ("tcg") | ("whpx"); "distro"?: ("alpine") | ("debian") | ("ubuntu"); "template"?: ("none") | ("node") | ("python") | ("rust"); "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }> }; "project": { "directory": string; "template": ("none") | ("node") | ("python") | ("rust"); "repository": string; "setup": string; "command": string; "previewPort"?: number; "networkIsolation"?: ("host") | ("private"); "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "python"?: string; "node"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn": Array<string>; "ready": string; "timeout": number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval": number; "timeout": number; "failures": number; "restart": boolean; "maxRestarts": number; "backoff": number } }> } };
-type Contract368 = { "action": "read" | "write" };
-type Contract369 = { "id": string; "vmId": string; "projectId": string; "target": string; "state": "preview" | "generating" | "review" | "validating" | "validated" | "apply-unknown" | "applied" | "failed" | "cancelled"; "expiresAt": string; "files": Array<{ "path": string; "sha256": string; "bytes": number }>; "preview": { "content": string; "model": string; "endpoint": string; "redactions": number; "expiresAt": number }; "before": string; "patch"?: { "path": string; "content": string; "summary": string }; "patchSha256"?: string; "validation"?: { "command": string; "patchSha256": string; "job"?: { "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }; "sandboxId"?: string; "cleanup": "pending" | "done" | "failed"; "passed": boolean }; "error"?: string };
-type Contract370 = ({ "action": "preview"; "input": { "target": string; "context"?: Array<string>; "instruction": string } }) | ({ "action": "validate"; "input": { "sessionId": string; "command": string; "timeoutSeconds"?: number } }) | ({ "action": "generate"; "sessionId": string }) | ({ "action": "apply"; "sessionId": string }) | ({ "action": "cancel"; "sessionId": string });
-type Contract371 = ({ "id": string; "vmId": string; "projectId": string; "target": string; "state": "preview" | "generating" | "review" | "validating" | "validated" | "apply-unknown" | "applied" | "failed" | "cancelled"; "expiresAt": string; "files": Array<{ "path": string; "sha256": string; "bytes": number }>; "preview": { "content": string; "model": string; "endpoint": string; "redactions": number; "expiresAt": number }; "before": string; "patch"?: { "path": string; "content": string; "summary": string }; "patchSha256"?: string; "validation"?: { "command": string; "patchSha256": string; "job"?: { "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }; "sandboxId"?: string; "cleanup": "pending" | "done" | "failed"; "passed": boolean }; "error"?: string }) | ({ "ok": true });
-type Contract372 = { "selected": { "python"?: string; "node"?: string }; "declared": { "node"?: string; "python"?: string }; "actual": { "node": string; "python": string }; "mismatches": Array<("node") | ("python")>; "probe": { "errorCode"?: string; "state": ("running") | ("failed") | ("stale") | ("unprobed") | ("cached"); "checkedAt": null | string; "configVersion": null | string; "bootId": null | string }; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
-type Contract373 = ({ "action": "probe" }) | ({ "action": "select"; "node"?: string; "python"?: string }) | ({ "action": "install"; "tool": "node" | "python"; "version": string });
-type Contract374 = ({ "selected": { "python"?: string; "node"?: string }; "declared": { "node"?: string; "python"?: string }; "actual": { "node": string; "python": string }; "mismatches": Array<("node") | ("python")>; "probe": { "errorCode"?: string; "state": ("running") | ("failed") | ("stale") | ("unprobed") | ("cached"); "checkedAt": null | string; "configVersion": null | string; "bootId": null | string }; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) }) | ({ "directory": string; "template": ("none") | ("node") | ("python") | ("rust"); "repository": string; "setup": string; "command": string; "previewPort"?: number; "networkIsolation"?: ("host") | ("private"); "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "python"?: string; "node"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn": Array<string>; "ready": string; "timeout": number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval": number; "timeout": number; "failures": number; "restart": boolean; "maxRestarts": number; "backoff": number } }> }) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } });
-type Contract375 = { "sandboxes": Array<{ "name": string; "memoryMiB": number; "cpus": number; "diskGiB": number; "accelerator": ("auto") | ("tcg") | ("whpx"); "forwards": Array<{ "host": number; "guest": number; "name"?: string }>; "storagePoolId"?: string; "firmware"?: ("bios") | ("uefi"); "distro"?: ("alpine") | ("debian") | ("ubuntu"); "architecture"?: ("x86_64") | ("aarch64"); "template"?: ("none") | ("node") | ("python") | ("rust"); "hardware"?: { "cpu"?: { "sockets": number; "cores": number; "threads": number; "numa"?: Array<{ "memoryMiB": number; "cpus": Array<number> }> }; "devices"?: { "graphics": ("none") | ("virtio-gpu") | ("virgl"); "networkCard": ("virtio-net-pci") | ("e1000"); "randomDevice": boolean; "balloon": boolean; "diskCache": ("none") | ("writeback") | ("writethrough"); "discard": boolean; "graphicsOutputs"?: number; "graphicsWidth"?: number; "graphicsHeight"?: number; "graphicsMemoryMiB"?: number; "audio"?: ("none") | ("hda-duplex"); "audioBackend"?: ("none") | ("dsound") }; "memory"?: { "maxMiB": number; "slots": number }; "ipv6"?: (false) | (true) }; "id": string; "diskEncryption"?: { "format": "luks"; "secretName": string }; "sandbox": { "network": "isolated" | "nat"; "expiresAt": string; "onExpire": "stop" | "delete"; "storage"?: "persistent" | "discard-on-stop" }; "rescueOf"?: string; "createdAt": string; "snapshots": Array<{ "id": string; "name": string; "createdAt": string; "note"?: string; "diskGiB"?: number; "pendingResize"?: (false) | (true); "consistency"?: ("offline") | ("filesystem") | ("vmstate"); "stateFingerprint"?: string }>; "bootstrapped"?: (false) | (true); "lastUsedAt"?: string; "lastError"?: string; "organization"?: { "group": string; "tags": Array<string>; "favorite": boolean }; "pendingResize"?: (false) | (true); "migrationOrigin"?: { "sourceHostId": string; "transferId": string; "targetName": string; "sourceVmId"?: string; "snapshotId"?: string; "diskSha256"?: string }; "haPromotion"?: { "peerId": string; "targetHostId": string; "transferId": string; "remoteVmId": string; "snapshotId": string; "sha256": string; "fencedAt": string; "status": "fenced" | "accepted"; "updatedAt": string; "error"?: string }; "haRetirement"?: { "sourceHostId": string; "transferId": string; "sourceVmId": string; "snapshotId": string; "sha256": string; "retiredAt": string }; "haWitnessEnrollment"?: { "targetHostId": string; "failureThreshold": number; "registeredAt": string }; "liveMigrationFence"?: { "targetHostId": string; "targetVmId": string; "transferId": string; "fencedAt": string; "peerId"?: string; "sourceHostId"?: string; "sessionId"?: string; "projectsDigest"?: string; "sourceProcessId"?: string; "origin"?: { "owner": string; "pluginId"?: string; "pluginInstanceId"?: string; "pluginGeneration"?: string; "artifactDigest"?: string; "operationId"?: string; "resourceIds": Array<string> }; "sourceStopped"?: { "sourceProcessId": string; "stoppedAt": string }; "completion"?: { "version": 1; "sourceVmId": string; "sourceHostId": string; "sourceProcessId": string; "targetHostId": string; "targetVmId": string; "transferId": string; "sessionId": string; "projectsDigest": string; "sourceStoppedAt": string; "targetVerifiedAt": string; "confirmedAt": string } }; "liveMigrationOrigin"?: { "sourceHostId": string; "sourceVmId": string; "transferId": string; "status": "prepared" | "received" | "ready"; "completionProtocol"?: 1; "sessionId"?: string; "projectsDigest"?: string; "prepareDigest"?: string; "prepareReceipt"?: { "targetVmId": string; "sessionId": string; "targetDiskNode": string; "diskPort": number; "statePort": number; "completionProtocol"?: 1 }; "createdAt": string; "updatedAt": string }; "branchOrigin"?: { "sourceVmId": string; "snapshotId": string; "createdAt": string }; "mergeOrigin"?: { "branchVmId": string; "targetVmId": string; "snapshotId": string; "path": string; "mergedAt": string; "appliedFiles": number }; "activeAccelerator"?: ("tcg") | ("whpx"); "memoryTargetMiB"?: number; "status": ("error") | ("running") | ("stopped") | ("starting") | ("paused") | ("stopping"); "poweredOn": boolean; "startedAt"?: string; "diskBytes": number; "expired": boolean }>; "runs": Array<{ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }>; "persistenceError"?: string };
-type Contract376 = { "name": string; "distro"?: "alpine" | "debian" | "ubuntu"; "accelerator"?: "auto" | "tcg" | "whpx"; "memoryMiB"?: number; "cpus"?: number; "diskGiB"?: number; "lifetimeMinutes"?: number; "network"?: "isolated" | "nat"; "onExpire"?: "stop" | "delete"; "storage"?: "persistent" | "discard-on-stop" };
-type Contract377 = { "name": string; "memoryMiB": number; "cpus": number; "diskGiB": number; "accelerator": ("auto") | ("tcg") | ("whpx"); "forwards": Array<{ "host": number; "guest": number; "name"?: string }>; "storagePoolId"?: string; "firmware"?: ("bios") | ("uefi"); "distro"?: ("alpine") | ("debian") | ("ubuntu"); "architecture"?: ("x86_64") | ("aarch64"); "template"?: ("none") | ("node") | ("python") | ("rust"); "hardware"?: { "cpu"?: { "sockets": number; "cores": number; "threads": number; "numa"?: Array<{ "memoryMiB": number; "cpus": Array<number> }> }; "devices"?: { "graphics": ("none") | ("virtio-gpu") | ("virgl"); "networkCard": ("virtio-net-pci") | ("e1000"); "randomDevice": boolean; "balloon": boolean; "diskCache": ("none") | ("writeback") | ("writethrough"); "discard": boolean; "graphicsOutputs"?: number; "graphicsWidth"?: number; "graphicsHeight"?: number; "graphicsMemoryMiB"?: number; "audio"?: ("none") | ("hda-duplex"); "audioBackend"?: ("none") | ("dsound") }; "memory"?: { "maxMiB": number; "slots": number }; "ipv6"?: (false) | (true) }; "id": string; "diskEncryption"?: { "format": "luks"; "secretName": string }; "sandbox": { "network": "isolated" | "nat"; "expiresAt": string; "onExpire": "stop" | "delete"; "storage"?: "persistent" | "discard-on-stop" }; "rescueOf"?: string; "createdAt": string; "snapshots": Array<{ "id": string; "name": string; "createdAt": string; "note"?: string; "diskGiB"?: number; "pendingResize"?: (false) | (true); "consistency"?: ("offline") | ("filesystem") | ("vmstate"); "stateFingerprint"?: string }>; "bootstrapped"?: (false) | (true); "lastUsedAt"?: string; "lastError"?: string; "organization"?: { "group": string; "tags": Array<string>; "favorite": boolean }; "pendingResize"?: (false) | (true); "migrationOrigin"?: { "sourceHostId": string; "transferId": string; "targetName": string; "sourceVmId"?: string; "snapshotId"?: string; "diskSha256"?: string }; "haPromotion"?: { "peerId": string; "targetHostId": string; "transferId": string; "remoteVmId": string; "snapshotId": string; "sha256": string; "fencedAt": string; "status": "fenced" | "accepted"; "updatedAt": string; "error"?: string }; "haRetirement"?: { "sourceHostId": string; "transferId": string; "sourceVmId": string; "snapshotId": string; "sha256": string; "retiredAt": string }; "haWitnessEnrollment"?: { "targetHostId": string; "failureThreshold": number; "registeredAt": string }; "liveMigrationFence"?: { "targetHostId": string; "targetVmId": string; "transferId": string; "fencedAt": string; "peerId"?: string; "sourceHostId"?: string; "sessionId"?: string; "projectsDigest"?: string; "sourceProcessId"?: string; "origin"?: { "owner": string; "pluginId"?: string; "pluginInstanceId"?: string; "pluginGeneration"?: string; "artifactDigest"?: string; "operationId"?: string; "resourceIds": Array<string> }; "sourceStopped"?: { "sourceProcessId": string; "stoppedAt": string }; "completion"?: { "version": 1; "sourceVmId": string; "sourceHostId": string; "sourceProcessId": string; "targetHostId": string; "targetVmId": string; "transferId": string; "sessionId": string; "projectsDigest": string; "sourceStoppedAt": string; "targetVerifiedAt": string; "confirmedAt": string } }; "liveMigrationOrigin"?: { "sourceHostId": string; "sourceVmId": string; "transferId": string; "status": "prepared" | "received" | "ready"; "completionProtocol"?: 1; "sessionId"?: string; "projectsDigest"?: string; "prepareDigest"?: string; "prepareReceipt"?: { "targetVmId": string; "sessionId": string; "targetDiskNode": string; "diskPort": number; "statePort": number; "completionProtocol"?: 1 }; "createdAt": string; "updatedAt": string }; "branchOrigin"?: { "sourceVmId": string; "snapshotId": string; "createdAt": string }; "mergeOrigin"?: { "branchVmId": string; "targetVmId": string; "snapshotId": string; "path": string; "mergedAt": string; "appliedFiles": number }; "activeAccelerator"?: ("tcg") | ("whpx"); "memoryTargetMiB"?: number; "status": ("error") | ("running") | ("stopped") | ("starting") | ("paused") | ("stopping"); "poweredOn": boolean; "startedAt"?: string; "diskBytes": number; "expired": boolean };
-type Contract378 = { "action": "start" | "stop" };
-type Contract379 = { "run": string; "artifact": string };
-type Contract380 = { "inputFiles"?: Array<{ "path": string; "content": string }>; "command": string; "cwd"?: string; "timeoutSeconds"?: number; "artifacts"?: Array<string> };
-type Contract381 = { "items": Array<{ "name": string; "updatedAt": string }> };
-type Contract382 = { "name": string; "value": string };
-type Contract383 = Array<{ "name": string; "updatedAt": string }>;
-type Contract384 = { "name": string };
-type Contract385 = { "items": Array<{ "name": string; "lastChangedAt": string; "policy": { "enabled": boolean; "maxAgeDays": number; "remindBeforeDays": number }; "ageDays": null | number; "dueAt": null | string; "daysRemaining": null | number; "status": ("unknown") | ("current") | ("disabled") | ("due-soon") | ("overdue") }> };
-type Contract386 = { "name": string; "policy": { "enabled"?: boolean; "maxAgeDays"?: number; "remindBeforeDays"?: number } };
-type Contract387 = { "services": Array<{ "name": string; "desired": boolean; "status": ("stopped") | ("healthy") | ("unhealthy") | ("waiting") | ("restarting") | ("exhausted"); "failures": number; "restarts": number; "checkedAt"?: string; "nextCheck": number; "error"?: string }>; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
-type Contract388 = { "templates": Array<{ "version": 1; "id": string; "name": string; "note": string; "createdAt": string; "sourceId": string; "sourceName": string; "distro": "alpine" | "debian" | "ubuntu"; "architecture"?: "x86_64" | "aarch64"; "diskGiB": number; "bytes": number; "sha256": string }>; "issues": Array<{ "id": string; "error": string }>; "limits": { "count": number; "bytes": number; "imageBytes": number }; "job": ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) | (null); "persistenceError"?: string };
-type Contract389 = ({ "action": "create"; "vmId": string; "name": string; "note"?: string; "sourceReviewed": true }) | ({ "action": "instantiate"; "id": string; "name": string }) | ({ "action": "verify"; "id": string }) | ({ "action": "delete"; "id": string });
-type Contract390 = { "kind": "template" | "vm" | "verified" | "deleted"; "id": string };
-type Contract391 = { "command": string; "partition"?: (number) | (null); "timeoutSeconds"?: number; "artifacts"?: Array<string> };
-type Contract392 = { "name": string };
-type Contract393 = { "x-sakura-passphrase"?: string };
-type Contract394 = { "revision": number; "requireTrustedOnImport": boolean; "localKey": ({ "name": string; "fingerprint": string; "publicKey": string }) | (null); "trustedKeys": Array<{ "name": string; "fingerprint": string; "publicKey": string }> };
-type Contract395 = ({ "action": "configure"; "revision": number; "requireTrustedOnImport": boolean }) | ({ "action": "trust"; "revision": number; "name": string; "publicKey": string }) | ({ "action": "forget"; "revision": number; "fingerprint": string });
-type Contract396 = { "name": string; "online"?: boolean; "memory"?: boolean };
-type Contract397 = { "stateFingerprint"?: string; "id": string; "name": string; "createdAt": string; "diskGiB": number; "pendingResize": boolean; "consistency": ("vmstate") | ("offline") | ("filesystem") };
-type Contract398 = { "name": string; "note"?: string };
-type Contract399 = { "backup"?: boolean; "memory"?: boolean };
-type Contract400 = { "from": string; "to"?: ("current") | (string); "partition"?: number; "path"?: string };
-type Contract401 = { "runs": Array<{ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }>; "persistenceError"?: string; "branchOrigin"?: { "sourceVmId": string; "snapshotId": string; "createdAt": string }; "sourceName"?: string };
-type Contract402 = { "mode": "preview" | "apply"; "name"?: string; "partition"?: number; "path"?: string };
-type Contract403 = { "name": string; "snapshot"?: string };
-type Contract404 = { "projectId": string; "config": (null) | ({ "host": string; "guest": string; "auto": boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": ("readonly") | ("push") | ("both") | ("pull"); "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text") }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> }); "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "queue": (null) | ({ "id": string; "requestedAt": string; "attempts": number; "nextAttemptAt": number; "jobId"?: string; "lastError"?: string }); "maintenance": boolean; "history": Array<{ "error"?: string; "status": ("failed") | ("done") | ("pending") | ("rolled-back"); "id": string; "bytes": number; "createdAt": string; "changes": number }>; "watching": (null) | ({ "host": ("watching") | ("polling"); "guest": ("offline") | ("watching") | ("polling"); "reason"?: string; "lastEvent"?: string }) };
-type Contract405 = { "host": string; "guest": string; "auto"?: boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": "both" | "push" | "pull" | "readonly"; "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": "manual" | "keep-both" | "prefer-host" | "prefer-guest" | "merge-text" }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> };
-type Contract406 = { "host": string; "guest": string; "auto": boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": ("readonly") | ("push") | ("both") | ("pull"); "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text") }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> };
-type Contract407 = { "direction": "both" | "push" | "pull"; "token"?: string; "decisions"?: { [key: string]: ("push" | "pull" | "both" | "skip" | "merge" | "manual" | "delete-host" | "delete-guest" | "restore-host" | "restore-guest") }; "merges"?: { [key: string]: (string) } };
-type Contract408 = { "token": string; "changes": Array<{ "path": string; "from"?: string; "driver"?: ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text"); "suggestedDecision"?: ("push") | ("merge") | ("both") | ("skip") | ("pull"); "action": ("push") | ("skip") | ("pull") | ("delete-host") | ("delete-guest") | ("conflict") | ("mkdir-host") | ("mkdir-guest") | ("rename-host") | ("rename-guest") }>; "unchanged": number };
-type Contract409 = { "path": string; "token": string };
-type Contract410 = { "path": string; "token": string; "base": string; "ours": string; "theirs": string };
-type Contract411 = { "queue": (null) | ({ "id": string; "requestedAt": string; "attempts": number; "nextAttemptAt": number; "jobId"?: string; "lastError"?: string }) };
-type Contract412 = { "checkpoint": string };
-type Contract413 = ({ "session": string }) | ({ "action": "stop-all" });
-type Contract414 = { "ok": boolean; "projectId": string };
-type Contract415 = { "tools": Array<{ "id": string; "name": ("Go") | ("Git") | ("Node.js / npm") | ("Python / pip") | ("Rust / Cargo") | ("Java JDK") | ("PHP"); "installed": boolean; "version": string; "required": boolean }>; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
-type Contract416 = { "tools": Array<"git" | "node" | "python" | "rust" | "go" | "java" | "php"> };
-type Contract417 = ({ "type": "file"; "path": string }) | ({ "type": "export" });
+type Contract306 = { "workspaceId"?: string };
+type Contract307Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract307Ref1>) | ({ [key: string]: (Contract307Ref1) });
+type Contract307Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract307Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract307Ref2; "enum"?: Array<Contract307Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract307 = { "result": Array<{ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract307Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract307Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract307Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }> };
+type Contract308Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract308Ref1>) | ({ [key: string]: (Contract308Ref1) });
+type Contract308Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract308Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract308Ref2; "enum"?: Array<Contract308Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract308 = ({ "action": "save"; "id"?: string; "expectedRevision"?: string; "content": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract308Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract308Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract308Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }) | ({ "action": "get"; "ref": { "id": string; "revision": string } }) | ({ "action": "seal"; "ref": { "id": string; "revision": string } }) | ({ "action": "archive"; "ref": { "id": string; "revision": string } });
+type Contract309Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract309Ref1>) | ({ [key: string]: (Contract309Ref1) });
+type Contract309Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract309Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract309Ref2; "enum"?: Array<Contract309Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract309 = { "result": ({ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract309Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract309Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract309Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }) };
+type Contract310 = { "result": Array<{ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> } }> };
+type Contract311 = ({ "action": "application-targets" }) | ({ "action": "save"; "id"?: string; "expectedRevision"?: string; "content": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> } }) | ({ "action": "get"; "ref": { "id": string; "revision": string } }) | ({ "action": "seal"; "ref": { "id": string; "revision": string } }) | ({ "action": "archive"; "ref": { "id": string; "revision": string } }) | ({ "action": "versions"; "ref": { "id": string; "revision": string } }) | ({ "action": "revoke"; "ref": { "id": string; "revision": string } });
+type Contract312 = { "result": ({ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> } }) | ({ "available": boolean; "targets": Array<{ "appId": string; "name": string; "revision": number; "identityDigest": string }> }) | ({ [key: string]: (string) }) | ({ "revoked": true }) };
+type Contract313Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract313Ref1>) | ({ [key: string]: (Contract313Ref1) });
+type Contract313 = { "result": Array<{ "id": string; "owner": string; "digest": string; "createdAt": string; "state": "quarantined" | "accepting" | "accepted" | "failed"; "workspace": ({ "id": string; "name": string; "owner": string; "revision": string; "state": "active" | "importing" | "archived"; "createdAt": string }) | (null); "bundle": { "format": "sakura-integration-bundle/1"; "tool": "integration-http-v1"; "createdAt": string; "root": { "scenario": string; "mock": (string) | (null); "assertions": string }; "entries": Array<{ "kind": "spec" | "environment" | "fixture" | "mock" | "scenario" | "assertion" | "report"; "key": string; "path": string; "bytes": number; "digest": string; "content": Contract313Ref1 }>; "digest": string }; "mapping": { [key: string]: ({ "id": string; "revision": string }) }; "error": (string) | (null) }> };
+type Contract314Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract314Ref1>) | ({ [key: string]: (Contract314Ref1) });
+type Contract314 = ({ "action": "upload-begin"; "name": string; "bytes": number; "digest": string; "contentType": "application/zip" }) | ({ "action": "upload-append"; "id": string; "offset": number; "data": string }) | ({ "action": "upload-complete"; "id": string }) | ({ "action": "upload-discard"; "id": string }) | ({ "action": "uploads" }) | ({ "action": "export"; "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "reports": Array<string> }) | ({ "action": "quarantine"; "bundle": { "format": "sakura-integration-bundle/1"; "tool": "integration-http-v1"; "createdAt": string; "root": { "scenario": string; "mock": (string) | (null); "assertions": string }; "entries": Array<{ "kind": "spec" | "environment" | "fixture" | "mock" | "scenario" | "assertion" | "report"; "key": string; "path": string; "bytes": number; "digest": string; "content": Contract314Ref1 }>; "digest": string } }) | ({ "action": "accept"; "id": string; "digest": string });
+type Contract315Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract315Ref1>) | ({ [key: string]: (Contract315Ref1) });
+type Contract315 = { "result": ({ "format": "sakura-integration-bundle/1"; "tool": "integration-http-v1"; "createdAt": string; "root": { "scenario": string; "mock": (string) | (null); "assertions": string }; "entries": Array<{ "kind": "spec" | "environment" | "fixture" | "mock" | "scenario" | "assertion" | "report"; "key": string; "path": string; "bytes": number; "digest": string; "content": Contract315Ref1 }>; "digest": string }) | ({ "id": string; "owner": string; "digest": string; "createdAt": string; "state": "quarantined" | "accepting" | "accepted" | "failed"; "workspace": ({ "id": string; "name": string; "owner": string; "revision": string; "state": "active" | "importing" | "archived"; "createdAt": string }) | (null); "bundle": { "format": "sakura-integration-bundle/1"; "tool": "integration-http-v1"; "createdAt": string; "root": { "scenario": string; "mock": (string) | (null); "assertions": string }; "entries": Array<{ "kind": "spec" | "environment" | "fixture" | "mock" | "scenario" | "assertion" | "report"; "key": string; "path": string; "bytes": number; "digest": string; "content": Contract315Ref1 }>; "digest": string }; "mapping": { [key: string]: ({ "id": string; "revision": string }) }; "error": (string) | (null) }) | ({ "id": string; "workspaceId": string; "owner": string; "digest": string; "bytes": number; "offset": number; "createdAt": string; "expiresAt": string; "state": "uploading" | "quarantined" | "rejected" | "discarded"; "importId": (string) | (null); "capacityToken": string; "error": (string) | (null) }) | (Array<{ "id": string; "workspaceId": string; "owner": string; "digest": string; "bytes": number; "offset": number; "createdAt": string; "expiresAt": string; "state": "uploading" | "quarantined" | "rejected" | "discarded"; "importId": (string) | (null); "capacityToken": string; "error": (string) | (null) }>) };
+type Contract316Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract316Ref1>) | ({ [key: string]: (Contract316Ref1) });
+type Contract316 = { "result": Array<{ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract316Ref1) }>; "seed"?: number; "redactedFields": Array<string> } }> };
+type Contract317Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract317Ref1>) | ({ [key: string]: (Contract317Ref1) });
+type Contract317 = ({ "action": "save"; "id"?: string; "expectedRevision"?: string; "content": { "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract317Ref1) }>; "seed"?: number; "redactedFields": Array<string> } }) | ({ "action": "get"; "ref": { "id": string; "revision": string } }) | ({ "action": "seal"; "ref": { "id": string; "revision": string } }) | ({ "action": "archive"; "ref": { "id": string; "revision": string } }) | ({ "action": "import"; "name": string; "format": "json" | "csv"; "text": string; "redact": Array<string> }) | ({ "action": "generate"; "name": string; "seed": number; "rows": number });
+type Contract318Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract318Ref1>) | ({ [key: string]: (Contract318Ref1) });
+type Contract318 = { "result": ({ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract318Ref1) }>; "seed"?: number; "redactedFields": Array<string> } }) };
+type Contract319 = { "result": Array<{ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "run": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string> } } }> };
+type Contract320 = ({ "action": "save"; "id"?: string; "expectedRevision"?: string; "content": { "name": string; "run": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string> } } }) | ({ "action": "get"; "ref": { "id": string; "revision": string } }) | ({ "action": "seal"; "ref": { "id": string; "revision": string } }) | ({ "action": "archive"; "ref": { "id": string; "revision": string } }) | ({ "action": "preview"; "ref": { "id": string; "revision": string } }) | ({ "action": "apply"; "planId": string; "digest": string; "approveWrites": boolean });
+type Contract321Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract321Ref1>) | ({ [key: string]: (Contract321Ref1) });
+type Contract321Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract321Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract321Ref2; "enum"?: Array<Contract321Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract321 = { "result": ({ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "run": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string> } } }) | ({ "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }) | ({ "id": string; "workspaceId": string; "plan": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }; "state": "queued" | "preparing" | "running" | "evaluating" | "cleanup" | "completed" | "cancelling" | "interrupted" | "effect-unknown" | "cleanup-pending"; "createdAt": string; "finishedAt": (string) | (null); "jobKey": string; "vm": ({ "token": string; "owner": string; "vmId": string; "createdAt": string; "imageRef": { "assetId": string; "digest": string }; "persistent": boolean; "expiresAt": (string) | (null); "cleanup": "pending" | "confirmed" | "unknown" }) | (null); "vmStartedAt": string | null; "workerId": (string) | (null); "egressId": (string) | (null); "requests": Array<{ "node": string; "sequence": number; "requestDigest": string; "bodyDigest": string; "state": "intent-durable" | "permitted" | "response-recorded" | "effect-unknown" | "not-sent"; "status": (number) | (null); "headers": { [key: string]: (string) }; "bytes": number; "responseDigest": (string) | (null); "durationMs": number; "complete": boolean; "error": (string) | (null); "dispatchedAt": (string) | (null); "selected": { [key: string]: (Contract321Ref1) } }>; "evaluation": ({ "id": string; "workspaceId": string; "runId": string; "assertion": { "id": string; "revision": string }; "evidenceDigest": string; "results": Array<{ "id": string; "node": string; "outcome": "satisfied" | "violated" | "unevaluated"; "reason": string; "evidence": ({ "sequence": number; "start": number; "end": number }) | (null) }> }) | (null); "cleanupConfirmed": boolean; "error": (string) | (null); "verification": Array<{ "at": string; "actor": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" }>; "snapshot": { "contract": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract321Ref2) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract321Ref2 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract321Ref2 }>; "request": (Contract321Ref2) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract321Ref2) | (null) }>; "effect": "read" | "write" | "unknown" }> }; "environment": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> }; "fixtures": Array<{ "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract321Ref1) }>; "seed"?: number; "redactedFields": Array<string> }>; "mock": ({ "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract321Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> }) | (null); "scenario": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract321Ref1) }; "query": { [key: string]: (Contract321Ref1) }; "body": Contract321Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract321Ref2 }> }> }; "assertions": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract321Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract321Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract321Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }; "load": ({ "planned": number; "initiated": number; "completed": number; "errors": number; "cancelled": number; "uninitiated": number; "unknown": number; "countsComplete": boolean; "intervalsMs": Array<number>; "latencyMs": { "samples": number; "p50": (number) | (null); "p95": (number) | (null); "p99": (number) | (null) }; "timeouts": number; "scheduleMisses": number; "inconclusive": boolean }) | (null) }) };
+type Contract322Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract322Ref1>) | ({ [key: string]: (Contract322Ref1) });
+type Contract322 = { "result": Array<{ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract322Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> } }> };
+type Contract323Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract323Ref1>) | ({ [key: string]: (Contract323Ref1) });
+type Contract323 = ({ "action": "save"; "id"?: string; "expectedRevision"?: string; "content": { "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract323Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> } }) | ({ "action": "get"; "ref": { "id": string; "revision": string } }) | ({ "action": "seal"; "ref": { "id": string; "revision": string } }) | ({ "action": "archive"; "ref": { "id": string; "revision": string } });
+type Contract324Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract324Ref1>) | ({ [key: string]: (Contract324Ref1) });
+type Contract324 = { "result": ({ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract324Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> } }) };
+type Contract325Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract325Ref1>) | ({ [key: string]: (Contract325Ref1) });
+type Contract325Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract325Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract325Ref2; "enum"?: Array<Contract325Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract325 = { "result": Array<{ "id": string; "workspaceId": string; "runId": string; "createdAt": string; "retainUntil": string; "digest": string; "verdict": "passed" | "failed" | "inconclusive"; "evidenceCoverage": "record-only" | "selected-fields" | "recomputable"; "cannotRecompute": Array<string>; "origin": "local" | "imported"; "run": { "id": string; "workspaceId": string; "plan": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }; "state": "queued" | "preparing" | "running" | "evaluating" | "cleanup" | "completed" | "cancelling" | "interrupted" | "effect-unknown" | "cleanup-pending"; "createdAt": string; "finishedAt": (string) | (null); "jobKey": string; "vm": ({ "token": string; "owner": string; "vmId": string; "createdAt": string; "imageRef": { "assetId": string; "digest": string }; "persistent": boolean; "expiresAt": (string) | (null); "cleanup": "pending" | "confirmed" | "unknown" }) | (null); "vmStartedAt": string | null; "workerId": (string) | (null); "egressId": (string) | (null); "requests": Array<{ "node": string; "sequence": number; "requestDigest": string; "bodyDigest": string; "state": "intent-durable" | "permitted" | "response-recorded" | "effect-unknown" | "not-sent"; "status": (number) | (null); "headers": { [key: string]: (string) }; "bytes": number; "responseDigest": (string) | (null); "durationMs": number; "complete": boolean; "error": (string) | (null); "dispatchedAt": (string) | (null); "selected": { [key: string]: (Contract325Ref1) } }>; "evaluation": ({ "id": string; "workspaceId": string; "runId": string; "assertion": { "id": string; "revision": string }; "evidenceDigest": string; "results": Array<{ "id": string; "node": string; "outcome": "satisfied" | "violated" | "unevaluated"; "reason": string; "evidence": ({ "sequence": number; "start": number; "end": number }) | (null) }> }) | (null); "cleanupConfirmed": boolean; "error": (string) | (null); "verification": Array<{ "at": string; "actor": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" }>; "snapshot": { "contract": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract325Ref2) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract325Ref2 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract325Ref2 }>; "request": (Contract325Ref2) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract325Ref2) | (null) }>; "effect": "read" | "write" | "unknown" }> }; "environment": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> }; "fixtures": Array<{ "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract325Ref1) }>; "seed"?: number; "redactedFields": Array<string> }>; "mock": ({ "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract325Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> }) | (null); "scenario": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract325Ref1) }; "query": { [key: string]: (Contract325Ref1) }; "body": Contract325Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract325Ref2 }> }> }; "assertions": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract325Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract325Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract325Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }; "load": ({ "planned": number; "initiated": number; "completed": number; "errors": number; "cancelled": number; "uninitiated": number; "unknown": number; "countsComplete": boolean; "intervalsMs": Array<number>; "latencyMs": { "samples": number; "p50": (number) | (null); "p95": (number) | (null); "p99": (number) | (null) }; "timeouts": number; "scheduleMisses": number; "inconclusive": boolean }) | (null) } }> };
+type Contract326 = ({ "action": "get"; "id": string }) | ({ "action": "seal"; "runId": string }) | ({ "action": "compare"; "before": string; "after": string }) | ({ "action": "cleanup-plan" }) | ({ "action": "cleanup"; "digest": string });
+type Contract327Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract327Ref1>) | ({ [key: string]: (Contract327Ref1) });
+type Contract327Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract327Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract327Ref2; "enum"?: Array<Contract327Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract327 = { "result": ({ "id": string; "workspaceId": string; "runId": string; "createdAt": string; "retainUntil": string; "digest": string; "verdict": "passed" | "failed" | "inconclusive"; "evidenceCoverage": "record-only" | "selected-fields" | "recomputable"; "cannotRecompute": Array<string>; "origin": "local" | "imported"; "run": { "id": string; "workspaceId": string; "plan": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }; "state": "queued" | "preparing" | "running" | "evaluating" | "cleanup" | "completed" | "cancelling" | "interrupted" | "effect-unknown" | "cleanup-pending"; "createdAt": string; "finishedAt": (string) | (null); "jobKey": string; "vm": ({ "token": string; "owner": string; "vmId": string; "createdAt": string; "imageRef": { "assetId": string; "digest": string }; "persistent": boolean; "expiresAt": (string) | (null); "cleanup": "pending" | "confirmed" | "unknown" }) | (null); "vmStartedAt": string | null; "workerId": (string) | (null); "egressId": (string) | (null); "requests": Array<{ "node": string; "sequence": number; "requestDigest": string; "bodyDigest": string; "state": "intent-durable" | "permitted" | "response-recorded" | "effect-unknown" | "not-sent"; "status": (number) | (null); "headers": { [key: string]: (string) }; "bytes": number; "responseDigest": (string) | (null); "durationMs": number; "complete": boolean; "error": (string) | (null); "dispatchedAt": (string) | (null); "selected": { [key: string]: (Contract327Ref1) } }>; "evaluation": ({ "id": string; "workspaceId": string; "runId": string; "assertion": { "id": string; "revision": string }; "evidenceDigest": string; "results": Array<{ "id": string; "node": string; "outcome": "satisfied" | "violated" | "unevaluated"; "reason": string; "evidence": ({ "sequence": number; "start": number; "end": number }) | (null) }> }) | (null); "cleanupConfirmed": boolean; "error": (string) | (null); "verification": Array<{ "at": string; "actor": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" }>; "snapshot": { "contract": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract327Ref2) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract327Ref2 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract327Ref2 }>; "request": (Contract327Ref2) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract327Ref2) | (null) }>; "effect": "read" | "write" | "unknown" }> }; "environment": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> }; "fixtures": Array<{ "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract327Ref1) }>; "seed"?: number; "redactedFields": Array<string> }>; "mock": ({ "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract327Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> }) | (null); "scenario": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract327Ref1) }; "query": { [key: string]: (Contract327Ref1) }; "body": Contract327Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract327Ref2 }> }> }; "assertions": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract327Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract327Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract327Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }; "load": ({ "planned": number; "initiated": number; "completed": number; "errors": number; "cancelled": number; "uninitiated": number; "unknown": number; "countsComplete": boolean; "intervalsMs": Array<number>; "latencyMs": { "samples": number; "p50": (number) | (null); "p95": (number) | (null); "p99": (number) | (null) }; "timeouts": number; "scheduleMisses": number; "inconclusive": boolean }) | (null) } }) | ({ "comparable": boolean; "reasons": Array<string>; "before": { "id": string; "workspaceId": string; "runId": string; "createdAt": string; "retainUntil": string; "digest": string; "verdict": "passed" | "failed" | "inconclusive"; "evidenceCoverage": "record-only" | "selected-fields" | "recomputable"; "cannotRecompute": Array<string>; "origin": "local" | "imported"; "run": { "id": string; "workspaceId": string; "plan": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }; "state": "queued" | "preparing" | "running" | "evaluating" | "cleanup" | "completed" | "cancelling" | "interrupted" | "effect-unknown" | "cleanup-pending"; "createdAt": string; "finishedAt": (string) | (null); "jobKey": string; "vm": ({ "token": string; "owner": string; "vmId": string; "createdAt": string; "imageRef": { "assetId": string; "digest": string }; "persistent": boolean; "expiresAt": (string) | (null); "cleanup": "pending" | "confirmed" | "unknown" }) | (null); "vmStartedAt": string | null; "workerId": (string) | (null); "egressId": (string) | (null); "requests": Array<{ "node": string; "sequence": number; "requestDigest": string; "bodyDigest": string; "state": "intent-durable" | "permitted" | "response-recorded" | "effect-unknown" | "not-sent"; "status": (number) | (null); "headers": { [key: string]: (string) }; "bytes": number; "responseDigest": (string) | (null); "durationMs": number; "complete": boolean; "error": (string) | (null); "dispatchedAt": (string) | (null); "selected": { [key: string]: (Contract327Ref1) } }>; "evaluation": ({ "id": string; "workspaceId": string; "runId": string; "assertion": { "id": string; "revision": string }; "evidenceDigest": string; "results": Array<{ "id": string; "node": string; "outcome": "satisfied" | "violated" | "unevaluated"; "reason": string; "evidence": ({ "sequence": number; "start": number; "end": number }) | (null) }> }) | (null); "cleanupConfirmed": boolean; "error": (string) | (null); "verification": Array<{ "at": string; "actor": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" }>; "snapshot": { "contract": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract327Ref2) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract327Ref2 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract327Ref2 }>; "request": (Contract327Ref2) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract327Ref2) | (null) }>; "effect": "read" | "write" | "unknown" }> }; "environment": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> }; "fixtures": Array<{ "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract327Ref1) }>; "seed"?: number; "redactedFields": Array<string> }>; "mock": ({ "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract327Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> }) | (null); "scenario": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract327Ref1) }; "query": { [key: string]: (Contract327Ref1) }; "body": Contract327Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract327Ref2 }> }> }; "assertions": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract327Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract327Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract327Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }; "load": ({ "planned": number; "initiated": number; "completed": number; "errors": number; "cancelled": number; "uninitiated": number; "unknown": number; "countsComplete": boolean; "intervalsMs": Array<number>; "latencyMs": { "samples": number; "p50": (number) | (null); "p95": (number) | (null); "p99": (number) | (null) }; "timeouts": number; "scheduleMisses": number; "inconclusive": boolean }) | (null) } }; "after": { "id": string; "workspaceId": string; "runId": string; "createdAt": string; "retainUntil": string; "digest": string; "verdict": "passed" | "failed" | "inconclusive"; "evidenceCoverage": "record-only" | "selected-fields" | "recomputable"; "cannotRecompute": Array<string>; "origin": "local" | "imported"; "run": { "id": string; "workspaceId": string; "plan": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }; "state": "queued" | "preparing" | "running" | "evaluating" | "cleanup" | "completed" | "cancelling" | "interrupted" | "effect-unknown" | "cleanup-pending"; "createdAt": string; "finishedAt": (string) | (null); "jobKey": string; "vm": ({ "token": string; "owner": string; "vmId": string; "createdAt": string; "imageRef": { "assetId": string; "digest": string }; "persistent": boolean; "expiresAt": (string) | (null); "cleanup": "pending" | "confirmed" | "unknown" }) | (null); "vmStartedAt": string | null; "workerId": (string) | (null); "egressId": (string) | (null); "requests": Array<{ "node": string; "sequence": number; "requestDigest": string; "bodyDigest": string; "state": "intent-durable" | "permitted" | "response-recorded" | "effect-unknown" | "not-sent"; "status": (number) | (null); "headers": { [key: string]: (string) }; "bytes": number; "responseDigest": (string) | (null); "durationMs": number; "complete": boolean; "error": (string) | (null); "dispatchedAt": (string) | (null); "selected": { [key: string]: (Contract327Ref1) } }>; "evaluation": ({ "id": string; "workspaceId": string; "runId": string; "assertion": { "id": string; "revision": string }; "evidenceDigest": string; "results": Array<{ "id": string; "node": string; "outcome": "satisfied" | "violated" | "unevaluated"; "reason": string; "evidence": ({ "sequence": number; "start": number; "end": number }) | (null) }> }) | (null); "cleanupConfirmed": boolean; "error": (string) | (null); "verification": Array<{ "at": string; "actor": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" }>; "snapshot": { "contract": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract327Ref2) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract327Ref2 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract327Ref2 }>; "request": (Contract327Ref2) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract327Ref2) | (null) }>; "effect": "read" | "write" | "unknown" }> }; "environment": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> }; "fixtures": Array<{ "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract327Ref1) }>; "seed"?: number; "redactedFields": Array<string> }>; "mock": ({ "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract327Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> }) | (null); "scenario": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract327Ref1) }; "query": { [key: string]: (Contract327Ref1) }; "body": Contract327Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract327Ref2 }> }> }; "assertions": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract327Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract327Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract327Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }; "load": ({ "planned": number; "initiated": number; "completed": number; "errors": number; "cancelled": number; "uninitiated": number; "unknown": number; "countsComplete": boolean; "intervalsMs": Array<number>; "latencyMs": { "samples": number; "p50": (number) | (null); "p95": (number) | (null); "p99": (number) | (null) }; "timeouts": number; "scheduleMisses": number; "inconclusive": boolean }) | (null) } } }) | ({ "digest": string; "ids": Array<string>; "protected": Array<string> }) | ({ "removed": number }) };
+type Contract328Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract328Ref1>) | ({ [key: string]: (Contract328Ref1) });
+type Contract328Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract328Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract328Ref2; "enum"?: Array<Contract328Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract328 = { "result": { "runs": Array<{ "id": string; "workspaceId": string; "plan": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }; "state": "queued" | "preparing" | "running" | "evaluating" | "cleanup" | "completed" | "cancelling" | "interrupted" | "effect-unknown" | "cleanup-pending"; "createdAt": string; "finishedAt": (string) | (null); "jobKey": string; "vm": ({ "token": string; "owner": string; "vmId": string; "createdAt": string; "imageRef": { "assetId": string; "digest": string }; "persistent": boolean; "expiresAt": (string) | (null); "cleanup": "pending" | "confirmed" | "unknown" }) | (null); "vmStartedAt": string | null; "workerId": (string) | (null); "egressId": (string) | (null); "requests": Array<{ "node": string; "sequence": number; "requestDigest": string; "bodyDigest": string; "state": "intent-durable" | "permitted" | "response-recorded" | "effect-unknown" | "not-sent"; "status": (number) | (null); "headers": { [key: string]: (string) }; "bytes": number; "responseDigest": (string) | (null); "durationMs": number; "complete": boolean; "error": (string) | (null); "dispatchedAt": (string) | (null); "selected": { [key: string]: (Contract328Ref1) } }>; "evaluation": ({ "id": string; "workspaceId": string; "runId": string; "assertion": { "id": string; "revision": string }; "evidenceDigest": string; "results": Array<{ "id": string; "node": string; "outcome": "satisfied" | "violated" | "unevaluated"; "reason": string; "evidence": ({ "sequence": number; "start": number; "end": number }) | (null) }> }) | (null); "cleanupConfirmed": boolean; "error": (string) | (null); "verification": Array<{ "at": string; "actor": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" }>; "snapshot": { "contract": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract328Ref2) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract328Ref2 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract328Ref2 }>; "request": (Contract328Ref2) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract328Ref2) | (null) }>; "effect": "read" | "write" | "unknown" }> }; "environment": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> }; "fixtures": Array<{ "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract328Ref1) }>; "seed"?: number; "redactedFields": Array<string> }>; "mock": ({ "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract328Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> }) | (null); "scenario": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract328Ref1) }; "query": { [key: string]: (Contract328Ref1) }; "body": Contract328Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract328Ref2 }> }> }; "assertions": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract328Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract328Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract328Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }; "load": ({ "planned": number; "initiated": number; "completed": number; "errors": number; "cancelled": number; "uninitiated": number; "unknown": number; "countsComplete": boolean; "intervalsMs": Array<number>; "latencyMs": { "samples": number; "p50": (number) | (null); "p95": (number) | (null); "p99": (number) | (null) }; "timeouts": number; "scheduleMisses": number; "inconclusive": boolean }) | (null) }>; "plans": Array<{ "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }> } };
+type Contract329 = ({ "action": "images" }) | ({ "action": "image-uploads" }) | ({ "action": "image-begin"; "digest": string; "bytes": number; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64"; "source": string }) | ({ "action": "image-append"; "id": string; "offset": number; "data": string }) | ({ "action": "image-finish"; "id": string }) | ({ "action": "image-discard"; "id": string }) | ({ "action": "preview"; "input": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string> } }) | ({ "action": "apply"; "planId": string; "digest": string; "approveWrites": boolean }) | ({ "action": "inspect"; "id": string }) | ({ "action": "cancel"; "id": string }) | ({ "action": "recover"; "id": string }) | ({ "action": "verify-effect"; "id": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" });
+type Contract330Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract330Ref1>) | ({ [key: string]: (Contract330Ref1) });
+type Contract330Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract330Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract330Ref2; "enum"?: Array<Contract330Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract330 = { "result": ({ "id": string; "workspaceId": string; "plan": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }; "state": "queued" | "preparing" | "running" | "evaluating" | "cleanup" | "completed" | "cancelling" | "interrupted" | "effect-unknown" | "cleanup-pending"; "createdAt": string; "finishedAt": (string) | (null); "jobKey": string; "vm": ({ "token": string; "owner": string; "vmId": string; "createdAt": string; "imageRef": { "assetId": string; "digest": string }; "persistent": boolean; "expiresAt": (string) | (null); "cleanup": "pending" | "confirmed" | "unknown" }) | (null); "vmStartedAt": string | null; "workerId": (string) | (null); "egressId": (string) | (null); "requests": Array<{ "node": string; "sequence": number; "requestDigest": string; "bodyDigest": string; "state": "intent-durable" | "permitted" | "response-recorded" | "effect-unknown" | "not-sent"; "status": (number) | (null); "headers": { [key: string]: (string) }; "bytes": number; "responseDigest": (string) | (null); "durationMs": number; "complete": boolean; "error": (string) | (null); "dispatchedAt": (string) | (null); "selected": { [key: string]: (Contract330Ref1) } }>; "evaluation": ({ "id": string; "workspaceId": string; "runId": string; "assertion": { "id": string; "revision": string }; "evidenceDigest": string; "results": Array<{ "id": string; "node": string; "outcome": "satisfied" | "violated" | "unevaluated"; "reason": string; "evidence": ({ "sequence": number; "start": number; "end": number }) | (null) }> }) | (null); "cleanupConfirmed": boolean; "error": (string) | (null); "verification": Array<{ "at": string; "actor": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" }>; "snapshot": { "contract": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract330Ref2) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract330Ref2 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract330Ref2 }>; "request": (Contract330Ref2) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract330Ref2) | (null) }>; "effect": "read" | "write" | "unknown" }> }; "environment": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> }; "fixtures": Array<{ "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract330Ref1) }>; "seed"?: number; "redactedFields": Array<string> }>; "mock": ({ "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract330Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> }) | (null); "scenario": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract330Ref1) }; "query": { [key: string]: (Contract330Ref1) }; "body": Contract330Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract330Ref2 }> }> }; "assertions": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract330Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract330Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract330Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }; "load": ({ "planned": number; "initiated": number; "completed": number; "errors": number; "cancelled": number; "uninitiated": number; "unknown": number; "countsComplete": boolean; "intervalsMs": Array<number>; "latencyMs": { "samples": number; "p50": (number) | (null); "p95": (number) | (null); "p99": (number) | (null) }; "timeouts": number; "scheduleMisses": number; "inconclusive": boolean }) | (null) }) | ({ "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }) | ({ "id": string; "digest": string; "bytes": number; "offset": number; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64"; "source": string; "createdAt": string }) | ({ "id": string; "digest": string; "bytes": number; "virtualBytes": number; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64"; "createdAt": string; "source": string }) | (Array<{ "id": string; "digest": string; "bytes": number; "offset": number; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64"; "source": string; "createdAt": string }>) | (Array<{ "id": string; "digest": string; "bytes": number; "virtualBytes": number; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64"; "createdAt": string; "source": string }>) | ({ "discarded": true }) };
+type Contract331Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract331Ref1>) | ({ [key: string]: (Contract331Ref1) });
+type Contract331Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract331Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract331Ref2; "enum"?: Array<Contract331Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract331 = { "result": Array<{ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract331Ref1) }; "query": { [key: string]: (Contract331Ref1) }; "body": Contract331Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract331Ref2 }> }> } }> };
+type Contract332Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract332Ref1>) | ({ [key: string]: (Contract332Ref1) });
+type Contract332Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract332Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract332Ref2; "enum"?: Array<Contract332Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract332 = ({ "action": "save"; "id"?: string; "expectedRevision"?: string; "content": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract332Ref1) }; "query": { [key: string]: (Contract332Ref1) }; "body": Contract332Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract332Ref2 }> }> } }) | ({ "action": "get"; "ref": { "id": string; "revision": string } }) | ({ "action": "seal"; "ref": { "id": string; "revision": string } }) | ({ "action": "archive"; "ref": { "id": string; "revision": string } }) | ({ "action": "compile"; "ref": { "id": string; "revision": string } });
+type Contract333Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract333Ref1>) | ({ [key: string]: (Contract333Ref1) });
+type Contract333Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract333Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract333Ref2; "enum"?: Array<Contract333Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract333 = { "result": ({ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract333Ref1) }; "query": { [key: string]: (Contract333Ref1) }; "body": Contract333Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract333Ref2 }> }> } }) | ({ "digest": string; "order": Array<string> }) };
+type Contract334Ref2 = (null) | (boolean) | (number) | (string) | (Array<Contract334Ref2>) | ({ [key: string]: (Contract334Ref2) });
+type Contract334Ref1 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract334Ref1) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract334Ref1; "enum"?: Array<Contract334Ref2>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract334 = { "result": { "workspaces": Array<{ "id": string; "name": string; "owner": string; "revision": string; "state": "active" | "importing" | "archived"; "createdAt": string }>; "definitions": Array<{ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract334Ref1) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract334Ref1 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract334Ref1 }>; "request": (Contract334Ref1) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract334Ref1) | (null) }>; "effect": "read" | "write" | "unknown" }> } }>; "comparisons": Array<{ "id": string; "workspaceId": string; "before": { "id": string; "revision": string }; "after": { "id": string; "revision": string }; "direction": "old-client-new-service"; "rulesVersion": 1; "items": Array<{ "operationId": string; "verdict": "compatible" | "breaking" | "undetermined"; "reasons": Array<string> }> }> } };
+type Contract335Ref2 = (null) | (boolean) | (number) | (string) | (Array<Contract335Ref2>) | ({ [key: string]: (Contract335Ref2) });
+type Contract335Ref1 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract335Ref1) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract335Ref1; "enum"?: Array<Contract335Ref2>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract335 = ({ "action": "save"; "id"?: string; "expectedRevision"?: string; "content": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract335Ref1) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract335Ref1 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract335Ref1 }>; "request": (Contract335Ref1) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract335Ref1) | (null) }>; "effect": "read" | "write" | "unknown" }> } }) | ({ "action": "get"; "ref": { "id": string; "revision": string } }) | ({ "action": "seal"; "ref": { "id": string; "revision": string } }) | ({ "action": "archive"; "ref": { "id": string; "revision": string } }) | ({ "action": "create-workspace"; "name": string }) | ({ "action": "compare"; "before": { "id": string; "revision": string }; "after": { "id": string; "revision": string } });
+type Contract336Ref2 = (null) | (boolean) | (number) | (string) | (Array<Contract336Ref2>) | ({ [key: string]: (Contract336Ref2) });
+type Contract336Ref1 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract336Ref1) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract336Ref1; "enum"?: Array<Contract336Ref2>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract336 = { "result": ({ "id": string; "workspaceId": string; "revision": string; "parent": (string) | (null); "createdAt": string; "createdBy": string; "state": "draft" | "sealed" | "archived"; "sequence": number; "content": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract336Ref1) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract336Ref1 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract336Ref1 }>; "request": (Contract336Ref1) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract336Ref1) | (null) }>; "effect": "read" | "write" | "unknown" }> } }) | ({ "id": string; "name": string; "owner": string; "revision": string; "state": "active" | "importing" | "archived"; "createdAt": string }) | ({ "id": string; "workspaceId": string; "before": { "id": string; "revision": string }; "after": { "id": string; "revision": string }; "direction": "old-client-new-service"; "rulesVersion": 1; "items": Array<{ "operationId": string; "verdict": "compatible" | "breaking" | "undetermined"; "reasons": Array<string> }> }) };
+type Contract337Ref1 = (null) | (boolean) | (number) | (string) | (Array<Contract337Ref1>) | ({ [key: string]: (Contract337Ref1) });
+type Contract337Ref2 = { "type"?: "object" | "array" | "string" | "boolean" | "integer" | "number" | "null"; "ref"?: string; "properties"?: { [key: string]: (Contract337Ref2) }; "required"?: Array<string>; "additionalProperties"?: boolean; "items"?: Contract337Ref2; "enum"?: Array<Contract337Ref1>; "minimum"?: number; "maximum"?: number; "minLength"?: number; "maxLength"?: number; "minItems"?: number; "maxItems"?: number };
+type Contract337 = { "result": (Array<{ "id": "order-demo" | "pagination" | "contract-change"; "name": string }>) | ({ "workspace": { "id": string; "name": string; "owner": string; "revision": string; "state": "active" | "importing" | "archived"; "createdAt": string }; "runs": Array<{ "id": string; "workspaceId": string; "plan": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }; "state": "queued" | "preparing" | "running" | "evaluating" | "cleanup" | "completed" | "cancelling" | "interrupted" | "effect-unknown" | "cleanup-pending"; "createdAt": string; "finishedAt": (string) | (null); "jobKey": string; "vm": ({ "token": string; "owner": string; "vmId": string; "createdAt": string; "imageRef": { "assetId": string; "digest": string }; "persistent": boolean; "expiresAt": (string) | (null); "cleanup": "pending" | "confirmed" | "unknown" }) | (null); "vmStartedAt": string | null; "workerId": (string) | (null); "egressId": (string) | (null); "requests": Array<{ "node": string; "sequence": number; "requestDigest": string; "bodyDigest": string; "state": "intent-durable" | "permitted" | "response-recorded" | "effect-unknown" | "not-sent"; "status": (number) | (null); "headers": { [key: string]: (string) }; "bytes": number; "responseDigest": (string) | (null); "durationMs": number; "complete": boolean; "error": (string) | (null); "dispatchedAt": (string) | (null); "selected": { [key: string]: (Contract337Ref1) } }>; "evaluation": ({ "id": string; "workspaceId": string; "runId": string; "assertion": { "id": string; "revision": string }; "evidenceDigest": string; "results": Array<{ "id": string; "node": string; "outcome": "satisfied" | "violated" | "unevaluated"; "reason": string; "evidence": ({ "sequence": number; "start": number; "end": number }) | (null) }> }) | (null); "cleanupConfirmed": boolean; "error": (string) | (null); "verification": Array<{ "at": string; "actor": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" }>; "snapshot": { "contract": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract337Ref2) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract337Ref2 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract337Ref2 }>; "request": (Contract337Ref2) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract337Ref2) | (null) }>; "effect": "read" | "write" | "unknown" }> }; "environment": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> }; "fixtures": Array<{ "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract337Ref1) }>; "seed"?: number; "redactedFields": Array<string> }>; "mock": ({ "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract337Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> }) | (null); "scenario": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract337Ref1) }; "query": { [key: string]: (Contract337Ref1) }; "body": Contract337Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract337Ref2 }> }> }; "assertions": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract337Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract337Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract337Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }; "load": ({ "planned": number; "initiated": number; "completed": number; "errors": number; "cancelled": number; "uninitiated": number; "unknown": number; "countsComplete": boolean; "intervalsMs": Array<number>; "latencyMs": { "samples": number; "p50": (number) | (null); "p95": (number) | (null); "p99": (number) | (null) }; "timeouts": number; "scheduleMisses": number; "inconclusive": boolean }) | (null) }>; "reports": Array<{ "id": string; "workspaceId": string; "runId": string; "createdAt": string; "retainUntil": string; "digest": string; "verdict": "passed" | "failed" | "inconclusive"; "evidenceCoverage": "record-only" | "selected-fields" | "recomputable"; "cannotRecompute": Array<string>; "origin": "local" | "imported"; "run": { "id": string; "workspaceId": string; "plan": { "scenario": { "id": string; "revision": string }; "mock": ({ "id": string; "revision": string }) | (null); "assertions": { "id": string; "revision": string }; "image": { "assetId": string; "digest": string }; "mode": "functional" | "load" | "mock-only"; "requests": number; "rate": number; "durationSeconds": number; "retainFields": Array<string>; "id": string; "workspaceId": string; "digest": string; "createdAt": string; "expiresAt": string; "deadline": string; "state": "validated" | "consumed" | "invalidated"; "runId": (string) | (null); "writes": Array<string>; "snapshotDigest": string; "toolDigest": string; "credentialVersions": { [key: string]: (string) }; "targetDigest": string; "capacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" }; "recordCapacity": { "token": string; "workspaceId": string; "consumer": string; "objects": number; "revisions": number; "bytes": number; "metadataBytes": number; "controlBytes": number; "state": "reserved" | "committed" | "released" } }; "state": "queued" | "preparing" | "running" | "evaluating" | "cleanup" | "completed" | "cancelling" | "interrupted" | "effect-unknown" | "cleanup-pending"; "createdAt": string; "finishedAt": (string) | (null); "jobKey": string; "vm": ({ "token": string; "owner": string; "vmId": string; "createdAt": string; "imageRef": { "assetId": string; "digest": string }; "persistent": boolean; "expiresAt": (string) | (null); "cleanup": "pending" | "confirmed" | "unknown" }) | (null); "vmStartedAt": string | null; "workerId": (string) | (null); "egressId": (string) | (null); "requests": Array<{ "node": string; "sequence": number; "requestDigest": string; "bodyDigest": string; "state": "intent-durable" | "permitted" | "response-recorded" | "effect-unknown" | "not-sent"; "status": (number) | (null); "headers": { [key: string]: (string) }; "bytes": number; "responseDigest": (string) | (null); "durationMs": number; "complete": boolean; "error": (string) | (null); "dispatchedAt": (string) | (null); "selected": { [key: string]: (Contract337Ref1) } }>; "evaluation": ({ "id": string; "workspaceId": string; "runId": string; "assertion": { "id": string; "revision": string }; "evidenceDigest": string; "results": Array<{ "id": string; "node": string; "outcome": "satisfied" | "violated" | "unevaluated"; "reason": string; "evidence": ({ "sequence": number; "start": number; "end": number }) | (null) }> }) | (null); "cleanupConfirmed": boolean; "error": (string) | (null); "verification": Array<{ "at": string; "actor": string; "evidenceDigest": string; "conclusion": "confirmed-applied" | "confirmed-not-applied" | "unresolved" }>; "snapshot": { "contract": { "format": "sakura-http-contract/1"; "title": string; "schemas": { [key: string]: (Contract337Ref2) }; "operations": Array<{ "operationId": string; "method": "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"; "path": string; "pathParameters": Array<{ "name": string; "required": boolean; "schema": Contract337Ref2 }>; "queryParameters": Array<{ "name": string; "required": boolean; "schema": Contract337Ref2 }>; "request": (Contract337Ref2) | (null); "responses": Array<{ "status": number; "mediaType": "application/json" | "text/plain" | "none"; "schema": (Contract337Ref2) | (null) }>; "effect": "read" | "write" | "unknown" }> }; "environment": { "name": string; "application"?: { "appId": string; "revision": number; "identityDigest": string }; "target": ({ "kind": "mock" }) | ({ "kind": "private"; "address": string; "port": number; "protocol": "http" | "https"; "tlsName"?: string; "testUseConfirmed": true }) | ({ "kind": "unbound"; "slot": string }); "credentials": Array<{ "header": string; "slot": string; "sourceVmId"?: string; "name"?: string; "version"?: string }> }; "fixtures": Array<{ "name": string; "columns": Array<string>; "rows": Array<{ [key: string]: (Contract337Ref1) }>; "seed"?: number; "redactedFields": Array<string> }>; "mock": ({ "name": string; "contract": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "states": Array<string>; "initialState": string; "seed": number; "rules": Array<{ "id": string; "operationId": string; "state"?: string; "nextState"?: string; "status": number; "headers": { [key: string]: (string) }; "body": Contract337Ref1; "fixture"?: { "index": number; "row": number }; "fault": { "delayMs": number; "disconnect": boolean; "truncateBytes"?: number } }> }) | (null); "scenario": { "name": string; "contract": { "id": string; "revision": string }; "environment": { "id": string; "revision": string }; "fixtures": Array<{ "id": string; "revision": string }>; "nodes": Array<{ "id": string; "operationId": string; "after": Array<string>; "condition"?: { "node": string; "status": number }; "path": { [key: string]: (Contract337Ref1) }; "query": { [key: string]: (Contract337Ref1) }; "body": Contract337Ref1; "fixture"?: { "index": number; "row": number }; "bindings": Array<{ "from": string; "pointer": string; "to": "path" | "query" | "body"; "field": string; "shape": Contract337Ref2 }> }> }; "assertions": { "name": string; "scenario": { "id": string; "revision": string }; "rules": Array<({ "id": string; "node": string; "kind": "status"; "equals": number }) | ({ "id": string; "node": string; "kind": "header"; "name": string; "equals": string }) | ({ "id": string; "node": string; "kind": "value"; "pointer": string; "equals": Contract337Ref1 }) | ({ "id": string; "node": string; "kind": "shape"; "pointer": string; "shape": Contract337Ref2 }) | ({ "id": string; "node": string; "kind": "member"; "pointer": string; "value": Contract337Ref1 }) | ({ "id": string; "node": string; "kind": "relation"; "pointer": string; "otherNode": string; "otherPointer": string; "relation": "eq" | "ne" | "lt" | "le" | "gt" | "ge" }) | ({ "id": string; "node": string; "kind": "duration"; "maxMs": number })> } }; "load": ({ "planned": number; "initiated": number; "completed": number; "errors": number; "cancelled": number; "uninitiated": number; "unknown": number; "countsComplete": boolean; "intervalsMs": Array<number>; "latencyMs": { "samples": number; "p50": (number) | (null); "p95": (number) | (null); "p99": (number) | (null) }; "timeouts": number; "scheduleMisses": number; "inconclusive": boolean }) | (null) } }> }) };
+type Contract338 = { "action": "create"; "name": string; "template": "order-demo" | "pagination" | "contract-change" };
+type Contract339 = { "result": { "workspace": { "id": string; "name": string; "owner": string; "revision": string; "state": "active" | "importing" | "archived"; "createdAt": string }; "scenario": ({ "id": string; "revision": string }) | (null); "mock": ({ "id": string; "revision": string }) | (null); "assertions": ({ "id": string; "revision": string }) | (null); "comparison": ({ "id": string; "workspaceId": string; "before": { "id": string; "revision": string }; "after": { "id": string; "revision": string }; "direction": "old-client-new-service"; "rulesVersion": 1; "items": Array<{ "operationId": string; "verdict": "compatible" | "breaking" | "undetermined"; "reasons": Array<string> }> }) | (null) } };
+type Contract340 = Array<{ "id": "handover" | "operations" | "decision" | "glossary"; "headings": Array<string>; "revision": 1 }>;
+type Contract341 = { "spaceId": string; "title": string; "template": "handover" | "operations" | "decision" | "glossary"; "applicability": string; "sections": Array<{ "heading": string; "text": string; "entries": Array<{ "id": string; "revision": number }>; "citations": Array<{ "id": string; "revision": number }> }> };
+type Contract342 = { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "template": "handover" | "operations" | "decision" | "glossary"; "applicability": string; "sections": Array<{ "heading": string; "text": string; "entries": Array<{ "id": string; "revision": number }>; "citations": Array<{ "id": string; "revision": number }> }>; "templateRevision": 1; "archived": boolean };
+type Contract343 = { "spaceId": string; "id": string; "expectedRevision": number; "title": string; "template": "handover" | "operations" | "decision" | "glossary"; "applicability": string; "sections": Array<{ "heading": string; "text": string; "entries": Array<{ "id": string; "revision": number }>; "citations": Array<{ "id": string; "revision": number }> }> };
+type Contract344 = { "spaceId": string; "id": string; "revision": number; "purpose": "read" | "index" | "cite" | "publish" | "export" };
+type Contract345 = { "spaceId": string };
+type Contract346 = Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "template": "handover" | "operations" | "decision" | "glossary"; "applicability": string; "sections": Array<{ "heading": string; "text": string; "entries": Array<{ "id": string; "revision": number }>; "citations": Array<{ "id": string; "revision": number }> }>; "templateRevision": 1; "archived": boolean }>;
+type Contract347 = { "spaceId": string; "id": string; "left": number; "right": number };
+type Contract348 = { "left": { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "template": "handover" | "operations" | "decision" | "glossary"; "applicability": string; "sections": Array<{ "heading": string; "text": string; "entries": Array<{ "id": string; "revision": number }>; "citations": Array<{ "id": string; "revision": number }> }>; "templateRevision": 1; "archived": boolean }; "right": { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "template": "handover" | "operations" | "decision" | "glossary"; "applicability": string; "sections": Array<{ "heading": string; "text": string; "entries": Array<{ "id": string; "revision": number }>; "citations": Array<{ "id": string; "revision": number }> }>; "templateRevision": 1; "archived": boolean } };
+type Contract349 = { "spaceId": string; "id": string; "expectedRevision": number };
+type Contract350 = { "spaceId": string; "title": string; "assertions": Array<{ "text": string; "kind": "fact" | "judgment" | "procedure" | "unverified"; "applicability": string; "supports": Array<{ "id": string; "revision": number }>; "conflicts": Array<{ "id": string; "revision": number }>; "resolution": string; "verification": string }> };
+type Contract351 = { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "assertions": Array<{ "text": string; "kind": "fact" | "judgment" | "procedure" | "unverified"; "applicability": string; "supports": Array<{ "id": string; "revision": number }>; "conflicts": Array<{ "id": string; "revision": number }>; "resolution": string; "verification": string }>; "archived": boolean };
+type Contract352 = { "spaceId": string; "id": string; "expectedRevision": number; "title": string; "assertions": Array<{ "text": string; "kind": "fact" | "judgment" | "procedure" | "unverified"; "applicability": string; "supports": Array<{ "id": string; "revision": number }>; "conflicts": Array<{ "id": string; "revision": number }>; "resolution": string; "verification": string }> };
+type Contract353 = Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "assertions": Array<{ "text": string; "kind": "fact" | "judgment" | "procedure" | "unverified"; "applicability": string; "supports": Array<{ "id": string; "revision": number }>; "conflicts": Array<{ "id": string; "revision": number }>; "resolution": string; "verification": string }>; "archived": boolean }>;
+type Contract354 = { "left": { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "assertions": Array<{ "text": string; "kind": "fact" | "judgment" | "procedure" | "unverified"; "applicability": string; "supports": Array<{ "id": string; "revision": number }>; "conflicts": Array<{ "id": string; "revision": number }>; "resolution": string; "verification": string }>; "archived": boolean }; "right": { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "assertions": Array<{ "text": string; "kind": "fact" | "judgment" | "procedure" | "unverified"; "applicability": string; "supports": Array<{ "id": string; "revision": number }>; "conflicts": Array<{ "id": string; "revision": number }>; "resolution": string; "verification": string }>; "archived": boolean } };
+type Contract355 = { "spaceId": string; "extraction": { "id": string; "revision": number }; "start": number; "end": number };
+type Contract356 = { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "source": { "id": string; "revision": number }; "extraction": { "id": string; "revision": number }; "sourceDigest": string; "textDigest": string; "quote": string; "quoteDigest": string; "start": number; "end": number; "locator": string };
+type Contract357 = { "citation": { "id": string; "revision": number }; "integrity": "verified" | "mismatch" | "unavailable"; "permission": "allowed" | "revoked" | "unknown"; "currency": "current" | "updated" | "unknown"; "authenticity": "unverified"; "reason": string };
+type Contract358 = { "spaceId": string; "id": string; "revision": number; "purpose": "read" | "index" | "cite" | "publish" | "export"; "target": { "id": string; "revision": number } };
+type Contract359 = { "candidates": Array<{ "start": number; "end": number; "locator": string }>; "ambiguous": boolean };
+type Contract360 = Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "source": { "id": string; "revision": number }; "extraction": { "id": string; "revision": number }; "sourceDigest": string; "textDigest": string; "quote": string; "quoteDigest": string; "start": number; "end": number; "locator": string }>;
+type Contract361 = { "spaceId": string; "document": { "id": string; "revision": number }; "review": { "id": string; "revision": number }; "mode": "reading" | "handover" };
+type Contract362 = { "token": string; "spaceId": string; "expiresAt": string; "digest": string; "summary": Array<string> };
+type Contract363 = { "spaceId": string; "token": string };
+type Contract364 = { "id": string; "digest": string; "mode": "reading" | "handover" };
+type Contract365 = { "spaceId": string; "id": string };
+type Contract366 = { "format": "sakura-knowledge/1"; "id": string; "mode": "reading" | "handover"; "canonical": "sorted-keys-utf8/1"; "files": Array<{ "path": string; "bytes": number; "sha256": string; "data": string }>; "manifestDigest": string };
+type Contract367 = { "bundle": { "format": "sakura-knowledge/1"; "id": string; "mode": "reading" | "handover"; "canonical": "sorted-keys-utf8/1"; "files": Array<{ "path": string; "bytes": number; "sha256": string; "data": string }>; "manifestDigest": string } };
+type Contract368 = { "id": string; "digest": string; "state": "checked" | "rejected" | "accepted"; "mode"?: "reading" | "handover"; "issues": Array<string>; "createdAt": string; "spaceId"?: string; "mapping": { [key: string]: (string) }; "identity": "unverified" };
+type Contract369 = { "id": string; "name": string; "acceptUnverified": true };
+type Contract370 = Array<{ "id": string; "digest": string; "state": "checked" | "rejected" | "accepted"; "mode"?: "reading" | "handover"; "issues": Array<string>; "createdAt": string; "spaceId"?: string; "mapping": { [key: string]: (string) }; "identity": "unverified" }>;
+type Contract371 = { "spaceId": string; "sources": Array<{ "id": string; "revision": number }> };
+type Contract372 = Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "source": { "id": string; "revision": number }; "sourceDigest": string; "parser": "sakura-text/1"; "textDigest": string; "blocks": Array<{ "text": string; "start": number; "end": number; "line": number; "locator": string }>; "warnings": Array<string> }>;
+type Contract373 = { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "source": { "id": string; "revision": number }; "sourceDigest": string; "parser": "sakura-text/1"; "textDigest": string; "blocks": Array<{ "text": string; "start": number; "end": number; "line": number; "locator": string }>; "warnings": Array<string> };
+type Contract374 = Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "source": { "id": string; "revision": number }; "sourceDigest": string; "parser": "sakura-text/1"; "textDigest": string; "blocks": Array<{ "text": string; "start": number; "end": number; "line": number; "locator": string }>; "warnings": Array<string> }>;
+type Contract375 = Array<{ "id": string; "spaceId": string; "kind": string; "state": "running" | "ready" | "failed" | "cancelled" | "interrupted" | "cleanup-pending"; "createdAt": string; "error": string; "resultId"?: string }>;
+type Contract376 = { "id": string; "spaceId": string; "kind": string; "state": "running" | "ready" | "failed" | "cancelled" | "interrupted" | "cleanup-pending"; "createdAt": string; "error": string; "resultId"?: string };
+type Contract377 = { "spaceId": string; "extractions": Array<{ "id": string; "revision": number }> };
+type Contract378 = { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "tokenizer": "unicode-cjk/1"; "extractions": Array<{ "id": string; "revision": number }>; "rows": Array<{ "extraction": { "id": string; "revision": number }; "source": { "id": string; "revision": number }; "sourceDigest": string; "block": { "text": string; "start": number; "end": number; "line": number; "locator": string }; "terms": Array<string> }>; "active": boolean; "omitted": Array<string> };
+type Contract379 = { "spaceId": string; "query": string; "generation"?: { "id": string; "revision": number }; "limit": number };
+type Contract380 = { "generation": { "id": string; "revision": number }; "hits": Array<{ "source": { "id": string; "revision": number }; "extraction": { "id": string; "revision": number }; "block": { "text": string; "start": number; "end": number; "line": number; "locator": string }; "score": number }>; "truncated": boolean; "coverage": { "indexed": number; "omitted": number; "stale": boolean } };
+type Contract381 = { "indexed": number; "omitted": number; "stale": boolean };
+type Contract382 = { "spaceId": string; "document": { "id": string; "revision": number }; "review": { "id": string; "revision": number } };
+type Contract383 = { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "document": { "id": string; "revision": number }; "review": { "id": string; "revision": number }; "renderer": "knowledge-safe/1"; "output": { "title": string; "markdown": string; "html": string; "digest": string; "warnings": Array<string> }; "withdrawn": boolean; "reason": string };
+type Contract384 = { "spaceId": string; "id"?: string };
+type Contract385 = { "spaceId": string; "id": string; "reason": string };
+type Contract386 = Array<{ "id": string; "revision": number; "document": { "id": string; "revision": number }; "withdrawn": boolean; "active": boolean }>;
+type Contract387 = { "spaceId": string; "document": { "id": string; "revision": number } };
+type Contract388 = { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "document": { "id": string; "revision": number }; "documentDigest": string; "rules": "knowledge-review/1"; "issues": Array<{ "id": string; "kind": "integrity" | "permission" | "conflict" | "unverified" | "sensitive" | "image" | "template" | "scope"; "message": string; "blocking": boolean }>; "decision": "open" | "accepted" | "changes-requested" | "revoked" | "imported"; "acknowledgements": Array<string>; "note": string; "mode": "single-owner" };
+type Contract389 = { "spaceId": string; "id": string; "expectedRevision": number; "decision": "accepted" | "changes-requested" | "revoked"; "acknowledgements": Array<string>; "note": string };
+type Contract390 = Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "document": { "id": string; "revision": number }; "documentDigest": string; "rules": "knowledge-review/1"; "issues": Array<{ "id": string; "kind": "integrity" | "permission" | "conflict" | "unverified" | "sensitive" | "image" | "template" | "scope"; "message": string; "blocking": boolean }>; "decision": "open" | "accepted" | "changes-requested" | "revoked" | "imported"; "acknowledgements": Array<string>; "note": string; "mode": "single-owner" }>;
+type Contract391 = { "name": string };
+type Contract392 = { "id": string; "name": string; "createdAt": string; "actor": string; "revoked": boolean; "quarantined": boolean; "revision": number };
+type Contract393 = Array<{ "id": string; "name": string; "createdAt": string; "actor": string; "revoked": boolean; "quarantined": boolean; "revision": number }>;
+type Contract394 = { "spaceId": string; "expectedRevision": number; "revoked": boolean };
+type Contract395 = Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "name": string; "format": "text" | "markdown" | "json" | "csv" | "html"; "bytes": number; "blobId": string; "origin": "upload" | "project" | "import" | "redacted"; "originDigest"?: string; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean }; "policyRevision": number; "revoked": boolean; "sensitive": Array<string>; "redactions": Array<{ "start": number; "end": number }> }>;
+type Contract396 = { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "name": string; "format": "text" | "markdown" | "json" | "csv" | "html"; "bytes": number; "blobId": string; "origin": "upload" | "project" | "import" | "redacted"; "originDigest"?: string; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean }; "policyRevision": number; "revoked": boolean; "sensitive": Array<string>; "redactions": Array<{ "start": number; "end": number }> };
+type Contract397 = { "spaceId": string; "name": string; "format": "text" | "markdown" | "json" | "csv" | "html"; "data": string; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean }; "sourceId"?: string; "expectedRevision"?: number };
+type Contract398 = { "spaceId": string; "id": string; "revision": number; "purpose": "read" | "index" | "cite" | "publish" | "export"; "ranges": Array<{ "start": number; "end": number }>; "name": string; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean } };
+type Contract399 = { "spaceId": string; "request": { "vmId": string; "projectId": string; "configRevision": string; "relativePaths": Array<string>; "maxBytes": number }; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean }; "refresh"?: Array<{ "path": string; "sourceId": string; "expectedRevision": number }> };
+type Contract400 = Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "name": string; "format": "text" | "markdown" | "json" | "csv" | "html"; "bytes": number; "blobId": string; "origin": "upload" | "project" | "import" | "redacted"; "originDigest"?: string; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean }; "policyRevision": number; "revoked": boolean; "sensitive": Array<string>; "redactions": Array<{ "start": number; "end": number }> }>;
+type Contract401 = { "source": { "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "name": string; "format": "text" | "markdown" | "json" | "csv" | "html"; "bytes": number; "blobId": string; "origin": "upload" | "project" | "import" | "redacted"; "originDigest"?: string; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean }; "policyRevision": number; "revoked": boolean; "sensitive": Array<string>; "redactions": Array<{ "start": number; "end": number }> }; "data": string };
+type Contract402 = { "digest": string; "bytes": number };
+type Contract403 = { "spaceId": string; "id": string; "expectedRevision": number; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean }; "revoked": boolean };
+type Contract404 = { "used": number; "reserved": number; "totalLimit": number; "recoveryReserve": number };
+type Contract405 = { "removed": Array<string>; "protected": Array<string>; "pending": Array<string> };
+type Contract406 = { "space": { "id": string; "name": string; "createdAt": string; "actor": string; "revoked": boolean; "quarantined": boolean; "revision": number }; "sources": Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "name": string; "format": "text" | "markdown" | "json" | "csv" | "html"; "bytes": number; "blobId": string; "origin": "upload" | "project" | "import" | "redacted"; "originDigest"?: string; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean }; "policyRevision": number; "revoked": boolean; "sensitive": Array<string>; "redactions": Array<{ "start": number; "end": number }> }>; "entries": Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "assertions": Array<{ "text": string; "kind": "fact" | "judgment" | "procedure" | "unverified"; "applicability": string; "supports": Array<{ "id": string; "revision": number }>; "conflicts": Array<{ "id": string; "revision": number }>; "resolution": string; "verification": string }>; "archived": boolean }>; "documents": Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "title": string; "template": "handover" | "operations" | "decision" | "glossary"; "applicability": string; "sections": Array<{ "heading": string; "text": string; "entries": Array<{ "id": string; "revision": number }>; "citations": Array<{ "id": string; "revision": number }> }>; "templateRevision": 1; "archived": boolean }>; "reviews": Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "document": { "id": string; "revision": number }; "documentDigest": string; "rules": "knowledge-review/1"; "issues": Array<{ "id": string; "kind": "integrity" | "permission" | "conflict" | "unverified" | "sensitive" | "image" | "template" | "scope"; "message": string; "blocking": boolean }>; "decision": "open" | "accepted" | "changes-requested" | "revoked" | "imported"; "acknowledgements": Array<string>; "note": string; "mode": "single-owner" }>; "jobs": Array<{ "id": string; "spaceId": string; "kind": string; "state": "running" | "ready" | "failed" | "cancelled" | "interrupted" | "cleanup-pending"; "createdAt": string; "error": string; "resultId"?: string }>; "capacity": { "used": number; "reserved": number; "totalLimit": number; "recoveryReserve": number } };
+type Contract407 = { "spaceId": string; "step": string };
+type Contract408 = { "spaceId": string; "step": string };
+type Contract409 = { "name": string; "template": "handover" | "operations" | "decision" | "glossary" };
+type Contract410 = { "space": { "id": string; "name": string; "createdAt": string; "actor": string; "revoked": boolean; "quarantined": boolean; "revision": number }; "sources": Array<{ "spaceId": string; "id": string; "revision": number; "digest": string; "createdAt": string; "actor": string; "dependencies": Array<{ "id": string; "revision": number; "digest": string; "policyRevision": number }>; "name": string; "format": "text" | "markdown" | "json" | "csv" | "html"; "bytes": number; "blobId": string; "origin": "upload" | "project" | "import" | "redacted"; "originDigest"?: string; "policy": { "read": boolean; "index": boolean; "cite": boolean; "publish": boolean; "export": boolean }; "policyRevision": number; "revoked": boolean; "sensitive": Array<string>; "redactions": Array<{ "start": number; "end": number }> }> };
+type Contract411 = { "ids": Array<string>; "action": "start" | "stop" };
+type Contract412 = { "results": Array<({ "id": string; "ok": boolean }) | ({ "id": string; "ok": boolean; "error": string })> };
+type Contract413 = { "group"?: string; "tags"?: Array<string>; "favorite"?: boolean };
+type Contract414 = { "providers": Array<{ "id": "backup-blocks" | "job-logs"; "label": string; "description": string }> };
+type Contract415 = { "provider": "backup-blocks" | "job-logs" };
+type Contract416 = { "revision": string; "entries": Array<{ "id": string; "source": string; "owner": string; "label": string; "bytes": number; "eligible": boolean; "reason": string }>; "notes": Array<string>; "provider": "backup-blocks" | "job-logs"; "token": string; "expiresAt": string; "estimatedBytes": number; "candidateCount": number };
+type Contract417 = { "provider": "backup-blocks" | "job-logs"; "token": string };
+type Contract418 = { "provider": "backup-blocks" | "job-logs"; "removedCount": number; "reclaimedBytes": number };
+type Contract419 = { "total": number; "available": number; "images": Array<{ "id": string; "name": ("Alpine 3.23") | ("Debian 12") | ("Debian 12 ARM64") | ("Ubuntu 24.04 LTS"); "bytes": number }>; "backupBytes": number; "deduplicatedBackups": { "backups": number; "logicalBytes": number; "physicalBytes": number; "referencedBytes": number; "savedBytes": number; "orphanBytes": number; "reclaimedBytes": number; "chunkCount": number; "blockSize": number }; "machines": Array<{ "id": string; "name": string; "bytes": number; "capacity": number; "snapshots": number; "pendingResize": boolean }>; "warning": string };
+type Contract420 = { "report": (null) | ({ "createdAt": string; "checks": Array<{ "name": string; "status": ("error") | ("warning") | ("ok") | ("skip"); "detail": string; "suggestion"?: string }>; "log": string }); "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
+type Contract421 = { "diskGiB"?: number; "finish"?: boolean };
+type Contract422 = ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } });
+type Contract423Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract423Ref1>) | ({ [key: string]: (Contract423Ref1) });
+type Contract423 = { "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "maintenance": boolean; "policy": { "enabled": boolean; "intervalHours": number; "mode": ("trim") | ("compact") | ("both"); "compress": boolean }; "attempts": { "trim"?: { "startedAt": string; "finishedAt"?: string; "error"?: string; "result"?: { [key: string]: (Contract423Ref1) } }; "compact"?: { "startedAt": string; "finishedAt"?: string; "error"?: string; "result"?: { [key: string]: (Contract423Ref1) } } }; "successes": { "trim"?: string; "compact"?: string } };
+type Contract424 = { "enabled"?: boolean; "intervalHours"?: number; "mode"?: "trim" | "compact" | "both"; "compress"?: boolean };
+type Contract425Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract425Ref1>) | ({ [key: string]: (Contract425Ref1) });
+type Contract425 = { "policy": { "enabled": boolean; "intervalHours": number; "mode": ("trim") | ("compact") | ("both"); "compress": boolean }; "attempts": { "trim"?: { "startedAt": string; "finishedAt"?: string; "error"?: string; "result"?: { [key: string]: (Contract425Ref1) } }; "compact"?: { "startedAt": string; "finishedAt"?: string; "error"?: string; "result"?: { [key: string]: (Contract425Ref1) } } }; "successes": { "trim"?: string; "compact"?: string } };
+type Contract426 = { "mode": "trim" | "compact" };
+type Contract427 = { "cpuPercent": number; "memoryUsed": number; "memoryTotal": number; "diskUsed": number; "diskTotal": number; "uptime": number; "sampledAt": string; "networkReceivedBytes": number | null; "networkTransmittedBytes": number | null; "networkInterfaces": Array<{ "name": string; "receivedBytes": number; "transmittedBytes": number }>; "networkReceiveBytesPerSecond": number | null; "networkTransmitBytesPerSecond": number | null; "processes": Array<{ "name": string; "memory": number }> };
+type Contract428 = { "source": string; "target"?: string; "restartRequired": boolean; "blocked": boolean; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "previous": null };
+type Contract429 = { "action": "preview" | "start" | "cancel-activation"; "target"?: string; "token"?: string };
+type Contract430 = ({ "source": string; "target"?: string; "restartRequired": boolean; "blocked": boolean; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "previous": null }) | ({ "source": string; "target": string; "bytes": number; "available": number; "count": number; "token": string }) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } });
+type Contract431 = Array<{ "id": string; "name": string; "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "updatedAt": string }>;
+type Contract432 = { "name": string; "config": { "dnsServers"?: Array<string>; "dnsDomains"?: Array<string>; "dnssec"?: "inherit" | "yes" | "allow-downgrade" | "no"; "forwards"?: Array<{ "name"?: string; "host": number; "guest": number }>; "httpProxy"?: string; "httpsProxy"?: string; "noProxy"?: string; "npmRegistry"?: string; "pipIndex"?: string; "apkMirror"?: string; "aptMirror"?: string; "aptSecurityMirror"?: string; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "id"?: string };
+type Contract433 = { "id": string; "updatedAt": string; "name": string; "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } } };
+type Contract434 = { "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "changes": Array<{ "path": string; "before": null | string; "after": string }>; "forwards"?: { "before": Array<{ "host": number; "guest": number; "name"?: string }>; "after": Array<{ "host": number; "guest": number; "name"?: string }> }; "dnsBackend"?: "resolved"; "resolverLink"?: { "before": string; "after": string }; "appliedAt"?: string };
+type Contract435 = { "action": "preview" | "apply" | "restore" | "test"; "config"?: { "dnsServers"?: Array<string>; "dnsDomains"?: Array<string>; "dnssec"?: "inherit" | "yes" | "allow-downgrade" | "no"; "forwards"?: Array<{ "name"?: string; "host": number; "guest": number }>; "httpProxy"?: string; "httpsProxy"?: string; "noProxy"?: string; "npmRegistry"?: string; "pipIndex"?: string; "apkMirror"?: string; "aptMirror"?: string; "aptSecurityMirror"?: string; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "token"?: string };
+type Contract436 = ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) | ({ "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "changes": Array<{ "path": string; "before": null | string; "after": string }>; "forwards"?: { "before": Array<{ "host": number; "guest": number; "name"?: string }>; "after": Array<{ "host": number; "guest": number; "name"?: string }> }; "dnsBackend"?: "resolved"; "resolverLink"?: { "before": string; "after": string }; "token": string }) | ({ "config": { "dnsServers": Array<string>; "dnsDomains": Array<string>; "dnssec": ("no") | ("yes") | ("inherit") | ("allow-downgrade"); "httpProxy": string; "httpsProxy": string; "noProxy": string; "npmRegistry": string; "pipIndex": string; "apkMirror": string; "aptMirror": string; "aptSecurityMirror": string; "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }>; "dependencyDownloads"?: { "npm"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "pip"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }); "git"?: ({ "kind": "bearer"; "endpoint": string; "tokenSecret": string }) | ({ "kind": "basic"; "endpoint": string; "username": string; "passwordSecret": string }) } }; "changes": Array<{ "path": string; "before": null | string; "after": string }>; "forwards"?: { "before": Array<{ "host": number; "guest": number; "name"?: string }>; "after": Array<{ "host": number; "guest": number; "name"?: string }> }; "dnsBackend"?: "resolved"; "resolverLink"?: { "before": string; "after": string }; "appliedAt"?: string });
+type Contract437 = { "forwards": Array<{ "listening": boolean; "host": number; "guest": number; "name"?: string }>; "listening": Array<number> };
+type Contract438 = { "forwards": Array<{ "name"?: string; "host": number; "guest": number }> };
+type Contract439 = { "entries": Array<{ "id": string; "name": string; "protocol": "http" | "https"; "domainAlias": boolean; "listenPort": number; "pathPrefix": string; "vmId": string; "upstreamPort": number; "healthPath": string; "stripPrefix": boolean; "clientAuth": ({ "currentPem": string; "currentCaPem"?: string; "replacementPem"?: string; "replacementCaPem"?: string; "rotateAt"?: string }) | (null); "createdAt": string; "updatedAt": string; "health": { "status": "healthy" | "unhealthy" | "stopped" | "unconfigured" | "checking"; "checkedAt"?: string; "httpStatus"?: number; "error"?: string }; "url": string }>; "listenerErrors": { [key: string]: (string) } };
+type Contract440 = ({ "action": "save"; "entry": { "id"?: string; "name": string; "protocol"?: "http" | "https"; "domainAlias"?: boolean; "listenPort": number; "pathPrefix": string; "vmId": string; "upstreamPort": number; "healthPath": string; "stripPrefix": boolean; "clientAuth"?: ({ "currentPem": string; "currentCaPem"?: string; "replacementPem"?: string; "replacementCaPem"?: string; "rotateAt"?: string }) | (null) } }) | ({ "action": "delete"; "id": string }) | ({ "action": "check"; "id"?: string });
+type Contract441 = { "policy": { "autoRotate": boolean; "renewBeforeDays": number }; "certificate": ({ "pem": string; "fingerprint256": string; "validFrom": string; "validTo": string; "generatedAt": string }) | (null); "nextRotationAt": string | null; "rotationError"?: string };
+type Contract442 = ({ "action": "configure"; "policy": { "autoRotate": boolean; "renewBeforeDays": number } }) | ({ "action": "rotate" });
+type Contract443 = { "enabled": boolean; "supported": boolean; "aliases": Array<string>; "installed": Array<string>; "missing": Array<string>; "stale": Array<string>; "error"?: string };
+type Contract444 = ({ "action": "set-enabled"; "enabled": boolean }) | ({ "action": "sync" });
+type Contract445 = { "projectId": string; "pipelines": Array<{ "name": string; "steps": Array<{ "name": string; "command": string; "timeout": number; "id"?: string; "dependsOn"?: Array<string>; "rerunnable"?: boolean }>; "maxConcurrency"?: number; "inputs"?: Array<string>; "artifacts": Array<string>; "id": string }>; "runs": Array<{ "id": string; "pipelineId": string; "sourceRunId"?: string; "selectedStepIds"?: Array<string>; "fingerprint"?: string; "rerunUnavailable"?: string; "name": string; "projectId": string; "startedAt": string; "finishedAt"?: string; "status": ("running") | ("error") | ("cancelled") | ("interrupted") | ("done"); "error"?: string; "errorCode"?: string; "steps": Array<{ "name": string; "id"?: string; "dependsOn"?: Array<string>; "blockedReason"?: string; "status": ("running") | ("error") | ("cancelled") | ("done") | ("pending"); "startedAt"?: string; "finishedAt"?: string; "code"?: number; "errorCode"?: string; "log": string }>; "artifacts": Array<{ "name": string; "bytes": number; "index": number }> }>; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
+type Contract446 = { "id"?: string; "name": string; "steps": Array<{ "name": string; "command": string; "timeout"?: number; "id"?: string; "dependsOn"?: Array<string>; "rerunnable"?: boolean }>; "artifacts"?: Array<string>; "maxConcurrency"?: number; "inputs"?: Array<string> };
+type Contract447 = { "id": string; "name": string; "steps": Array<{ "name": string; "command": string; "timeout": number; "id"?: string; "dependsOn"?: Array<string>; "rerunnable"?: boolean }>; "maxConcurrency"?: number; "inputs"?: Array<string>; "artifacts": Array<string> };
+type Contract448 = { "ok": boolean };
+type Contract449 = ({ "action": "run"; "pipelineId": string }) | ({ "action": "rerun"; "pipelineId": string; "sourceRunId": string; "stepIds": Array<string> });
+type Contract450 = { "runId": string; "index": number };
+type Contract451Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract451Ref1>) | ({ [key: string]: (Contract451Ref1) });
+type Contract451 = { "features": Array<{ "id": ("process-interop") | ("gpu-compute-passthrough") | ("pci-usb-passthrough") | ("vtpm-key-enrollment") | ("service-mesh") | ("acme-renewal") | ("team-templates") | ("wireguard-overlay") | ("object-backup") | ("storage-pools") | ("storage-tiering") | ("disaster-recovery-drill") | ("authenticated-ide-preview") | ("notebook-environment") | ("cross-host-snapshots") | ("maintenance-drain") | ("cold-migration") | ("ebpf-profiler") | ("flamegraph") | ("network-emulation") | ("nat-hairpin") | ("host-disk-health") | ("global-dedup") | ("otel-tracing") | ("dependency-bot") | ("vcpu-hotplug") | ("memory-hotplug") | ("schema-panels") | ("compliance-evidence") | ("proxy-pac") | ("build-cache") | ("branch-preview") | ("onboarding-checklist") | ("review-threads") | ("activity-digest") | ("slo-dashboard") | ("error-budget") | ("capacity-forecast") | ("log-index") | ("test-sharding") | ("network-topology") | ("code-search-index") | ("language-server-catalog") | ("pii-classification") | ("host-pairing") | ("host-cert-rotation") | ("multi-host-inventory") | ("live-migration") | ("resource-scheduler") | ("ha-failover") | ("fleet-policy-rollout") | ("uefi-ovmf") | ("gpu-vgpu-profiles") | ("nested-virtualization") | ("virtio-fs") | ("virtual-media-devices") | ("hardware-compatibility") | ("snapshot-merge") | ("file-level-restore") | ("backup-throttle") | ("rpo-rto-planner") | ("private-dns-dnssec") | ("http-ingress") | ("mtls-policy") | ("passkey-webauthn") | ("oidc-saml") | ("custom-rbac") | ("jit-privilege") | ("dual-approval") | ("signed-policy-bundles") | ("remote-audit-lock") | ("incident-lockdown") | ("log-retention") | ("alert-routing") | ("auto-remediation") | ("build-farm") | ("devcontainer-marketplace") | ("local-ai-assistant") | ("natural-command-planner") | ("shared-terminal") | ("shared-desktop-view") | ("session-handoff") | ("file-locks") | ("project-permissions") | ("change-approval") | ("host-drive-policy") | ("file-associations") | ("clipboard-policy") | ("media-passthrough") | ("usb-hotplug") | ("desktop-recording") | ("plugin-marketplace") | ("signed-plugin-sandbox") | ("graphql-api") | ("webhook-events") | ("automation-dsl") | ("mobile-companion") | ("browser-extension") | ("tray-companion") | ("feature-rollout"); "name": string; "category": string; "priority": string; "summary": string; "state": ("available") | ("experimental") | ("planned") }>; "capabilities": Array<{ "id": string; "name": string; "scope": ("suite") | ("extended") | ("next"); "example": { [key: string]: (Contract451Ref1) }; "note": string; "requiresGuest": boolean; "writes": boolean; "schema": { [key: string]: (Contract451Ref1) } }>; "count": number; "generatedAt": string };
+type Contract452Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract452Ref1>) | ({ [key: string]: (Contract452Ref1) });
+type Contract452 = { "projectId": string; "features": Array<{ "id": ("process-interop") | ("gpu-compute-passthrough") | ("pci-usb-passthrough") | ("vtpm-key-enrollment") | ("service-mesh") | ("acme-renewal") | ("team-templates") | ("wireguard-overlay") | ("object-backup") | ("storage-pools") | ("storage-tiering") | ("disaster-recovery-drill") | ("authenticated-ide-preview") | ("notebook-environment") | ("cross-host-snapshots") | ("maintenance-drain") | ("cold-migration") | ("ebpf-profiler") | ("flamegraph") | ("network-emulation") | ("nat-hairpin") | ("host-disk-health") | ("global-dedup") | ("otel-tracing") | ("dependency-bot") | ("vcpu-hotplug") | ("memory-hotplug") | ("schema-panels") | ("compliance-evidence") | ("proxy-pac") | ("build-cache") | ("branch-preview") | ("onboarding-checklist") | ("review-threads") | ("activity-digest") | ("slo-dashboard") | ("error-budget") | ("capacity-forecast") | ("log-index") | ("test-sharding") | ("network-topology") | ("code-search-index") | ("language-server-catalog") | ("pii-classification") | ("host-pairing") | ("host-cert-rotation") | ("multi-host-inventory") | ("live-migration") | ("resource-scheduler") | ("ha-failover") | ("fleet-policy-rollout") | ("uefi-ovmf") | ("gpu-vgpu-profiles") | ("nested-virtualization") | ("virtio-fs") | ("virtual-media-devices") | ("hardware-compatibility") | ("snapshot-merge") | ("file-level-restore") | ("backup-throttle") | ("rpo-rto-planner") | ("private-dns-dnssec") | ("http-ingress") | ("mtls-policy") | ("passkey-webauthn") | ("oidc-saml") | ("custom-rbac") | ("jit-privilege") | ("dual-approval") | ("signed-policy-bundles") | ("remote-audit-lock") | ("incident-lockdown") | ("log-retention") | ("alert-routing") | ("auto-remediation") | ("build-farm") | ("devcontainer-marketplace") | ("local-ai-assistant") | ("natural-command-planner") | ("shared-terminal") | ("shared-desktop-view") | ("session-handoff") | ("file-locks") | ("project-permissions") | ("change-approval") | ("host-drive-policy") | ("file-associations") | ("clipboard-policy") | ("media-passthrough") | ("usb-hotplug") | ("desktop-recording") | ("plugin-marketplace") | ("signed-plugin-sandbox") | ("graphql-api") | ("webhook-events") | ("automation-dsl") | ("mobile-companion") | ("browser-extension") | ("tray-companion") | ("feature-rollout"); "name": string; "category": string; "priority": string; "summary": string; "state": ("available") | ("experimental") | ("planned") }>; "capabilities": Array<{ "id": string; "name": string; "scope": ("suite") | ("extended") | ("next"); "example": { [key: string]: (Contract452Ref1) }; "note": string; "requiresGuest": boolean; "writes": boolean; "schema": { [key: string]: (Contract452Ref1) } }>; "settings": { [key: string]: ({ "enabled": boolean; "options": { [key: string]: (Contract452Ref1) }; "updatedAt": string }) }; "records": { [key: string]: (Contract452Ref1) }; "haFailoverMonitor": (null) | ({ "suspected": boolean; "sampleIntervalSeconds": number; "armed": boolean; "consecutiveFailures": number; "observedState": ("running") | ("error") | ("stopped") | ("starting") | ("paused") | ("stopping"); "observedAt": string; "policyVersion"?: string; "lastHealthyAt"?: string; "suspectedAt"?: string }); "haPromotion": (null) | ({ "peerId": string; "targetHostId": string; "transferId": string; "remoteVmId": string; "snapshotId": string; "sha256": string; "fencedAt": string; "status": ("fenced") | ("accepted"); "updatedAt": string; "error"?: string }); "haLocalFailover": (null) | ({ "error": null | string }); "haHostFailover": (null) | ({ "configured": boolean; "armed": boolean; "phase": null | string; "targetVmId": null | string; "failback": (null) | ("pending") | ("completed"); "recoveryHeld": boolean; "statusPending": boolean; "error": null | string }); "executions": Array<{ "featureId": ("process-interop") | ("gpu-compute-passthrough") | ("pci-usb-passthrough") | ("vtpm-key-enrollment") | ("service-mesh") | ("acme-renewal") | ("team-templates") | ("wireguard-overlay") | ("object-backup") | ("storage-pools") | ("storage-tiering") | ("disaster-recovery-drill") | ("authenticated-ide-preview") | ("notebook-environment") | ("cross-host-snapshots") | ("maintenance-drain") | ("cold-migration") | ("ebpf-profiler") | ("flamegraph") | ("network-emulation") | ("nat-hairpin") | ("host-disk-health") | ("global-dedup") | ("otel-tracing") | ("dependency-bot") | ("vcpu-hotplug") | ("memory-hotplug") | ("schema-panels") | ("compliance-evidence") | ("proxy-pac") | ("build-cache") | ("branch-preview") | ("onboarding-checklist") | ("review-threads") | ("activity-digest") | ("slo-dashboard") | ("error-budget") | ("capacity-forecast") | ("log-index") | ("test-sharding") | ("network-topology") | ("code-search-index") | ("language-server-catalog") | ("pii-classification") | ("host-pairing") | ("host-cert-rotation") | ("multi-host-inventory") | ("live-migration") | ("resource-scheduler") | ("ha-failover") | ("fleet-policy-rollout") | ("uefi-ovmf") | ("gpu-vgpu-profiles") | ("nested-virtualization") | ("virtio-fs") | ("virtual-media-devices") | ("hardware-compatibility") | ("snapshot-merge") | ("file-level-restore") | ("backup-throttle") | ("rpo-rto-planner") | ("private-dns-dnssec") | ("http-ingress") | ("mtls-policy") | ("passkey-webauthn") | ("oidc-saml") | ("custom-rbac") | ("jit-privilege") | ("dual-approval") | ("signed-policy-bundles") | ("remote-audit-lock") | ("incident-lockdown") | ("log-retention") | ("alert-routing") | ("auto-remediation") | ("build-farm") | ("devcontainer-marketplace") | ("local-ai-assistant") | ("natural-command-planner") | ("shared-terminal") | ("shared-desktop-view") | ("session-handoff") | ("file-locks") | ("project-permissions") | ("change-approval") | ("host-drive-policy") | ("file-associations") | ("clipboard-policy") | ("media-passthrough") | ("usb-hotplug") | ("desktop-recording") | ("plugin-marketplace") | ("signed-plugin-sandbox") | ("graphql-api") | ("webhook-events") | ("automation-dsl") | ("mobile-companion") | ("browser-extension") | ("tray-companion") | ("feature-rollout"); "action": ("check") | ("run"); "startedAt": string; "finishedAt": string; "ready": boolean; "executed": boolean; "result": { [key: string]: (Contract452Ref1) } }>; "jobs": Array<{ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }> };
+type Contract453Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract453Ref1>) | ({ [key: string]: (Contract453Ref1) });
+type Contract453 = ({ "action": "configure"; "featureId": "host-pairing" | "host-cert-rotation" | "multi-host-inventory" | "live-migration" | "cold-migration" | "resource-scheduler" | "ha-failover" | "cross-host-snapshots" | "fleet-policy-rollout" | "maintenance-drain" | "uefi-ovmf" | "vtpm-key-enrollment" | "pci-usb-passthrough" | "gpu-vgpu-profiles" | "nested-virtualization" | "vcpu-hotplug" | "memory-hotplug" | "virtio-fs" | "virtual-media-devices" | "hardware-compatibility" | "storage-pools" | "storage-tiering" | "object-backup" | "snapshot-merge" | "file-level-restore" | "global-dedup" | "backup-throttle" | "rpo-rto-planner" | "host-disk-health" | "disaster-recovery-drill" | "wireguard-overlay" | "private-dns-dnssec" | "http-ingress" | "acme-renewal" | "mtls-policy" | "network-topology" | "nat-hairpin" | "proxy-pac" | "network-emulation" | "service-mesh" | "passkey-webauthn" | "oidc-saml" | "custom-rbac" | "jit-privilege" | "dual-approval" | "signed-policy-bundles" | "remote-audit-lock" | "compliance-evidence" | "pii-classification" | "incident-lockdown" | "otel-tracing" | "ebpf-profiler" | "flamegraph" | "log-index" | "log-retention" | "alert-routing" | "slo-dashboard" | "error-budget" | "capacity-forecast" | "auto-remediation" | "build-cache" | "build-farm" | "language-server-catalog" | "devcontainer-marketplace" | "branch-preview" | "test-sharding" | "dependency-bot" | "code-search-index" | "local-ai-assistant" | "natural-command-planner" | "shared-terminal" | "shared-desktop-view" | "session-handoff" | "file-locks" | "review-threads" | "project-permissions" | "team-templates" | "onboarding-checklist" | "change-approval" | "activity-digest" | "process-interop" | "host-drive-policy" | "file-associations" | "clipboard-policy" | "media-passthrough" | "usb-hotplug" | "gpu-compute-passthrough" | "notebook-environment" | "authenticated-ide-preview" | "desktop-recording" | "plugin-marketplace" | "signed-plugin-sandbox" | "schema-panels" | "graphql-api" | "webhook-events" | "automation-dsl" | "mobile-companion" | "browser-extension" | "tray-companion" | "feature-rollout"; "enabled": boolean; "options"?: { [key: string]: (Contract453Ref1) } }) | ({ "action": "check"; "featureId": "host-pairing" | "host-cert-rotation" | "multi-host-inventory" | "live-migration" | "cold-migration" | "resource-scheduler" | "ha-failover" | "cross-host-snapshots" | "fleet-policy-rollout" | "maintenance-drain" | "uefi-ovmf" | "vtpm-key-enrollment" | "pci-usb-passthrough" | "gpu-vgpu-profiles" | "nested-virtualization" | "vcpu-hotplug" | "memory-hotplug" | "virtio-fs" | "virtual-media-devices" | "hardware-compatibility" | "storage-pools" | "storage-tiering" | "object-backup" | "snapshot-merge" | "file-level-restore" | "global-dedup" | "backup-throttle" | "rpo-rto-planner" | "host-disk-health" | "disaster-recovery-drill" | "wireguard-overlay" | "private-dns-dnssec" | "http-ingress" | "acme-renewal" | "mtls-policy" | "network-topology" | "nat-hairpin" | "proxy-pac" | "network-emulation" | "service-mesh" | "passkey-webauthn" | "oidc-saml" | "custom-rbac" | "jit-privilege" | "dual-approval" | "signed-policy-bundles" | "remote-audit-lock" | "compliance-evidence" | "pii-classification" | "incident-lockdown" | "otel-tracing" | "ebpf-profiler" | "flamegraph" | "log-index" | "log-retention" | "alert-routing" | "slo-dashboard" | "error-budget" | "capacity-forecast" | "auto-remediation" | "build-cache" | "build-farm" | "language-server-catalog" | "devcontainer-marketplace" | "branch-preview" | "test-sharding" | "dependency-bot" | "code-search-index" | "local-ai-assistant" | "natural-command-planner" | "shared-terminal" | "shared-desktop-view" | "session-handoff" | "file-locks" | "review-threads" | "project-permissions" | "team-templates" | "onboarding-checklist" | "change-approval" | "activity-digest" | "process-interop" | "host-drive-policy" | "file-associations" | "clipboard-policy" | "media-passthrough" | "usb-hotplug" | "gpu-compute-passthrough" | "notebook-environment" | "authenticated-ide-preview" | "desktop-recording" | "plugin-marketplace" | "signed-plugin-sandbox" | "schema-panels" | "graphql-api" | "webhook-events" | "automation-dsl" | "mobile-companion" | "browser-extension" | "tray-companion" | "feature-rollout"; "options"?: { [key: string]: (Contract453Ref1) } }) | ({ "action": "run"; "featureId": "host-pairing" | "host-cert-rotation" | "multi-host-inventory" | "live-migration" | "cold-migration" | "resource-scheduler" | "ha-failover" | "cross-host-snapshots" | "fleet-policy-rollout" | "maintenance-drain" | "uefi-ovmf" | "vtpm-key-enrollment" | "pci-usb-passthrough" | "gpu-vgpu-profiles" | "nested-virtualization" | "vcpu-hotplug" | "memory-hotplug" | "virtio-fs" | "virtual-media-devices" | "hardware-compatibility" | "storage-pools" | "storage-tiering" | "object-backup" | "snapshot-merge" | "file-level-restore" | "global-dedup" | "backup-throttle" | "rpo-rto-planner" | "host-disk-health" | "disaster-recovery-drill" | "wireguard-overlay" | "private-dns-dnssec" | "http-ingress" | "acme-renewal" | "mtls-policy" | "network-topology" | "nat-hairpin" | "proxy-pac" | "network-emulation" | "service-mesh" | "passkey-webauthn" | "oidc-saml" | "custom-rbac" | "jit-privilege" | "dual-approval" | "signed-policy-bundles" | "remote-audit-lock" | "compliance-evidence" | "pii-classification" | "incident-lockdown" | "otel-tracing" | "ebpf-profiler" | "flamegraph" | "log-index" | "log-retention" | "alert-routing" | "slo-dashboard" | "error-budget" | "capacity-forecast" | "auto-remediation" | "build-cache" | "build-farm" | "language-server-catalog" | "devcontainer-marketplace" | "branch-preview" | "test-sharding" | "dependency-bot" | "code-search-index" | "local-ai-assistant" | "natural-command-planner" | "shared-terminal" | "shared-desktop-view" | "session-handoff" | "file-locks" | "review-threads" | "project-permissions" | "team-templates" | "onboarding-checklist" | "change-approval" | "activity-digest" | "process-interop" | "host-drive-policy" | "file-associations" | "clipboard-policy" | "media-passthrough" | "usb-hotplug" | "gpu-compute-passthrough" | "notebook-environment" | "authenticated-ide-preview" | "desktop-recording" | "plugin-marketplace" | "signed-plugin-sandbox" | "schema-panels" | "graphql-api" | "webhook-events" | "automation-dsl" | "mobile-companion" | "browser-extension" | "tray-companion" | "feature-rollout"; "options"?: { [key: string]: (Contract453Ref1) } });
+type Contract454Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract454Ref1>) | ({ [key: string]: (Contract454Ref1) });
+type Contract454 = ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) | ({ "enabled": boolean; "options": { [key: string]: (Contract454Ref1) }; "updatedAt": string; [key: string]: (Contract454Ref1) | (boolean) | ({ [key: string]: (Contract454Ref1) }) | (string) }) | ({ "ready": boolean; "executed"?: boolean; "reason"?: string; "adapter"?: (string) | ({ "id": string; "enabled"?: boolean; "options"?: { [key: string]: (Contract454Ref1) }; "actions"?: Array<string>; [key: string]: (Contract454Ref1) | (string) | (boolean) | ({ [key: string]: (Contract454Ref1) }) | (Array<string>) | (undefined) }); [key: string]: (Contract454Ref1) | (boolean) | (string) | ((string) | ({ "id": string; "enabled"?: boolean; "options"?: { [key: string]: (Contract454Ref1) }; "actions"?: Array<string>; [key: string]: (Contract454Ref1) | (string) | (boolean) | ({ [key: string]: (Contract454Ref1) }) | (Array<string>) | (undefined) })) | (undefined) });
+type Contract455 = { "provider": "jupyter" | "marimo"; "url": string };
+type Contract456 = { "url": string; "password": string; "expiresAt": string };
+type Contract457 = { "project"?: string; "q"?: string; "content"?: "0" | "1" };
+type Contract458 = { "root": string; "files": Array<{ "path": string; "directory": boolean; "size": number }>; "matches": Array<{ "path": string; "line": number; "text": string }>; "scanned": number; "truncated": boolean };
+type Contract459 = { "active": string; "projects": Array<{ "id": string; "name": string }> };
+type Contract460 = ({ "action": "create"; "name": string; "config": { "directory"?: string; "template"?: "none" | "node" | "python" | "rust"; "repository"?: ("") | (string); "setup"?: string; "command"?: string; "previewPort"?: number; "networkIsolation"?: "host" | "private"; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "node"?: string; "python"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn"?: Array<string>; "ready"?: string; "timeout"?: number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval"?: number; "timeout"?: number; "failures"?: number; "restart"?: boolean; "maxRestarts"?: number; "backoff"?: number } }> } }) | ({ "action": "select"; "projectId": string }) | ({ "action": "rename"; "projectId": string; "name": string });
+type Contract461 = { "project": { "directory": string; "template": ("none") | ("node") | ("python") | ("rust"); "repository": string; "setup": string; "command": string; "previewPort"?: number; "networkIsolation"?: ("host") | ("private"); "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "python"?: string; "node"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn": Array<string>; "ready": string; "timeout": number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval": number; "timeout": number; "failures": number; "restart": boolean; "maxRestarts": number; "backoff": number } }>; "_workspace"?: string }; "version": string; "projectId": string; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
+type Contract462 = { "directory"?: string; "template"?: "none" | "node" | "python" | "rust"; "repository"?: ("") | (string); "setup"?: string; "command"?: string; "previewPort"?: number; "networkIsolation"?: "host" | "private"; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "node"?: string; "python"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn"?: Array<string>; "ready"?: string; "timeout"?: number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval"?: number; "timeout"?: number; "failures"?: number; "restart"?: boolean; "maxRestarts"?: number; "backoff"?: number } }> };
+type Contract463 = { "directory": string; "template": ("none") | ("node") | ("python") | ("rust"); "repository": string; "setup": string; "command": string; "previewPort"?: number; "networkIsolation"?: ("host") | ("private"); "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "python"?: string; "node"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn": Array<string>; "ready": string; "timeout": number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval": number; "timeout": number; "failures": number; "restart": boolean; "maxRestarts": number; "backoff": number } }> };
+type Contract464 = { "action": "setup" | "start" | "stop" | "terminal"; "service"?: string };
+type Contract465 = { "status": string; "log": string; "services"?: Array<{ "name": string; "status": string; "log": string }>; "main"?: { "status": string } };
+type Contract466 = { "version": 1; "projectId": string; "plan": (null) | ({ "version": 1; "proposal": { "version": 1; "planId": string; "createdAt": string; "vmId": string; "projectId": string; "bootId": string; "identity": { "version": 1; "phase": ("active") | ("intent"); "registryId": string; "projectId": string; "identityId": string; "revision": number; "account": string; "uid": number; "gid": number; "home": string; "directory": string; "directoryDevice": string; "directoryInode": string; "homeDevice": string; "homeInode": string; "networkIsolation": ("host") | ("private") }; "directory": string; "networkIsolation": ("host") | ("private"); "configSha256": string; "projectsSha256": string; "policy": "private-owner-v1"; "entries": Array<{ "path": string; "kind": ("file") | ("directory"); "device": string; "inode": string; "mountId": string; "filesystemId": string; "uid": number; "gid": number; "mode": number; "links": number; "size": number; "mtimeNs": string; "ctimeNs": string; "sha256": null | string; "targetMode": number }>; "summary": { "files": number; "directories": number; "bytes": number } }; "sha256": string; "state": ("failed") | ("preview") | ("applying") | ("directory-applied") | ("applied"); "completed": Array<string>; "attempt": null | string; "lastError": (null) | ({ "code": string; "path"?: string }); "activatedIdentity": (null) | ({ "version": 1; "phase": ("active") | ("intent"); "registryId": string; "projectId": string; "identityId": string; "revision": number; "account": string; "uid": number; "gid": number; "home": string; "directory": string; "directoryDevice": string; "directoryInode": string; "homeDevice": string; "homeInode": string; "networkIsolation": ("host") | ("private") }) }); "lastFailure": (null) | ({ "code": string; "path"?: string; "at": string }) };
+type Contract467 = ({ "action": "preview"; "version": 1 }) | ({ "action": "apply"; "version": 1; "planId": string; "sha256": string; "reviewed": true });
+type Contract468Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract468Ref1>) | ({ [key: string]: (Contract468Ref1) });
+type Contract468 = { "version": 1; "resources"?: { "cpus"?: number; "memoryMiB"?: number; "diskGiB"?: number; "accelerator"?: "auto" | "tcg" | "whpx"; "distro"?: "alpine" | "debian" | "ubuntu"; "template"?: "none" | "node" | "python" | "rust"; "forwards"?: Array<{ "name"?: string; "host": number; "guest": number; [key: string]: (Contract468Ref1) | (string) | (number) | (undefined) }> }; "project": { "directory"?: string; "template"?: "none" | "node" | "python" | "rust"; "repository"?: ("") | (string); "setup"?: string; "command"?: string; "previewPort"?: number; "networkIsolation"?: "host" | "private"; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "node"?: string; "python"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn"?: Array<string>; "ready"?: string; "timeout"?: number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval"?: number; "timeout"?: number; "failures"?: number; "restart"?: boolean; "maxRestarts"?: number; "backoff"?: number } }> } };
+type Contract469 = { "token": string; "expiresAt": string; "vmId": string; "projectId": string; "inputSha256": string; "configurationSha256": string; "resourceDeclarationSha256": string; "canApply": boolean; "unchanged": boolean; "changes": Array<{ "field": string; "before": string; "after": string; "disposition": "apply" | "stop-required" | "rebuild-required" | "separate-operation" | "unsupported"; "reason": string }>; "runtimeVerification": "not-probed"; "dependencyVerification": "not-probed"; "imageVerification": "not-probed"; "warnings": Array<string> };
+type Contract470 = { "token": string };
+type Contract471Ref1 = (string) | (number) | (boolean) | (null) | (Array<Contract471Ref1>) | ({ [key: string]: (Contract471Ref1) });
+type Contract471 = { "name": string; "recipe": { "version": 1; "resources"?: { "cpus"?: number; "memoryMiB"?: number; "diskGiB"?: number; "accelerator"?: "auto" | "tcg" | "whpx"; "distro"?: "alpine" | "debian" | "ubuntu"; "template"?: "none" | "node" | "python" | "rust"; "forwards"?: Array<{ "name"?: string; "host": number; "guest": number; [key: string]: (Contract471Ref1) | (string) | (number) | (undefined) }> }; "project": { "directory"?: string; "template"?: "none" | "node" | "python" | "rust"; "repository"?: ("") | (string); "setup"?: string; "command"?: string; "previewPort"?: number; "networkIsolation"?: "host" | "private"; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "node"?: string; "python"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn"?: Array<string>; "ready"?: string; "timeout"?: number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval"?: number; "timeout"?: number; "failures"?: number; "restart"?: boolean; "maxRestarts"?: number; "backoff"?: number } }> } } };
+type Contract472 = { "version": 1; "resources": { "cpus"?: number; "memoryMiB"?: number; "diskGiB"?: number; "accelerator"?: ("auto") | ("tcg") | ("whpx"); "distro"?: ("alpine") | ("debian") | ("ubuntu"); "template"?: ("none") | ("node") | ("python") | ("rust"); "forwards"?: Array<{ "host": number; "guest": number; "name"?: string }> }; "project": { "directory": string; "template": ("none") | ("node") | ("python") | ("rust"); "repository": string; "setup": string; "command": string; "previewPort"?: number; "networkIsolation"?: ("host") | ("private"); "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "python"?: string; "node"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn": Array<string>; "ready": string; "timeout": number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval": number; "timeout": number; "failures": number; "restart": boolean; "maxRestarts": number; "backoff": number } }> } };
+type Contract473 = { "action": "read" | "write" };
+type Contract474 = { "id": string; "vmId": string; "projectId": string; "target": string; "state": "preview" | "generating" | "review" | "validating" | "validated" | "apply-unknown" | "applied" | "failed" | "cancelled"; "expiresAt": string; "files": Array<{ "path": string; "sha256": string; "bytes": number }>; "preview": { "content": string; "model": string; "endpoint": string; "redactions": number; "expiresAt": number }; "before": string; "patch"?: { "path": string; "content": string; "summary": string }; "patchSha256"?: string; "validation"?: { "command": string; "patchSha256": string; "job"?: { "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }; "sandboxId"?: string; "cleanup": "pending" | "done" | "failed"; "passed": boolean }; "error"?: string };
+type Contract475 = ({ "action": "preview"; "input": { "target": string; "context"?: Array<string>; "instruction": string } }) | ({ "action": "validate"; "input": { "sessionId": string; "command": string; "timeoutSeconds"?: number } }) | ({ "action": "generate"; "sessionId": string }) | ({ "action": "apply"; "sessionId": string }) | ({ "action": "cancel"; "sessionId": string });
+type Contract476 = ({ "id": string; "vmId": string; "projectId": string; "target": string; "state": "preview" | "generating" | "review" | "validating" | "validated" | "apply-unknown" | "applied" | "failed" | "cancelled"; "expiresAt": string; "files": Array<{ "path": string; "sha256": string; "bytes": number }>; "preview": { "content": string; "model": string; "endpoint": string; "redactions": number; "expiresAt": number }; "before": string; "patch"?: { "path": string; "content": string; "summary": string }; "patchSha256"?: string; "validation"?: { "command": string; "patchSha256": string; "job"?: { "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }; "sandboxId"?: string; "cleanup": "pending" | "done" | "failed"; "passed": boolean }; "error"?: string }) | ({ "ok": true });
+type Contract477 = { "workspaceId": string };
+type Contract478 = Array<{ "id": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "name": string; "fault": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "recovery": "observe" | "restart" | "checkpoint"; "baselineSeconds": 60; "recoverySeconds": 60 }>;
+type Contract479 = { "scope": { "workspaceId": string }; "runId": string };
+type Contract480 = { "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string };
+type Contract481 = Array<{ "id": string; "runId": string; "target": { "id": string; "revision": string }; "scope": { "workspaceId": string }; "identity": ({ "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }) | (null); "state": "creating" | "preparing" | "ready" | "cleanup-pending" | "cleaned" | "unknown"; "createdAt": string; "checkpoint": ({ "assetId": string; "digest": string }) | (null); "cleanup": "pending" | "confirmed" | "unknown" }>;
+type Contract482 = Array<{ "id": string; "digest": string; "bytes": number; "virtualBytes": number; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64"; "createdAt": string; "source": string }>;
+type Contract483 = { "scope": { "workspaceId": string }; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64" };
+type Contract484 = { "id": string; "digest": string; "bytes": number; "virtualBytes": number; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64"; "createdAt": string; "source": string };
+type Contract485 = { "scope": { "workspaceId": string }; "input": { "digest": string; "bytes": number; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64"; "source": string } };
+type Contract486 = { "id": string; "digest": string; "bytes": number; "offset": number; "distro": "alpine" | "debian" | "ubuntu"; "architecture": "x86_64" | "aarch64"; "source": string; "createdAt": string };
+type Contract487 = { "scope": { "workspaceId": string }; "id": string; "offset": number; "data": string };
+type Contract488 = { "scope": { "workspaceId": string }; "id": string };
+type Contract489 = { "scope": { "workspaceId": string }; "target": { "id": string; "revision": string }; "runId": string };
+type Contract490 = { "id": string; "runId": string; "target": { "id": string; "revision": string }; "scope": { "workspaceId": string }; "identity": ({ "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }) | (null); "state": "creating" | "preparing" | "ready" | "cleanup-pending" | "cleaned" | "unknown"; "createdAt": string; "checkpoint": ({ "assetId": string; "digest": string }) | (null); "cleanup": "pending" | "confirmed" | "unknown" };
+type Contract491 = { "id": string; "scope": { "workspaceId": string }; "replicaId": string; "digest": string; "expiresAt": string; "resources": Array<string> };
+type Contract492 = { "scope": { "workspaceId": string }; "plan": { "id": string; "scope": { "workspaceId": string }; "replicaId": string; "digest": string; "expiresAt": string; "resources": Array<string> } };
+type Contract493 = { "available": boolean; "platform": string; "hostVerified": boolean; "guestVerified": boolean; "gaps": Array<string>; "catalogueVersion": "1.0.0" };
+type Contract494 = { "workspaceId": string; "runId": string };
+type Contract495 = Array<{ "id": string; "runId": string; "scope": { "workspaceId": string }; "phase": "baseline" | "fault" | "recovery"; "startedAt": string; "endedAt": string; "durationMs": number; "samples": Array<{ "requestId": string; "at": string; "elapsedMs": number; "ok": boolean; "valueDigest": (string) | (null); "error": string }>; "count": number; "errors": number; "duplicates": number; "p95Ms": (number) | (null); "algorithm": "nearest-rank-v1"; "passed": boolean; "missing": Array<string> }>;
+type Contract496 = { "scope": { "workspaceId": string }; "runId": string; "strategy": "observe" | "restart" | "checkpoint" };
+type Contract497 = { "id": string; "scope": { "workspaceId": string }; "runId": string; "strategy": "observe" | "restart" | "checkpoint"; "digest": string; "expiresAt": string; "consumed": boolean };
+type Contract498 = { "scope": { "workspaceId": string }; "id": string; "digest": string };
+type Contract499 = Array<{ "id": string; "scope": { "workspaceId": string }; "run": { "id": string; "scope": { "workspaceId": string }; "plan": { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } }; "state": "queued" | "preparing" | "baselining" | "armed" | "injecting" | "observing" | "recovering" | "verifying" | "containing" | "cleaning" | "completed" | "reconcile-required"; "outcome": "passed" | "failed" | "cancelled" | "inconclusive"; "containment": "confirmed" | "pending" | "unknown"; "cleanup": "confirmed" | "pending" | "unknown"; "createdAt": string; "updatedAt": string; "replicas": Array<string>; "segments": Array<string>; "evidence": Array<{ "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string }>; "intents": Array<{ "id": string; "step": string; "at": string; "status": "pending" | "confirmed" | "unknown" }>; "error": string; "jobId": string | null; "cancelled": boolean }; "segments": Array<{ "id": string; "runId": string; "scope": { "workspaceId": string }; "phase": "baseline" | "fault" | "recovery"; "startedAt": string; "endedAt": string; "durationMs": number; "samples": Array<{ "requestId": string; "at": string; "elapsedMs": number; "ok": boolean; "valueDigest": (string) | (null); "error": string }>; "count": number; "errors": number; "duplicates": number; "p95Ms": (number) | (null); "algorithm": "nearest-rank-v1"; "passed": boolean; "missing": Array<string> }>; "createdAt": string; "classification": "passed" | "failed" | "incomplete"; "sourceTrust": "local" | "unauthenticated"; "digest": string; "pinned": boolean; "external": boolean }>;
+type Contract500 = Array<{ "id": string; "scope": { "workspaceId": string }; "digest": string; "createdAt": string; "integrity": "valid" | "invalid"; "sourceTrust": "unauthenticated"; "state": "quarantined" | "accepted"; "findings": Array<string>; "acceptedId": (string) | (null) }>;
+type Contract501 = { "id": string; "discarded": true };
+type Contract502 = Array<{ "id": string; "pinned": boolean; "expiresAt": string; "archiving": boolean }>;
+type Contract503 = { "scope": { "workspaceId": string }; "id": string; "pinned": boolean };
+type Contract504 = { "id": string; "pinned": boolean };
+type Contract505 = { "id": string; "archived": true };
+type Contract506 = { "id": string; "scope": { "workspaceId": string }; "run": { "id": string; "scope": { "workspaceId": string }; "plan": { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } }; "state": "queued" | "preparing" | "baselining" | "armed" | "injecting" | "observing" | "recovering" | "verifying" | "containing" | "cleaning" | "completed" | "reconcile-required"; "outcome": "passed" | "failed" | "cancelled" | "inconclusive"; "containment": "confirmed" | "pending" | "unknown"; "cleanup": "confirmed" | "pending" | "unknown"; "createdAt": string; "updatedAt": string; "replicas": Array<string>; "segments": Array<string>; "evidence": Array<{ "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string }>; "intents": Array<{ "id": string; "step": string; "at": string; "status": "pending" | "confirmed" | "unknown" }>; "error": string; "jobId": string | null; "cancelled": boolean }; "segments": Array<{ "id": string; "runId": string; "scope": { "workspaceId": string }; "phase": "baseline" | "fault" | "recovery"; "startedAt": string; "endedAt": string; "durationMs": number; "samples": Array<{ "requestId": string; "at": string; "elapsedMs": number; "ok": boolean; "valueDigest": (string) | (null); "error": string }>; "count": number; "errors": number; "duplicates": number; "p95Ms": (number) | (null); "algorithm": "nearest-rank-v1"; "passed": boolean; "missing": Array<string> }>; "createdAt": string; "classification": "passed" | "failed" | "incomplete"; "sourceTrust": "local" | "unauthenticated"; "digest": string; "pinned": boolean; "external": boolean };
+type Contract507 = { "format": "sakura-resilience-1"; "sourceTrust": "unauthenticated"; "entries": Array<{ "path": string; "bytes": number; "digest": string; "contentType": "application/json"; "purpose": "report" | "scenario" | "samples"; "data": string }> };
+type Contract508 = { "scope": { "workspaceId": string }; "bundle": { "format": "sakura-resilience-1"; "sourceTrust": "unauthenticated"; "entries": Array<{ "path": string; "bytes": number; "digest": string; "contentType": "application/json"; "purpose": "report" | "scenario" | "samples"; "data": string }> } };
+type Contract509 = { "id": string; "scope": { "workspaceId": string }; "digest": string; "createdAt": string; "integrity": "valid" | "invalid"; "sourceTrust": "unauthenticated"; "state": "quarantined" | "accepted"; "findings": Array<string>; "report": { "id": string; "scope": { "workspaceId": string }; "run": { "id": string; "scope": { "workspaceId": string }; "plan": { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } }; "state": "queued" | "preparing" | "baselining" | "armed" | "injecting" | "observing" | "recovering" | "verifying" | "containing" | "cleaning" | "completed" | "reconcile-required"; "outcome": "passed" | "failed" | "cancelled" | "inconclusive"; "containment": "confirmed" | "pending" | "unknown"; "cleanup": "confirmed" | "pending" | "unknown"; "createdAt": string; "updatedAt": string; "replicas": Array<string>; "segments": Array<string>; "evidence": Array<{ "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string }>; "intents": Array<{ "id": string; "step": string; "at": string; "status": "pending" | "confirmed" | "unknown" }>; "error": string; "jobId": string | null; "cancelled": boolean }; "segments": Array<{ "id": string; "runId": string; "scope": { "workspaceId": string }; "phase": "baseline" | "fault" | "recovery"; "startedAt": string; "endedAt": string; "durationMs": number; "samples": Array<{ "requestId": string; "at": string; "elapsedMs": number; "ok": boolean; "valueDigest": (string) | (null); "error": string }>; "count": number; "errors": number; "duplicates": number; "p95Ms": (number) | (null); "algorithm": "nearest-rank-v1"; "passed": boolean; "missing": Array<string> }>; "createdAt": string; "classification": "passed" | "failed" | "incomplete"; "sourceTrust": "local" | "unauthenticated"; "digest": string; "pinned": boolean; "external": boolean }; "acceptedId": (string) | (null) };
+type Contract510 = { "scope": { "workspaceId": string }; "left": string; "right": string };
+type Contract511 = { "compatible": boolean; "differences": Array<string>; "left": { "id": string; "scope": { "workspaceId": string }; "run": { "id": string; "scope": { "workspaceId": string }; "plan": { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } }; "state": "queued" | "preparing" | "baselining" | "armed" | "injecting" | "observing" | "recovering" | "verifying" | "containing" | "cleaning" | "completed" | "reconcile-required"; "outcome": "passed" | "failed" | "cancelled" | "inconclusive"; "containment": "confirmed" | "pending" | "unknown"; "cleanup": "confirmed" | "pending" | "unknown"; "createdAt": string; "updatedAt": string; "replicas": Array<string>; "segments": Array<string>; "evidence": Array<{ "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string }>; "intents": Array<{ "id": string; "step": string; "at": string; "status": "pending" | "confirmed" | "unknown" }>; "error": string; "jobId": string | null; "cancelled": boolean }; "segments": Array<{ "id": string; "runId": string; "scope": { "workspaceId": string }; "phase": "baseline" | "fault" | "recovery"; "startedAt": string; "endedAt": string; "durationMs": number; "samples": Array<{ "requestId": string; "at": string; "elapsedMs": number; "ok": boolean; "valueDigest": (string) | (null); "error": string }>; "count": number; "errors": number; "duplicates": number; "p95Ms": (number) | (null); "algorithm": "nearest-rank-v1"; "passed": boolean; "missing": Array<string> }>; "createdAt": string; "classification": "passed" | "failed" | "incomplete"; "sourceTrust": "local" | "unauthenticated"; "digest": string; "pinned": boolean; "external": boolean }; "right": { "id": string; "scope": { "workspaceId": string }; "run": { "id": string; "scope": { "workspaceId": string }; "plan": { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } }; "state": "queued" | "preparing" | "baselining" | "armed" | "injecting" | "observing" | "recovering" | "verifying" | "containing" | "cleaning" | "completed" | "reconcile-required"; "outcome": "passed" | "failed" | "cancelled" | "inconclusive"; "containment": "confirmed" | "pending" | "unknown"; "cleanup": "confirmed" | "pending" | "unknown"; "createdAt": string; "updatedAt": string; "replicas": Array<string>; "segments": Array<string>; "evidence": Array<{ "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string }>; "intents": Array<{ "id": string; "step": string; "at": string; "status": "pending" | "confirmed" | "unknown" }>; "error": string; "jobId": string | null; "cancelled": boolean }; "segments": Array<{ "id": string; "runId": string; "scope": { "workspaceId": string }; "phase": "baseline" | "fault" | "recovery"; "startedAt": string; "endedAt": string; "durationMs": number; "samples": Array<{ "requestId": string; "at": string; "elapsedMs": number; "ok": boolean; "valueDigest": (string) | (null); "error": string }>; "count": number; "errors": number; "duplicates": number; "p95Ms": (number) | (null); "algorithm": "nearest-rank-v1"; "passed": boolean; "missing": Array<string> }>; "createdAt": string; "classification": "passed" | "failed" | "incomplete"; "sourceTrust": "local" | "unauthenticated"; "digest": string; "pinned": boolean; "external": boolean } };
+type Contract512 = Array<{ "id": string; "scope": { "workspaceId": string }; "plan": { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } }; "state": "queued" | "preparing" | "baselining" | "armed" | "injecting" | "observing" | "recovering" | "verifying" | "containing" | "cleaning" | "completed" | "reconcile-required"; "outcome": "passed" | "failed" | "cancelled" | "inconclusive"; "containment": "confirmed" | "pending" | "unknown"; "cleanup": "confirmed" | "pending" | "unknown"; "createdAt": string; "updatedAt": string; "replicas": Array<string>; "segments": Array<string>; "evidence": Array<{ "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string }>; "intents": Array<{ "id": string; "step": string; "at": string; "status": "pending" | "confirmed" | "unknown" }>; "error": string; "jobId": string | null; "cancelled": boolean }>;
+type Contract513 = { "workspaceId": string; "id": string };
+type Contract514 = { "id": string; "scope": { "workspaceId": string }; "plan": { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } }; "state": "queued" | "preparing" | "baselining" | "armed" | "injecting" | "observing" | "recovering" | "verifying" | "containing" | "cleaning" | "completed" | "reconcile-required"; "outcome": "passed" | "failed" | "cancelled" | "inconclusive"; "containment": "confirmed" | "pending" | "unknown"; "cleanup": "confirmed" | "pending" | "unknown"; "createdAt": string; "updatedAt": string; "replicas": Array<string>; "segments": Array<string>; "evidence": Array<{ "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string }>; "intents": Array<{ "id": string; "step": string; "at": string; "status": "pending" | "confirmed" | "unknown" }>; "error": string; "jobId": string | null; "cancelled": boolean };
+type Contract515 = { "scope": { "workspaceId": string }; "scenario": { "id": string; "revision": string } };
+type Contract516 = { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } };
+type Contract517 = Array<{ "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }>;
+type Contract518 = { "scope": { "workspaceId": string }; "input": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number } };
+type Contract519 = { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string };
+type Contract520 = Array<{ "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }>;
+type Contract521 = { "scope": { "workspaceId": string }; "input": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount"?: number; "memoryMiB"?: number; "cpus"?: number; "source": "local" } };
+type Contract522 = { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string };
+type Contract523 = { "workspaceId": string; "id": string; "revision": string };
+type Contract524 = { "templates": Array<{ "id": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "name": string; "fault": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "recovery": "observe" | "restart" | "checkpoint"; "baselineSeconds": 60; "recoverySeconds": 60 }>; "capabilities": { "available": boolean; "platform": string; "hostVerified": boolean; "guestVerified": boolean; "gaps": Array<string>; "catalogueVersion": "1.0.0" }; "targets": Array<{ "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }>; "replicas": Array<{ "id": string; "runId": string; "target": { "id": string; "revision": string }; "scope": { "workspaceId": string }; "identity": ({ "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }) | (null); "state": "creating" | "preparing" | "ready" | "cleanup-pending" | "cleaned" | "unknown"; "createdAt": string; "checkpoint": ({ "assetId": string; "digest": string }) | (null); "cleanup": "pending" | "confirmed" | "unknown" }>; "runs": Array<{ "id": string; "scope": { "workspaceId": string }; "plan": { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } }; "state": "queued" | "preparing" | "baselining" | "armed" | "injecting" | "observing" | "recovering" | "verifying" | "containing" | "cleaning" | "completed" | "reconcile-required"; "outcome": "passed" | "failed" | "cancelled" | "inconclusive"; "containment": "confirmed" | "pending" | "unknown"; "cleanup": "confirmed" | "pending" | "unknown"; "createdAt": string; "updatedAt": string; "replicas": Array<string>; "segments": Array<string>; "evidence": Array<{ "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string }>; "intents": Array<{ "id": string; "step": string; "at": string; "status": "pending" | "confirmed" | "unknown" }>; "error": string; "jobId": string | null; "cancelled": boolean }>; "reports": Array<{ "id": string; "scope": { "workspaceId": string }; "run": { "id": string; "scope": { "workspaceId": string }; "plan": { "id": string; "digest": string; "scope": { "workspaceId": string }; "scenario": { "name": string; "target": { "id": string; "revision": string }; "template": "http-retry" | "worker-restart" | "cpu-contention" | "volume-full" | "checkpoint-restore"; "parameters": { "fault": "network" | "process" | "cpu" | "volume" | "checkpoint"; "durationSeconds": number; "delayMs": number; "jitterMs": number; "lossPercent": number; "cpuPercent": number }; "maxErrors": number; "minimumSamples": number; "maxP95Ms": number; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string }; "target": { "name": string; "image": { "assetId": string; "digest": string }; "reviewed": true; "sampleCount": number; "memoryMiB": number; "cpus": number; "source": "local"; "id": string; "revision": string; "scope": { "workspaceId": string }; "createdAt": string; "sampleDigest": string }; "createdAt": string; "expiresAt": string; "state": "previewed" | "approved" | "consumed" | "stale" | "expired" | "revoked"; "gaps": Array<string>; "budget": { "replicas": 2; "memoryMiB": number; "cpus": number; "diskGiB": 64; "runSeconds": 1200 } }; "state": "queued" | "preparing" | "baselining" | "armed" | "injecting" | "observing" | "recovering" | "verifying" | "containing" | "cleaning" | "completed" | "reconcile-required"; "outcome": "passed" | "failed" | "cancelled" | "inconclusive"; "containment": "confirmed" | "pending" | "unknown"; "cleanup": "confirmed" | "pending" | "unknown"; "createdAt": string; "updatedAt": string; "replicas": Array<string>; "segments": Array<string>; "evidence": Array<{ "id": string; "runId": string; "identity": { "vmId": string; "createdAt": string; "diskIdentity": string; "processId": number; "processCreated": string; "bootId": string; "projectId": string; "projectRevision": string; "controllerGeneration": string }; "at": string; "effect": "observed" | "absent" | "unknown"; "containment": "confirmed" | "pending" | "unknown"; "deadlineBreach": boolean; "detail": string }>; "intents": Array<{ "id": string; "step": string; "at": string; "status": "pending" | "confirmed" | "unknown" }>; "error": string; "jobId": string | null; "cancelled": boolean }; "segments": Array<{ "id": string; "runId": string; "scope": { "workspaceId": string }; "phase": "baseline" | "fault" | "recovery"; "startedAt": string; "endedAt": string; "durationMs": number; "samples": Array<{ "requestId": string; "at": string; "elapsedMs": number; "ok": boolean; "valueDigest": (string) | (null); "error": string }>; "count": number; "errors": number; "duplicates": number; "p95Ms": (number) | (null); "algorithm": "nearest-rank-v1"; "passed": boolean; "missing": Array<string> }>; "createdAt": string; "classification": "passed" | "failed" | "incomplete"; "sourceTrust": "local" | "unauthenticated"; "digest": string; "pinned": boolean; "external": boolean }> };
+type Contract525 = { "selected": { "python"?: string; "node"?: string }; "declared": { "node"?: string; "python"?: string }; "actual": { "node": string; "python": string }; "mismatches": Array<("node") | ("python")>; "probe": { "errorCode"?: string; "state": ("running") | ("failed") | ("stale") | ("unprobed") | ("cached"); "checkedAt": null | string; "configVersion": null | string; "bootId": null | string }; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
+type Contract526 = ({ "action": "probe" }) | ({ "action": "select"; "node"?: string; "python"?: string }) | ({ "action": "install"; "tool": "node" | "python"; "version": string });
+type Contract527 = ({ "selected": { "python"?: string; "node"?: string }; "declared": { "node"?: string; "python"?: string }; "actual": { "node": string; "python": string }; "mismatches": Array<("node") | ("python")>; "probe": { "errorCode"?: string; "state": ("running") | ("failed") | ("stale") | ("unprobed") | ("cached"); "checkedAt": null | string; "configVersion": null | string; "bootId": null | string }; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) }) | ({ "directory": string; "template": ("none") | ("node") | ("python") | ("rust"); "repository": string; "setup": string; "command": string; "previewPort"?: number; "networkIsolation"?: ("host") | ("private"); "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "runtimes"?: { "python"?: string; "node"?: string }; "services"?: Array<{ "name": string; "command": string; "dependsOn": Array<string>; "ready": string; "timeout": number; "environment"?: { [key: string]: (string) }; "secrets"?: { [key: string]: (string) }; "health"?: { "command": string; "interval": number; "timeout": number; "failures": number; "restart": boolean; "maxRestarts": number; "backoff": number } }> }) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } });
+type Contract528 = { "sandboxes": Array<{ "name": string; "memoryMiB": number; "cpus": number; "diskGiB": number; "accelerator": ("auto") | ("tcg") | ("whpx"); "forwards": Array<{ "host": number; "guest": number; "name"?: string }>; "storagePoolId"?: string; "firmware"?: ("bios") | ("uefi"); "distro"?: ("alpine") | ("debian") | ("ubuntu"); "architecture"?: ("x86_64") | ("aarch64"); "template"?: ("none") | ("node") | ("python") | ("rust"); "hardware"?: { "cpu"?: { "sockets": number; "cores": number; "threads": number; "numa"?: Array<{ "memoryMiB": number; "cpus": Array<number> }> }; "devices"?: { "graphics": ("none") | ("virtio-gpu") | ("virgl"); "networkCard": ("virtio-net-pci") | ("e1000"); "randomDevice": boolean; "balloon": boolean; "diskCache": ("none") | ("writeback") | ("writethrough"); "discard": boolean; "graphicsOutputs"?: number; "graphicsWidth"?: number; "graphicsHeight"?: number; "graphicsMemoryMiB"?: number; "audio"?: ("none") | ("hda-duplex"); "audioBackend"?: ("none") | ("dsound") }; "memory"?: { "maxMiB": number; "slots": number }; "ipv6"?: (false) | (true) }; "id": string; "diskEncryption"?: { "format": "luks"; "secretName": string }; "sandbox": { "network": "isolated" | "nat"; "expiresAt": string; "onExpire": "stop" | "delete"; "storage"?: "persistent" | "discard-on-stop" }; "rescueOf"?: string; "createdAt": string; "snapshots": Array<{ "id": string; "name": string; "createdAt": string; "note"?: string; "diskGiB"?: number; "pendingResize"?: (false) | (true); "consistency"?: ("offline") | ("filesystem") | ("vmstate"); "stateFingerprint"?: string }>; "bootstrapped"?: (false) | (true); "lastUsedAt"?: string; "lastError"?: string; "organization"?: { "group": string; "tags": Array<string>; "favorite": boolean }; "pendingResize"?: (false) | (true); "migrationOrigin"?: { "sourceHostId": string; "transferId": string; "targetName": string; "sourceVmId"?: string; "snapshotId"?: string; "diskSha256"?: string }; "haPromotion"?: { "peerId": string; "targetHostId": string; "transferId": string; "remoteVmId": string; "snapshotId": string; "sha256": string; "fencedAt": string; "status": "fenced" | "accepted"; "updatedAt": string; "error"?: string }; "haRetirement"?: { "sourceHostId": string; "transferId": string; "sourceVmId": string; "snapshotId": string; "sha256": string; "retiredAt": string }; "haWitnessEnrollment"?: { "targetHostId": string; "failureThreshold": number; "registeredAt": string }; "liveMigrationFence"?: { "targetHostId": string; "targetVmId": string; "transferId": string; "fencedAt": string; "peerId"?: string; "sourceHostId"?: string; "sessionId"?: string; "projectsDigest"?: string; "sourceProcessId"?: string; "origin"?: { "owner": string; "pluginId"?: string; "pluginInstanceId"?: string; "pluginGeneration"?: string; "artifactDigest"?: string; "operationId"?: string; "resourceIds": Array<string> }; "sourceStopped"?: { "sourceProcessId": string; "stoppedAt": string }; "completion"?: { "version": 1; "sourceVmId": string; "sourceHostId": string; "sourceProcessId": string; "targetHostId": string; "targetVmId": string; "transferId": string; "sessionId": string; "projectsDigest": string; "sourceStoppedAt": string; "targetVerifiedAt": string; "confirmedAt": string } }; "liveMigrationOrigin"?: { "sourceHostId": string; "sourceVmId": string; "transferId": string; "status": "prepared" | "received" | "ready"; "completionProtocol"?: 1; "sessionId"?: string; "projectsDigest"?: string; "prepareDigest"?: string; "prepareReceipt"?: { "targetVmId": string; "sessionId": string; "targetDiskNode": string; "diskPort": number; "statePort": number; "completionProtocol"?: 1 }; "createdAt": string; "updatedAt": string }; "branchOrigin"?: { "sourceVmId": string; "snapshotId": string; "createdAt": string }; "mergeOrigin"?: { "branchVmId": string; "targetVmId": string; "snapshotId": string; "path": string; "mergedAt": string; "appliedFiles": number }; "activeAccelerator"?: ("tcg") | ("whpx"); "memoryTargetMiB"?: number; "status": ("error") | ("running") | ("stopped") | ("starting") | ("paused") | ("stopping"); "poweredOn": boolean; "startedAt"?: string; "diskBytes": number; "expired": boolean }>; "runs": Array<{ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }>; "persistenceError"?: string };
+type Contract529 = { "name": string; "distro"?: "alpine" | "debian" | "ubuntu"; "accelerator"?: "auto" | "tcg" | "whpx"; "memoryMiB"?: number; "cpus"?: number; "diskGiB"?: number; "lifetimeMinutes"?: number; "network"?: "isolated" | "nat"; "onExpire"?: "stop" | "delete"; "storage"?: "persistent" | "discard-on-stop" };
+type Contract530 = { "name": string; "memoryMiB": number; "cpus": number; "diskGiB": number; "accelerator": ("auto") | ("tcg") | ("whpx"); "forwards": Array<{ "host": number; "guest": number; "name"?: string }>; "storagePoolId"?: string; "firmware"?: ("bios") | ("uefi"); "distro"?: ("alpine") | ("debian") | ("ubuntu"); "architecture"?: ("x86_64") | ("aarch64"); "template"?: ("none") | ("node") | ("python") | ("rust"); "hardware"?: { "cpu"?: { "sockets": number; "cores": number; "threads": number; "numa"?: Array<{ "memoryMiB": number; "cpus": Array<number> }> }; "devices"?: { "graphics": ("none") | ("virtio-gpu") | ("virgl"); "networkCard": ("virtio-net-pci") | ("e1000"); "randomDevice": boolean; "balloon": boolean; "diskCache": ("none") | ("writeback") | ("writethrough"); "discard": boolean; "graphicsOutputs"?: number; "graphicsWidth"?: number; "graphicsHeight"?: number; "graphicsMemoryMiB"?: number; "audio"?: ("none") | ("hda-duplex"); "audioBackend"?: ("none") | ("dsound") }; "memory"?: { "maxMiB": number; "slots": number }; "ipv6"?: (false) | (true) }; "id": string; "diskEncryption"?: { "format": "luks"; "secretName": string }; "sandbox": { "network": "isolated" | "nat"; "expiresAt": string; "onExpire": "stop" | "delete"; "storage"?: "persistent" | "discard-on-stop" }; "rescueOf"?: string; "createdAt": string; "snapshots": Array<{ "id": string; "name": string; "createdAt": string; "note"?: string; "diskGiB"?: number; "pendingResize"?: (false) | (true); "consistency"?: ("offline") | ("filesystem") | ("vmstate"); "stateFingerprint"?: string }>; "bootstrapped"?: (false) | (true); "lastUsedAt"?: string; "lastError"?: string; "organization"?: { "group": string; "tags": Array<string>; "favorite": boolean }; "pendingResize"?: (false) | (true); "migrationOrigin"?: { "sourceHostId": string; "transferId": string; "targetName": string; "sourceVmId"?: string; "snapshotId"?: string; "diskSha256"?: string }; "haPromotion"?: { "peerId": string; "targetHostId": string; "transferId": string; "remoteVmId": string; "snapshotId": string; "sha256": string; "fencedAt": string; "status": "fenced" | "accepted"; "updatedAt": string; "error"?: string }; "haRetirement"?: { "sourceHostId": string; "transferId": string; "sourceVmId": string; "snapshotId": string; "sha256": string; "retiredAt": string }; "haWitnessEnrollment"?: { "targetHostId": string; "failureThreshold": number; "registeredAt": string }; "liveMigrationFence"?: { "targetHostId": string; "targetVmId": string; "transferId": string; "fencedAt": string; "peerId"?: string; "sourceHostId"?: string; "sessionId"?: string; "projectsDigest"?: string; "sourceProcessId"?: string; "origin"?: { "owner": string; "pluginId"?: string; "pluginInstanceId"?: string; "pluginGeneration"?: string; "artifactDigest"?: string; "operationId"?: string; "resourceIds": Array<string> }; "sourceStopped"?: { "sourceProcessId": string; "stoppedAt": string }; "completion"?: { "version": 1; "sourceVmId": string; "sourceHostId": string; "sourceProcessId": string; "targetHostId": string; "targetVmId": string; "transferId": string; "sessionId": string; "projectsDigest": string; "sourceStoppedAt": string; "targetVerifiedAt": string; "confirmedAt": string } }; "liveMigrationOrigin"?: { "sourceHostId": string; "sourceVmId": string; "transferId": string; "status": "prepared" | "received" | "ready"; "completionProtocol"?: 1; "sessionId"?: string; "projectsDigest"?: string; "prepareDigest"?: string; "prepareReceipt"?: { "targetVmId": string; "sessionId": string; "targetDiskNode": string; "diskPort": number; "statePort": number; "completionProtocol"?: 1 }; "createdAt": string; "updatedAt": string }; "branchOrigin"?: { "sourceVmId": string; "snapshotId": string; "createdAt": string }; "mergeOrigin"?: { "branchVmId": string; "targetVmId": string; "snapshotId": string; "path": string; "mergedAt": string; "appliedFiles": number }; "activeAccelerator"?: ("tcg") | ("whpx"); "memoryTargetMiB"?: number; "status": ("error") | ("running") | ("stopped") | ("starting") | ("paused") | ("stopping"); "poweredOn": boolean; "startedAt"?: string; "diskBytes": number; "expired": boolean };
+type Contract531 = { "action": "start" | "stop" };
+type Contract532 = { "run": string; "artifact": string };
+type Contract533 = { "inputFiles"?: Array<{ "path": string; "content": string }>; "command": string; "cwd"?: string; "timeoutSeconds"?: number; "artifacts"?: Array<string> };
+type Contract534 = { "items": Array<{ "name": string; "updatedAt": string }> };
+type Contract535 = { "name": string; "value": string };
+type Contract536 = Array<{ "name": string; "updatedAt": string }>;
+type Contract537 = { "name": string };
+type Contract538 = { "items": Array<{ "name": string; "lastChangedAt": string; "policy": { "enabled": boolean; "maxAgeDays": number; "remindBeforeDays": number }; "ageDays": null | number; "dueAt": null | string; "daysRemaining": null | number; "status": ("unknown") | ("current") | ("disabled") | ("due-soon") | ("overdue") }> };
+type Contract539 = { "name": string; "policy": { "enabled"?: boolean; "maxAgeDays"?: number; "remindBeforeDays"?: number } };
+type Contract540 = { "services": Array<{ "name": string; "desired": boolean; "status": ("stopped") | ("healthy") | ("unhealthy") | ("waiting") | ("restarting") | ("exhausted"); "failures": number; "restarts": number; "checkedAt"?: string; "nextCheck": number; "error"?: string }>; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
+type Contract541 = { "templates": Array<{ "version": 1; "id": string; "name": string; "note": string; "createdAt": string; "sourceId": string; "sourceName": string; "distro": "alpine" | "debian" | "ubuntu"; "architecture"?: "x86_64" | "aarch64"; "diskGiB": number; "bytes": number; "sha256": string }>; "issues": Array<{ "id": string; "error": string }>; "limits": { "count": number; "bytes": number; "imageBytes": number }; "job": ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) | (null); "persistenceError"?: string };
+type Contract542 = ({ "action": "create"; "vmId": string; "name": string; "note"?: string; "sourceReviewed": true }) | ({ "action": "instantiate"; "id": string; "name": string }) | ({ "action": "verify"; "id": string }) | ({ "action": "delete"; "id": string });
+type Contract543 = { "kind": "template" | "vm" | "verified" | "deleted"; "id": string };
+type Contract544 = { "command": string; "partition"?: (number) | (null); "timeoutSeconds"?: number; "artifacts"?: Array<string> };
+type Contract545 = { "name": string };
+type Contract546 = { "x-sakura-passphrase"?: string };
+type Contract547 = { "revision": number; "requireTrustedOnImport": boolean; "localKey": ({ "name": string; "fingerprint": string; "publicKey": string }) | (null); "trustedKeys": Array<{ "name": string; "fingerprint": string; "publicKey": string }> };
+type Contract548 = ({ "action": "configure"; "revision": number; "requireTrustedOnImport": boolean }) | ({ "action": "trust"; "revision": number; "name": string; "publicKey": string }) | ({ "action": "forget"; "revision": number; "fingerprint": string });
+type Contract549 = { "name": string; "online"?: boolean; "memory"?: boolean };
+type Contract550 = { "stateFingerprint"?: string; "id": string; "name": string; "createdAt": string; "diskGiB": number; "pendingResize": boolean; "consistency": ("vmstate") | ("offline") | ("filesystem") };
+type Contract551 = { "name": string; "note"?: string };
+type Contract552 = { "backup"?: boolean; "memory"?: boolean };
+type Contract553 = { "from": string; "to"?: ("current") | (string); "partition"?: number; "path"?: string };
+type Contract554 = { "runs": Array<{ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }>; "persistenceError"?: string; "branchOrigin"?: { "sourceVmId": string; "snapshotId": string; "createdAt": string }; "sourceName"?: string };
+type Contract555 = { "mode": "preview" | "apply"; "name"?: string; "partition"?: number; "path"?: string };
+type Contract556 = { "name": string; "snapshot"?: string };
+type Contract557 = { "projectId": string; "config": (null) | ({ "host": string; "guest": string; "auto": boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": ("readonly") | ("push") | ("both") | ("pull"); "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text") }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> }); "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }); "queue": (null) | ({ "id": string; "requestedAt": string; "attempts": number; "nextAttemptAt": number; "jobId"?: string; "lastError"?: string }); "maintenance": boolean; "history": Array<{ "error"?: string; "status": ("failed") | ("done") | ("pending") | ("rolled-back"); "id": string; "bytes": number; "createdAt": string; "changes": number }>; "watching": (null) | ({ "host": ("watching") | ("polling"); "guest": ("offline") | ("watching") | ("polling"); "reason"?: string; "lastEvent"?: string }) };
+type Contract558 = { "host": string; "guest": string; "auto"?: boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": "both" | "push" | "pull" | "readonly"; "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": "manual" | "keep-both" | "prefer-host" | "prefer-guest" | "merge-text" }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> };
+type Contract559 = { "host": string; "guest": string; "auto": boolean; "mergeText"?: boolean; "detectRenames"?: boolean; "rollback"?: boolean; "watch"?: boolean; "policies"?: Array<{ "pattern": string; "direction": ("readonly") | ("push") | ("both") | ("pull"); "guestMode"?: string }>; "drivers"?: Array<{ "pattern": string; "mode": ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text") }>; "window"?: { "days": Array<number>; "start": string; "end": string; "timeZone": string }; "bandwidthMiBps"?: number; "ignore"?: Array<string> };
+type Contract560 = { "direction": "both" | "push" | "pull"; "token"?: string; "decisions"?: { [key: string]: ("push" | "pull" | "both" | "skip" | "merge" | "manual" | "delete-host" | "delete-guest" | "restore-host" | "restore-guest") }; "merges"?: { [key: string]: (string) } };
+type Contract561 = { "token": string; "changes": Array<{ "path": string; "from"?: string; "driver"?: ("manual") | ("keep-both") | ("prefer-host") | ("prefer-guest") | ("merge-text"); "suggestedDecision"?: ("push") | ("merge") | ("both") | ("skip") | ("pull"); "action": ("push") | ("skip") | ("pull") | ("delete-host") | ("delete-guest") | ("conflict") | ("mkdir-host") | ("mkdir-guest") | ("rename-host") | ("rename-guest") }>; "unchanged": number };
+type Contract562 = { "path": string; "token": string };
+type Contract563 = { "path": string; "token": string; "base": string; "ours": string; "theirs": string };
+type Contract564 = { "queue": (null) | ({ "id": string; "requestedAt": string; "attempts": number; "nextAttemptAt": number; "jobId"?: string; "lastError"?: string }) };
+type Contract565 = { "checkpoint": string };
+type Contract566 = ({ "session": string }) | ({ "action": "stop-all" });
+type Contract567 = { "ok": boolean; "projectId": string };
+type Contract568 = { "tools": Array<{ "id": string; "name": ("Go") | ("Git") | ("Node.js / npm") | ("Python / pip") | ("Rust / Cargo") | ("Java JDK") | ("PHP"); "installed": boolean; "version": string; "required": boolean }>; "job": (null) | ({ "correlationId"?: string; "title"?: string; "vmId"?: string; "action"?: string; "projectId"?: string; "execution"?: { "command": string; "cwd": string; "timeoutSeconds": number; "requestedArtifacts": Array<string>; "artifacts": Array<{ "id": string; "name": string; "path": string; "bytes": number; "sha256": string }>; "timings": { "bootMs"?: number; "commandMs"?: number; "artifactsMs"?: number; "shutdownMs"?: number; "totalMs"?: number }; "exitCode"?: number; "outcome"?: ("success") | ("failed") | ("timeout") | ("cancelled") | ("expired") | ("interrupted") }; "owner"?: string; "lane"?: ("interactive") | ("background") | ("control"); "admissionTimeoutMs"?: number; "id"?: string; "key"?: string; "scope"?: string; "status": ("error") | ("cancelled") | ("interrupted") | ("running") | ("done"); "admission"?: ("running") | ("queued") | ("cancelling") | ("cleanup-pending"); "queuedAt"?: string; "executionStartedAt"?: string; "resourceWait"?: { "resource": string; "reason": string; "since": string }; "resourceLeaseId"?: string; "cleanupLeaseId"?: string; "cleanupResolvedAt"?: string; "delegatedFrom"?: string; "log": string; "error"?: string; "errorCode"?: string; "startedAt": string; "finishedAt"?: string; "phase"?: string; "progress"?: number; "result"?: { "bytes": number; "sha256": string }; "logPruned"?: { "at": string; "bytes": number } }) };
+type Contract569 = { "tools": Array<"git" | "node" | "python" | "rust" | "go" | "java" | "php"> };
+type Contract570 = ({ "type": "file"; "path": string }) | ({ "type": "export" });
 /** 操作 ID 到 wire 形状的映射；input 联合约束 bodylessQuery 与请求体互斥。这里只描述类型，运行时校验由服务端操作契约执行。
  * Map operation IDs to wire shapes; input unions enforce bodylessQuery/body exclusivity. These are type declarations; server operation contracts perform runtime validation. */
 export type OperationContractMap = {
@@ -731,107 +923,239 @@ export type OperationContractMap = {
   "images.legacy.get.images": { request: undefined; response: Contract303; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
   "images.legacy.post.images.imageId": { request: undefined; response: Contract148; path: { "imageId": string }; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
   "images.legacy.post.image-import": { request: BodyInit; response: Contract305; path: Record<never, never>; query: Contract304; headers: Contract0; method: "POST"; contract: "declared" };
-  "library.legacy.post.vms.batch": { request: Contract306; response: Contract307; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "library.legacy.put.vms.vmId.organization": { request: Contract308; response: Contract139; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
-  "maintenance.cleanup.providers": { request: undefined; response: Contract309; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "maintenance.cleanup.preview": { request: Contract310; response: Contract311; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "maintenance.cleanup.execute": { request: Contract312; response: Contract313; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "maintenance.legacy.get.storage": { request: undefined; response: Contract314; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "maintenance.legacy.get.vms.vmId.diagnostics": { request: undefined; response: Contract315; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-assertions.view": { request: undefined; response: Contract307; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-assertions.act": { request: Contract308; response: Contract309; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-environments.view": { request: undefined; response: Contract310; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-environments.act": { request: Contract311; response: Contract312; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-exchange.view": { request: undefined; response: Contract313; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-exchange.act": { request: Contract314; response: Contract315; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-fixtures.view": { request: undefined; response: Contract316; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-fixtures.act": { request: Contract317; response: Contract318; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-load.view": { request: undefined; response: Contract319; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-load.act": { request: Contract320; response: Contract321; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-mocks.view": { request: undefined; response: Contract322; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-mocks.act": { request: Contract323; response: Contract324; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-reports.view": { request: undefined; response: Contract325; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-reports.act": { request: Contract326; response: Contract327; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-runners.view": { request: undefined; response: Contract328; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-runners.act": { request: Contract329; response: Contract330; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-scenarios.view": { request: undefined; response: Contract331; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-scenarios.act": { request: Contract332; response: Contract333; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-specs.view": { request: undefined; response: Contract334; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-specs.act": { request: Contract335; response: Contract336; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "integration-workbench.view": { request: undefined; response: Contract337; path: Record<never, never>; query: Contract306; headers: Contract0; method: "GET"; contract: "declared" };
+  "integration-workbench.act": { request: Contract338; response: Contract339; path: Record<never, never>; query: Contract306; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-documents.templates": { request: Contract0; response: Contract340; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-documents.create": { request: Contract341; response: Contract342; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-documents.revise": { request: Contract343; response: Contract342; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-documents.readPinned": { request: Contract344; response: Contract342; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-documents.list": { request: Contract345; response: Contract346; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-documents.compare": { request: Contract347; response: Contract348; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-documents.archive": { request: Contract349; response: Contract342; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-entries.create": { request: Contract350; response: Contract351; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-entries.revise": { request: Contract352; response: Contract351; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-entries.readPinned": { request: Contract344; response: Contract351; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-entries.list": { request: Contract345; response: Contract353; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-entries.compare": { request: Contract347; response: Contract354; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-entries.archive": { request: Contract349; response: Contract351; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-evidence.create": { request: Contract355; response: Contract356; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-evidence.inspect": { request: Contract344; response: Contract356; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-evidence.check": { request: Contract344; response: Contract357; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-evidence.migrate": { request: Contract358; response: Contract359; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-evidence.list": { request: Contract345; response: Contract360; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-exchange.planExport": { request: Contract361; response: Contract362; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-exchange.export": { request: Contract363; response: Contract364; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-exchange.download": { request: Contract365; response: Contract366; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-exchange.inspectImport": { request: Contract367; response: Contract368; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-exchange.acceptImport": { request: Contract369; response: Contract368; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-exchange.imports": { request: Contract0; response: Contract370; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-exchange.discardImport": { request: Contract218; response: Contract368; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-extract.plan": { request: Contract371; response: Contract362; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-extract.run": { request: Contract363; response: Contract372; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-extract.get": { request: Contract344; response: Contract373; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-extract.list": { request: Contract345; response: Contract374; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-extract.jobs": { request: Contract345; response: Contract375; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-extract.cancel": { request: Contract365; response: Contract376; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-index.plan": { request: Contract377; response: Contract362; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-index.build": { request: Contract363; response: Contract378; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-index.search": { request: Contract379; response: Contract380; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-index.coverage": { request: Contract345; response: Contract381; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-index.jobs": { request: Contract345; response: Contract375; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-index.cancel": { request: Contract365; response: Contract376; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-publish.plan": { request: Contract382; response: Contract362; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-publish.apply": { request: Contract363; response: Contract383; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-publish.read": { request: Contract384; response: Contract383; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-publish.withdraw": { request: Contract385; response: Contract383; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-publish.rollback": { request: Contract365; response: Contract362; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-publish.list": { request: Contract345; response: Contract386; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-reviews.open": { request: Contract387; response: Contract388; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-reviews.readPinned": { request: Contract344; response: Contract388; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-reviews.decide": { request: Contract389; response: Contract388; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-reviews.recheck": { request: Contract344; response: Contract388; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-reviews.list": { request: Contract345; response: Contract390; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.createSpace": { request: Contract391; response: Contract392; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.listSpaces": { request: Contract0; response: Contract393; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.space": { request: Contract345; response: Contract392; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.revokeSpace": { request: Contract394; response: Contract392; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.listSources": { request: Contract345; response: Contract395; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.getSource": { request: Contract344; response: Contract396; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.upload": { request: Contract397; response: Contract396; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.redact": { request: Contract398; response: Contract396; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.planCapture": { request: Contract399; response: Contract362; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.capture": { request: Contract363; response: Contract400; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.read": { request: Contract344; response: Contract401; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.verify": { request: Contract344; response: Contract402; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.planPolicy": { request: Contract403; response: Contract362; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.applyPolicy": { request: Contract363; response: Contract396; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.capacity": { request: Contract345; response: Contract404; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.planCleanup": { request: Contract345; response: Contract362; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-sources.cleanup": { request: Contract363; response: Contract405; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-workbench.view": { request: Contract345; response: Contract406; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-workbench.preferences": { request: Contract407; response: Contract408; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "knowledge-workbench.example": { request: Contract409; response: Contract410; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "library.legacy.post.vms.batch": { request: Contract411; response: Contract412; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "library.legacy.put.vms.vmId.organization": { request: Contract413; response: Contract139; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
+  "maintenance.cleanup.providers": { request: undefined; response: Contract414; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "maintenance.cleanup.preview": { request: Contract415; response: Contract416; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "maintenance.cleanup.execute": { request: Contract417; response: Contract418; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "maintenance.legacy.get.storage": { request: undefined; response: Contract419; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "maintenance.legacy.get.vms.vmId.diagnostics": { request: undefined; response: Contract420; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
   "maintenance.legacy.post.vms.vmId.diagnostics": { request: undefined; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "maintenance.legacy.post.vms.vmId.resize": { request: Contract316; response: Contract317; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "maintenance.legacy.post.vms.vmId.resize": { request: Contract421; response: Contract422; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
   "maintenance.legacy.post.vms.vmId.compact": { request: undefined; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "maintenance.legacy.get.vms.vmId.disk-maintenance": { request: undefined; response: Contract318; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "maintenance.legacy.put.vms.vmId.disk-maintenance": { request: Contract319; response: Contract320; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
-  "maintenance.legacy.post.vms.vmId.disk-maintenance": { request: Contract321; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "metrics.sample": { request: undefined; response: Contract322; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "migration.legacy.get.migration": { request: undefined; response: Contract323; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "migration.legacy.post.migration": { request: Contract324; response: Contract325; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "network.legacy.get.network-profiles": { request: undefined; response: Contract326; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "network.legacy.post.network-profiles": { request: Contract327; response: Contract328; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "maintenance.legacy.get.vms.vmId.disk-maintenance": { request: undefined; response: Contract423; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "maintenance.legacy.put.vms.vmId.disk-maintenance": { request: Contract424; response: Contract425; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
+  "maintenance.legacy.post.vms.vmId.disk-maintenance": { request: Contract426; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "metrics.sample": { request: undefined; response: Contract427; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "migration.legacy.get.migration": { request: undefined; response: Contract428; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "migration.legacy.post.migration": { request: Contract429; response: Contract430; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "network.legacy.get.network-profiles": { request: undefined; response: Contract431; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "network.legacy.post.network-profiles": { request: Contract432; response: Contract433; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
   "network.legacy.delete.network-profiles": { request: Contract218; response: Contract37; path: Record<never, never>; query: Contract0; headers: Contract0; method: "DELETE"; contract: "declared" };
-  "network.legacy.get.vms.vmId.network": { request: undefined; response: Contract329; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "network.legacy.post.vms.vmId.network": { request: Contract330; response: Contract331; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "network.legacy.get.vms.vmId.services": { request: undefined; response: Contract332; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "network.legacy.patch.vms.vmId.services": { request: Contract333; response: Contract139; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PATCH"; contract: "declared" };
-  "network.ingress-view": { request: undefined; response: Contract334; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "network.ingress-action": { request: Contract335; response: Contract334; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "network.ingress-certificate-view": { request: undefined; response: Contract336; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "network.ingress-certificate-action": { request: Contract337; response: Contract336; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "network.local-aliases-view": { request: undefined; response: Contract338; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "network.local-aliases-action": { request: Contract339; response: Contract338; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "pipelines.legacy.get.vms.vmId.pipelines": { request: undefined; response: Contract340; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "pipelines.legacy.put.vms.vmId.pipelines": { request: Contract341; response: Contract342; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
-  "pipelines.legacy.delete.vms.vmId.pipelines": { request: Contract218; response: Contract343; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
-  "pipelines.legacy.post.vms.vmId.pipelines": { request: Contract344; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "pipelines.legacy.post.vms.vmId.pipeline-artifact": { request: Contract345; response: Contract202; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "platform.legacy.get.next-features": { request: undefined; response: Contract346; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "platform.legacy.get.vms.vmId.next-features": { request: undefined; response: Contract347; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "platform.legacy.post.vms.vmId.next-features": { request: Contract348; response: Contract349; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "platform.notebook-link": { request: undefined; response: Contract350; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "platform.browser-ide-link": { request: undefined; response: Contract351; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "project-search.legacy.get.vms.vmId.project-files": { request: undefined; response: Contract353; path: { "vmId": string }; query: Contract352; headers: Contract0; method: "GET"; contract: "declared" };
-  "projects.legacy.get.vms.vmId.projects": { request: undefined; response: Contract354; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "projects.legacy.post.vms.vmId.projects": { request: Contract355; response: Contract354; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "projects.legacy.get.vms.vmId.project": { request: undefined; response: Contract356; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "projects.legacy.put.vms.vmId.project": { request: Contract357; response: Contract358; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
-  "projects.legacy.post.vms.vmId.project": { request: Contract359; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "projects.legacy.get.vms.vmId.project-runtime": { request: undefined; response: Contract360; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "projects.legacy.get.vms.vmId.project-directory-migration": { request: undefined; response: Contract361; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "projects.legacy.post.vms.vmId.project-directory-migration": { request: Contract362; response: Contract361; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "recipes.post.vms.vmId.recipe.plan": { request: Contract363; response: Contract364; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "recipes.post.vms.vmId.recipe.apply-plan": { request: Contract365; response: Contract356; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "recipes.legacy.post.recipes": { request: Contract366; response: Contract139; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "recipes.legacy.get.vms.vmId.recipe": { request: undefined; response: Contract367; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "recipes.legacy.put.vms.vmId.recipe": { request: Contract363; response: Contract356; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
-  "recipes.legacy.post.vms.vmId.recipe": { request: Contract368; response: Contract367; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "repair.view": { request: undefined; response: Contract369; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "repair.act": { request: Contract370; response: Contract371; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "runtimes.legacy.get.vms.vmId.runtimes": { request: undefined; response: Contract372; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "runtimes.legacy.post.vms.vmId.runtimes": { request: Contract373; response: Contract374; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "sandbox.list": { request: undefined; response: Contract375; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "sandbox.create": { request: Contract376; response: Contract377; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "sandbox.inspect": { request: undefined; response: Contract377; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "sandbox.control": { request: Contract378; response: Contract39; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "network.legacy.get.vms.vmId.network": { request: undefined; response: Contract434; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "network.legacy.post.vms.vmId.network": { request: Contract435; response: Contract436; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "network.legacy.get.vms.vmId.services": { request: undefined; response: Contract437; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "network.legacy.patch.vms.vmId.services": { request: Contract438; response: Contract139; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PATCH"; contract: "declared" };
+  "network.ingress-view": { request: undefined; response: Contract439; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "network.ingress-action": { request: Contract440; response: Contract439; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "network.ingress-certificate-view": { request: undefined; response: Contract441; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "network.ingress-certificate-action": { request: Contract442; response: Contract441; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "network.local-aliases-view": { request: undefined; response: Contract443; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "network.local-aliases-action": { request: Contract444; response: Contract443; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "pipelines.legacy.get.vms.vmId.pipelines": { request: undefined; response: Contract445; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "pipelines.legacy.put.vms.vmId.pipelines": { request: Contract446; response: Contract447; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
+  "pipelines.legacy.delete.vms.vmId.pipelines": { request: Contract218; response: Contract448; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
+  "pipelines.legacy.post.vms.vmId.pipelines": { request: Contract449; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "pipelines.legacy.post.vms.vmId.pipeline-artifact": { request: Contract450; response: Contract202; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "platform.legacy.get.next-features": { request: undefined; response: Contract451; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "platform.legacy.get.vms.vmId.next-features": { request: undefined; response: Contract452; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "platform.legacy.post.vms.vmId.next-features": { request: Contract453; response: Contract454; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "platform.notebook-link": { request: undefined; response: Contract455; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "platform.browser-ide-link": { request: undefined; response: Contract456; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "project-search.legacy.get.vms.vmId.project-files": { request: undefined; response: Contract458; path: { "vmId": string }; query: Contract457; headers: Contract0; method: "GET"; contract: "declared" };
+  "projects.legacy.get.vms.vmId.projects": { request: undefined; response: Contract459; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "projects.legacy.post.vms.vmId.projects": { request: Contract460; response: Contract459; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "projects.legacy.get.vms.vmId.project": { request: undefined; response: Contract461; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "projects.legacy.put.vms.vmId.project": { request: Contract462; response: Contract463; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
+  "projects.legacy.post.vms.vmId.project": { request: Contract464; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "projects.legacy.get.vms.vmId.project-runtime": { request: undefined; response: Contract465; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "projects.legacy.get.vms.vmId.project-directory-migration": { request: undefined; response: Contract466; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "projects.legacy.post.vms.vmId.project-directory-migration": { request: Contract467; response: Contract466; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "recipes.post.vms.vmId.recipe.plan": { request: Contract468; response: Contract469; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "recipes.post.vms.vmId.recipe.apply-plan": { request: Contract470; response: Contract461; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "recipes.legacy.post.recipes": { request: Contract471; response: Contract139; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "recipes.legacy.get.vms.vmId.recipe": { request: undefined; response: Contract472; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "recipes.legacy.put.vms.vmId.recipe": { request: Contract468; response: Contract461; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
+  "recipes.legacy.post.vms.vmId.recipe": { request: Contract473; response: Contract472; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "repair.view": { request: undefined; response: Contract474; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "repair.act": { request: Contract475; response: Contract476; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-faults.catalogue": { request: undefined; response: Contract478; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-faults.observe": { request: Contract479; response: Contract480; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-fixtures.view": { request: undefined; response: Contract481; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-fixtures.sources": { request: undefined; response: Contract482; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-fixtures.prepareBuiltin": { request: Contract483; response: Contract484; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-fixtures.beginImport": { request: Contract485; response: Contract486; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-fixtures.appendImport": { request: Contract487; response: Contract486; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-fixtures.finishImport": { request: Contract488; response: Contract484; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-fixtures.prepare": { request: Contract489; response: Contract490; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-fixtures.cleanupPreview": { request: Contract488; response: Contract491; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-fixtures.cleanup": { request: Contract492; response: Contract490; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-guard.view": { request: undefined; response: Contract493; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-guard.contain": { request: Contract479; response: Contract480; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-guard.reconcile": { request: Contract479; response: Contract480; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-probes.view": { request: undefined; response: Contract495; path: Record<never, never>; query: Contract494; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-recovery.preview": { request: Contract496; response: Contract497; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-recovery.apply": { request: Contract498; response: Contract480; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-reports.view": { request: undefined; response: Contract499; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-reports.imports": { request: undefined; response: Contract500; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-reports.discardImport": { request: Contract488; response: Contract501; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-reports.retention": { request: undefined; response: Contract502; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-reports.pin": { request: Contract503; response: Contract504; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-reports.archive": { request: Contract488; response: Contract505; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-reports.seal": { request: Contract479; response: Contract506; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-reports.export": { request: Contract488; response: Contract507; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-reports.import": { request: Contract508; response: Contract509; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-reports.accept": { request: Contract488; response: Contract509; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-reports.compare": { request: Contract510; response: Contract511; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-runs.view": { request: undefined; response: Contract512; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-runs.get": { request: undefined; response: Contract514; path: Record<never, never>; query: Contract513; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-runs.preview": { request: Contract515; response: Contract516; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-runs.approve": { request: Contract498; response: Contract516; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-runs.start": { request: Contract488; response: Contract514; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-runs.cancel": { request: Contract488; response: Contract514; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-runs.reconcile": { request: Contract488; response: Contract514; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-scenarios.view": { request: undefined; response: Contract517; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-scenarios.templates": { request: undefined; response: Contract478; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-scenarios.save": { request: Contract518; response: Contract519; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-targets.view": { request: undefined; response: Contract520; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-targets.register": { request: Contract521; response: Contract522; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "resilience-targets.get": { request: undefined; response: Contract522; path: Record<never, never>; query: Contract523; headers: Contract0; method: "GET"; contract: "declared" };
+  "resilience-workbench.view": { request: undefined; response: Contract524; path: Record<never, never>; query: Contract477; headers: Contract0; method: "GET"; contract: "declared" };
+  "runtimes.legacy.get.vms.vmId.runtimes": { request: undefined; response: Contract525; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "runtimes.legacy.post.vms.vmId.runtimes": { request: Contract526; response: Contract527; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sandbox.list": { request: undefined; response: Contract528; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "sandbox.create": { request: Contract529; response: Contract530; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "sandbox.inspect": { request: undefined; response: Contract530; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "sandbox.control": { request: Contract531; response: Contract39; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
   "sandbox.destroy": { request: undefined; response: Contract39; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
-  "sandbox.artifact": { request: undefined; response: Contract206; path: Record<never, never>; query: Contract379; headers: Contract0; method: "GET"; contract: "declared" };
-  "sandbox.run": { request: Contract380; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "secrets.legacy.get.vms.vmId.secrets": { request: undefined; response: Contract381; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "secrets.legacy.put.vms.vmId.secrets": { request: Contract382; response: Contract383; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
-  "secrets.legacy.delete.vms.vmId.secrets": { request: Contract384; response: Contract383; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
-  "secrets.legacy.get.vms.vmId.secret-rotation": { request: undefined; response: Contract385; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "secrets.legacy.patch.vms.vmId.secret-rotation": { request: Contract386; response: Contract385; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PATCH"; contract: "declared" };
-  "service-health.legacy.get.vms.vmId.health": { request: undefined; response: Contract387; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "snapshots.golden-list": { request: undefined; response: Contract388; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "snapshots.golden-action": { request: Contract389; response: Contract390; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "sandbox.artifact": { request: undefined; response: Contract206; path: Record<never, never>; query: Contract532; headers: Contract0; method: "GET"; contract: "declared" };
+  "sandbox.run": { request: Contract533; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "secrets.legacy.get.vms.vmId.secrets": { request: undefined; response: Contract534; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "secrets.legacy.put.vms.vmId.secrets": { request: Contract535; response: Contract536; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
+  "secrets.legacy.delete.vms.vmId.secrets": { request: Contract537; response: Contract536; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
+  "secrets.legacy.get.vms.vmId.secret-rotation": { request: undefined; response: Contract538; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "secrets.legacy.patch.vms.vmId.secret-rotation": { request: Contract539; response: Contract538; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PATCH"; contract: "declared" };
+  "service-health.legacy.get.vms.vmId.health": { request: undefined; response: Contract540; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "snapshots.golden-list": { request: undefined; response: Contract541; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "snapshots.golden-action": { request: Contract542; response: Contract543; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
   "snapshots.rescue-view": { request: undefined; response: Contract203; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "snapshots.rescue-run": { request: Contract391; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "snapshots.legacy.post.import": { request: BodyInit; response: Contract139; path: Record<never, never>; query: Contract392; headers: Contract393; method: "POST"; contract: "declared" };
-  "snapshots.signed-bundles-view": { request: undefined; response: Contract394; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
-  "snapshots.signed-bundles-action": { request: Contract395; response: Contract394; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
-  "snapshots.legacy.post.vms.vmId.snapshots": { request: Contract396; response: Contract397; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "snapshots.legacy.patch.vms.vmId.snapshots.snapshotId": { request: Contract398; response: Contract139; path: { "vmId": string; "snapshotId": string }; query: Contract94; headers: Contract0; method: "PATCH"; contract: "declared" };
+  "snapshots.rescue-run": { request: Contract544; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "snapshots.legacy.post.import": { request: BodyInit; response: Contract139; path: Record<never, never>; query: Contract545; headers: Contract546; method: "POST"; contract: "declared" };
+  "snapshots.signed-bundles-view": { request: undefined; response: Contract547; path: Record<never, never>; query: Contract0; headers: Contract0; method: "GET"; contract: "declared" };
+  "snapshots.signed-bundles-action": { request: Contract548; response: Contract547; path: Record<never, never>; query: Contract0; headers: Contract0; method: "POST"; contract: "declared" };
+  "snapshots.legacy.post.vms.vmId.snapshots": { request: Contract549; response: Contract550; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "snapshots.legacy.patch.vms.vmId.snapshots.snapshotId": { request: Contract551; response: Contract139; path: { "vmId": string; "snapshotId": string }; query: Contract94; headers: Contract0; method: "PATCH"; contract: "declared" };
   "snapshots.legacy.delete.vms.vmId.snapshots.snapshotId": { request: undefined; response: Contract139; path: { "vmId": string; "snapshotId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
-  "snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore": { request: Contract399 | undefined; response: Contract139; path: { "vmId": string; "snapshotId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore": { request: Contract552 | undefined; response: Contract139; path: { "vmId": string; "snapshotId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
   "snapshots.snapshot-diff-view": { request: undefined; response: Contract203; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "snapshots.snapshot-diff-run": { request: Contract400; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "snapshots.snapshot-merge-view": { request: undefined; response: Contract401; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "snapshots.snapshot-merge-run": { request: Contract402; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "snapshots.snapshot-diff-run": { request: Contract553; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "snapshots.snapshot-merge-view": { request: undefined; response: Contract554; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "snapshots.snapshot-merge-run": { request: Contract555; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
   "snapshots.legacy.get.vms.vmId.export": { request: undefined; response: Response; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "snapshots.legacy.post.vms.vmId.clone": { request: Contract403; response: Contract139; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "snapshots.legacy.post.vms.vmId.clone": { request: Contract556; response: Contract139; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
   "snapshots.rescue-artifact": { request: undefined; response: Contract206; path: { "vmId": string }; query: Contract205; headers: Contract0; method: "GET"; contract: "declared" };
-  "sync.legacy.get.vms.vmId.sync": { request: undefined; response: Contract404; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "sync.legacy.put.vms.vmId.sync": { request: Contract405; response: Contract406; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync": { request: Contract407; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync-preview": { request: undefined; response: Contract408; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync-merge": { request: Contract409; response: Contract410; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync-queue": { request: undefined; response: Contract411; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "sync.legacy.delete.vms.vmId.sync-queue": { request: undefined; response: Contract411; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
-  "sync.legacy.post.vms.vmId.sync-rollback": { request: Contract412; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "terminal-workspace.legacy.post.vms.vmId.terminal-session": { request: Contract413; response: Contract414; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "toolchains.legacy.get.vms.vmId.tools": { request: undefined; response: Contract415; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
-  "toolchains.legacy.post.vms.vmId.tools": { request: Contract416; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
-  "transfers.legacy.post.vms.vmId.download": { request: Contract417; response: Contract202; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.get.vms.vmId.sync": { request: undefined; response: Contract557; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "sync.legacy.put.vms.vmId.sync": { request: Contract558; response: Contract559; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "PUT"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync": { request: Contract560; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync-preview": { request: undefined; response: Contract561; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync-merge": { request: Contract562; response: Contract563; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync-queue": { request: undefined; response: Contract564; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "sync.legacy.delete.vms.vmId.sync-queue": { request: undefined; response: Contract564; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "DELETE"; contract: "declared" };
+  "sync.legacy.post.vms.vmId.sync-rollback": { request: Contract565; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "terminal-workspace.legacy.post.vms.vmId.terminal-session": { request: Contract566; response: Contract567; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "toolchains.legacy.get.vms.vmId.tools": { request: undefined; response: Contract568; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "GET"; contract: "declared" };
+  "toolchains.legacy.post.vms.vmId.tools": { request: Contract569; response: Contract148; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
+  "transfers.legacy.post.vms.vmId.download": { request: Contract570; response: Contract202; path: { "vmId": string }; query: Contract94; headers: Contract0; method: "POST"; contract: "declared" };
 };
 /** 从统一操作目录选择合法操作 ID，作为下列请求/响应类型索引。
  * Select valid operation IDs from the shared catalog for the request/response projections below. */
@@ -5087,6 +5411,1356 @@ export const operationRoutes = {
     "body": "binary",
     "bodyRequired": true
   },
+  "integration-assertions.view": {
+    "path": "/api/integration-assertions",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-assertions.act": {
+    "path": "/api/integration-assertions",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-environments.view": {
+    "path": "/api/integration-environments",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-environments.act": {
+    "path": "/api/integration-environments",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-exchange.view": {
+    "path": "/api/integration-exchange",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-exchange.act": {
+    "path": "/api/integration-exchange",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-fixtures.view": {
+    "path": "/api/integration-fixtures",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-fixtures.act": {
+    "path": "/api/integration-fixtures",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-load.view": {
+    "path": "/api/integration-load",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-load.act": {
+    "path": "/api/integration-load",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-mocks.view": {
+    "path": "/api/integration-mocks",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-mocks.act": {
+    "path": "/api/integration-mocks",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-reports.view": {
+    "path": "/api/integration-reports",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-reports.act": {
+    "path": "/api/integration-reports",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-runners.view": {
+    "path": "/api/integration-runners",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-runners.act": {
+    "path": "/api/integration-runners",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-scenarios.view": {
+    "path": "/api/integration-scenarios",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-scenarios.act": {
+    "path": "/api/integration-scenarios",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-specs.view": {
+    "path": "/api/integration-specs",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-specs.act": {
+    "path": "/api/integration-specs",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "integration-workbench.view": {
+    "path": "/api/integration-workbench",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "integration-workbench.act": {
+    "path": "/api/integration-workbench",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-documents.templates": {
+    "path": "/api/knowledge-documents/templates",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-documents.create": {
+    "path": "/api/knowledge-documents/create",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-documents.revise": {
+    "path": "/api/knowledge-documents/revise",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-documents.readPinned": {
+    "path": "/api/knowledge-documents/readPinned",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-documents.list": {
+    "path": "/api/knowledge-documents/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-documents.compare": {
+    "path": "/api/knowledge-documents/compare",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-documents.archive": {
+    "path": "/api/knowledge-documents/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-entries.create": {
+    "path": "/api/knowledge-entries/create",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-entries.revise": {
+    "path": "/api/knowledge-entries/revise",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-entries.readPinned": {
+    "path": "/api/knowledge-entries/readPinned",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-entries.list": {
+    "path": "/api/knowledge-entries/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-entries.compare": {
+    "path": "/api/knowledge-entries/compare",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-entries.archive": {
+    "path": "/api/knowledge-entries/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-evidence.create": {
+    "path": "/api/knowledge-evidence/create",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-evidence.inspect": {
+    "path": "/api/knowledge-evidence/inspect",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-evidence.check": {
+    "path": "/api/knowledge-evidence/check",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-evidence.migrate": {
+    "path": "/api/knowledge-evidence/migrate",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-evidence.list": {
+    "path": "/api/knowledge-evidence/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-exchange.planExport": {
+    "path": "/api/knowledge-exchange/planExport",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-exchange.export": {
+    "path": "/api/knowledge-exchange/export",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-exchange.download": {
+    "path": "/api/knowledge-exchange/download",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-exchange.inspectImport": {
+    "path": "/api/knowledge-exchange/inspectImport",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-exchange.acceptImport": {
+    "path": "/api/knowledge-exchange/acceptImport",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-exchange.imports": {
+    "path": "/api/knowledge-exchange/imports",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-exchange.discardImport": {
+    "path": "/api/knowledge-exchange/discardImport",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-extract.plan": {
+    "path": "/api/knowledge-extract/plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-extract.run": {
+    "path": "/api/knowledge-extract/run",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-extract.get": {
+    "path": "/api/knowledge-extract/get",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-extract.list": {
+    "path": "/api/knowledge-extract/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-extract.jobs": {
+    "path": "/api/knowledge-extract/jobs",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-extract.cancel": {
+    "path": "/api/knowledge-extract/cancel",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-index.plan": {
+    "path": "/api/knowledge-index/plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-index.build": {
+    "path": "/api/knowledge-index/build",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-index.search": {
+    "path": "/api/knowledge-index/search",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-index.coverage": {
+    "path": "/api/knowledge-index/coverage",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-index.jobs": {
+    "path": "/api/knowledge-index/jobs",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-index.cancel": {
+    "path": "/api/knowledge-index/cancel",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-publish.plan": {
+    "path": "/api/knowledge-publish/plan",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-publish.apply": {
+    "path": "/api/knowledge-publish/apply",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-publish.read": {
+    "path": "/api/knowledge-publish/read",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-publish.withdraw": {
+    "path": "/api/knowledge-publish/withdraw",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-publish.rollback": {
+    "path": "/api/knowledge-publish/rollback",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-publish.list": {
+    "path": "/api/knowledge-publish/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-reviews.open": {
+    "path": "/api/knowledge-reviews/open",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-reviews.readPinned": {
+    "path": "/api/knowledge-reviews/readPinned",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-reviews.decide": {
+    "path": "/api/knowledge-reviews/decide",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-reviews.recheck": {
+    "path": "/api/knowledge-reviews/recheck",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-reviews.list": {
+    "path": "/api/knowledge-reviews/list",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.createSpace": {
+    "path": "/api/knowledge-sources/createSpace",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.listSpaces": {
+    "path": "/api/knowledge-sources/listSpaces",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.space": {
+    "path": "/api/knowledge-sources/space",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.revokeSpace": {
+    "path": "/api/knowledge-sources/revokeSpace",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.listSources": {
+    "path": "/api/knowledge-sources/listSources",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.getSource": {
+    "path": "/api/knowledge-sources/getSource",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.upload": {
+    "path": "/api/knowledge-sources/upload",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.redact": {
+    "path": "/api/knowledge-sources/redact",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.planCapture": {
+    "path": "/api/knowledge-sources/planCapture",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.capture": {
+    "path": "/api/knowledge-sources/capture",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.read": {
+    "path": "/api/knowledge-sources/read",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.verify": {
+    "path": "/api/knowledge-sources/verify",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.planPolicy": {
+    "path": "/api/knowledge-sources/planPolicy",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.applyPolicy": {
+    "path": "/api/knowledge-sources/applyPolicy",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.capacity": {
+    "path": "/api/knowledge-sources/capacity",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.planCleanup": {
+    "path": "/api/knowledge-sources/planCleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-sources.cleanup": {
+    "path": "/api/knowledge-sources/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-workbench.view": {
+    "path": "/api/knowledge-workbench/view",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-workbench.preferences": {
+    "path": "/api/knowledge-workbench/preferences",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "knowledge-workbench.example": {
+    "path": "/api/knowledge-workbench/example",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
   "library.legacy.post.vms.batch": {
     "path": "/api/vms/batch",
     "method": "POST",
@@ -5927,6 +7601,636 @@ export const operationRoutes = {
     "session": "required",
     "body": "json",
     "bodyRequired": true
+  },
+  "resilience-faults.catalogue": {
+    "path": "/api/resilience-faults/catalogue",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-faults.observe": {
+    "path": "/api/resilience-faults/observe",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-fixtures.view": {
+    "path": "/api/resilience-fixtures/view",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-fixtures.sources": {
+    "path": "/api/resilience-fixtures/sources",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-fixtures.prepareBuiltin": {
+    "path": "/api/resilience-fixtures/prepareBuiltin",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-fixtures.beginImport": {
+    "path": "/api/resilience-fixtures/beginImport",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-fixtures.appendImport": {
+    "path": "/api/resilience-fixtures/appendImport",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-fixtures.finishImport": {
+    "path": "/api/resilience-fixtures/finishImport",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-fixtures.prepare": {
+    "path": "/api/resilience-fixtures/prepare",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-fixtures.cleanupPreview": {
+    "path": "/api/resilience-fixtures/cleanupPreview",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-fixtures.cleanup": {
+    "path": "/api/resilience-fixtures/cleanup",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-guard.view": {
+    "path": "/api/resilience-guard/view",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-guard.contain": {
+    "path": "/api/resilience-guard/contain",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-guard.reconcile": {
+    "path": "/api/resilience-guard/reconcile",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-probes.view": {
+    "path": "/api/resilience-probes/view",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-recovery.preview": {
+    "path": "/api/resilience-recovery/preview",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-recovery.apply": {
+    "path": "/api/resilience-recovery/apply",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-reports.view": {
+    "path": "/api/resilience-reports/view",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-reports.imports": {
+    "path": "/api/resilience-reports/imports",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-reports.discardImport": {
+    "path": "/api/resilience-reports/discardImport",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-reports.retention": {
+    "path": "/api/resilience-reports/retention",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-reports.pin": {
+    "path": "/api/resilience-reports/pin",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-reports.archive": {
+    "path": "/api/resilience-reports/archive",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-reports.seal": {
+    "path": "/api/resilience-reports/seal",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-reports.export": {
+    "path": "/api/resilience-reports/export",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-reports.import": {
+    "path": "/api/resilience-reports/import",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-reports.accept": {
+    "path": "/api/resilience-reports/accept",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-reports.compare": {
+    "path": "/api/resilience-reports/compare",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-runs.view": {
+    "path": "/api/resilience-runs/view",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-runs.get": {
+    "path": "/api/resilience-runs/get",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-runs.preview": {
+    "path": "/api/resilience-runs/preview",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-runs.approve": {
+    "path": "/api/resilience-runs/approve",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-runs.start": {
+    "path": "/api/resilience-runs/start",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-runs.cancel": {
+    "path": "/api/resilience-runs/cancel",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-runs.reconcile": {
+    "path": "/api/resilience-runs/reconcile",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-scenarios.view": {
+    "path": "/api/resilience-scenarios/view",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-scenarios.templates": {
+    "path": "/api/resilience-scenarios/templates",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-scenarios.save": {
+    "path": "/api/resilience-scenarios/save",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-targets.view": {
+    "path": "/api/resilience-targets/view",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-targets.register": {
+    "path": "/api/resilience-targets/register",
+    "method": "POST",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "json",
+    "bodyRequired": true
+  },
+  "resilience-targets.get": {
+    "path": "/api/resilience-targets/get",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
+  },
+  "resilience-workbench.view": {
+    "path": "/api/resilience-workbench/view",
+    "method": "GET",
+    "transport": "json",
+    "contract": "declared",
+    "status": 200,
+    "response": "json",
+    "statuses": [
+      200
+    ],
+    "access": "controller",
+    "session": "required",
+    "body": "none",
+    "bodyRequired": false
   },
   "runtimes.legacy.get.vms.vmId.runtimes": {
     "path": "/api/vms/{vmId}/runtimes",

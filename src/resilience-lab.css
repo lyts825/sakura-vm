@@ -1,0 +1,113 @@
+.resilience-lab {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+  color: var(--ink);
+}
+.resilience-lab header,
+.resilience-form,
+.resilience-actions {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.resilience-lab header {
+  align-items: center;
+  justify-content: space-between;
+}
+.resilience-lab h2 {
+  margin: 0;
+}
+.resilience-lab p {
+  line-height: 1.6;
+}
+.resilience-lab nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+.resilience-lab nav button[aria-pressed='true'] {
+  background: #245e75;
+  color: white;
+}
+.resilience-lab label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 8px 0;
+}
+.resilience-lab label:has(input[type='checkbox']) {
+  flex-direction: row;
+  align-items: center;
+}
+.resilience-lab input[type='checkbox'] {
+  width: auto;
+  flex: 0 0 auto;
+}
+.resilience-lab input,
+.resilience-lab select,
+.resilience-lab button {
+  font: inherit;
+  padding: 8px 12px;
+  border: 1px solid #a7b6c1;
+  border-radius: 6px;
+}
+.resilience-lab button {
+  cursor: pointer;
+}
+.resilience-lab button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.resilience-lab article {
+  padding: 18px;
+  border: 1px solid #c6d1d9;
+  border-radius: 10px;
+  margin: 16px 0;
+}
+.resilience-lab article h3 {
+  margin-top: 0;
+}
+.resilience-lab article button {
+  margin: 4px;
+}
+.resilience-lab code {
+  overflow-wrap: anywhere;
+  font-size: 0.85em;
+}
+.resilience-lab pre {
+  max-height: 440px;
+  overflow: auto;
+  padding: 16px;
+  background: #111d29;
+  color: #e2ebf0;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.resilience-gap {
+  background: #fff1da;
+  color: #714905;
+  padding: 12px;
+}
+.resilience-ready {
+  background: #e2f3eb;
+  color: #235d43;
+  padding: 12px;
+}
+.resilience-error {
+  color: #a22c2c;
+}
+@media (max-width: 700px) {
+  .resilience-lab {
+    padding: 12px;
+  }
+  .resilience-form {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .resilience-lab select {
+    max-width: 100%;
+  }
+}

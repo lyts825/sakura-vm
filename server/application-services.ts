@@ -46,6 +46,9 @@ import { NotebookEnvironments } from './notebook-environments.ts';
 import { ImageAssets } from './image-assets.ts';
 import { EgressRules } from './egress-rules.ts';
 import { DataNotebookSessions } from './data-notebook-sessions.ts';
+import { PreparedWorkerSessions } from './prepared-worker-sessions.ts';
+import { preparedWorkerMetadata } from './core-worker-metadata.ts';
+import { createCoreDrillService } from './core-drill-service.ts';
 import { Passkeys } from './passkeys.ts';
 import { DATA, PORT } from './paths.ts';
 import { join } from 'node:path';
@@ -580,6 +583,28 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 200,
   });
+  if (selectedPlugins.includes('integration-runners')) {
+    await plugins.system.start({
+      id: 'preparedWorkerSessions', startup: 'required', requires: ['@machines'], lateRequires: ['@plugins'],
+      create: dependencies => new PreparedWorkerSessions(dependencies.vm(), () => {
+        const workspaces = dependencies.late('@plugins').workspaces;
+        if (!workspaces) throw new AppError('固定工具会话需要项目插件', 503, 'PROJECTS_UNAVAILABLE');
+        return workspaces;
+      }, preparedWorkerMetadata),
+      initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
+    });
+  }
+  if (selectedPlugins.includes('resilience-fixtures')) {
+    await plugins.system.start({
+      id: 'drillSupervision', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'], lateRequires: ['@plugins'],
+      create: dependencies => createCoreDrillService(dependencies.vm(), () => {
+        const workspaces = dependencies.late('@plugins').workspaces;
+        if (!workspaces) throw new AppError('演练监管需要项目插件', 503, 'PROJECTS_UNAVAILABLE');
+        return workspaces;
+      }, dependencies.get('@pluginDirectory')),
+      initialize: () => {}, dispose: value => value?.close(), disposePhase: ClosePhase.services,
+    });
+  }
   features = await plugins.start(machines, (id) => rollouts.decision(id).allowed);
   resources.defer('features', () => features.close(), ClosePhase.plugins,
     ['machines', 'audit', 'network', 'compute', 'scheduler']);

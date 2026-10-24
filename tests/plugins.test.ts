@@ -734,14 +734,56 @@ test('plugin activation failure is isolated and prevents dependent activation', 
  */
 test('the complete pack activates all adapters and releases every lifecycle listener', async () => {
   const vm = machines();
-  const host = await Features.create(vm, resolvePlugins({ ...emptySelection(), packs: ['complete'] }));
+  const [{ PluginDirectory }, { SystemServices }, { ImageAssets }, { EgressRules },
+    { PreparedWorkerSessions }, { preparedWorkerMetadata }, { createCoreDrillService }] = await Promise.all([
+    import('../server/plugin-directory.ts'), import('../server/system-services.ts'),
+    import('../server/image-assets.ts'), import('../server/egress-rules.ts'),
+    import('../server/prepared-worker-sessions.ts'), import('../server/core-worker-metadata.ts'),
+    import('../server/core-drill-service.ts'),
+  ]);
+  const pluginDirectory = new PluginDirectory(), system = new SystemServices(pluginDirectory);
+  system.ready('@machines', vm);
+  system.ready('@pluginDirectory', pluginDirectory);
+  let host: GatewayFixtureHost | undefined;
   try {
+    await system.start({
+      id: 'imageAssets', startup: 'required', requires: ['@machines'],
+      create: dependencies => new ImageAssets(dependencies.vm()),
+      initialize: value => value.init(), dispose: value => value?.close(),
+    });
+    await system.start({
+      id: 'egressRules', startup: 'required', requires: ['@machines'],
+      create: dependencies => new EgressRules(dependencies.vm()),
+      initialize: value => value.init(), dispose: value => value?.close(),
+    });
+    await system.start({
+      id: 'preparedWorkerSessions', startup: 'required', requires: ['@machines'], lateRequires: ['@plugins'],
+      create: dependencies => new PreparedWorkerSessions(dependencies.vm(), () => {
+        const workspaces = dependencies.late('@plugins').workspaces;
+        assert.ok(workspaces);
+        return workspaces;
+      }, preparedWorkerMetadata),
+      initialize: value => value.init(), dispose: value => value?.close(),
+    });
+    await system.start({
+      id: 'drillSupervision', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      lateRequires: ['@plugins'],
+      create: dependencies => createCoreDrillService(dependencies.vm(), () => {
+        const workspaces = dependencies.late('@plugins').workspaces;
+        assert.ok(workspaces);
+        return workspaces;
+      }, dependencies.get('@pluginDirectory')),
+      initialize: () => {}, dispose: value => value?.close(),
+    });
+    host = await Features.create(vm, resolvePlugins({ ...emptySelection(), packs: ['complete'] }),
+      () => true, pluginDirectory, system);
+    system.ready('@plugins', host);
     assert.deepEqual(host.errors, {});
     assert.equal(host.enabled.size, PLUGINS.length);
     assert.ok(vm.listenerCount('change') > 0);
     assert.ok(host.jobStores().length > 10);
   } finally {
-    await host.close();
+    try { await host?.close(); } finally { await system.close(); }
   }
   assert.equal(vm.listenerCount('change'), 0);
   assert.equal(Object.hasOwn(vm, 'fileBeforeReplace'), false);

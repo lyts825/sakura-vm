@@ -23,6 +23,16 @@ for (const file of ['sakura-sans-ui-OFL.txt', 'sakura-serif-ui-OFL.txt', 'sakura
 await cp(join(root, 'server/compute-worker.mjs'), join(target, 'compute-worker.mjs'));
 // 数据任务通过 import.meta.url 定位客户机工作器，发行包须与服务器入口同目录。
 await cp(join(root, 'server/data-worker.py'), join(root, '.sakura-server/data-worker.py'));
+// 固定工具与解析器按相邻 URL 加载；源码和已编译入口必须一起交付。
+for (const file of ['integration-http-worker.py', 'drill-guest.py', 'drill-watchdog.cs', 'core-drill-validation-controller.mjs'])
+  await cp(join(root, 'server', file), join(root, '.sakura-server', file));
+// 动态插件计算模块位于 assets/，其 import.meta.url 必须解析到同目录的固定解析器。
+await cp(join(root, 'server', 'knowledge-worker.mjs'), join(target, 'knowledge-worker.mjs'));
+if (process.platform === 'win32') {
+  await import('./resilience-build-watchdog.mjs');
+  await cp(join(root, '.tools', 'resilience'), join(target, 'resilience'), { recursive: true });
+  await cp(join(root, 'server', 'drill-watchdog.cs'), join(target, 'resilience', 'drill-watchdog.cs'));
+}
 await cp(join(root, 'server/network/worker.mjs'), join(target, 'network-worker.mjs'));
 await cp(join(root, 'server/network/bounded-qmp-policy.mjs'), join(target, 'bounded-qmp-policy.mjs'));
 await cp(join(root, 'server/network/parent-exec.py'), join(target, 'network-parent-exec.py'));

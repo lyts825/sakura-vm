@@ -36,6 +36,9 @@ manifest.scripts = {
   foundry: manifest.scripts.foundry,
   'app-runtime': manifest.scripts['app-runtime'],
   data: manifest.scripts.data,
+  integration: manifest.scripts.integration,
+  resilience: manifest.scripts.resilience,
+  knowledge: manifest.scripts.knowledge,
   tray: manifest.scripts.tray,
   'update:status': manifest.scripts['update:status'],
   'update:check': manifest.scripts['update:check'],
@@ -61,6 +64,12 @@ for (const file of [
   'app-runtime.mjs',
   'data.mjs',
   'study-verify.mjs',
+  'integration-cli.mjs',
+  'integration-verify.mjs',
+  'resilience-cli.mjs',
+  'resilience-verify.mjs',
+  'knowledge.mjs',
+  'knowledge-verify.mjs',
   'sandbox-cli.mjs',
   'resumable-download.mjs',
   'native-open.mjs',
@@ -76,14 +85,23 @@ for (const file of [
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
 await cp(join(root, 'docs', 'delivery-cli.md'), join(output, '.sakura-server', 'docs', 'delivery-cli.md'));
-for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md'])
+for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md', 'integration-lab.md', 'resilience-lab.md', 'knowledge-studio.md'])
   await cp(join(root, 'docs', file), join(output, '.sakura-server', 'docs', file));
-for (const [command, file] of [['foundry', 'foundry.mjs'], ['app-runtime', 'app-runtime.mjs'], ['data', 'data.mjs']]) {
+for (const [command, file] of [['foundry', 'foundry.mjs'], ['app-runtime', 'app-runtime.mjs'], ['data', 'data.mjs'], ['knowledge', 'knowledge.mjs']]) {
   if (manifest.scripts[command] !== `node scripts/${file}`) throw new Error(`${command} CLI 必须使用纯 Node 入口`);
   const result = spawnSync(process.execPath, [join(output, 'scripts', file), 'help'], {
     cwd: output, encoding: 'utf8', windowsHide: true, env: { ...process.env, NODE_OPTIONS: '' },
   });
   if (result.status !== 0 || !result.stdout.trim()) throw new Error(`运行包 ${command} CLI 不可用：${result.stderr || result.error?.message || result.status}`);
+}
+for (const command of ['integration', 'resilience']) {
+  if (manifest.scripts[command] !== `node scripts/cli.mjs ${command}`)
+    throw new Error(`${command} CLI 缺少固定分发入口`);
+  const result = spawnSync(process.execPath, [join(output, 'scripts', 'cli.mjs'), command, 'help'], {
+    cwd: output, encoding: 'utf8', windowsHide: true, env: { ...process.env, NODE_OPTIONS: '' },
+  });
+  if (result.status !== 0 || !result.stdout.trim())
+    throw new Error(`运行包 ${command} CLI 不可用：${result.stderr || result.error?.message || result.status}`);
 }
 if (manifest.scripts.delivery !== 'node scripts/delivery.mjs')
   throw new Error('交付 CLI 必须使用无开发依赖的纯 Node 入口');
@@ -108,6 +126,8 @@ const readme = [
   '已配置含 Linux QEMU、swtpm、virtiofsd 和 OVMF 的 WSL 发行版时，也可先运行 `npm run check:wsl`，再用 `npm run start:wsl` 启动可用 TPM 与 Virtio-FS 的 Linux 后端；数据单独保存在该发行版的 Linux 文件系统中。',
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
   '可分别启用 foundry（9 个插件）、app-runtime（9 个插件）和 data-lab（10 个插件）。三个包分别完成镜像制作、应用部署维护和数据实验，互不要求安装对方。纯 Node CLI 入口为 npm run foundry -- help、npm run app-runtime -- help、npm run data -- help；完整使用指南随包保存在 .sakura-server/docs/foundry-workbench.md、app-runtime-pack.md 和 data-lab.md。依赖准备与实际执行均由用户显式提交。',
+  '',
+  '也可分别启用 integration-lab（11 个插件）、resilience-lab（10 个插件）和 knowledge-studio（10 个插件），完成接口联调、隔离副本故障演练和材料整理与引用发布。CLI 入口为 npm run integration -- help、npm run resilience -- help、npm run knowledge -- help；使用指南为 .sakura-server/docs/integration-lab.md、resilience-lab.md 和 knowledge-studio.md。故障演练需通过本机监管实测，Windows x64 以外的平台明确拒绝；知识上传与检索无需创建虚拟机。',
   '启用 `delivery` 插件包并重启后，可在本目录运行 `npm run delivery -- help`。CLI 使用随包的受管网络入口和运行依赖，不需要源码、TypeScript、tsx 或开发依赖。设置 `SAKURA_TOKEN` 后，显式传入 `--vm` 和 `--project`，通过本机服务保存定义、捕获输入、运行构建及分块导入导出交付包。完整步骤见 `.sakura-server/docs/delivery-cli.md`。CLI 不自动启用插件、执行包内命令或发布外部系统。',
   '统一网络运行时属于基础设施，始终启用。宿主 TCP/DNS 使用有界 Node worker 池；VM 使用单独的 Node worker 与无客户机 CPU 的 QEMU user/slirp 后端。默认最多 4 个宿主 worker、2 个 VM worker 及其最多 2 个 QEMU 网络进程，不需要管理员权限或额外网络驱动。每个 VM 固定在一个 worker；该 worker 故障会停止受影响的 VM，不自动重放连接。配置、诊断接口、退出顺序及限制见 `.sakura-server/docs/network-runtime.md`。',
   '升级注意：旧网络后端的内存快照因运行时指纹变化不能恢复；磁盘快照保持兼容。远程审计现在须向服务显式提供 AWS_ACCESS_KEY_ID、AWS_SECRET_ACCESS_KEY，以及临时凭据所需的 AWS_SESSION_TOKEN，不再自动调用 AWS 默认 IAM/元数据凭据链。',

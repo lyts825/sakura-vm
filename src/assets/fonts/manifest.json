@@ -47,12 +47,12 @@
     "source": "https://raw.githubusercontent.com/google/fonts/e44c4b011a820c2cbe2fd2cfa8052037d7edb571/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
     "sourceGitBlob": "fb0637bafbcd804fe32152370a1225990745b4bc",
     "file": "sakura-sans-packs.woff2",
-    "bytes": 22208,
-    "glyphs": 77,
+    "bytes": 38776,
+    "glyphs": 137,
     "weights": [
       400,
       700
     ],
-    "sha256": "1e1a0ff6ef5ca944ff97aaaec8d4f789808f098bbc19104bdb9504dd8dd841ec"
+    "sha256": "36d7aa24d426662ac1c5d78d6c8b3105f9058f1fc5b0107518601211c1cb50ae"
   }
 ]

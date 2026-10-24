@@ -552,9 +552,13 @@ export class PluginRuntime {
                */
               close?: () => Promise<void> | void; jobs?: JobsV1 } | undefined;
             if (!service || closedServices.has(service)) return;
+            // Some domain contracts expose jobs() as a query. Only a task store
+            // supplies close/list; a same-named query is not a lifecycle handle.
+            const jobs = service.jobs && typeof service.jobs.list === 'function' &&
+              typeof service.jobs.close === 'function' ? service.jobs : undefined;
             if (service.close) await service.close();
-            else if (service.jobs) await service.jobs.close();
-            if (service.jobs?.list().some((job) => job.admission === 'cleanup-pending'))
+            else if (jobs) await jobs.close();
+            if (jobs?.list().some((job) => job.admission === 'cleanup-pending'))
               throw new AppError('插件任务仍有资源等待领域恢复', 503, 'PLUGIN_CLEANUP_PENDING');
             closedServices.add(service);
           });

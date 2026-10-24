@@ -1,0 +1,141 @@
+.integration-lab {
+  padding: 24px;
+  max-width: 1440px;
+  margin: auto;
+  color: var(--ink);
+  line-height: 1.6;
+}
+.integration-lab header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.integration-lab h2,
+.integration-lab h3 {
+  margin: 0 0 12px;
+}
+.integration-lab header p,
+.integration-lab header span {
+  color: var(--muted);
+}
+.integration-lab-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 24px;
+}
+.integration-lab nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.integration-lab button {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.integration-lab button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.integration-lab nav .active {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.integration-lab main {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 0;
+}
+.integration-lab label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.integration-lab select,
+.integration-lab input,
+.integration-lab textarea {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
+  min-width: 0;
+  max-width: 100%;
+}
+.integration-lab textarea,
+.integration-lab pre {
+  font-family: ui-monospace, monospace;
+  line-height: 1.5;
+}
+.integration-lab .integration-lab-check {
+  flex-direction: row;
+  align-items: center;
+}
+.integration-lab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.integration-lab-guided {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.integration-lab-summary {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px 16px;
+}
+.integration-lab-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.integration-lab-output {
+  margin-top: 24px;
+}
+.integration-lab pre {
+  overflow: auto;
+  max-height: 560px;
+  padding: 16px;
+  background: var(--surface-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.integration-lab-error {
+  color: var(--danger);
+}
+@media (max-width: 760px) {
+  .integration-lab-layout {
+    grid-template-columns: 1fr;
+  }
+  .integration-lab nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .integration-lab nav button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 8px 12px;
+  }
+  .integration-lab header {
+    display: block;
+  }
+  .integration-lab main {
+    padding: 16px;
+  }
+  .integration-lab {
+    padding: 16px;
+  }
+  .integration-lab-summary {
+    grid-template-columns: 1fr;
+  }
+}

@@ -8,6 +8,40 @@ import type { ServiceContract } from './service-ref.ts';
 
 /** Stable descriptor IDs are independent of implementation names and paths. */
 export const serviceContracts = {
+  IntegrationSpecs: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-specs.v1'] as ServiceContract<V1.IntegrationSpecsV1>,
+  IntegrationEnvironments: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-environments.v1'] as ServiceContract<V1.IntegrationEnvironmentsV1>,
+  IntegrationFixtures: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-fixtures.v1'] as ServiceContract<V1.IntegrationFixturesV1>,
+  IntegrationMocks: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-mocks.v1'] as ServiceContract<V1.IntegrationMocksV1>,
+  IntegrationScenarios: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-scenarios.v1'] as ServiceContract<V1.IntegrationScenariosV1>,
+  IntegrationAssertions: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-assertions.v1'] as ServiceContract<V1.IntegrationAssertionsV1>,
+  IntegrationRunners: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-runners.v1'] as ServiceContract<V1.IntegrationRunnersV1>,
+  IntegrationLoad: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-load.v1'] as ServiceContract<V1.IntegrationLoadV1>,
+  IntegrationReports: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-reports.v1'] as ServiceContract<V1.IntegrationReportsV1>,
+  IntegrationExchange: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-exchange.v1'] as ServiceContract<V1.IntegrationExchangeV1>,
+  IntegrationWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.integration-workbench.v1'] as ServiceContract<V1.IntegrationWorkbenchV1>,
+  ResilienceTargets: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-targets.v1'] as ServiceContract<V1.ResilienceTargetsV1>,
+  ResilienceFixtures: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-fixtures.v1'] as ServiceContract<V1.ResilienceFixturesV1>,
+  ResilienceGuard: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-guard.v1'] as ServiceContract<V1.ResilienceGuardV1>,
+  ResilienceFaults: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-faults.v1'] as ServiceContract<V1.ResilienceFaultsV1>,
+  ResilienceProbes: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-probes.v1'] as ServiceContract<V1.ResilienceProbesV1>,
+  ResilienceRecovery: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-recovery.v1'] as ServiceContract<V1.ResilienceRecoveryV1>,
+  ResilienceScenarios: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-scenarios.v1'] as ServiceContract<V1.ResilienceScenariosV1>,
+  ResilienceRuns: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-runs.v1'] as ServiceContract<V1.ResilienceRunsV1>,
+  ResilienceReports: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-reports.v1'] as ServiceContract<V1.ResilienceReportsV1>,
+  ResilienceWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-workbench.v1'] as ServiceContract<V1.ResilienceWorkbenchV1>,
+  KnowledgeSources: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-sources.v1'] as ServiceContract<V1.KnowledgeSourcesV1>,
+  KnowledgeExtract: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-extract.v1'] as ServiceContract<V1.KnowledgeExtractV1>,
+  KnowledgeIndex: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-index.v1'] as ServiceContract<V1.KnowledgeIndexV1>,
+  KnowledgeEvidence: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-evidence.v1'] as ServiceContract<V1.KnowledgeEvidenceV1>,
+  KnowledgeEntries: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-entries.v1'] as ServiceContract<V1.KnowledgeEntriesV1>,
+  KnowledgeDocuments: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-documents.v1'] as ServiceContract<V1.KnowledgeDocumentsV1>,
+  KnowledgeReviews: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-reviews.v1'] as ServiceContract<V1.KnowledgeReviewsV1>,
+  KnowledgePublish: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-publish.v1'] as ServiceContract<V1.KnowledgePublishV1>,
+  KnowledgeExchange: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-exchange.v1'] as ServiceContract<V1.KnowledgeExchangeV1>,
+  KnowledgeWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.knowledge-workbench.v1'] as ServiceContract<V1.KnowledgeWorkbenchV1>,
+  FilesV2: PUBLIC_SERVICE_CONTRACTS['sakura.service.files.v2'] as ServiceContract<V1.FilesV2>,
+  PreparedWorkerSessions: PUBLIC_SERVICE_CONTRACTS['sakura.service.prepared-worker-sessions.v1'] as ServiceContract<V1.PreparedWorkerSessionsV1>,
+  DrillSupervision: PUBLIC_SERVICE_CONTRACTS['sakura.service.drill-supervision.v1'] as ServiceContract<V1.DrillSupervisionV1>,
   FoundrySources: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-sources.v1'] as ServiceContract<V1.FoundrySourcesV1>,
   FoundryBlueprints: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-blueprints.v1'] as ServiceContract<V1.FoundryBlueprintsV1>,
   FoundryDepot: PUBLIC_SERVICE_CONTRACTS['sakura.service.foundry-depot.v1'] as ServiceContract<V1.FoundryDepotV1>,
@@ -207,6 +241,8 @@ export const officialServiceContracts: Readonly<Record<string, ServiceContract<a
 };
 
 export const systemServiceContracts: Readonly<Record<string, ServiceContract<any>>> = {
+  'preparedWorkerSessions': serviceContracts.PreparedWorkerSessions,
+  'drillSupervision': serviceContracts.DrillSupervision,
   'imageAssets': serviceContracts.ImageAssets,
   'egressRules': serviceContracts.EgressRules,
   'notebookEnvironmentsV2': serviceContracts.NotebookEnvironmentsV2,
@@ -259,6 +295,8 @@ export const systemServiceContracts: Readonly<Record<string, ServiceContract<any
 
 /** System assembly returns these contracts; raw values stay in initialization callbacks. */
 export interface SystemServiceContracts {
+  'preparedWorkerSessions': V1.PreparedWorkerSessionsV1;
+  'drillSupervision': V1.DrillSupervisionV1;
   'imageAssets': V1.ImageAssetsV1;
   'egressRules': V1.EgressRulesV1;
   'notebookEnvironmentsV2': V1.NotebookEnvironmentsV2;

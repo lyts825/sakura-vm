@@ -46,6 +46,7 @@ export class AppDeploy {
   private installations: AppStore<AppInstallation>;
   private operations: AppStore<AppOperation>;
   private reconciling = new Set<string>();
+  private hasInstallations = true;
   constructor(
     metadata: { plans: PluginMetadata; installations: PluginMetadata; operations: PluginMetadata },
     private machines: VmAccess,
@@ -65,6 +66,7 @@ export class AppDeploy {
   }
   async init() {
     await this.installations.write((rows) => {
+      this.hasInstallations = rows.length > 0;
       for (const i of rows) if (i.state === 'running') i.state = 'unknown';
     });
     await this.operations.write((rows) => {
@@ -600,6 +602,7 @@ export class AppDeploy {
         routeRevision: 0,
       };
       await this.installations.write((rows) => {
+        this.hasInstallations = true;
         rows.push(installation!);
       });
       await this.update(operationId, { installationId: id });
@@ -693,6 +696,8 @@ export class AppDeploy {
   }
   async close() {
     await this.jobs.close();
+    // An empty deployment owns no target resources; shutdown must not query a revoked dependency.
+    if (!this.hasInstallations) return;
     for (const t of (await this.targets.view()).targets) {
       if (t.desired !== 'running') continue;
       try {
