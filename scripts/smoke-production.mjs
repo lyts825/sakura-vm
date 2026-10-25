@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
+import { fetch as patchedFetch } from 'undici';
 import { request as httpRequest, createServer as createHttpServer } from 'node:http';
 
 const root = process.cwd();
@@ -92,7 +93,7 @@ async function probe(selected, expected) {
     const { SakuraClient } = await import(
       'data:text/javascript;base64,' + Buffer.from(sdkFile.content).toString('base64')
     );
-    const sdk = new SakuraClient();
+    const sdk = new SakuraClient({ fetcher: patchedFetch });
     assert.deepEqual(await sdk.call('core.vms.list'), []);
     const recovery = await sdk.request('/api/recoveries');
     assert.equal(recovery.diagnostics.state, 'degraded');
@@ -579,7 +580,7 @@ async function probe(selected, expected) {
       (error) => error.status === 423 && error.code === 'SESSION_LOCKED',
     );
     await assert.rejects(
-      new SakuraClient().call('core.vms.list'),
+      new SakuraClient({ fetcher: patchedFetch }).call('core.vms.list'),
       (error) => error.status === 423 && error.code === 'SESSION_LOCKED',
     );
     const denied = new WebSocket(origin.replace('http:', 'ws:') + '/ws/events?token=' + beforeLock.token, {

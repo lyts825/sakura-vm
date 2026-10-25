@@ -32,7 +32,7 @@ export function generateSdk(document: ApiDocument) {
     `const encodeOperationBody = ${encodeOperationBody.toString()};\n` +
     `const resolveOperationBody = ${resolveOperationBody.toString()};\n` +
     `export const catalogVersion = ${document['x-sakura-catalog-version'] || 0};\n` +
-    `// Generated Sakura ES module. Node.js 22+ or a modern browser. No dependencies.\n// import { SakuraClient } from './sakura-client.mjs';\n// const client = new SakuraClient();\n// const machines = await client.call('core.vms.list');\n// JSON responses are parsed; binary responses return a Response for streaming.\nexport const operations = ${JSON.stringify(operations, null, 2)};\nexport const operationDirectory = [...Object.values(operations).map(operation => operation.policy).filter(Boolean), ...${JSON.stringify(document['x-sakura-operations']?.filter(operation => operation.method === 'UPGRADE') || [])}];\n` +
+    `// Generated Sakura ES module. Node.js 22+ or a modern browser.\n// Browsers use native fetch without dependencies. Node.js callers must inject a maintained fetch implementation; the built-in fetch is not accepted.\n// import { SakuraClient } from './sakura-client.mjs';\n// Browser: const client = new SakuraClient();\n// Node.js: import { fetch } from 'undici'; // use a version with current security fixes\n// const client = new SakuraClient({ fetcher: fetch });\n// const machines = await client.call('core.vms.list');\n// JSON responses are parsed; binary responses return a Response for streaming.\nexport const operations = ${JSON.stringify(operations, null, 2)};\nexport const operationDirectory = [...Object.values(operations).map(operation => operation.policy).filter(Boolean), ...${JSON.stringify(document['x-sakura-operations']?.filter(operation => operation.method === 'UPGRADE') || [])}];\n` +
     String.raw`
 export class SakuraApiError extends Error {
   constructor(message, status, code, correlationId, operationResult, auditFailure) {
@@ -43,10 +43,18 @@ export class SakuraApiError extends Error {
 }
 export class SakuraClient {
   #base; #fetch; #token = '';
-  constructor({ baseUrl = __ORIGIN__, fetcher = globalThis.fetch } = {}) {
+  constructor({ baseUrl = __ORIGIN__, fetcher } = {}) {
     const url = new URL(baseUrl);
     if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(url.hostname) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('Sakura requires a local HTTP origin');
-    this.#base = url.origin; this.#fetch = fetcher;
+    if (fetcher !== undefined && typeof fetcher !== 'function') throw new TypeError('fetcher must be a function');
+    const node = typeof process === 'object' && typeof process?.versions?.node === 'string';
+    const defaultFetch = globalThis.fetch;
+    this.#base = url.origin;
+    this.#fetch = (...args) => {
+      if (node && (fetcher === undefined || fetcher === defaultFetch || fetcher === globalThis.fetch))
+        throw Object.assign(new Error('Node.js requires an explicitly supplied fetcher with current security fixes, such as fetch from a patched undici package; built-in fetch is not accepted.'), { code: 'SDK_NODE_FETCH_REQUIRED' });
+      return (fetcher || defaultFetch)(...args);
+    };
   }
   async authenticate(signal) {
     const response = await this.#fetch(this.#base + '/api/bootstrap', { cache: 'no-store', redirect: 'error', signal });

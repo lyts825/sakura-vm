@@ -8,10 +8,11 @@ import * as net from 'node:net';
 import * as tls from 'node:tls';
 import type { Duplex } from 'node:stream';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { Agent as FetchAgent } from 'undici';
+import { Agent as FetchAgent, Request as FetchRequest } from 'undici';
 import { WebSocket } from 'ws';
 import { networkRuntime, type NetworkIdentity, type NetworkRuntime } from './core.ts';
 import type { Destination } from './host-pool.ts';
+import { fetchWithDispatcher } from './fetch.ts';
 import { withPluginAuthority, withPluginBackground, pluginAuthority } from '../plugin-authority.ts';
 import type { PluginInstance } from '../plugin-instance.ts';
 import { withResourceContext } from '../host-runtime/context.ts';
@@ -746,13 +747,13 @@ export class NetworkScope {
   }) as typeof https.get;
   /**
    * 入口 / Entry: NetworkScope.fetch.
-   * 功能：在提供按所有者划分的网络作用域中，执行此领域的具体处理步骤并返回其结果；本入口产生 `globalThis.fetch(input, { ...init, signal, dispatcher: this.fetchAgent } as RequestInit)` 供上层消费（`NetworkScope`）。
-   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NetworkScope`; this entry produces `globalThis.fetch(input, { ...init, signal, dispatcher: this.fetchAgent } as RequestInit)` for its caller. Module context: Provides owner-scoped requests, proxy environments and connection lifecycles over the shared network runtime.
-   * 处理：通过 `this.abort.signal.throwIfAborted`, `this.runtime.check`, `this.signal`, `globalThis.fetch` 协调依赖；下列分支决定是否继续、返回或拒绝。
-   * Processing: Coordinates its dependencies through `this.abort.signal.throwIfAborted`, `this.runtime.check`, `this.signal`, `globalThis.fetch`; the branches below determine continuation, return or refusal.
+   * 功能：在提供按所有者划分的网络作用域中，执行此领域的具体处理步骤并返回其结果；本入口产生 `fetchWithDispatcher(input, { ...init, signal }, this.fetchAgent)` 供上层消费（`NetworkScope`）。
+   * Purpose: Executes the domain-specific processing steps and returns their outcome in `NetworkScope`; this entry produces `fetchWithDispatcher(input, { ...init, signal }, this.fetchAgent)` for its caller. Module context: Provides owner-scoped requests, proxy environments and connection lifecycles over the shared network runtime.
+   * 处理：通过 `this.abort.signal.throwIfAborted`, `this.runtime.check`, `this.signal`, `fetchWithDispatcher` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.abort.signal.throwIfAborted`, `this.runtime.check`, `this.signal`, `fetchWithDispatcher`; the branches below determine continuation, return or refusal.
    * 输入 / Inputs: input; init
-   * 输出 / Returns: `globalThis.fetch(input, { ...init, signal, dispatcher: this.fetchAgent } as RequestInit)`.
-   * 副作用 / Effects: `this.abort.signal.throwIfAborted`; `globalThis.fetch`; 更新 / updates `this.fetchAgent`.
+   * 输出 / Returns: `fetchWithDispatcher(input, { ...init, signal }, this.fetchAgent)`.
+   * 副作用 / Effects: `this.abort.signal.throwIfAborted`; `fetchWithDispatcher`; 更新 / updates `this.fetchAgent`.
    * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
    */
   fetch: typeof globalThis.fetch = (input, init) => {
@@ -873,11 +874,11 @@ export class NetworkScope {
     const signal = this.signal(
       init && 'signal' in init
         ? init.signal || undefined
-        : input instanceof Request
+        : input instanceof Request || input instanceof FetchRequest
           ? input.signal
           : undefined,
     );
-    return globalThis.fetch(input, { ...init, signal, dispatcher: this.fetchAgent } as RequestInit);
+    return fetchWithDispatcher(input, { ...init, signal }, this.fetchAgent);
   };
   /**
    * 入口 / Entry: NetworkScope.close.

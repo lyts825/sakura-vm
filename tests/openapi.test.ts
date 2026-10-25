@@ -8,6 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { fetch as patchedFetch } from 'undici';
 import { apiDocument } from '../server/openapi.ts';
 import { generateSdk } from '../server/sdk.ts';
 import { apiPath } from '../shared/api-document.ts';
@@ -432,7 +433,7 @@ test('the generated module authenticates against HTTP, sends encoded parameters 
   });
   try {
     const { SakuraClient } = await sdk((server.address() as any).port);
-    const client = new SakuraClient();
+    const client = new SakuraClient({ fetcher: patchedFetch });
     assert.deepEqual(
       await client.call('commands.run', {
         path: { vmId: 'machine-id' },

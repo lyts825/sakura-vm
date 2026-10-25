@@ -2,9 +2,11 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
-应用与内置包版本：**2.8.0**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+应用与内置包版本：**2.8.1**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
 
-本轮新增 10 个完整插件包、101 个插件，覆盖浏览器验收、软件供应审查、数据库变更、事件队列、模型评测、媒体处理、本地化、跨包流程、事件复盘和交互式实验。各包提供工作台、严格 HTTP 契约、纯 Node CLI 和离线交接。使用入口见下表；变更、验收范围与限制见 [2.8.0 版本说明](docs/release-2.8.0.md)。
+本次安全补丁修复网络和集合校验依赖漏洞，详见 [2.8.1 版本说明](docs/release-2.8.1.md)。
+
+2.8.0 新增 10 个完整插件包、101 个插件，覆盖浏览器验收、软件供应审查、数据库变更、事件队列、模型评测、媒体处理、本地化、跨包流程、事件复盘和交互式实验。各包提供工作台、严格 HTTP 契约、纯 Node CLI 和离线交接。使用入口见下表；变更、验收范围与限制见 [2.8.0 版本说明](docs/release-2.8.0.md)。
 
 [环境镜像工坊](docs/foundry-workbench.md)、[应用运行与运维](docs/app-runtime-pack.md)、[数据与实验工作台](docs/data-lab.md)和[项目交付工作台](docs/delivery-workbench.md)继续可用。新增包沿用宿主 API 5，旧服务契约保持兼容。
 

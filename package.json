@@ -1,6 +1,6 @@
 {
   "name": "sakura-vm",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "private": true,
   "type": "module",
   "description": "A WSL-inspired local Linux workspace, powered by PosixLoom and QEMU",
@@ -192,9 +192,9 @@
     "pg": "8.23.1",
     "selfsigned": "^5.5.0",
     "ssh2": "^1.17.0",
-    "undici": "^7.30.0",
+    "undici": "^7.30.1",
     "ws": "^8.19.0",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@codemirror/lang-css": "^6.3.1",
@@ -230,7 +230,7 @@
     "react-dom": "^19.2.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
+    "vite": "^7.3.7",
     "xml-crypto": "^6.3.2"
   }
 }

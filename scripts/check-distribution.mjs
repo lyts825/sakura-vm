@@ -74,7 +74,7 @@ for (const file of ['integration-http-worker.py', 'drill-guest.py', 'drill-watch
 if (!(await readFile(join(root, 'server', 'browser-pixels-worker.mjs')))
     .equals(await readFile(join(root, '.sakura-server', 'assets', 'browser-pixels-worker.mjs'))))
   throw new Error('Packaged browser pixel worker differs from its source');
-for (const file of ['browser-lab.md', 'database-evolution.md', 'event-lab.md', 'model-evaluation.md', 'media-studio.md', 'flow-studio.md', 'learning-lab.md', 'suite-execution.md', 'release-2.8.0.md'])
+for (const file of ['browser-lab.md', 'database-evolution.md', 'event-lab.md', 'model-evaluation.md', 'media-studio.md', 'flow-studio.md', 'learning-lab.md', 'suite-execution.md', 'release-2.8.0.md', 'release-2.8.1.md'])
   if (!(await readFile(join(root, 'docs', file))).equals(await readFile(join(root, '.sakura-server', 'docs', file))))
     throw new Error(`Packaged suite guide differs from its source: ${file}`);
 if (!(await readFile(join(root, 'server', 'knowledge-worker.mjs')))
@@ -130,6 +130,7 @@ if (process.platform === 'win32') {
     'server/network-entry.ts',
     'server/network/core.ts',
     'server/network/index.ts',
+    'server/network/fetch.ts',
     'server/network/host-pool.ts',
     'server/network/vm-backend.ts',
     'server/network/worker.mjs',
