@@ -6,7 +6,7 @@ import { suiteFail } from './suite-store.ts';
 
 export type SupplyComputation = 'inventory' | 'dataset' | 'advisories' | 'licenses';
 export type LocaleComputation = 'catalog' | 'checks' | 'preview';
-export type IncidentComputation = 'timeline';
+export type IncidentComputation = 'timeline' | 'redact';
 export async function readSuiteText(
   source: Pick<SuiteByteMaterialsV1, 'get' | 'openRead' | 'readLease' | 'closeRead'>,
   scope: SuiteScope,

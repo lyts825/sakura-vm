@@ -58,7 +58,7 @@ const describe = async (base, file) => {
 await writeFile(join(target, 'compute-runtime.json'), JSON.stringify({ version: 1,
   files: await Promise.all(['compute-task.js', 'assets/compute-worker.mjs'].map((file) => describe(join(root, '.sakura-server'), file))),
   sources: await Promise.all(['server/compute-task.ts', 'server/compute-worker.mjs', 'server/file-preview.ts',
-    'server/file-preview-runtime.ts', 'server/compute-runtime.ts', 'server/suite-supply-analysis.ts', 'server/suite-locale-analysis.ts', 'server/suite-incident-analysis.ts',
+    'server/file-preview-runtime.ts', 'server/compute-runtime.ts', 'server/suite-supply-analysis.ts', 'server/suite-locale-analysis.ts', 'server/suite-incident-analysis.ts', 'server/suite-incident-redaction.ts',
     'shared/contracts/supply-audit.ts', 'shared/contracts/locale-studio.ts', 'shared/contracts/incident-desk.ts', 'shared/contracts/cleanup-plan.ts', 'shared/contracts/resilience-lab.ts', 'shared/contracts/image-assets.ts', 'shared/contracts/drill-supervision.ts', 'shared/contracts/suite-common.ts', 'shared/suite-json.ts',
     'shared/errors.ts'].map((file) => describe(root, file))),
 }, null, 2) + '\n');

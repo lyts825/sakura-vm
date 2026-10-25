@@ -3,9 +3,8 @@ import { z } from 'zod';
 import * as S from '../shared/contracts/suite-common.ts';
 import * as I from '../shared/contracts/incident-desk.ts';
 import type { PluginMetadata } from './plugin-metadata.ts';
-import { SuiteRoot, SuiteStore, suiteActor, suiteFail, suiteSha, type SuiteAuthorize, type SuiteState } from './suite-store.ts';
+import { SuiteRoot, SuiteStore, suiteActor, suiteFail, type SuiteAuthorize } from './suite-store.ts';
 import { resourceContext } from './host-runtime/context.ts';
-import { SuiteMaterials } from './suite-materials.ts';
 import { computeIncident, readSuiteText } from './suite-compute.ts';
 import type { IncidentCasesV1, IncidentEvidenceV1, IncidentTimelineV1 } from './service-contracts/incident-desk.ts';
 import type { incidentTimelineInput } from './suite-incident-analysis.ts';
@@ -128,70 +127,7 @@ export class IncidentCases extends SuiteRoot implements IncidentCasesV1 {
   }
 }
 
-export class IncidentEvidence extends SuiteMaterials implements IncidentEvidenceV1 {
-  protected evidenceLimit = 500;
-  constructor(metadata: PluginMetadata, uploads: PluginMetadata, authorize: SuiteAuthorize, private cases: IncidentCasesV1) {
-    super('incident-evidence', metadata, uploads, authorize, 4 * 1024 ** 3, 32 * 1024 ** 2, ['text', 'json'], cases);
-    this.peers = { 'incident-cases': cases };
-  }
-  protected override validateState(state: SuiteState, priorBytes = 0): void {
-    super.validateState(state, priorBytes);
-    const groups = new Map<string, Set<string>>();
-    for (const row of state.rows) {
-      if (row.kind !== 'result' || row.origin !== 'local' || !row.content || typeof row.content !== 'object' ||
-        Array.isArray(row.content) || row.content.format !== 'sakura-incident-evidence/1') continue;
-      const key = row.workspaceId + ':' + row.actor, ids = groups.get(key) ?? new Set<string>();
-      ids.add(row.id);
-      groups.set(key, ids);
-      if (ids.size > this.evidenceLimit) suiteFail('INCIDENT_EVIDENCE_LIMIT', '本机案例材料数量超过上限');
-    }
-  }
-  async upload(raw: z.input<typeof I.incidentUpload>): Promise<S.SuiteRecord> {
-    const input = I.incidentUpload.parse(raw);
-    if (I.incidentCase.parse((await this.cases.scope(scope(input))).content).status !== 'open')
-      suiteFail('INCIDENT_CASE_NOT_OPEN', '先重新打开案例再收集新材料');
-    if (/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(input.text))
-      suiteFail('INCIDENT_UNICODE', '文本包含无效 Unicode');
-    const data = Buffer.from(input.text, 'utf8');
-    if (data.length > 1024 ** 2) suiteFail('INCIDENT_TEXT_LIMIT', '控制请求中的文本最多 1 MiB');
-    const ticket = await this.beginUpload({
-      ...scope(input), name: input.name, format: input.format, bytes: data.length,
-      digest: suiteSha(data), allowExport: input.allowExport,
-    });
-    for (let offset = 0; offset < data.length; offset += 512 * 1024)
-      await this.appendUpload({ ...scope(input), id: ticket.id, offset, data: data.subarray(offset, offset + 512 * 1024).toString('base64') });
-    const source = await this.finishUpload({ ...scope(input), id: ticket.id });
-    return this.attach({ ...scope(input), source: ref(source), sourceAt: input.sourceAt });
-  }
-  async attach(raw: z.input<typeof I.incidentAttach>): Promise<S.SuiteRecord> {
-    const input = I.incidentAttach.parse(raw), s = scope(input);
-    if (input.source.domain !== this.domain) suiteFail('INCIDENT_EVIDENCE_SOURCE');
-    const c = await this.cases.scope(s), value = I.incidentCase.parse(c.content);
-    if (value.status !== 'open') suiteFail('INCIDENT_CASE_NOT_OPEN', '先重新打开案例再收集新材料');
-    const source = await this.fixed(s, input.source), material = S.suiteMaterial.parse(source.content);
-    if (source.kind !== 'source' || !['text', 'json'].includes(material.format)) suiteFail('INCIDENT_EVIDENCE_SOURCE');
-    const evidenceIds = new Set((await this.readState()).rows.filter((row) =>
-      row.workspaceId === s.workspaceId && row.actor === suiteActor() && row.origin === 'local' &&
-      row.kind === 'result' && row.content && typeof row.content === 'object' && !Array.isArray(row.content) &&
-      row.content.format === 'sakura-incident-evidence/1',
-    ).map((row) => row.id));
-    if (evidenceIds.size >= this.evidenceLimit) suiteFail('INCIDENT_EVIDENCE_LIMIT', '本机案例材料数量已达上限');
-    return this.put({
-      ...s, name: input.label ?? source.name, references: [ref(c), input.source],
-      content: json(I.incidentEvidence.parse({
-        format: 'sakura-incident-evidence/1', case: ref(c), source: input.source,
-        sourceDigest: material.digest, sourceAt: input.sourceAt, observedAt: source.createdAt,
-        method: 'upload', externalStatement: true, derivation: null,
-      })),
-    }, 'result', true);
-  }
-  async pin(raw: S.SuitePin): Promise<S.SuiteRecord> {
-    const input = S.suitePin.parse(raw), row = await this.get(input);
-    if (row.state !== 'sealed' || row.kind !== 'result' || row.origin !== 'local') suiteFail('INCIDENT_EVIDENCE_REQUIRED');
-    I.incidentEvidence.parse(row.content);
-    return row;
-  }
-}
+export { IncidentEvidence } from './suite-incident-evidence.ts';
 
 export class IncidentTimeline extends SuiteStore {
   constructor(metadata: PluginMetadata, authorize: SuiteAuthorize, private cases: IncidentCasesV1, private evidence: IncidentEvidenceV1) {

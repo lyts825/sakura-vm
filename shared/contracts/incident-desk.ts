@@ -62,6 +62,10 @@ export const incidentEvidence = z.object({
     rulesDigest: S.suiteDigest,
     reviewed: z.boolean(),
     reviewer: S.suiteId.nullable(),
+    reviewPolicyRevision: z.number().int().positive().nullable().default(null),
+    reviewReason: z.string().max(4000).default(''),
+    replacements: z.number().int().nonnegative().default(0),
+    warnings: z.array(z.string().max(1000)).max(20).default([]),
   }).strict().nullable(),
 }).strict();
 export const incidentRedactionRules = z.object({

@@ -264,6 +264,7 @@ export const suiteUploadInput = suiteScope
   .strict();
 export const suiteUpload = suiteUploadInput
   .extend({
+    lineage: z.array(suiteRef).max(1000).default([]),
     id: suiteId,
     actor: suiteId,
     offset: z.number().int().min(0),

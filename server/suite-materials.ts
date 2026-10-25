@@ -286,8 +286,14 @@ export class SuiteMaterials extends SuiteRoot implements S.SuiteMaterialsV1 {
     return super.previewCleanup(input);
   }
   async beginUpload(raw: z.input<typeof S.suiteUploadInput>): Promise<S.SuiteUpload> {
+    return this.beginDerivedUpload(raw, []);
+  }
+  /** 派生材料在首次发布字节时建立来源保护，不能先产生可绕过来源许可的裸字节。 */
+  protected async beginDerivedUpload(raw: z.input<typeof S.suiteUploadInput>, lineage: S.SuiteRef[]): Promise<S.SuiteUpload> {
     const input = S.suiteUploadInput.parse(raw),
       scope = { workspaceId: input.workspaceId };
+    const references = z.array(S.suiteRef).max(1000).parse(lineage);
+    for (const reference of references) await this.fixed(scope, reference);
     await this.access(scope);
     if (input.bytes > this.maximumFile || !this.formats.includes(input.format))
       suiteFail('SUITE_MATERIAL_UNSUPPORTED', '文件格式或大小不受支持', 413);
@@ -298,6 +304,7 @@ export class SuiteMaterials extends SuiteRoot implements S.SuiteMaterialsV1 {
       file = this.file(id);
     const upload: S.SuiteUpload = {
       ...input,
+      lineage: references,
       id,
       actor: suiteActor(),
       offset: 0,
@@ -590,6 +597,8 @@ export class SuiteMaterials extends SuiteRoot implements S.SuiteMaterialsV1 {
           !Array.isArray(r.content) &&
           r.content.blobId === row.id,
       );
+      if (published && JSON.stringify(published.references) !== JSON.stringify(row.lineage))
+        suiteFail('SUITE_MATERIAL_LINEAGE', '原上传的来源保护与已发布材料不一致');
       const result = published
         ? await super.get({ ...scope, id: published.id, revision: published.revision })
         : await this.put(
@@ -606,7 +615,7 @@ export class SuiteMaterials extends SuiteRoot implements S.SuiteMaterialsV1 {
                 allowRead: true,
                 allowExport: row.allowExport,
               },
-              references: [],
+              references: row.lineage,
             },
             'source',
             true,

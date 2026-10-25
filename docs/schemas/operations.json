@@ -269465,6 +269465,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -269575,6 +269604,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -269715,6 +269745,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -269825,6 +269884,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -270188,6 +270248,35 @@
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
           },
+          "lineage": {
+            "default": [],
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "domain": {
+                  "type": "string",
+                  "pattern": "^[a-z]+-[a-z-]+$"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "revision": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "domain",
+                "id",
+                "revision"
+              ],
+              "additionalProperties": false
+            }
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -270298,6 +270387,7 @@
           "bytes",
           "digest",
           "allowExport",
+          "lineage",
           "id",
           "actor",
           "offset",
@@ -270428,6 +270518,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -270538,6 +270657,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -284186,6 +284306,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -284296,6 +284445,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -284436,6 +284586,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -284546,6 +284725,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -284672,6 +284852,35 @@
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
           },
+          "lineage": {
+            "default": [],
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "domain": {
+                  "type": "string",
+                  "pattern": "^[a-z]+-[a-z-]+$"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "revision": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "domain",
+                "id",
+                "revision"
+              ],
+              "additionalProperties": false
+            }
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -284782,6 +284991,7 @@
           "bytes",
           "digest",
           "allowExport",
+          "lineage",
           "id",
           "actor",
           "offset",
@@ -284912,6 +285122,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -285022,6 +285261,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -372951,6 +373191,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -373061,6 +373330,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -373201,6 +373471,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -373311,6 +373610,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -373437,6 +373737,35 @@
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
           },
+          "lineage": {
+            "default": [],
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "domain": {
+                  "type": "string",
+                  "pattern": "^[a-z]+-[a-z-]+$"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "revision": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "domain",
+                "id",
+                "revision"
+              ],
+              "additionalProperties": false
+            }
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -373547,6 +373876,7 @@
           "bytes",
           "digest",
           "allowExport",
+          "lineage",
           "id",
           "actor",
           "offset",
@@ -373677,6 +374007,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -373787,6 +374146,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -399470,6 +399830,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -399580,6 +399969,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -399720,6 +400110,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -399830,6 +400249,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -400196,6 +400616,35 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "lineage": {
+          "default": [],
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "pattern": "^[a-z]+-[a-z-]+$"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "domain",
+              "id",
+              "revision"
+            ],
+            "additionalProperties": false
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid",
@@ -400306,6 +400755,7 @@
         "bytes",
         "digest",
         "allowExport",
+        "lineage",
         "id",
         "actor",
         "offset",
@@ -400862,6 +401312,35 @@
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
           },
+          "lineage": {
+            "default": [],
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "domain": {
+                  "type": "string",
+                  "pattern": "^[a-z]+-[a-z-]+$"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "revision": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "domain",
+                "id",
+                "revision"
+              ],
+              "additionalProperties": false
+            }
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -400972,6 +401451,7 @@
           "bytes",
           "digest",
           "allowExport",
+          "lineage",
           "id",
           "actor",
           "offset",

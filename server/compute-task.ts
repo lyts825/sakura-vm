@@ -16,11 +16,13 @@ import { parseLocaleCatalog, evaluateLocale, renderLocale } from './suite-locale
 import * as L from '../shared/contracts/locale-studio.ts';
 import { suiteRef } from '../shared/contracts/suite-common.ts';
 import { assembleIncidentTimeline, incidentTimelineInput } from './suite-incident-analysis.ts';
+import { redactIncidentText, incidentRedactionInput } from './suite-incident-redaction.ts';
 
 try {
   if (workerData?.task === 'incident-desk') {
-    z.literal('timeline').parse(workerData.operation);
-    const result = assembleIncidentTimeline(incidentTimelineInput.parse(workerData.input));
+    const operation = z.enum(['timeline', 'redact']).parse(workerData.operation);
+    const result = operation === 'timeline' ? assembleIncidentTimeline(incidentTimelineInput.parse(workerData.input))
+      : redactIncidentText(incidentRedactionInput.parse(workerData.input));
     parentPort!.postMessage({ ok: true, result });
   } else if (workerData?.task === 'localization-studio') {
     const operation = z.enum(['catalog', 'checks', 'preview']).parse(workerData.operation);
