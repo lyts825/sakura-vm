@@ -1,6 +1,6 @@
 # 文档索引
 
-核对日期：2026-10-24；应用与内置包版本：**2.7.0**；宿主插件 API：**5**；既有公共服务契约保持兼容，Notebook 和 Files 提供显式的 **V2**。
+核对日期：2026-10-25；应用与内置包版本：**2.8.0**；宿主插件 API：**5**；既有公共服务契约保持兼容，Notebook 和 Files 提供显式的 **V2**。
 
 | 使用场景 | 从这里开始 |
 | --- | --- |
@@ -17,8 +17,8 @@
 - [架构与依赖边界](architecture.md)
 - [第三方 WebAssembly 插件](community-plugins.md)
 - [有界计算运行时](compute-runtime.md)
-- [固定动作委派（2.8.0 实施中）](delegated-actions.md)
-- [事件证据只读采集（2.8.0 实施中）](incident-capture.md)
+- [固定动作委派](delegated-actions.md)
+- [事件证据只读采集](incident-capture.md)
 - [源码阅读与维护指南](development-guide.md)
 - [HTTP 请求体契约清单](http-request-contracts.md)
 - [统一网络运行时](network-runtime.md)
@@ -27,7 +27,7 @@
 - [项目交付工作台插件包设计](delivery-pack-design.md)
 - [三个插件包的产品与实施设计](plugin-pack-roadmap.md)：[环境镜像工坊](foundry-pack-design.md)、[应用运行与运维](app-runtime-pack-design.md)、[数据与实验工作台](data-lab-pack-design.md)；实现使用指南见下方三个插件包
 - [第二批三个完整插件包设计](plugin-pack-expansion-design.md)：[接口集成验证](integration-lab-pack-design.md)、[可靠性演练](resilience-lab-pack-design.md)、[项目知识与文档](knowledge-studio-pack-design.md)；设计版本 2.0.0，2.7.0 实施与验收状态见项目状态
-- [第三批十个完整插件包设计](plugin-pack-suite-design.md)：浏览器、软件供应、数据库变更、事件队列、模型评测、媒体、本地化、跨包流程、事件复盘和交互式实验；101 个拟议插件，设计版本 3.0.0，实施进度见项目状态
+- [第三批十个完整插件包设计](plugin-pack-suite-design.md)：浏览器、软件供应、数据库变更、事件队列、模型评测、媒体、本地化、跨包流程、事件复盘和交互式实验；101 个插件，设计版本 3.0.0；实际能力、实施上限和验收见 [2.8.0 版本说明](release-2.8.0.md)
 - [第四批十个完整插件包设计](plugin-pack-next-design.md)：需求、架构、代码改造、性能、测试数据、权限复核、集群基线、容量、恢复验证和发布审查；114 个拟议插件，设计版本 4.0.0，运行实现待开始
 - [第五批十个完整插件包设计](plugin-pack-specialist-design.md)：网络拓扑、命令行体验、应用配置、数据契约、搜索质量、可重复构建、离线分发、桌面自动化、数据标注和可观测性规则；127 个拟议插件，设计版本 5.0.0，运行实现待开始
 - [插件与整合包协议](plugin-protocol.md)
@@ -50,7 +50,17 @@
 - [接口集成验证](integration-lab.md)
 - [可靠性演练](resilience-lab.md)
 - [项目知识与文档](knowledge-studio.md)
-- [事件响应与复盘（2.8.0 实施中）](incident-desk.md)
+- [浏览器验收](browser-lab.md)
+- [软件供应审查](supply-audit.md)
+- [数据库变更演练](database-evolution.md)
+- [事件与队列实验](event-lab.md)
+- [模型评测](model-evaluation.md)
+- [媒体处理](media-studio.md)
+- [本地化交付](localization-studio.md)
+- [跨包流程](flow-studio.md)
+- [事件响应与复盘](incident-desk.md)
+- [交互式实验](learning-lab.md)
+- [固定工具执行与清理](suite-execution.md)及[宿主共同容量](suite-capacity.md)
 - [开发工作区与数据互通](development-workspaces.md)
 - [工程操作的项目账号](engineering-project-identity.md)
 - [文件锁](file-locks.md)

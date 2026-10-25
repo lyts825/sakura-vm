@@ -2,7 +2,7 @@
 
 ## 1. 版本与使用结果
 
-设计 3.0.0，2026-10-24；基线 2.7.0 / `912287a`。`flow-studio` 含 10 个拟议插件，实现待开始，共同约定见[第三批总览](plugin-pack-suite-design.md)。
+设计基线 3.0.0，2026-10-24；实施版本 2.8.0，2026-10-25。`flow-studio` 的 10 个插件已落地，固定图、逐阶段批准、持久等待、隔离交接及两个真实原服务适配器验收通过。知识发布核对了原发布记录，接口验证核对了真实隔离 VM 的请求、断言及清理回执。实际入口、收紧后的预算和使用步骤见[本机流程工作台](flow-studio.md)，共同约定见[第三批总览](plugin-pack-suite-design.md)。下文保留设计说明，以使用指南中的实际边界为准。
 
 用户将固定材料、领域操作、人工审批和等待节点组成长期流程，逐步保存原提供者回执。现有[流水线](pipeline-graph.md)继续编排项目任务；本包重点处理跨领域计划、人工等待及中断后的原操作核对，不提供通用 Shell 或任意 HTTP 自动化。
 
@@ -12,18 +12,18 @@
 
 短依赖前缀为 `flow-`。
 
-| 插件 ID | 专属对象、职责与主要服务方法 | 必需依赖 | 可选依赖 |
-| --- | --- | --- | --- |
-| `flow-definitions` | 空间、图结构和固定节点类型；FlowDefinitionsV1：compile、validate | — | — |
-| `flow-inputs` | 固定材料、变量及绑定规则；FlowInputsV1：upload、bind、resolve | definitions | — |
-| `flow-connectors` | 静态提供者适配目录、能力和版本；FlowConnectorsV1：catalogue、inspectProvider | definitions | @integration-runners, @integration-reports, @knowledge-publish |
-| `flow-plans` | 图计划和逐阶段领域计划；FlowPlansV1：previewFlow、previewStep、invalidate | definitions, inputs, connectors | — |
-| `flow-approvals` | 当前主体对具体阶段的批准与撤销；FlowApprovalsV1：approve、revoke、inspect | plans | — |
-| `flow-journal` | 有序事件、原始提供者回执及保护引用；FlowJournalV1：readTimeline、verify | definitions | — |
-| `flow-runs` | 节点推进、取消与原任务核对；FlowRunsV1：start、advance、cancel、reconcile | plans, approvals, connectors, journal | — |
-| `flow-timers` | 持久等待和到期记录；FlowTimersV1：scheduleWait、due、cancelWait | runs, approvals | — |
-| `flow-exchange` | 定义、固定材料与历史交换；FlowExchangeV1：export、inspectImport、acceptImport | definitions, inputs, connectors, plans, approvals, journal, runs, timers | — |
-| `flow-workbench` | 图编辑、审批箱、时间线和恢复；FlowWorkbenchV1：view、templates | * | — |
+| 插件 ID            | 专属对象、职责与主要服务方法                                                  | 必需依赖                                                                 | 可选依赖                                                       |
+| ------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `flow-definitions` | 空间、图结构和固定节点类型；FlowDefinitionsV1：compile、validate              | —                                                                        | —                                                              |
+| `flow-inputs`      | 固定材料、变量及绑定规则；FlowInputsV1：upload、bind、resolve                 | definitions                                                              | —                                                              |
+| `flow-connectors`  | 静态提供者适配目录、能力和版本；FlowConnectorsV1：catalogue、inspectProvider  | definitions                                                              | @integration-runners, @integration-reports, @knowledge-publish |
+| `flow-plans`       | 图计划和逐阶段领域计划；FlowPlansV1：previewFlow、previewStep、invalidate     | definitions, inputs, connectors                                          | —                                                              |
+| `flow-approvals`   | 当前主体对具体阶段的批准与撤销；FlowApprovalsV1：approve、revoke、inspect     | plans                                                                    | —                                                              |
+| `flow-journal`     | 有序事件、原始提供者回执及保护引用；FlowJournalV1：readTimeline、verify       | definitions                                                              | —                                                              |
+| `flow-runs`        | 节点推进、取消与原任务核对；FlowRunsV1：start、advance、cancel、reconcile     | plans, approvals, connectors, journal                                    | —                                                              |
+| `flow-timers`      | 持久等待和到期记录；FlowTimersV1：scheduleWait、due、cancelWait               | runs, approvals                                                          | —                                                              |
+| `flow-exchange`    | 定义、固定材料与历史交换；FlowExchangeV1：export、inspectImport、acceptImport | definitions, inputs, connectors, plans, approvals, journal, runs, timers | —                                                              |
+| `flow-workbench`   | 图编辑、审批箱、时间线和恢复；FlowWorkbenchV1：view、templates                | *                                                                        | —                                                              |
 
 没有必需的外部插件。可选服务缺席时，相关节点显示未就绪，允许编辑但拒绝执行。首版须落实接口验证和知识发布两个真实适配器；全包验收包括启用与缺席两种组合。
 
@@ -52,12 +52,12 @@ connectors 是编译时审核的适配表，每项固定提供者服务版本、
 
 页面包含定义、输入、提供者、预览、审批箱、运行时间线和交接。CLI 别名 `flow`。
 
-| 操作 | 拟议 HTTP | CLI | 输出 |
-| --- | --- | --- | --- |
-| 图/阶段预览 | `/api/flow-plans/previewFlow`、`previewStep` | `flow plan preview/step` | 固定图及当前可授权输入 |
-| 明确批准 | `/api/flow-approvals/approve` | `flow approval approve` | 绑定当前主体的单阶段票据 |
-| 推进/核对 | `/api/flow-runs/advance`、`reconcile` | `flow run advance/reconcile` | 原操作回执或 unknown |
-| 等待/导出 | `/api/flow-timers/scheduleWait`、`/api/flow-exchange/export` | `flow wait create`、`flow export` | 绝对等待点及无执行权限的包 |
+| 操作        | 拟议 HTTP                                                    | CLI                               | 输出                       |
+| ----------- | ------------------------------------------------------------ | --------------------------------- | -------------------------- |
+| 图/阶段预览 | `/api/flow-plans/previewFlow`、`previewStep`                 | `flow plan preview/step`          | 固定图及当前可授权输入     |
+| 明确批准    | `/api/flow-approvals/approve`                                | `flow approval approve`           | 绑定当前主体的单阶段票据   |
+| 推进/核对   | `/api/flow-runs/advance`、`reconcile`                        | `flow run advance/reconcile`      | 原操作回执或 unknown       |
+| 等待/导出   | `/api/flow-timers/scheduleWait`、`/api/flow-exchange/export` | `flow wait create`、`flow export` | 绝对等待点及无执行权限的包 |
 
 拟定 200 个定义，每定义 100 个节点、200 条边；每空间 1 个活动流程，全包 8 个。单流程最多 10,000 条事件，等待最长 30 天，控制材料与记录总量 1 GiB，导出 128 MiB。外部动作继续计入原提供者和宿主预算，不在流程层重复发放 VM 额度。
 

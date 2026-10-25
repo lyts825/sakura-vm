@@ -3,12 +3,30 @@ import { z } from 'zod';
 import { cleanupProviderIdSchema, cleanupPreviewSchema } from './cleanup-plan.ts';
 import { resilienceScopeSchema } from './resilience-lab.ts';
 import { suiteJson as suiteJsonSchema } from './suite-common.ts';
+import { ilScope, runPreviewSchema } from './integration-lab.ts';
+import { scopeSchema as knowledgeScope, refSchema as knowledgeRef } from './knowledge-studio.ts';
 
-export const delegatedAdapterSchema = z.enum(['maintenance-cleanup', 'resilience-reconcile']);
+export const delegatedAdapterSchema = z.enum([
+  'maintenance-cleanup',
+  'resilience-reconcile',
+  'integration-run',
+  'knowledge-publish',
+]);
 export const delegatedInputSchema = z.discriminatedUnion('adapter', [
   z.object({ adapter: z.literal('maintenance-cleanup'), provider: cleanupProviderIdSchema }).strict(),
   z
     .object({ adapter: z.literal('resilience-reconcile'), scope: resilienceScopeSchema, runId: z.uuid() })
+    .strict(),
+  z
+    .object({
+      adapter: z.literal('integration-run'),
+      scope: ilScope,
+      input: runPreviewSchema,
+      approveWrites: z.boolean().default(false),
+    })
+    .strict(),
+  knowledgeScope
+    .extend({ adapter: z.literal('knowledge-publish'), document: knowledgeRef, review: knowledgeRef })
     .strict(),
 ]);
 export const delegatedTicketSchema = z
@@ -26,7 +44,12 @@ export const delegatedPlanSchema = z
     actorId: z.uuid(),
     consumer: z.enum(['official:incident-actions', 'official:flow-connectors']),
     consumerGeneration: z.string().min(1).max(100),
-    provider: z.enum(['official:maintenance', 'official:resilience-runs']),
+    provider: z.enum([
+      'official:maintenance',
+      'official:resilience-runs',
+      'official:integration-runners',
+      'official:knowledge-publish',
+    ]),
     providerGeneration: z.string().min(1).max(100),
     input: delegatedInputSchema,
     resourceDigest: digest,

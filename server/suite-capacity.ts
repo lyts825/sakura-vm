@@ -11,6 +11,7 @@ import { serializedMetadata, metadataKey } from './metadata-queue.ts';
 import { storageRuntime } from './storage-runtime.ts';
 import { DATA } from './paths.ts';
 import { suiteRouteRegistry, suiteRootRegistry } from '../shared/contracts/suite-routes.registry.generated.ts';
+import { suiteExecutionCapacitySpecs } from './suite-execution-capacity.ts';
 
 export type SuiteRootCapacitySpec = Readonly<{ pluginId: string; file: string; memberDirectories?: readonly string[] }>;
 type Limits = { limit: number; recoveryReserve: number; packControl: number; rootBytes: number; rootControl: number };
@@ -175,13 +176,13 @@ export function suiteCapacity() {
     const limit = configured === undefined ? defaults.limit : Number(configured);
     if (!Number.isSafeInteger(limit) || limit < 512 * 1024 ** 2 || limit > 1024 ** 4)
       throw new AppError('SAKURA_SUITE_CAPACITY_BYTES 必须为 512 MiB 到 1 TiB 的整数字节数', 503, 'SUITE_HOST_CAPACITY_CONFIG');
-    shared = new SuiteCapacity(DATA, rootIds.map((pluginId) => {
+    shared = new SuiteCapacity(DATA, [...rootIds.map((pluginId) => {
       const prefix = pluginId.split('-')[0] as keyof typeof suiteRouteRegistry;
       return {
         pluginId, file: join(DATA, 'plugins', pluginId, 'state.json'),
         memberDirectories: Object.keys(suiteRouteRegistry[prefix]).map((domain) => join(DATA, 'plugins', prefix + '-' + domain)),
       };
-    }), { limit });
+    }), ...suiteExecutionCapacitySpecs(DATA)], { limit });
   }
   return shared;
 }

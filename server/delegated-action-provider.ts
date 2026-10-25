@@ -140,7 +140,15 @@ export class DelegatedActionProvider implements ProviderContract {
     if (
       !instance ||
       instance.source !== 'official' ||
-      instance.pluginId !== (adapter.id === 'maintenance-cleanup' ? 'maintenance' : 'resilience-runs')
+      instance.pluginId !==
+        (
+          {
+            'maintenance-cleanup': 'maintenance',
+            'resilience-reconcile': 'resilience-runs',
+            'integration-run': 'integration-runners',
+            'knowledge-publish': 'knowledge-publish',
+          } as const
+        )[adapter.id]
     )
       fail('动作账本须由原提供者建立', 'DELEGATED_IDENTITY_STALE');
     this.instance = instance;

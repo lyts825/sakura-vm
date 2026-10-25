@@ -78,7 +78,6 @@ async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:h
   fixture.bodies.set(req, body);
   return await fixture.gateway.dispatch(req, res, url) as boolean;
 }
-import { services as metricsContract } from '../plugins/metrics/services.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -187,33 +186,7 @@ test('declared operations validate responses before writing to the client', asyn
        * 验证场景 / Scenario: declared operations validate responses before writing to the client
        * 协作入口 / Collaborators: `host.provide`.
        */
-      activate: async (host) => {
-        host.provide(metricsContract.metrics, { /**
-         * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
-         * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
-         * 输入 / Inputs: 无 / none。
-         * 结果：返回分支计算值（`sample`），以 Promise 交付。
-         * Result: Return the branch-computed value (`sample`) through a Promise.
-         * 验证场景 / Scenario: declared operations validate responses before writing to the client
-         */
-        sample: async () => sample, /**
-         * 中文功能：读取或解析本组夹具的可观察状态，供业务调用或后续断言使用。
-         * English: Read or resolve observable fixture state for business calls or subsequent assertions.
-         * 输入 / Inputs: 无 / none。
-         * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
-         * Result: No explicit result value; callers observe completion, state changes or an exception.
-         * 验证场景 / Scenario: declared operations validate responses before writing to the client
-         */
-        forget: () => {}, /**
-         * 中文功能：执行夹具或受控资源的关闭、释放或收尾步骤，供清理断言及退出路径复用。
-         * English: Close, release or finalize fixture-controlled resources for cleanup assertions and exit paths.
-         * 输入 / Inputs: 无 / none。
-         * 结果：没有显式结果值；调用者观察执行完成、状态变化或异常。
-         * Result: No explicit result value; callers observe completion, state changes or an exception.
-         * 验证场景 / Scenario: declared operations validate responses before writing to the client
-         */
-        close: async () => {} } as any);
-      },
+      activate: module.activate,
       operations: {
         sample: operation,
       },

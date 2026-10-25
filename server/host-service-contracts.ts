@@ -4,6 +4,12 @@
  */
 import type { BrowserIdeV1, CapabilityChecksV1, ColdMigrationsV1, CommunityPluginsV1, DisasterRecoveryDrillV1, HaHostFailoverV1, HaLocalFailoversV1, HostMountsV1, HostPeersV1, MediaDevicesV1, NotebookEnvironmentsV1, ProcessInteropV1, ProjectTerminalsV1, SnapshotReplicationsV1, TrustedBootServiceV1, VirtioFsSharesV1 } from './service-contracts/v1.ts';
 export interface HostServiceContracts {
+  evaluationCalls: import('./service-contracts/v1.ts').EvaluationCallsV1;
+  learningToolSessions: import('./service-contracts/v1.ts').LearningToolSessionsV1;
+  mediaTasks: import('./service-contracts/v1.ts').MediaTasksV1;
+  eventSessions: import('./service-contracts/v1.ts').EventSessionsV1;
+  databaseRehearsal: import('./service-contracts/v1.ts').DatabaseRehearsalV1;
+  browserSessions: import('./service-contracts/v1.ts').BrowserSessionsV1;
   delegatedActions: import('./service-contracts/v1.ts').DelegatedActionsV1;
   preparedWorkerSessions: import('./service-contracts/v1.ts').PreparedWorkerSessionsV1;
   drillSupervision: import('./service-contracts/v1.ts').DrillSupervisionV1;

@@ -1,10 +1,24 @@
+import { learningHttpSchemas } from '../shared/contracts/learning-http.ts';
+import { mediaHttpSchemas } from '../shared/contracts/media-http.ts';
+import { flowHttpSchemas } from '../shared/contracts/flow-http.ts';
+import { eventHttpSchemas } from '../shared/contracts/event-http.ts';
+import { evaluationHttpSchemas } from '../shared/contracts/evaluation-http.ts';
+import { databaseHttpSchemas } from '../shared/contracts/database-http.ts';
+import { browserHttpSchemas } from '../shared/contracts/browser-http.ts';
 /** 从逐方法校验器生成轻量清单元数据；--check 阻止过期的读写策略进入构建。 */
 import { readFile, writeFile } from 'node:fs/promises';
 import { supplyHttpSchemas } from '../shared/contracts/supply-http.ts';
 import { localeHttpSchemas } from '../shared/contracts/locale-http.ts';
 import { incidentHttpSchemas } from '../shared/contracts/incident-http.ts';
-const suites = { supply: supplyHttpSchemas, locale: localeHttpSchemas, incident: incidentHttpSchemas };
+const suites = { learning: learningHttpSchemas, media: mediaHttpSchemas, flow: flowHttpSchemas, event: eventHttpSchemas, browser: browserHttpSchemas, database: databaseHttpSchemas, evaluation: evaluationHttpSchemas, supply: supplyHttpSchemas, locale: localeHttpSchemas, incident: incidentHttpSchemas };
 const roots: { [K in keyof typeof suites]: keyof (typeof suites)[K] } = {
+  flow: 'definitions',
+  media: 'sources',
+  learning: 'courses',
+  event: 'contracts',
+  browser: 'targets',
+  database: 'sources',
+  evaluation: 'datasets',
   supply: 'sources',
   locale: 'catalogs',
   incident: 'cases',

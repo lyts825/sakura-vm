@@ -1,3 +1,4 @@
+import { mediaExecutionProfile } from './suite-media-profile.ts';
 /**
  * 模块职责：创建并连接应用领域服务及恢复来源；服务就绪和关闭由共同生命周期约束。
  * Module purpose: Creates and connects domain services and recovery sources under the application's readiness and shutdown lifecycle.
@@ -47,6 +48,11 @@ import { ImageAssets } from './image-assets.ts';
 import { EgressRules } from './egress-rules.ts';
 import { DataNotebookSessions } from './data-notebook-sessions.ts';
 import { PreparedWorkerSessions } from './prepared-worker-sessions.ts';
+import { SuiteExecutionSessions } from './suite-execution-sessions.ts';
+import { browserExecutionProfile, databaseExecutionProfile, eventExecutionProfile, learningExecutionProfile } from './suite-execution-profiles.ts';
+import { suiteCapacity } from './suite-capacity.ts';
+import { EvaluationCalls } from './evaluation-calls.ts';
+import { MetadataStore } from './metadata-store.ts';
 import { DelegatedActions } from './delegated-actions.ts';
 import { preparedWorkerMetadata } from './core-worker-metadata.ts';
 import { createCoreDrillService } from './core-drill-service.ts';
@@ -589,6 +595,56 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       id: 'delegatedActions', startup: 'required', requires: ['@delegatedProviders'],
       create: dependencies => new DelegatedActions(dependencies.get('@delegatedProviders')),
       initialize: () => {}, dispose: () => {}, disposePhase: ClosePhase.services,
+    });
+  }
+  if (selectedPlugins.includes('browser-runners')) {
+    await plugins.system.start({
+      id: 'browserSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      create: dependencies => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+        dependencies.get('@pluginDirectory'), suiteCapacity(), browserExecutionProfile, dependencies.executionCleanup()),
+      initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
+    });
+  }
+  if (selectedPlugins.includes('database-fixtures')) {
+    await plugins.system.start({
+      id: 'databaseRehearsal', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      create: dependencies => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+        dependencies.get('@pluginDirectory'), suiteCapacity(), databaseExecutionProfile, dependencies.executionCleanup()),
+      initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
+    });
+  }
+  if (selectedPlugins.includes('media-workers') || selectedPlugins.includes('media-inspect')) {
+    await plugins.system.start({
+      id: 'mediaTasks', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      create: (dependencies) => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+        dependencies.get('@pluginDirectory'), suiteCapacity(), mediaExecutionProfile, dependencies.executionCleanup()),
+      initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
+    });
+  }
+  if (selectedPlugins.includes('learning-sessions')) {
+    await plugins.system.start({
+      id: 'learningToolSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      create: (dependencies) => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+        dependencies.get('@pluginDirectory'), suiteCapacity(), learningExecutionProfile, dependencies.executionCleanup()),
+      initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
+    });
+  }
+  if (selectedPlugins.includes('event-brokers')) {
+    await plugins.system.start({
+      id: 'eventSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      create: dependencies => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+        dependencies.get('@pluginDirectory'), suiteCapacity(), eventExecutionProfile, dependencies.executionCleanup()),
+      initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
+    });
+  }
+  if (selectedPlugins.some(id => ['evaluation-endpoints', 'evaluation-runners', 'evaluation-scorers'].includes(id))) {
+    await plugins.system.start({
+      id: 'evaluationCalls', startup: 'required', requires: [],
+      create: () => {
+        const ledger = new MetadataStore<unknown>(join(DATA, 'evaluation-calls', 'receipts.json'), {fallback: () => []});
+        return new EvaluationCalls({name: 'receipts', read: signal => ledger.read(signal), replace: (value, options) => ledger.replace(value, options)});
+      },
+      initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
     });
   }
   if (selectedPlugins.includes('integration-runners')) {

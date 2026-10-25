@@ -15,16 +15,23 @@ const [action = 'help', name, ...args] = process.argv.slice(2);
  * Dispatch CLI arguments through authenticated local APIs to core or optional plugin capabilities; interactive terminals take over input/size and long work supports cancellation. Argument/service errors propagate and exit restores terminal state. */
 async function main() {
   if (
-    ['supply', 'locale', 'incident'].includes(action) &&
+    ["supply","locale","incident","browser","database","evaluation","learning","media","flow","event"].includes(action) &&
     ['help', '--help', 'verify'].includes(name || 'help')
   ) {
     try {
-      const command =
-        action === 'incident'
-          ? (await import('./incident-cli.mjs')).incidentCli
-          : action === 'locale'
-            ? (await import('./locale-cli.mjs')).localeCli
-            : (await import('./supply-cli.mjs')).supplyCli;
+      const commands={
+        learning: async()=> (await import('./learning-cli.mjs')).learningCli,
+        media: async()=> (await import('./media-cli.mjs')).mediaCli,
+        flow: async()=> (await import('./flow-cli.mjs')).flowCli,
+        event: async()=> (await import('./event-cli.mjs')).eventCli,
+        supply: async()=> (await import('./supply-cli.mjs')).supplyCli,
+        locale: async()=> (await import('./locale-cli.mjs')).localeCli,
+        incident: async()=> (await import('./incident-cli.mjs')).incidentCli,
+        browser: async()=> (await import('./browser-cli.mjs')).browserCli,
+        database: async()=> (await import('./database-cli.mjs')).databaseCli,
+        evaluation: async()=> (await import('./evaluation-cli.mjs')).evaluationCli,
+      };
+      const command=await commands[action]();
       const value = await command([name, ...args].filter(Boolean));
       console.log(value?.help || JSON.stringify(value, null, 2));
     } catch (error) {
@@ -63,7 +70,7 @@ async function main() {
     }
     const { developmentHelp } = await import('./development-cli.mjs');
     console.log(
-      'Plugin packs:\n  integration help\n  resilience help\n  knowledge help\n  supply help\n  locale help\n  incident help',
+      'Plugin packs:\n  integration help\n  resilience help\n  knowledge help\n  supply help\n  locale help\n  incident help\n  browser help\n  database help\n  evaluation help\n  event help\n  flow help\n  media help\n  learning help',
     );
     const { sandboxHelp } = await import('./sandbox-cli.mjs');
     console.log(
@@ -125,6 +132,41 @@ async function main() {
         await import('./integration-cli.mjs')
       ).integrationCli([name, ...args].filter(Boolean), { api });
       console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (action === 'event') {
+      const value=await (await import('./event-cli.mjs')).eventCli([name,...args].filter(Boolean),{api});
+      console.log(value?.help || JSON.stringify(value,null,2));
+      return;
+    }
+    if (action === 'flow') {
+      const value=await (await import('./flow-cli.mjs')).flowCli([name,...args].filter(Boolean),{api});
+      console.log(value?.help || JSON.stringify(value,null,2));
+      return;
+    }
+    if (action === 'media') {
+      const value=await (await import('./media-cli.mjs')).mediaCli([name,...args].filter(Boolean),{api});
+      console.log(value?.help || JSON.stringify(value,null,2));
+      return;
+    }
+    if (action === 'learning') {
+      const value=await (await import('./learning-cli.mjs')).learningCli([name,...args].filter(Boolean),{api});
+      console.log(value?.help || JSON.stringify(value,null,2));
+      return;
+    }
+    if (action === 'browser') {
+      const value=await (await import('./browser-cli.mjs')).browserCli([name,...args].filter(Boolean),{api});
+      console.log(JSON.stringify(value,null,2));
+      return;
+    }
+    if (action === 'database') {
+      const value=await (await import('./database-cli.mjs')).databaseCli([name,...args].filter(Boolean),{api});
+      console.log(JSON.stringify(value,null,2));
+      return;
+    }
+    if (action === 'evaluation') {
+      const value=await (await import('./evaluation-cli.mjs')).evaluationCli([name,...args].filter(Boolean),{api});
+      console.log(JSON.stringify(value,null,2));
       return;
     }
     if (action === 'incident') {
@@ -733,7 +775,7 @@ async function main() {
     console.error(
       `Sakura: ${error.message}. ${error.message === 'fetch failed' ? 'Run npm start first.' : ''}`,
     );
-    process.exitCode = ['supply', 'locale', 'incident'].includes(action)
+    process.exitCode = ["supply","locale","incident","browser","database","evaluation","learning","media","flow","event"].includes(action)
       ? error.exitCode || (error.status === 409 ? 3 : 2)
       : 1;
   }

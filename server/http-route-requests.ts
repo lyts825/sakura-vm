@@ -1,3 +1,10 @@
+import { learningHttpRequests } from '../shared/contracts/learning-http.ts';
+import { mediaHttpRequests } from '../shared/contracts/media-http.ts';
+import { flowHttpRequests } from '../shared/contracts/flow-http.ts';
+import { eventHttpRequests } from '../shared/contracts/event-http.ts';
+import { evaluationHttpRequests } from '../shared/contracts/evaluation-http.ts';
+import { databaseHttpRequests } from '../shared/contracts/database-http.ts';
+import { browserHttpRequests } from '../shared/contracts/browser-http.ts';
 import { incidentHttpRequests } from '../shared/contracts/incident-http.ts';
 import { localeHttpRequests } from '../shared/contracts/locale-http.ts';
 /**
@@ -36,6 +43,13 @@ export const httpRouteRequests = {
   ...supplyHttpRequests,
   ...localeHttpRequests,
   ...incidentHttpRequests,
+  ...flowHttpRequests,
+  ...mediaHttpRequests,
+  ...learningHttpRequests,
+  ...eventHttpRequests,
+  ...evaluationHttpRequests,
+  ...databaseHttpRequests,
+  ...browserHttpRequests,
   ...resilienceHttpRequests,
   ...integrationHttpRequests,
   'backups.legacy.post.vms.vmId.backup-download': z.object({ backupId: z.uuid() }).strict(),

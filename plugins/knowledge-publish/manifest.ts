@@ -14,7 +14,7 @@ export const manifest = definePlugin({
     pin('knowledge-reviews'),
   ],
   optional: [],
-  services: ['knowledgePublish'],
+  services: ['knowledgePublish', 'knowledgeActions'],
   contributes: {
     tabs: [],
     developmentSections: [],

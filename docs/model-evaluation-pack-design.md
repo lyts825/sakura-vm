@@ -2,7 +2,7 @@
 
 ## 1. 版本与使用结果
 
-设计 3.0.0，2026-10-24；基线 2.7.0 / `912287a`。`model-evaluation` 含 10 个拟议插件，运行实现待开始，遵守[第三批总览](plugin-pack-suite-design.md)。
+设计基线 3.0.0，2026-10-24；实施版本 2.8.0，2026-10-25。`model-evaluation` 的 10 个插件及受管本机文本调用已落地，领域、授权、传输协议、页面和离线交接验收通过。按用户本轮选择，跳过真实模型响应验收，未下载模型；合成协议响应不计为真实模型执行。实际入口、预算和使用步骤见[模型评测工作台](model-evaluation.md)，共同约定见[第三批总览](plugin-pack-suite-design.md)。下文保留设计说明，以使用指南中的实际边界为准。
 
 用户固定样例、提示词、端点声明和评分规则，比较逐样例输出、延迟、失败及人工评分。现有[本地助手](local-assistant.md)继续提供交互问答；本包只执行有界评测，不提供 Agent、工具调用、网页搜索或自动修改项目。
 
@@ -14,18 +14,18 @@
 
 短依赖前缀为 `evaluation-`，CLI 别名为 `evaluation`。
 
-| 插件 ID | 专属对象、职责与主要服务方法 | 必需依赖 | 可选依赖 |
-| --- | --- | --- | --- |
-| `evaluation-datasets` | 固定样例、标签、参考答案和发送许可；EvaluationDatasetsV1：upload、split、pin | — | @data-datasets |
-| `evaluation-prompts` | 提示词模板、变量及生成参数；EvaluationPromptsV1：compile、renderPreview | datasets | — |
-| `evaluation-endpoints` | 固定端点、模型声明、秘密版本和能力检查；EvaluationEndpointsV1：previewConnection、check、revoke | @secrets | — |
-| `evaluation-runners` | 逐样例调用许可、响应与取消；EvaluationRunnersV1：preview、start、cancel、reconcile | datasets, prompts, endpoints | — |
-| `evaluation-scorers` | 精确匹配、结构规则、人工量表和评判计划；EvaluationScorersV1：evaluate、planJudge、applyJudge | datasets, runners, endpoints | — |
-| `evaluation-comparisons` | 配对样例、覆盖差异和可比性；EvaluationComparisonsV1：compare、explain | runners, scorers | — |
-| `evaluation-reviews` | 盲审记录、争议和最终意见；EvaluationReviewsV1：open、score、decide | comparisons | — |
-| `evaluation-reports` | 固定评测摘要、限制和证据；EvaluationReportsV1：seal、compare | runners, scorers, comparisons, reviews | — |
-| `evaluation-exchange` | 数据许可、运行和审阅交换；EvaluationExchangeV1：export、inspectImport、acceptImport | datasets, prompts, endpoints, runners, scorers, comparisons, reviews, reports | — |
-| `evaluation-workbench` | 样例、发送预览、评分、对比与交接；EvaluationWorkbenchV1：view、templates | * | — |
+| 插件 ID                  | 专属对象、职责与主要服务方法                                                                    | 必需依赖                                                                      | 可选依赖       |
+| ------------------------ | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------- |
+| `evaluation-datasets`    | 固定样例、标签、参考答案和发送许可；EvaluationDatasetsV1：upload、split、pin                    | —                                                                             | @data-datasets |
+| `evaluation-prompts`     | 提示词模板、变量及生成参数；EvaluationPromptsV1：compile、renderPreview                         | datasets                                                                      | —              |
+| `evaluation-endpoints`   | 固定端点、模型声明、秘密版本和能力检查；EvaluationEndpointsV1：previewConnection、check、revoke | @secrets                                                                      | —              |
+| `evaluation-runners`     | 逐样例调用许可、响应与取消；EvaluationRunnersV1：preview、start、cancel、reconcile              | datasets, prompts, endpoints                                                  | —              |
+| `evaluation-scorers`     | 精确匹配、结构规则、人工量表和评判计划；EvaluationScorersV1：evaluate、planJudge、applyJudge    | datasets, runners, endpoints                                                  | —              |
+| `evaluation-comparisons` | 配对样例、覆盖差异和可比性；EvaluationComparisonsV1：compare、explain                           | runners, scorers                                                              | —              |
+| `evaluation-reviews`     | 盲审记录、争议和最终意见；EvaluationReviewsV1：open、score、decide                              | comparisons                                                                   | —              |
+| `evaluation-reports`     | 固定评测摘要、限制和证据；EvaluationReportsV1：seal、compare                                    | runners, scorers, comparisons, reviews                                        | —              |
+| `evaluation-exchange`    | 数据许可、运行和审阅交换；EvaluationExchangeV1：export、inspectImport、acceptImport             | datasets, prompts, endpoints, runners, scorers, comparisons, reviews, reports | —              |
+| `evaluation-workbench`   | 样例、发送预览、评分、对比与交接；EvaluationWorkbenchV1：view、templates                        | *                                                                             | —              |
 
 scorers 的模型判分通过 EvaluationCallsV1 单独执行，不调用 runners 的业务运行写入口，也不能覆盖原回答。数据和端点都撤销许可时，后续判分同样停止。
 
@@ -54,12 +54,12 @@ scorers 的模型判分通过 EvaluationCallsV1 单独执行，不调用 runners
 
 页面包含样例、提示词、端点、运行、评分、对比、审阅和交接。
 
-| 操作 | 拟议 HTTP | CLI | 结果 |
-| --- | --- | --- | --- |
-| 发送预览 | `/api/evaluation-runners/preview` | `evaluation run preview` | 完整发送范围、调用次数、秘密修订 |
-| 开始/取消 | `/api/evaluation-runners/start`、`cancel` | `evaluation run start/cancel` | 原请求账本与取消状态 |
-| 模型判分 | `/api/evaluation-scorers/planJudge`、`applyJudge` | `evaluation scorer plan-judge/apply-judge` | 独立发送计划和判分证据 |
-| 比较/交接 | `/api/evaluation-comparisons/compare`、`/api/evaluation-exchange/export` | `evaluation compare`、`evaluation export` | 配对覆盖、差异及来源属性 |
+| 操作      | 拟议 HTTP                                                                | CLI                                        | 结果                             |
+| --------- | ------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------- |
+| 发送预览  | `/api/evaluation-runners/preview`                                        | `evaluation run preview`                   | 完整发送范围、调用次数、秘密修订 |
+| 开始/取消 | `/api/evaluation-runners/start`、`cancel`                                | `evaluation run start/cancel`              | 原请求账本与取消状态             |
+| 模型判分  | `/api/evaluation-scorers/planJudge`、`applyJudge`                        | `evaluation scorer plan-judge/apply-judge` | 独立发送计划和判分证据           |
+| 比较/交接 | `/api/evaluation-comparisons/compare`、`/api/evaluation-exchange/export` | `evaluation compare`、`evaluation export`  | 配对覆盖、差异及来源属性         |
 
 拟定每集合 1,000 个样例，单输入和输出各 64 KiB；每次计划最多 2,000 次生成调用、1,000 次判分调用，总调用上限 3,000 次。并发最多 2，单次调用 60 秒，整个运行 30 分钟。总存储 4 GiB，单导出 256 MiB。输入、输出、错误正文和多次采样都计入配额。
 

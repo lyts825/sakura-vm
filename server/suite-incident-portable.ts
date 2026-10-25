@@ -249,7 +249,7 @@ function claims(row: S.SuiteRecord): S.SuiteJson {
         const parsed = cleanupResultSchema.parse(value.receipt.result);
         if (parsed.provider !== value.providerPlan.input.provider) fail('ACTION_PROOF');
         result = parsed;
-      } else {
+      } else if (value.providerPlan.input.adapter === 'resilience-reconcile') {
         const parsed = resultSummary.parse(value.receipt.result);
         if (parsed.runId !== value.providerPlan.input.runId) fail('ACTION_PROOF');
         result = {
@@ -258,7 +258,7 @@ function claims(row: S.SuiteRecord): S.SuiteJson {
           cleanup: parsed.cleanup,
           outcome: parsed.outcome,
         };
-      }
+      } else fail('ACTION_PROOF');
     }
     return S.suiteJson.parse({
       kind: 'delegated-history',

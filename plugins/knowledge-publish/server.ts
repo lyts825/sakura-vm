@@ -3,6 +3,7 @@ import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 import { knowledgeAuthorize, knowledgeRoute, knowledgeService } from '../../server/knowledge-http.ts';
 import { knowledgeHttpSchemas } from '../../shared/contracts/knowledge-http.ts';
 import { KnowledgePublish } from '../../server/knowledge-publish.ts';
+import { flowKnowledgeActions } from '../../server/flow-provider-actions.ts';
 import { services } from './services.ts';
 import { services as sources } from '../knowledge-sources/services.ts';
 import { services as evidence } from '../knowledge-evidence/services.ts';
@@ -25,6 +26,10 @@ export async function activate(host: PluginContext) {
     authorize,
   );
   host.provide(services.publish, knowledgeService('publish', service));
+  const actions = flowKnowledgeActions(meta('delegated-actions', null), service);
+  host.onDispose(() => actions.close());
+  await actions.init();
+  host.provide(services.actions, actions);
   host.onDispose(() => service.close());
 }
 export const route = knowledgeRoute('publish', services.publish);

@@ -2,11 +2,11 @@
 
 ## 1. 版本与使用结果
 
-设计 3.0.0，2026-10-24；基线 2.7.0 / `912287a`。`database-evolution` 含 10 个拟议插件，实现待开始。共同协议见[第三批总览](plugin-pack-suite-design.md)。
+设计 3.0.0，2026-10-24；设计基线 2.7.0 / `912287a`。`database-evolution` 的 10 个插件已在 2.8.0 实施，并完成真实 PostgreSQL、服务代理、独立恢复及交接验证。实际入口、限制和验证边界见[数据库演进演练使用说明](database-evolution.md)。共同协议见[第三批总览](plugin-pack-suite-design.md)。下文保留原设计；容量和服务方法以使用说明及已生成契约为准。
 
 用户在独立数据库副本中检查结构变更、数据回填、约束和恢复，取得逐阶段证据。本包不写入来源数据库，不切换生产连接，也不替代[应用包](app-runtime-pack.md)的数据恢复或[数据包](data-lab.md)的查询分析。
 
-首版只支持一个固定 PostgreSQL 运行档案。具体版本与工具摘要须在实施门禁中确定。输入为严格结构 JSON、CSV 和变更声明；不执行任意 SQL 脚本、原生数据库转储中的程序、扩展或宿主命令。
+首版使用固定 PostgreSQL 17.11 运行档案，计划绑定工具摘要。输入为严格结构 JSON、CSV 和变更声明；不执行任意 SQL 脚本、原生数据库转储中的程序、扩展或宿主命令。
 
 ## 2. 内部插件与依赖
 
@@ -57,7 +57,7 @@ fixtures 持有原 VM 与数据库资源。runners 仅取得绑定本次消费�
 | 独立恢复 | `/api/database-rehearsals/recover` | `database rehearsal recover` | 新计划、原基线、新实例及检查 |
 | 核销/交接 | `/api/database-fixtures/cleanup`、`/api/database-exchange/export` | `database fixture cleanup`、`database export` | 原资源证明与导出材料 |
 
-拟定输入 2 GiB、100 张表、每表 128 列、总计 1,000,000 行；变更最多 200 步。单条动作 60 秒、锁等待 5 秒、一次演练 30 分钟。最多两个 2 vCPU / 2 GiB 副本，每台虚拟磁盘 24 GiB；总持久与暂存 64 GiB，导出 2 GiB。全部数据导出须重新确认许可。
+原设计拟定输入 2 GiB、100 张表、每表 128 列、总计 1,000,000 行；变更最多 200 步。单条动作 60 秒、锁等待 5 秒、一次演练 30 分钟。最多两个 2 vCPU / 2 GiB 副本，每台虚拟磁盘 24 GiB；总持久与暂存 64 GiB，导出 2 GiB。实施已收紧这些上限，实际以[使用说明的容量表](database-evolution.md#实际容量与验证范围)为准。全部数据导出须重新确认许可。
 
 ## 6. 实施与验收
 

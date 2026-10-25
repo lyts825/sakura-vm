@@ -14,7 +14,7 @@ export const manifest = definePlugin({
     pin('integration-assertions'),
     pin('projects'),
   ],
-  services: ['integrationRunners'],
+  services: ['integrationRunners', 'integrationActions'],
   systemDependencies: ['imageAssets', 'egressRules', 'preparedWorkerSessions'],
   contributes: {
     tabs: ['development'],

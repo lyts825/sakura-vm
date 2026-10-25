@@ -42,6 +42,13 @@ manifest.scripts = {
   supply: manifest.scripts.supply,
   locale: manifest.scripts.locale,
   incident: manifest.scripts.incident,
+  evaluation: manifest.scripts.evaluation,
+  database: manifest.scripts.database,
+  event: manifest.scripts.event,
+  flow: manifest.scripts.flow,
+  media: manifest.scripts.media,
+  learning: manifest.scripts.learning,
+  browser: manifest.scripts.browser,
   tray: manifest.scripts.tray,
   'update:status': manifest.scripts['update:status'],
   'update:check': manifest.scripts['update:check'],
@@ -78,6 +85,20 @@ for (const file of [
   'locale-verify.mjs',
   'incident-cli.mjs',
   'incident-verify.mjs',
+  'evaluation-cli.mjs',
+  'evaluation-verify.mjs',
+  'database-cli.mjs',
+  'database-verify.mjs',
+  'event-cli.mjs',
+  'event-verify.mjs',
+  'flow-cli.mjs',
+  'flow-verify.mjs',
+  'media-cli.mjs',
+  'media-verify.mjs',
+  'learning-cli.mjs',
+  'learning-verify.mjs',
+  'browser-cli.mjs',
+  'browser-verify.mjs',
   'suite-cli.mjs',
   'suite-commands.generated.mjs',
   'suite-verify.mjs',
@@ -131,7 +152,7 @@ for (const [command, file] of [
       `运行包 ${command} CLI 不可用：${result.stderr || result.error?.message || result.status}`,
     );
 }
-for (const command of ['integration', 'resilience', 'supply', 'locale', 'incident']) {
+for (const command of ['integration', 'resilience', 'supply', 'locale', 'incident', 'event', 'flow', 'media', 'learning', 'browser', 'database', 'evaluation']) {
   if (manifest.scripts[command] !== `node scripts/cli.mjs ${command}`)
     throw new Error(`${command} CLI 缺少固定分发入口`);
   const result = spawnSync(process.execPath, [join(output, 'scripts', 'cli.mjs'), command, 'help'], {
@@ -172,6 +193,7 @@ const readme = [
   '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行依赖以随包 `package.json` 为准。',
   '已配置含 Linux QEMU、swtpm、virtiofsd 和 OVMF 的 WSL 发行版时，也可先运行 `npm run check:wsl`，再用 `npm run start:wsl` 启动可用 TPM 与 Virtio-FS 的 Linux 后端；数据单独保存在该发行版的 Linux 文件系统中。',
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
+  '2.8.0 共包含 201 个插件、26 个插件包。新增 browser-lab、supply-audit、database-evolution、event-lab、model-evaluation、media-studio、localization-studio、flow-studio、incident-desk 和 learning-lab 十个完整包；各包按需启用，使用指南与版本说明位于 .sakura-server/docs。固定工具的预备镜像、容量和支持平台见 suite-execution.md。模型评测已验收合成协议，真实本地模型调用验收按用户要求跳过，未下载模型。',
   '可分别启用 foundry（9 个插件）、app-runtime（9 个插件）和 data-lab（10 个插件）。三个包分别完成镜像制作、应用部署维护和数据实验，互不要求安装对方。纯 Node CLI 入口为 npm run foundry -- help、npm run app-runtime -- help、npm run data -- help；完整使用指南随包保存在 .sakura-server/docs/foundry-workbench.md、app-runtime-pack.md 和 data-lab.md。依赖准备与实际执行均由用户显式提交。',
   '',
   '也可分别启用 integration-lab（11 个插件）、resilience-lab（10 个插件）和 knowledge-studio（10 个插件），完成接口联调、隔离副本故障演练和材料整理与引用发布。CLI 入口为 npm run integration -- help、npm run resilience -- help、npm run knowledge -- help；使用指南为 .sakura-server/docs/integration-lab.md、resilience-lab.md 和 knowledge-studio.md。故障演练需通过本机监管实测，Windows x64 以外的平台明确拒绝；知识上传与检索无需创建虚拟机。',

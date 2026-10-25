@@ -23,6 +23,13 @@ export const pageLabels: Record<string, string> = {
   'supply-audit': '软件供应审查',
   'localization-studio': '本地化交付',
   'incident-desk': '事件响应与复盘',
+  'flow-studio': '流程编排',
+  'media-studio': '媒体处理',
+  'learning-lab': '交互式实验',
+  'event-lab': '事件与异步处理',
+  'browser-lab': '浏览器验收',
+  'database-evolution': '数据库变更演练',
+  'model-evaluation': '模型评测',
 };
 export const tabLabels: Record<string, string> = {
   terminal: '终端',

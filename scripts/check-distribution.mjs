@@ -36,6 +36,13 @@ for (const file of [
   '.sakura-server/supply-offline.js',
   '.sakura-server/locale-offline.js',
   '.sakura-server/incident-offline.js',
+  '.sakura-server/browser-offline.js',
+  '.sakura-server/database-offline.js',
+  '.sakura-server/event-offline.js',
+  '.sakura-server/evaluation-offline.js',
+  '.sakura-server/media-offline.js',
+  '.sakura-server/flow-offline.js',
+  '.sakura-server/learning-offline.js',
   '.sakura-server/assets/compute-worker.mjs',
   '.sakura-server/assets/compute-runtime.json',
   '.sakura-server/assets/network-worker.mjs',
@@ -59,11 +66,17 @@ for (const file of [
   '.sakura-server/assets/project-repository-broker.py',
 ])
   await stat(join(root, file));
-for (const file of ['integration-http-worker.py', 'drill-guest.py', 'drill-watchdog.cs', 'core-drill-validation-controller.mjs']) {
+for (const file of ['integration-http-worker.py', 'drill-guest.py', 'drill-watchdog.cs', 'core-drill-validation-controller.mjs', 'suite-execution-guardian.py', 'suite-browser-worker.py', 'suite-database-worker.py', 'suite-event-worker.py', 'suite-media-worker.py', 'suite-learning-worker.py']) {
   const original = await readFile(join(root, 'server', file));
   if (!original.equals(await readFile(join(root, '.sakura-server', file))))
     throw new Error(`Fixed plugin worker differs from its source: ${file}`);
 }
+if (!(await readFile(join(root, 'server', 'browser-pixels-worker.mjs')))
+    .equals(await readFile(join(root, '.sakura-server', 'assets', 'browser-pixels-worker.mjs'))))
+  throw new Error('Packaged browser pixel worker differs from its source');
+for (const file of ['browser-lab.md', 'database-evolution.md', 'event-lab.md', 'model-evaluation.md', 'media-studio.md', 'flow-studio.md', 'learning-lab.md', 'suite-execution.md', 'release-2.8.0.md'])
+  if (!(await readFile(join(root, 'docs', file))).equals(await readFile(join(root, '.sakura-server', 'docs', file))))
+    throw new Error(`Packaged suite guide differs from its source: ${file}`);
 if (!(await readFile(join(root, 'server', 'knowledge-worker.mjs')))
     .equals(await readFile(join(root, '.sakura-server', 'assets', 'knowledge-worker.mjs'))))
   throw new Error('Packaged knowledge parser differs from its source');

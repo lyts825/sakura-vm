@@ -24,6 +24,8 @@ import type { Features } from './features.ts';
 import type { AuditLog } from './audit.ts';
 import type { DelegatedProviderResolver } from './delegated-actions.ts';
 import { serviceContracts } from './service-contracts.ts';
+import { ImageAssets } from './image-assets.ts';
+import { executionCleanupFactory, type SuiteExecutionCleanupFactory } from './suite-execution-cleanup.ts';
 
 export interface SystemExternalDependencies {
   '@delegatedProviders': DelegatedProviderResolver;
@@ -85,6 +87,8 @@ export type SystemFactoryResolver<K extends keyof SystemServiceContracts = keyof
      * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
      */
     self(): SystemServiceContracts[K];
+    /** 本体固定会话专用原资源工厂，不出现在任何插件公共服务视图中。 */
+    executionCleanup(): SuiteExecutionCleanupFactory;
     vm: '@machines' extends R[number] ?
     /**
      * 中文功能：取得受限制实例访问能力的工厂依赖。
@@ -174,7 +178,11 @@ export class SystemServices {
       const ref = adapter === 'maintenance-cleanup'
         ? serviceRef('maintenance', 'maintenanceActions', serviceContracts.MaintenanceActions)
         : adapter === 'resilience-reconcile'
-          ? serviceRef('resilience-runs', 'resilienceActions', serviceContracts.ResilienceActions) : undefined;
+          ? serviceRef('resilience-runs', 'resilienceActions', serviceContracts.ResilienceActions)
+          :adapter==='integration-run'&&consumer.pluginId==='flow-connectors'
+            ?serviceRef('integration-runners','integrationActions',serviceContracts.IntegrationActions)
+            :adapter==='knowledge-publish'&&consumer.pluginId==='flow-connectors'
+              ?serviceRef('knowledge-publish','knowledgeActions',serviceContracts.KnowledgeActions):undefined;
       if (!ref) throw new AppError('委派适配器未登记', 400, 'DELEGATED_ADAPTER_DENIED');
       return this.broker.lookup(consumer, manifest, ref, true);
     };
@@ -305,6 +313,24 @@ export class SystemServices {
          * 失败 / Failure: 无直接 throw；依赖调用仍可能抛出或拒绝，处理方式见本实现 / no direct throw; dependency calls may throw or reject as handled by this implementation.
          */
         vm: () => this.vm(definition.id, raw.get<Machines>('@machines')),
+        executionCleanup: () => {
+          if (!['browserSessions', 'databaseRehearsal', 'eventSessions', 'mediaTasks', 'learningToolSessions'].includes(definition.id) ||
+            !definition.requires.includes('imageAssets') || !definition.requires.includes('@machines'))
+            throw new AppError('固定会话清理依赖未声明', 403, 'SERVICE_DEPENDENCY_DENIED');
+          const assets = raw.get<ImageAssets>('imageAssets'), machines = raw.get<Machines>('@machines'),
+            provider = this.owned.get('imageAssets');
+          if (!(assets instanceof ImageAssets) || !provider || provider.value !== assets)
+            throw new AppError('原镜像服务不可用', 503, 'SERVICE_NOT_READY');
+          const check = () => {
+            if (this.directory.get('system', definition.id) !== instance || this.owned.get(definition.id)?.instance !== instance ||
+              this.directory.get('system', 'imageAssets') !== provider.instance || this.owned.get('imageAssets')?.value !== assets)
+              throw new AppError('原资源提供者已更换', 403, 'PLUGIN_REVOKED');
+            // This assembly-only port can only reconstruct cleanup for the original ledger row.
+            // Revoking ordinary services must not revoke reclamation of that original resource.
+          };
+          check();
+          return executionCleanupFactory(definition.id, assets, machines, check);
+        },
       }) as SystemFactoryResolver<K, R, L, D>;
     };
     this.lifecycle.register({

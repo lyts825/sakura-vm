@@ -24,10 +24,11 @@ await cp(join(root, 'server/compute-worker.mjs'), join(target, 'compute-worker.m
 // 数据任务通过 import.meta.url 定位客户机工作器，发行包须与服务器入口同目录。
 await cp(join(root, 'server/data-worker.py'), join(root, '.sakura-server/data-worker.py'));
 // 固定工具与解析器按相邻 URL 加载；源码和已编译入口必须一起交付。
-for (const file of ['integration-http-worker.py', 'drill-guest.py', 'drill-watchdog.cs', 'core-drill-validation-controller.mjs'])
+for (const file of ['integration-http-worker.py', 'drill-guest.py', 'drill-watchdog.cs', 'core-drill-validation-controller.mjs', 'suite-execution-guardian.py', 'suite-browser-worker.py', 'suite-database-worker.py', 'suite-event-worker.py', 'suite-media-worker.py', 'suite-learning-worker.py'])
   await cp(join(root, 'server', file), join(root, '.sakura-server', file));
 // 动态插件计算模块位于 assets/，其 import.meta.url 必须解析到同目录的固定解析器。
 await cp(join(root, 'server', 'knowledge-worker.mjs'), join(target, 'knowledge-worker.mjs'));
+await cp(join(root, 'server', 'browser-pixels-worker.mjs'), join(target, 'browser-pixels-worker.mjs'));
 if (process.platform === 'win32') {
   await import('./resilience-build-watchdog.mjs');
   await cp(join(root, '.tools', 'resilience'), join(target, 'resilience'), { recursive: true });
@@ -37,7 +38,7 @@ await cp(join(root, 'server/network/worker.mjs'), join(target, 'network-worker.m
 await cp(join(root, 'server/network/bounded-qmp-policy.mjs'), join(target, 'bounded-qmp-policy.mjs'));
 await cp(join(root, 'server/network/parent-exec.py'), join(target, 'network-parent-exec.py'));
 await mkdir(join(root, '.sakura-server/docs'), { recursive: true });
-for (const file of ['network-runtime.md', 'delegated-actions.md', 'incident-capture.md'])
+for (const file of ['network-runtime.md', 'delegated-actions.md', 'incident-capture.md', 'browser-lab.md', 'database-evolution.md', 'model-evaluation.md', 'event-lab.md', 'flow-studio.md', 'media-studio.md', 'learning-lab.md', 'suite-execution.md', 'release-2.8.0.md'])
   await cp(join(root, 'docs', file), join(root, '.sakura-server/docs', file));
 const networkSources = [
   'server/network-entry.ts',

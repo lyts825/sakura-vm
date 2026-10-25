@@ -77,7 +77,7 @@ export const pluginPackSchema = z
 export const pluginSelectionSchema = z
   .object({
     schemaVersion: z.literal(3),
-    plugins: z.array(id).max(100),
+    plugins: z.array(id).max(512),
     packs: z.array(id).max(100),
   })
   .strict();

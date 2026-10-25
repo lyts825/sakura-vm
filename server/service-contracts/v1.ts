@@ -1,3 +1,97 @@
+import type {KnowledgeActionsV1 as KnowledgeActionsContract} from './delegated-actions.ts';
+export interface KnowledgeActionsV1 extends KnowledgeActionsContract {}
+import type {IntegrationActionsV1 as IntegrationActionsContract} from './delegated-actions.ts';
+export interface IntegrationActionsV1 extends IntegrationActionsContract {}
+import type * as LearningContracts from './learning-lab.ts';
+export interface LearningCoursesV1 extends LearningContracts.LearningCoursesV1 {}
+export interface LearningAssetsV1 extends LearningContracts.LearningAssetsV1 {}
+export interface LearningLessonsV1 extends LearningContracts.LearningLessonsV1 {}
+export interface LearningEnvironmentsV1 extends LearningContracts.LearningEnvironmentsV1 {}
+export interface LearningStepsV1 extends LearningContracts.LearningStepsV1 {}
+export interface LearningChecksV1 extends LearningContracts.LearningChecksV1 {}
+export interface LearningSessionsV1 extends LearningContracts.LearningSessionsV1 {}
+export interface LearningProgressV1 extends LearningContracts.LearningProgressV1 {}
+export interface LearningAssessmentsV1 extends LearningContracts.LearningAssessmentsV1 {}
+export interface LearningExchangeV1 extends LearningContracts.LearningExchangeV1 {}
+export interface LearningWorkbenchV1 extends LearningContracts.LearningWorkbenchV1 {}
+import type * as MediaContracts from './media-studio.ts';
+export interface MediaSourcesV1 extends MediaContracts.MediaSourcesV1 {}
+export interface MediaInspectV1 extends MediaContracts.MediaInspectV1 {}
+export interface MediaRecipesV1 extends MediaContracts.MediaRecipesV1 {}
+export interface MediaWorkersV1 extends MediaContracts.MediaWorkersV1 {}
+export interface MediaCaptionsV1 extends MediaContracts.MediaCaptionsV1 {}
+export interface MediaCollectionsV1 extends MediaContracts.MediaCollectionsV1 {}
+export interface MediaReviewsV1 extends MediaContracts.MediaReviewsV1 {}
+export interface MediaExchangeV1 extends MediaContracts.MediaExchangeV1 {}
+export interface MediaWorkbenchV1 extends MediaContracts.MediaWorkbenchV1 {}
+import type * as FlowContracts from './flow-studio.ts';
+export interface FlowDefinitionsV1 extends FlowContracts.FlowDefinitionsV1 {}
+export interface FlowInputsV1 extends FlowContracts.FlowInputsV1 {}
+export interface FlowConnectorsV1 extends FlowContracts.FlowConnectorsV1 {}
+export interface FlowPlansV1 extends FlowContracts.FlowPlansV1 {}
+export interface FlowApprovalsV1 extends FlowContracts.FlowApprovalsV1 {}
+export interface FlowJournalV1 extends FlowContracts.FlowJournalV1 {}
+export interface FlowRunsV1 extends FlowContracts.FlowRunsV1 {}
+export interface FlowTimersV1 extends FlowContracts.FlowTimersV1 {}
+export interface FlowExchangeV1 extends FlowContracts.FlowExchangeV1 {}
+export interface FlowWorkbenchV1 extends FlowContracts.FlowWorkbenchV1 {}
+import type * as EventContracts from './event-lab.ts';
+export interface EventContractsV1 extends EventContracts.EventContractsV1 {}
+export interface EventFixturesV1 extends EventContracts.EventFixturesV1 {}
+export interface EventProducersV1 extends EventContracts.EventProducersV1 {}
+export interface EventConsumersV1 extends EventContracts.EventConsumersV1 {}
+export interface EventScenariosV1 extends EventContracts.EventScenariosV1 {}
+export interface EventBrokersV1 extends EventContracts.EventBrokersV1 {}
+export interface EventRunsV1 extends EventContracts.EventRunsV1 {}
+export interface EventAssertionsV1 extends EventContracts.EventAssertionsV1 {}
+export interface EventReportsV1 extends EventContracts.EventReportsV1 {}
+export interface EventExchangeV1 extends EventContracts.EventExchangeV1 {}
+export interface EventWorkbenchV1 extends EventContracts.EventWorkbenchV1 {}
+import type {EvaluationCallsV1 as EvaluationCallsContract} from './evaluation-calls.ts';
+export interface EvaluationCallsV1 extends EvaluationCallsContract {}
+import type {LearningToolSessionsV1 as LearningToolSessionsContract} from './suite-execution.ts';
+export interface LearningToolSessionsV1 extends LearningToolSessionsContract {}
+import type {MediaTasksV1 as MediaTasksContract} from './suite-execution.ts';
+export interface MediaTasksV1 extends MediaTasksContract {}
+import type {EventSessionsV1 as EventSessionsContract} from './suite-execution.ts';
+export interface EventSessionsV1 extends EventSessionsContract {}
+import type {DatabaseRehearsalV1 as DatabaseRehearsalContract} from './suite-execution.ts';
+export interface DatabaseRehearsalV1 extends DatabaseRehearsalContract {}
+import type {BrowserSessionsV1 as BrowserSessionsContract} from './suite-execution.ts';
+export interface BrowserSessionsV1 extends BrowserSessionsContract {}
+import type * as EvaluationContracts from './evaluation-studio.ts';
+export interface EvaluationDatasetsV1 extends EvaluationContracts.EvaluationDatasetsV1 {}
+export interface EvaluationPromptsV1 extends EvaluationContracts.EvaluationPromptsV1 {}
+export interface EvaluationEndpointsV1 extends EvaluationContracts.EvaluationEndpointsV1 {}
+export interface EvaluationRunnersV1 extends EvaluationContracts.EvaluationRunnersV1 {}
+export interface EvaluationScorersV1 extends EvaluationContracts.EvaluationScorersV1 {}
+export interface EvaluationComparisonsV1 extends EvaluationContracts.EvaluationComparisonsV1 {}
+export interface EvaluationReviewsV1 extends EvaluationContracts.EvaluationReviewsV1 {}
+export interface EvaluationReportsV1 extends EvaluationContracts.EvaluationReportsV1 {}
+export interface EvaluationExchangeV1 extends EvaluationContracts.EvaluationExchangeV1 {}
+export interface EvaluationWorkbenchV1 extends EvaluationContracts.EvaluationWorkbenchV1 {}
+import type * as DatabaseContracts from './database-evolution.ts';
+export interface DatabaseSourcesV1 extends DatabaseContracts.DatabaseSourcesV1 {}
+export interface DatabaseSchemasV1 extends DatabaseContracts.DatabaseSchemasV1 {}
+export interface DatabaseChangesV1 extends DatabaseContracts.DatabaseChangesV1 {}
+export interface DatabaseFixturesV1 extends DatabaseContracts.DatabaseFixturesV1 {}
+export interface DatabaseRunnersV1 extends DatabaseContracts.DatabaseRunnersV1 {}
+export interface DatabaseChecksV1 extends DatabaseContracts.DatabaseChecksV1 {}
+export interface DatabaseRehearsalsV1 extends DatabaseContracts.DatabaseRehearsalsV1 {}
+export interface DatabaseReportsV1 extends DatabaseContracts.DatabaseReportsV1 {}
+export interface DatabaseExchangeV1 extends DatabaseContracts.DatabaseExchangeV1 {}
+export interface DatabaseWorkbenchV1 extends DatabaseContracts.DatabaseWorkbenchV1 {}
+import type * as BrowserContracts from './browser-lab.ts';
+export interface BrowserTargetsV1 extends BrowserContracts.BrowserTargetsV1 {}
+export interface BrowserFixturesV1 extends BrowserContracts.BrowserFixturesV1 {}
+export interface BrowserJourneysV1 extends BrowserContracts.BrowserJourneysV1 {}
+export interface BrowserRunnersV1 extends BrowserContracts.BrowserRunnersV1 {}
+export interface BrowserAssertionsV1 extends BrowserContracts.BrowserAssertionsV1 {}
+export interface BrowserVisualV1 extends BrowserContracts.BrowserVisualV1 {}
+export interface BrowserAccessibilityV1 extends BrowserContracts.BrowserAccessibilityV1 {}
+export interface BrowserReportsV1 extends BrowserContracts.BrowserReportsV1 {}
+export interface BrowserExchangeV1 extends BrowserContracts.BrowserExchangeV1 {}
+export interface BrowserWorkbenchV1 extends BrowserContracts.BrowserWorkbenchV1 {}
 import type * as IncidentContracts from './incident-desk.ts';
 import type * as IncidentReviewContracts from './incident-reviews.ts';
 import type * as IncidentExchangeContracts from './incident-exchange.ts';

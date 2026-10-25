@@ -22,3 +22,5 @@ export interface DelegatedActionsV1 extends DelegatedActionProvider {
 }
 export interface MaintenanceActionsV1 extends DelegatedActionProvider {}
 export interface ResilienceActionsV1 extends DelegatedActionProvider {}
+export interface IntegrationActionsV1 extends DelegatedActionProvider {}
+export interface KnowledgeActionsV1 extends DelegatedActionProvider {}

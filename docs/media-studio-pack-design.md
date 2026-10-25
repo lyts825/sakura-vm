@@ -2,7 +2,7 @@
 
 ## 1. 版本与使用结果
 
-设计 3.0.0，2026-10-24；基线 2.7.0 / `912287a`。`media-studio` 含 9 个拟议插件，实现待开始。共同边界见[第三批总览](plugin-pack-suite-design.md)。
+设计 3.0.0，2026-10-24；设计基线 2.7.0 / `912287a`。`media-studio` 的 9 个插件已在 2.8.0 实施，并完成真实 FFmpeg、服务代理、字幕集合、审核交接及撤权清理验证。实际入口、限制和验证边界见[媒体资源制作使用说明](media-studio.md)。共同边界见[第三批总览](plugin-pack-suite-design.md)。下文保留原设计；容量、依赖和服务方法以使用说明及已生成契约为准。
 
 用户把本地图片、音视频和字幕变成尺寸明确、格式固定、可审阅的交付资源。已有[桌面录制](desktop-recording.md)继续负责捕获；本包处理用户选择的文件，记录来源、配方和派生关系，不读取摄像头、麦克风或实时桌面。
 
@@ -56,7 +56,7 @@ sources 管理材料容量与运行名额，inspect 与 workers 各自持有原�
 | 字幕与集合 | `/api/media-captions/validateTiming`、`/api/media-collections/assemble` | `media caption validate`、`media collection assemble` | 时间错误和固定集合 |
 | 审阅/导出 | `/api/media-reviews/decide`、`/api/media-exchange/export` | `media review decide`、`media export` | 接受修订和实际资源 |
 
-拟定单图片 20 MiB、解码后 40,000,000 像素；每批 200 张。单音视频 256 MiB、10 分钟；视频最多 30 帧/秒、18,000 帧、单帧 1920 × 1080。解码逐帧流式处理，不将全片放入内存。单任务 15 分钟，每包最多两台 2 vCPU / 2 GiB VM，每台虚拟磁盘 16 GiB。总存储 64 GiB，单导出 2 GiB。
+原设计拟定单图片 20 MiB、解码后 40,000,000 像素；每批 200 张。单音视频 256 MiB、10 分钟；视频最多 30 帧/秒、18,000 帧、单帧 1920 × 1080。解码逐帧流式处理，不将全片放入内存。单任务 15 分钟，每包最多两台 2 vCPU / 2 GiB VM，每台虚拟磁盘 16 GiB。总存储 64 GiB，单导出 2 GiB。实施已收紧这些上限，实际以[使用说明的容量表](media-studio.md#实际容量)为准。
 
 当前 FilesV2 捕获仍受 32 MiB 总量限制，大文件使用显式上传。图片、视频与导出同时占用包和宿主额度；预算不足时不启动转换。
 

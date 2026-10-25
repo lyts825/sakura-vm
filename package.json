@@ -1,6 +1,6 @@
 {
   "name": "sakura-vm",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "private": true,
   "type": "module",
   "description": "A WSL-inspired local Linux workspace, powered by PosixLoom and QEMU",
@@ -11,7 +11,7 @@
     "setup": "node scripts/setup.mjs",
     "dev": "tsx server/index.ts --dev",
     "preview": "vite preview",
-    "build": "node scripts/patch-posixloom-process.mjs && tsc --noEmit && node scripts/build-native-clipboard.mjs && node scripts/build-gpg-agent-host.mjs && vite build && vite build --ssr server/index.ts --outDir .sakura-server && vite build --ssr scripts/ha-witness.ts --outDir .sakura-witness && vite build --ssr server/network-entry.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/compute-task.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/supply-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/locale-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/incident-offline.ts --outDir .sakura-server --emptyOutDir false && node scripts/prepare-server-assets.mjs",
+    "build": "node scripts/patch-posixloom-process.mjs && tsc --noEmit && node scripts/build-native-clipboard.mjs && node scripts/build-gpg-agent-host.mjs && vite build && vite build --ssr server/index.ts --outDir .sakura-server && vite build --ssr scripts/ha-witness.ts --outDir .sakura-witness && vite build --ssr server/network-entry.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/compute-task.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/supply-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/locale-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/incident-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/browser-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/database-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/evaluation-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/event-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/flow-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/media-offline.ts --outDir .sakura-server --emptyOutDir false && vite build --ssr server/learning-offline.ts --outDir .sakura-server --emptyOutDir false && node scripts/prepare-server-assets.mjs",
     "supply": "node scripts/cli.mjs supply",
     "locale": "node scripts/cli.mjs locale",
     "incident": "node scripts/cli.mjs incident",
@@ -171,7 +171,14 @@
     "architecture:check": "tsx scripts/check-architecture.ts",
     "plugins:contracts": "tsx scripts/service-contracts.ts",
     "plugins:contracts:freeze": "tsx scripts/freeze-service-contracts.ts",
-    "test:plugins:vm": "tsx scripts/smoke-plugin-lifecycle.ts"
+    "test:plugins:vm": "tsx scripts/smoke-plugin-lifecycle.ts",
+    "browser": "node scripts/cli.mjs browser",
+    "database": "node scripts/cli.mjs database",
+    "evaluation": "node scripts/cli.mjs evaluation",
+    "event": "node scripts/cli.mjs event",
+    "flow": "node scripts/cli.mjs flow",
+    "media": "node scripts/cli.mjs media",
+    "learning": "node scripts/cli.mjs learning"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1141.0",

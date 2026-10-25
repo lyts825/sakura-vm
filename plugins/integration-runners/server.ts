@@ -1,6 +1,7 @@
 /** 装配独立领域；跨插件只调用声明服务。 Assemble one domain using declared services. */
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { IntegrationRunners } from '../../server/integration-runners.ts';
+import { flowIntegrationActions } from '../../server/flow-provider-actions.ts';
 import { integrationRoute } from '../../server/integration-http.ts';
 import { integrationResponseSchemas } from '../../shared/contracts/integration-http.ts';
 import { services } from './services.ts';
@@ -33,6 +34,13 @@ export async function activate(host: PluginContext) {
     host.use(projectServices.workspaces),
   );
   await service.init();
+  const actions = flowIntegrationActions(
+    host.capabilities.metadata.reference('delegated-actions', () => null),
+    service,
+  );
+  host.onDispose(() => actions.close());
+  await actions.init();
+  host.provide(services.actions, actions);
   host.provide(services.runners, service);
   host.registerJobs(service.jobs, () => {
     throw new Error('原请求不能重放，请创建新计划');

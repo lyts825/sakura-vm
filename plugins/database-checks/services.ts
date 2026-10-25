@@ -1,0 +1,5 @@
+import { serviceRef } from '../../server/service-ref.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
+export const services = {
+  checks: serviceRef('database-checks', 'databaseChecks', serviceContracts.DatabaseChecks),
+};

@@ -3,6 +3,13 @@ import { Worker, isMainThread, parentPort, workerData } from 'node:worker_thread
 import { lstat } from 'node:fs/promises';
 import { readSuiteFile } from './suite-files.mjs';
 const tools = Object.freeze({
+  learning: ['learning-offline.js', 'verifyLearningBundle'],
+  media: ['media-offline.js', 'verifyMediaBundle'],
+  flow: ['flow-offline.js', 'verifyFlowBundle'],
+  event: ['event-offline.js', 'verifyEventBundle'],
+  browser: ['browser-offline.js', 'verifyBrowserBundle'],
+  database: ['database-offline.js', 'verifyDatabaseBundle'],
+  evaluation: ['evaluation-offline.js', 'verifyEvaluationBundle'],
   supply: ['supply-offline.js', 'verifySupplyBundle'],
   locale: ['locale-offline.js', 'verifyLocaleBundle'],
   incident: ['incident-offline.js', 'verifyIncidentBundle'],

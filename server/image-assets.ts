@@ -51,6 +51,8 @@ const stateSchema = z
   })
   .strict();
 type State = z.infer<typeof stateSchema>;
+/** 本体装配只提供原记录查询与停止/删除，不授予创建、网络或执行。 */
+export type OriginalImageVmCleanupPort = Pick<VmAccess, 'records' | 'live' | 'stop' | 'delete'>;
 const drillOwnership = new WeakMap<object, ImageAssets>();
 /** 本体内部适配器读取原服务账本，插件公开契约不包含此入口。
  * Internal adapter access to the originating ledger, outside the public plugin contract. */
@@ -605,6 +607,41 @@ export class ImageAssets implements ImageAssetsV1 {
     return structuredClone(row);
   }
   async destroyOwnedVm(input: OwnedImageVm) {
+    return this.destroyOriginalVm(input, this.machines);
+  }
+  /** 装配专用：闭包仅回收已固定的原账本对象，不进入公共服务契约。 */
+  async originalExecutionCleanup(principal: string, owner: string, ref: ImageRef,
+    expected: OwnedImageVm | null, machines: OriginalImageVmCleanupPort) {
+    const state = (await this.state()).value;
+    if (state.claims[owner] !== principal || this.principal() !== principal)
+      throw new AppError('原镜像消费者不匹配', 403, 'SUITE_EXECUTION_CLEANUP_PRINCIPAL');
+    const rows = state.vms.filter((r) => r.owner === owner);
+    if (rows.length > 1 || (expected && (!rows[0] || rows[0].token !== expected.token || rows[0].vmId !== expected.vmId || rows[0].createdAt !== expected.createdAt)) ||
+      rows.some((r) => r.imageRef.assetId !== ref.assetId || r.imageRef.digest !== ref.digest))
+      throw new AppError('原镜像资源身份不匹配', 403, 'SUITE_EXECUTION_CLEANUP_IDENTITY');
+    const original = rows[0] ? structuredClone(rows[0]) : null;
+    return async () => {
+      const current = (await this.state()).value;
+      if (current.claims[owner] !== principal || this.principal() !== principal)
+        throw new AppError('原镜像消费者已改变', 403, 'SUITE_EXECUTION_CLEANUP_PRINCIPAL');
+      const now = current.vms.filter((r) => r.owner === owner);
+      if (now.length !== (original ? 1 : 0) || (original && (!now[0] || now[0].token !== original.token || now[0].vmId !== original.vmId || now[0].createdAt !== original.createdAt)))
+        throw new AppError('原资源被替换', 403, 'SUITE_EXECUTION_CLEANUP_IDENTITY');
+      const result = now[0] ? await this.destroyOriginalVm(now[0], machines) : null;
+      await this.release(ref, owner);
+      return result;
+    };
+  }
+  /** 装配专用的实际缓存清单；删除未确认或文件身份未知时不归还容量。 */
+  async executionImageInventory() {
+    const state=(await this.state()).value, result:ImageAsset[]=[];
+    for(const asset of [...state.assets,...state.retired]) {
+      try { const file=await this.regular(this.file(asset.id)); if(file.size!==asset.bytes)throw new AppError('原镜像缓存大小改变',409,'SUITE_EXECUTION_IMAGE_CHANGED');result.push(asset); }
+      catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT'&&state.retired.some(r=>r.id===asset.id))continue;throw error;}
+    }
+    return result;
+  }
+  private async destroyOriginalVm(input: OwnedImageVm, machines: OriginalImageVmCleanupPort) {
     ownedImageVmSchema.parse(input);
     const state = (await this.state()).value;
     this.claim(state, input.owner);
@@ -618,14 +655,14 @@ export class ImageAssets implements ImageAssetsV1 {
     if (!row || JSON.stringify(row) !== JSON.stringify(input)) throw new AppError('实例归属回执不匹配', 403);
     if (row.cleanup === 'confirmed') return row;
     try {
-      const vm = this.machines.records.get(row.vmId);
+      const vm = machines.records.get(row.vmId);
       if (vm) {
         if (vm.createdAt !== row.createdAt) throw new AppError('实例创建身份已改变', 409);
-        if (this.machines.live.has(row.vmId)) await this.machines.stop(row.vmId, true);
-        if (this.machines.live.has(row.vmId)) throw new AppError('实例停止尚未确认', 503);
-        await this.machines.delete(row.vmId);
+        if (machines.live.has(row.vmId)) await machines.stop(row.vmId, true);
+        if (machines.live.has(row.vmId)) throw new AppError('实例停止尚未确认', 503);
+        await machines.delete(row.vmId);
       }
-      if (this.machines.live.has(row.vmId) || this.machines.records.has(row.vmId))
+      if (machines.live.has(row.vmId) || machines.records.has(row.vmId))
         throw new AppError('实例核销未完成', 503);
       try {
         await lstat(vmDir(row.vmId));

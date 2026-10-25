@@ -1,69 +1,70 @@
-# 事件与队列实验插件包设计
+# 事件与队列实验插件包
 
-## 1. 版本与使用结果
+## 版本与使用范围
 
-设计 3.0.0，2026-10-24；基线 2.7.0 / `912287a`。`event-lab` 含 11 个拟议插件，实现待开始，遵守[第三批共同协议](plugin-pack-suite-design.md)。
+2.7.0 → 2.8.0，2026-10-25。`event-lab` 已实现 11 个插件，遵守[第三批共同协议](plugin-pack-suite-design.md)。安装入口为 `plugins/packs/event-lab.ts`，工作台位于“开发”中的事件实验页面。
 
-用户定义消息、生产计划和消费策略，在专用队列中观察延迟、重复、重投、积压及应用结果去重。首版使用本包固定测试事件协议与持久队列实现，明确标为测试代理；不宣称兼容任何现有消息产品，也不测量生产集群性能。
+用户固定消息、发送顺序和消费策略，在独立虚拟机内观察重复投递、确认丢失后的重投和慢消费者。首版测试代理使用 SQLite WAL 持久队列和独立消费者进程。它只实现本包的实验协议，不提供外部消息产品的兼容性或生产性能结论。
 
-与[接口验证](integration-lab.md)的请求/响应不同，本包固定消息生命周期及确认语义。与[故障演练](resilience-lab.md)不同，延迟和重投属于预先声明的队列规则，不引入任意网络故障或生产服务操作。
+## 插件与权限归属
 
-## 2. 内部插件与依赖
+短依赖前缀为 `event-`。每个插件拥有独立服务、记录、修订和清理入口。
 
-短依赖前缀为 `event-`。
+| 插件 | 主要职责与服务方法 |
+| --- | --- |
+| `event-contracts` | 空间、消息模式和材料；`images`、`upload`、`validate`、`compare`，以及材料读写与导出策略 |
+| `event-fixtures` | 合成或人工审阅的固定消息；`generate`、`importRows` |
+| `event-producers` | 固定批次、FIFO 或按键顺序；`compile`、`previewMessages` |
+| `event-consumers` | 应用结果去重、延迟、拒绝列表和有限重试；`compile`、`validatePolicy` |
+| `event-scenarios` | 固定全部声明与截止；`compile`、`preview` |
+| `event-brokers` | 镜像选择、原工具会话及回收；`prepare`、`observe`，内部受限会话委派 |
+| `event-runs` | 预览、批准、一次提交及历史；`preview`、`start`、`inspect`、`cancel`、`reconcile`、`discardPreview` |
+| `event-assertions` | 重算消息轨迹、计数和顺序；`evaluate`、`explain` |
+| `event-reports` | 固定原运行与断言；`sealReport`、`compare` |
+| `event-exchange` | 逐来源导出授权、分片交接、隔离导入和恢复 |
+| `event-workbench` | 三个模板、完整操作页面和分页记录视图；`templates`、`createExample`、`view` |
 
-| 插件 ID | 专属对象、职责与主要服务方法 | 必需依赖 | 可选依赖 |
-| --- | --- | --- | --- |
-| `event-contracts` | 空间、消息模式、键与兼容规则；EventContractsV1：validate、compare | — | — |
-| `event-fixtures` | 固定消息正文和生成种子；EventFixturesV1：generate、importRows | contracts | — |
-| `event-brokers` | 专用 VM、队列、运行隔离与代理账本；EventBrokersV1：prepare、observe、cleanup | contracts, @projects | — |
-| `event-producers` | 发送顺序、速率和消息键；EventProducersV1：compile、previewMessages | contracts, fixtures | — |
-| `event-consumers` | 固定消费状态机、确认和幂等策略；EventConsumersV1：compile、validatePolicy | contracts | — |
-| `event-scenarios` | 发送、暂停、重投、恢复与截止阶段；EventScenariosV1：compile、preview | contracts, producers, consumers | — |
-| `event-runs` | 执行许可、消息意图和原始轨迹；EventRunsV1：preview、start、cancel、reconcile | brokers, scenarios, producers, consumers, fixtures | — |
-| `event-assertions` | 顺序、重复、遗漏、确认与业务结果检查；EventAssertionsV1：evaluate、explain | contracts, runs | — |
-| `event-reports` | 逐事件轨迹、积压与证据覆盖；EventReportsV1：seal、compare | runs, assertions | — |
-| `event-exchange` | 模式、策略、样例和证据包；EventExchangeV1：export、inspectImport、acceptImport | contracts, fixtures, brokers, producers, consumers, scenarios, runs, assertions, reports | — |
-| `event-workbench` | 模板、时序检查、异常定位和交接；EventWorkbenchV1：view、templates | * | — |
+只有 `event-brokers` 可以调用本体 `EventSessionsV1`。声明和执行计划固定原 actor、消费者代次、输入摘要、工具摘要和镜像身份。内部执行方法只接受原 `event-runs` 委派，不作为 HTTP 操作公开。一次批准只能对应一个会话，重复提交返回原记录。
 
-本包无需其他新包。代理、消费者进程和队列属于 brokers；runs 仅获本次资源的受限许可。producers、consumers 和 scenarios 保存声明，不直接创建进程。代理和消费者只在本次 VM 内连接，不映射宿主端口。
+## 准备与操作
 
-## 3. 完整用户流程
+准备一个 x86_64 镜像，安装 Python 3，并确保 `sqlite3`、`multiprocessing` 和 `json` 标准库可用。镜像须能够在新的隔离虚拟机内初始化网络与 SSH 身份。已初始化过的 Alpine 镜像应恢复 tiny-cloud 服务和首次启动状态，再封存。工具探针会读取实际 Python 和 SQLite 版本。
 
-1. 选择“重复消息去重”“确认丢失后的重投”或“慢消费者积压”，创建固定合成消息。
-2. 定义消息键和模式，再选择发送计划、消费延迟、确认位置和去重策略。
-3. 封存场景，选择已准备镜像，预览消息数量、阶段、代理及截止。
-4. 确认后创建专用 VM 和本次队列，执行固定状态机。
-5. 查看每条消息的发送、入队、投递、应用结果和确认，核对断言及未知项。
-6. 封存报告、导出指定正文或仅摘要，核销原代理与副本。
+宿主套件默认总预算仍为 8 GiB，并保留 256 MiB 恢复空间。一次工具虚拟机的声明磁盘至少为 8 GiB，另外还要计入实际镜像、输入及输出，因此默认额度会拒绝这类执行。管理员需明确配置足够的 `SAKURA_SUITE_CAPACITY_BYTES`。共享镜像按实际摘要计费一次，各虚拟磁盘分别预留；默认额度不会因本包自动提高。
 
-## 4. 事件与判定语义
+1. 选择已准备镜像和模板，创建合成消息。也可上传 JSON，并明确确认已经审阅，再按消息模式导入。
+2. 选择消息顺序、应用结果去重、消费延迟、重试次数和拒绝消息 ID，固定场景。
+3. 预览预算及截止，再批准本次执行。关闭未提交的预览会释放它持有的材料额度。
+4. 查看实际会话、逐事件轨迹及清理状态。取消会停止原资源，核销只处理原会话，不重放消息。
+5. 重算断言并封存报告。未完成的轨迹保留 `inconclusive`，死信和重复应用结果保留失败事实。
+6. 逐来源允许导出后生成交接包。导入会创建新的隔离空间，外来执行声明不带批准和执行能力。
 
-`messageId` 标识原消息，`deliveryId` 标识每次投递。日志保留消息键、正文摘要、序列、单调时钟及来源进程身份。生产者写入与代理接收分开记账；确认响应丢失时，不能把发送失败解释为没有入队。
+## 实验语义与边界
 
-消费模板只允许固定动作：校验、等待、写入本次结果表、确认、拒绝及规定次数重试。没有任意脚本、外部回调或外部数据库。应用结果去重按固定幂等键核验，不宣称传输只发生一次。
+`messageId` 标识原消息，`deliveryId` 由原队列序号和投递尝试次数组成。日志区分发送意图、入队、投递、应用结果意图、实际结果、去重、确认、确认丢失、拒绝及死信。最终队列和应用结果数量来自 SQLite 读回，代理和消费者分别记录实际进程身份。
 
-顺序只在明确分区和键范围内判断。迟到、重投、未发送、投递未知及已确认分别计数。延迟以同一代理的单调时钟计算；导入轨迹或不同进程时钟不能直接相减。最终计数不完整时，整体为 inconclusive。
+应用结果去重按 `messageId` 核对，不保证传输只发生一次。FIFO 和按键顺序检查只比较首次投递的声明顺序。重投保留原消息身份。时间值来自同一个代理的单调时钟；导入记录不会参与本机性能测量。
 
-测试代理持久保存队列与确认账本。代理进程退出后保留原数据，不自动恢复投递；新演练使用新队列。显式的场景内重投必须包含在原计划中，宿主重启后的恢复只核销原任务。
+每次最多 1000 条消息，单条正文由模式限制在 8 KiB 内；完整输入最多 2 MiB，完整轨迹最多 12,000 条。预览前按声明的复制、拒绝和重试策略计算轨迹上限，越界即拒绝。一个消费者最多等待 500 ms，重试最多 3 次。慢消费者场景也按全部可能投递次数核对声明截止。
 
-## 5. 页面、接口与预算
+一次执行最多 900 秒，固定为 1 vCPU、1 GiB 内存和至少 8 GiB 虚拟磁盘。输出上限为 8 MiB。私有运输使用 64 KiB 文件块，每块复核当前授权，完整文件核对摘要和原文件身份。普通机器执行接口的原有限额保持不变。
 
-工作台包含模式、样例、生产/消费策略、场景、运行、时序和交接。CLI 别名 `event`。
+客户机只运行固定 worker，使用 UID/GID 65534。队列和消费者通过客户机内管道通信，虚拟机没有外部网络、宿主共享目录或端口映射。每次执行使用新队列；宿主重启只把未结束记录改为中断，用户核销原资源后才能建立新的执行。
 
-| 操作 | 拟议 HTTP | CLI | 关键结果 |
-| --- | --- | --- | --- |
-| 编译策略 | `/api/event-producers/compile`、`/api/event-consumers/compile` | `event producer compile`、`event consumer compile` | 有限状态、数量与拒绝原因 |
-| 运行 | `/api/event-runs/preview`、`start` | `event run preview/start` | 固定计划与真实执行回执 |
-| 轨迹检查 | `/api/event-assertions/evaluate` | `event assertion evaluate` | 每消息状态、未知及业务重复 |
-| 核销/交换 | `/api/event-runs/reconcile`、`/api/event-exchange/export` | `event run reconcile`、`event export` | 原资源状态、数据覆盖 |
+## 接口与离线核验
 
-拟定每次 10,000 条消息、单条 8 KiB、最多 40,000 次投递，速率 100 条/秒、消费者 4 个，实际并发仍受工具预算约束。运行最多 10 分钟，每包 1 台 2 vCPU / 2 GiB VM，虚拟磁盘 8 GiB。总存储 16 GiB，单次证据 512 MiB、导出 1 GiB。正文按原消息保存一次，投递日志引用摘要。
+HTTP 入口由 `shared/contracts/event-http.ts` 生成。例如 `/api/event-runs/preview`、`/api/event-runs/start`、`/api/event-assertions/evaluate` 和 `/api/event-reports/seal-report`。CLI 别名为 `event`，操作参数采用相同的严格 JSON 契约。
 
-## 6. 实施与验收
+`server/event-offline.ts` 核对交接图、材料摘要、声明引用、逐投递计数、断言和报告关系。导出内容移除原虚拟机票据、宿主进程身份和执行计划，并逐次复查来源导出权限。撤销权限后，已经生成的包也无法继续通过本机下载接口读取。
 
-先实现模式、固定状态机和持久队列协议，再通过 EventSessionsV1 的实际进程归属、截止和停止验证，最后接通断言、工作台与交换。队列崩溃恢复不得依赖客户机内存计数。
+离线结果明确返回 `sourceTrust: unauthenticated` 和 `executionVerified: false`。材料及计算关系一致，不代表外来轨迹确实发生，也不会转换为本机通过记录。
 
-必须验证三个模板及其失败变体；相同键不同正文、重复确认、先写结果后丢失确认、毒消息重试耗尽、顺序范围误判、调度缺口、控制器冻结、代理崩溃、取消及容量耗尽都须有明确结果。离线核验能重算有完整轨迹的计数，但不能认证外来轨迹确实发生。
+## 验证记录
 
-未来连接外部消息产品须新增独立适配器、授权及验收。本版的测试协议不会被登记成外部产品兼容证明。
+2026-10-25，真实 SystemServices、Features 和服务代理上的完整流程通过 12 项断言。两台隔离虚拟机分别验证确认丢失去重和拒绝消息重试耗尽。正常记录含 40 次投递及 20 次去重；失败记录保留死信。两次原虚拟机与进程都已核销。
+
+同次验证覆盖一次提交、撤销预览、报告、逐来源导出授权、隔离导入、伪造计数拒绝，以及撤销权限后拒绝下载。材料保存在被忽略的本地目录 `artifacts/plugin-packs-2.8.0/event-real-1792911070547/`，测试脚本和输出不纳入 Git。
+
+共用执行底座还完成真实控制器退出与恢复验证：原控制器退出后，监管程序在 436 ms 内停止原 QEMU。新控制器保留中断历史，使用新消费者代次显式核销原资源，未重放执行。新学习档案用 1,921,970 字节输入和 1,928,876 字节输出验证了共用分块运输。
+
+外部消息系统、多个并行消费者、任意回调、脚本、外部数据库和跨运行续投不在本版范围内。连接外部消息产品需要独立适配器、权限和验收。

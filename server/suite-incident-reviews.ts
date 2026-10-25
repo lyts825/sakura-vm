@@ -435,6 +435,7 @@ export class IncidentReviews extends SuiteStore implements IncidentReviewsV1 {
         fact: { adapter: 'maintenance-cleanup', ...result.data },
       };
     }
+    if (receipt.plan.input.adapter !== 'resilience-reconcile') return { status: 'invalid-proof', resourceState: 'unknown', fact: null };
     const result = resilienceResult.safeParse(receipt.result);
     if (!result.success || result.data.runId !== receipt.plan.input.runId)
       return { status: 'invalid-proof', resourceState: 'unknown', fact: null };

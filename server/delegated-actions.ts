@@ -7,6 +7,7 @@ import {
   type DelegatedAdapter,
 } from '../shared/contracts/delegated-actions.ts';
 import type { DelegatedActionsV1, DelegatedActionProvider } from './service-contracts/delegated-actions.ts';
+import { resourceContext } from './host-runtime/context.ts';
 
 export type DelegatedProviderResolver = (adapter: DelegatedAdapter) => DelegatedActionProvider | undefined;
 export class DelegatedActions implements DelegatedActionsV1 {
@@ -18,7 +19,11 @@ export class DelegatedActions implements DelegatedActionsV1 {
     return provider;
   }
   async providers() {
-    return (['maintenance-cleanup', 'resilience-reconcile'] as const).map((adapter) => ({
+    const adapters: DelegatedAdapter[] =
+      resourceContext()?.serviceConsumerPluginInstanceId === 'official:flow-connectors'
+        ? ['integration-run', 'knowledge-publish']
+        : ['maintenance-cleanup', 'resilience-reconcile'];
+    return adapters.map((adapter) => ({
       adapter,
       available: !!this.resolve(adapter),
     }));
