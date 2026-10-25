@@ -14,9 +14,18 @@ const [action = 'help', name, ...args] = process.argv.slice(2);
 /** 解析 CLI 命令并通过已认证本机 API 调用基础或可选插件能力；交互终端接管输入与窗口尺寸，长任务响应取消。参数和服务错误向顶层传播，退出时释放终端状态。
  * Dispatch CLI arguments through authenticated local APIs to core or optional plugin capabilities; interactive terminals take over input/size and long work supports cancellation. Argument/service errors propagate and exit restores terminal state. */
 async function main() {
-  if (['supply', 'locale'].includes(action) && ['help', '--help', 'verify'].includes(name || 'help')) {
+  if (
+    ['supply', 'locale', 'incident'].includes(action) &&
+    ['help', '--help', 'verify'].includes(name || 'help')
+  ) {
     try {
-      const value = await (action === 'locale' ? (await import('./locale-cli.mjs')).localeCli : (await import('./supply-cli.mjs')).supplyCli)([name, ...args].filter(Boolean));
+      const command =
+        action === 'incident'
+          ? (await import('./incident-cli.mjs')).incidentCli
+          : action === 'locale'
+            ? (await import('./locale-cli.mjs')).localeCli
+            : (await import('./supply-cli.mjs')).supplyCli;
+      const value = await command([name, ...args].filter(Boolean));
       console.log(value?.help || JSON.stringify(value, null, 2));
     } catch (error) {
       console.error(error.message);
@@ -53,7 +62,9 @@ async function main() {
       return;
     }
     const { developmentHelp } = await import('./development-cli.mjs');
-    console.log('Plugin packs:\n  integration help\n  resilience help\n  knowledge help');
+    console.log(
+      'Plugin packs:\n  integration help\n  resilience help\n  knowledge help\n  supply help\n  locale help\n  incident help',
+    );
     const { sandboxHelp } = await import('./sandbox-cli.mjs');
     console.log(
       'Project commands:\n  shell <name> [--project <id>]\n  exec <name> [--project <id> | --instance] [--timeout <seconds>] -- <command> [args...]\n  Commands use the saved active project by default. Account mode accepts SAKURA_TOKEN.',
@@ -116,8 +127,17 @@ async function main() {
       console.log(JSON.stringify(result, null, 2));
       return;
     }
+    if (action === 'incident') {
+      const value = await (
+        await import('./incident-cli.mjs')
+      ).incidentCli([name, ...args].filter(Boolean), { api });
+      console.log(JSON.stringify(value, null, 2));
+      return;
+    }
     if (action === 'locale') {
-      const value = await (await import('./locale-cli.mjs')).localeCli([name, ...args].filter(Boolean), { api });
+      const value = await (
+        await import('./locale-cli.mjs')
+      ).localeCli([name, ...args].filter(Boolean), { api });
       console.log(JSON.stringify(value, null, 2));
       return;
     }
@@ -713,7 +733,9 @@ async function main() {
     console.error(
       `Sakura: ${error.message}. ${error.message === 'fetch failed' ? 'Run npm start first.' : ''}`,
     );
-    process.exitCode = ['supply', 'locale'].includes(action) ? error.exitCode || (error.status === 409 ? 3 : 2) : 1;
+    process.exitCode = ['supply', 'locale', 'incident'].includes(action)
+      ? error.exitCode || (error.status === 409 ? 3 : 2)
+      : 1;
   }
 }
 await main();

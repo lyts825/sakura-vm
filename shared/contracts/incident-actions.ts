@@ -1,7 +1,17 @@
 /** 事件动作的本地批准和原提供者回执分开；人工声明没有系统票据。 */
 import { z } from 'zod';
 import * as S from './suite-common.ts';
-import { delegatedPlanSchema, delegatedReceiptSchema } from './delegated-actions.ts';
+import {
+  delegatedPlanSchema,
+  delegatedReceiptSchema,
+  delegatedAcknowledgementReason,
+} from './delegated-actions.ts';
+export const incidentActionAcknowledgement = S.suiteScope
+  .extend({
+    action: S.suiteRef,
+    reason: delegatedAcknowledgementReason,
+  })
+  .strict();
 export const incidentPlanAction = S.suiteScope
   .extend({
     runbook: S.suiteRef,

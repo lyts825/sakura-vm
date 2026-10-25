@@ -13,6 +13,27 @@ const reference = (r: S.SuiteRecord): S.SuiteRef => ({ domain: r.domain, id: r.i
 const objectPath = (r: S.SuiteRef) => `objects/${r.domain}/${r.id}-${r.revision}.json`;
 const materialPath = (r: S.SuiteRef) => `materials/${r.id}-${r.revision}.bin`;
 const transferInput = S.suiteScope.extend({ id: S.suiteId }).strict();
+const projectionStamp = z
+  .object({
+    id: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/),
+    binding: S.suiteJson,
+    summary: S.suiteJson,
+  })
+  .strict();
+export interface SuiteExportProjection {
+  readonly id: string;
+  project(
+    scope: S.SuiteScope,
+    selected: S.SuiteRef[],
+  ): Promise<{
+    rows: S.SuiteRecord[];
+    materials: { reference: S.SuiteRef; data: Uint8Array }[];
+    binding: S.SuiteJson;
+    summary: S.SuiteJson;
+  }>;
+  /** 只核对本地原图与明确导出许可，不能创建或重放领域动作。 */
+  authorize(scope: S.SuiteScope, selected: S.SuiteRef[], binding: S.SuiteJson): Promise<void>;
+}
 const exportContent = z
   .object({
     format: z.literal('sakura-suite-export/1'),
@@ -22,6 +43,7 @@ const exportContent = z
     manifestDigest: S.suiteDigest,
     sourceTrust: z.literal('unauthenticated'),
     objects: z.number().int().positive(),
+    projection: projectionStamp.optional(),
   })
   .strict();
 const importContent = z
@@ -83,7 +105,12 @@ export class SuiteExchange extends SuiteQuarantineExchange {
     peers: Readonly<Record<string, S.SuiteRecordsV1>>,
     private format: string,
     private sanitize: (domain: string, kind: S.SuiteRecord['kind'], value: S.SuiteJson) => S.SuiteJson,
-    private options: { sourceDomain?: string; receivedName?: string } = {},
+    private options: {
+      sourceDomain?: string;
+      receivedName?: string;
+      projection?: SuiteExportProjection;
+      verifyBundle?: (data: Uint8Array) => void;
+    } = {},
   ) {
     super(domain, metadata, auth, sources, peers);
     this.files = new SuiteMaterials(
@@ -165,11 +192,13 @@ export class SuiteExchange extends SuiteQuarantineExchange {
         references: selected,
         manifestDigest: graph.manifest.digest,
         bytes: graph.data.length,
+        ...(graph.projection ? { projection: graph.projection } : {}),
       }),
       selected,
     );
   }
   private async collect(scope: S.SuiteScope, selected: S.SuiteRef[]) {
+    if (this.options.projection) return this.collectProjection(scope, selected, this.options.projection);
     const records = new Map<string, S.SuiteRecord>(),
       pending = new Set<string>();
     const visit = async (ref: S.SuiteRef) => {
@@ -200,7 +229,49 @@ export class SuiteExchange extends SuiteQuarantineExchange {
         });
       }
     }
-    return encodeSuiteBundle(this.format, entries);
+    return { ...encodeSuiteBundle(this.format, entries), projection: undefined };
+  }
+  private async collectProjection(
+    scope: S.SuiteScope,
+    selected: S.SuiteRef[],
+    strategy: SuiteExportProjection,
+  ) {
+    const projected = await strategy.project(scope, selected);
+    if (!projected.rows.length || projected.rows.length > 1000) suiteFail('SUITE_BUNDLE_GRAPH');
+    const material = new Map(projected.materials.map((item) => [key(item.reference), item.data]));
+    if (material.size !== projected.materials.length) suiteFail('SUITE_BUNDLE_DUPLICATE');
+    const entries: { path: string; data: Uint8Array }[] = [];
+    let size = 0,
+      sources = 0;
+    for (const raw of projected.rows) {
+      const record = S.suiteRecord.parse(raw),
+        payload = Buffer.from(suiteCanonical(record));
+      if (payload.length > 8 * 1024 ** 2) suiteFail('SUITE_OBJECT_LIMIT');
+      size += payload.length + 1024;
+      entries.push({ path: objectPath(reference(record)), data: payload });
+      if (record.kind === 'source') {
+        const metadata = S.suiteMaterial.parse(record.content),
+          data = material.get(key(reference(record)));
+        if (!data || data.byteLength !== metadata.bytes || suiteSha(data) !== metadata.digest)
+          suiteFail('SUITE_BUNDLE_MATERIAL');
+        size += data.byteLength;
+        sources++;
+        entries.push({ path: materialPath(reference(record)), data });
+      }
+      if (size > SUITE_BUNDLE_LIMIT - 128 * 1024)
+        suiteFail('SUITE_BUNDLE_LIMIT', '便携交接材料超过 16 MiB', 413);
+    }
+    if (sources !== material.size) suiteFail('SUITE_BUNDLE_MATERIAL');
+    const archive = encodeSuiteBundle(this.format, entries);
+    // 使用接收端同一结构校验器，拒绝悬空引用、错误修订和未声明字节。
+    this.validate(archive.data);
+    const projection = projectionStamp.parse({
+      id: strategy.id,
+      binding: projected.binding,
+      summary: projected.summary,
+    });
+    await strategy.authorize(scope, selected, projection.binding);
+    return { ...archive, projection };
   }
   private sourcesDomain() {
     return this.options.sourceDomain ?? this.domain.split('-')[0] + '-sources';
@@ -244,11 +315,14 @@ export class SuiteExchange extends SuiteQuarantineExchange {
         references: z.array(S.suiteRef),
         manifestDigest: S.suiteDigest,
         bytes: z.number().int().positive(),
+        projection: projectionStamp.optional(),
       })
       .strict()
       .parse(plan.input);
     const archive = await this.collect(scope, selection.references);
     if (archive.manifest.digest !== selection.manifestDigest || archive.data.length !== selection.bytes)
+      suiteFail('SUITE_EXPORT_CHANGED');
+    if (suiteHash(archive.projection ?? null) !== suiteHash(selection.projection ?? null))
       suiteFail('SUITE_EXPORT_CHANGED');
     const stored = await this.storeBytes(scope, '交接包.zip', archive.data);
     const row = await this.put(
@@ -264,6 +338,7 @@ export class SuiteExchange extends SuiteQuarantineExchange {
           manifestDigest: archive.manifest.digest,
           sourceTrust: 'unauthenticated',
           objects: archive.manifest.files.filter((f) => f.path.startsWith('objects/')).length,
+          ...(archive.projection ? { projection: archive.projection } : {}),
         },
       },
       'result',
@@ -286,8 +361,17 @@ export class SuiteExchange extends SuiteQuarantineExchange {
       .parse(raw);
     const row = await this.get({ workspaceId: input.workspaceId, id: input.id, revision: input.revision });
     if (row.state !== 'sealed') suiteFail('SUITE_EXPORT_ARCHIVED');
-    const guards = await this.exportPermissions({ workspaceId: input.workspaceId }, row.references);
+    if (row.origin !== 'local' || row.kind !== 'result') suiteFail('SUITE_EXPORT_LOCAL_REQUIRED');
     const content = exportContent.parse(row.content);
+    const projection = content.projection,
+      strategy = this.options.projection;
+    if (projection && (!strategy || strategy.id !== projection.id))
+      suiteFail('SUITE_EXPORT_PROJECTION_UNAVAILABLE');
+    if (strategy && !projection) suiteFail('SUITE_EXPORT_PROJECTION_REQUIRED');
+    const guards = projection
+      ? (await strategy!.authorize({ workspaceId: input.workspaceId }, row.references, projection.binding),
+        [])
+      : await this.exportPermissions({ workspaceId: input.workspaceId }, row.references);
     const result = await this.files.readSource({
       workspaceId: input.workspaceId,
       id: content.bundle.id,
@@ -305,6 +389,8 @@ export class SuiteExchange extends SuiteQuarantineExchange {
       if (!current.allowRead || !current.allowExport || current.revision !== guard.revision)
         suiteFail('SUITE_SOURCE_PERMISSION', '原材料导出许可已改变', 403);
     }
+    if (projection)
+      await strategy!.authorize({ workspaceId: input.workspaceId }, row.references, projection.binding);
     return result;
   }
   private async exportPermissions(scope: S.SuiteScope, references: S.SuiteRef[]) {
@@ -450,6 +536,7 @@ export class SuiteExchange extends SuiteQuarantineExchange {
       ordered.push(row);
     };
     rows.forEach(visit);
+    this.options.verifyBundle?.(data);
     return { rows: ordered, material, manifestDigest: decoded.manifest.digest };
   }
   async inspectImport(raw: unknown) {

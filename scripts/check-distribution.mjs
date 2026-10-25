@@ -35,6 +35,7 @@ for (const file of [
   '.sakura-server/compute-task.js',
   '.sakura-server/supply-offline.js',
   '.sakura-server/locale-offline.js',
+  '.sakura-server/incident-offline.js',
   '.sakura-server/assets/compute-worker.mjs',
   '.sakura-server/assets/compute-runtime.json',
   '.sakura-server/assets/network-worker.mjs',

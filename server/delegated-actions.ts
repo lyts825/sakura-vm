@@ -3,6 +3,7 @@ import { AppError } from '../shared/errors.ts';
 import {
   delegatedInputSchema,
   delegatedTicketSchema,
+  delegatedAcknowledgementReason,
   type DelegatedAdapter,
 } from '../shared/contracts/delegated-actions.ts';
 import type { DelegatedActionsV1, DelegatedActionProvider } from './service-contracts/delegated-actions.ts';
@@ -37,5 +38,9 @@ export class DelegatedActions implements DelegatedActionsV1 {
   inspect(ticket: Parameters<DelegatedActionsV1['inspect']>[0]) {
     const parsed = delegatedTicketSchema.parse(ticket);
     return this.provider(parsed.adapter).inspect(parsed);
+  }
+  acknowledge(ticket: Parameters<DelegatedActionsV1['acknowledge']>[0], reason: string) {
+    const parsed = delegatedTicketSchema.parse(ticket);
+    return this.provider(parsed.adapter).acknowledge(parsed, delegatedAcknowledgementReason.parse(reason));
   }
 }

@@ -8,6 +8,16 @@ import type { ServiceContract } from './service-ref.ts';
 
 /** Stable descriptor IDs are independent of implementation names and paths. */
 export const serviceContracts = {
+  IncidentCases: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-cases.v1'] as ServiceContract<V1.IncidentCasesV1>,
+  IncidentEvidence: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-evidence.v1'] as ServiceContract<V1.IncidentEvidenceV1>,
+  IncidentTimeline: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-timeline.v1'] as ServiceContract<V1.IncidentTimelineV1>,
+  IncidentHypotheses: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-hypotheses.v1'] as ServiceContract<V1.IncidentHypothesesV1>,
+  IncidentRunbooks: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-runbooks.v1'] as ServiceContract<V1.IncidentRunbooksV1>,
+  IncidentActions: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-actions.v1'] as ServiceContract<V1.IncidentActionsV1>,
+  IncidentReviews: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-reviews.v1'] as ServiceContract<V1.IncidentReviewsV1>,
+  IncidentReports: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-reports.v1'] as ServiceContract<V1.IncidentReportsV1>,
+  IncidentExchange: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-exchange.v1'] as ServiceContract<V1.IncidentExchangeV1>,
+  IncidentWorkbench: PUBLIC_SERVICE_CONTRACTS['sakura.service.incident-workbench.v1'] as ServiceContract<V1.IncidentWorkbenchV1>,
   MetricsSnapshots: PUBLIC_SERVICE_CONTRACTS['sakura.service.metrics-snapshots.v1'] as ServiceContract<V1.MetricsSnapshotsV1>,
   HealthSnapshots: PUBLIC_SERVICE_CONTRACTS['sakura.service.health-snapshots.v1'] as ServiceContract<V1.HealthSnapshotsV1>,
   DelegatedActions: PUBLIC_SERVICE_CONTRACTS['sakura.service.delegated-actions.v1'] as ServiceContract<V1.DelegatedActionsV1>,

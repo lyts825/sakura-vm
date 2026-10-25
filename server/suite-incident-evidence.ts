@@ -233,6 +233,7 @@ export class IncidentEvidence extends SuiteMaterials implements IncidentEvidence
     const output = await computeIncident<IncidentRedactionOutput>(this.domain, 'redact', async () => ({
       ...(await readSuiteText(this, s, value.source)),
       rules: input.rules,
+      systemLiterals: value.capture ? [value.capture.authTag] : [],
     }));
     const format = z.enum(['text', 'json']).parse(S.suiteMaterial.parse(material.content).format);
     const source = await this.textSource(
@@ -255,10 +256,12 @@ export class IncidentEvidence extends SuiteMaterials implements IncidentEvidence
             source: ref(source),
             sourceDigest: S.suiteMaterial.parse(source.content).digest,
             observedAt: source.createdAt,
+            externalStatement: true,
+            capture: null,
             derivation: {
               original: input.evidence,
               originalDigest: value.sourceDigest,
-              rulesDigest: suiteHash(input.rules),
+              rulesDigest: suiteHash({ rules: input.rules, mandatoryCaptureCredentialMasking: !!value.capture }),
               reviewed: false,
               reviewer: null,
               reviewPolicyRevision: null,

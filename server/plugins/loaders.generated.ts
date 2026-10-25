@@ -102,6 +102,26 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'ide': () => import('../../plugins/ide/server.ts'),
   /** 按需加载 images 的固定服务入口，无外部路径参数。 / Load the fixed images service entry on demand, with no external path input. */
   'images': () => import('../../plugins/images/server.ts'),
+  /** 按需加载 incident-actions 的固定服务入口，无外部路径参数。 / Load the fixed incident-actions service entry on demand, with no external path input. */
+  'incident-actions': () => import('../../plugins/incident-actions/server.ts'),
+  /** 按需加载 incident-cases 的固定服务入口，无外部路径参数。 / Load the fixed incident-cases service entry on demand, with no external path input. */
+  'incident-cases': () => import('../../plugins/incident-cases/server.ts'),
+  /** 按需加载 incident-evidence 的固定服务入口，无外部路径参数。 / Load the fixed incident-evidence service entry on demand, with no external path input. */
+  'incident-evidence': () => import('../../plugins/incident-evidence/server.ts'),
+  /** 按需加载 incident-exchange 的固定服务入口，无外部路径参数。 / Load the fixed incident-exchange service entry on demand, with no external path input. */
+  'incident-exchange': () => import('../../plugins/incident-exchange/server.ts'),
+  /** 按需加载 incident-hypotheses 的固定服务入口，无外部路径参数。 / Load the fixed incident-hypotheses service entry on demand, with no external path input. */
+  'incident-hypotheses': () => import('../../plugins/incident-hypotheses/server.ts'),
+  /** 按需加载 incident-reports 的固定服务入口，无外部路径参数。 / Load the fixed incident-reports service entry on demand, with no external path input. */
+  'incident-reports': () => import('../../plugins/incident-reports/server.ts'),
+  /** 按需加载 incident-reviews 的固定服务入口，无外部路径参数。 / Load the fixed incident-reviews service entry on demand, with no external path input. */
+  'incident-reviews': () => import('../../plugins/incident-reviews/server.ts'),
+  /** 按需加载 incident-runbooks 的固定服务入口，无外部路径参数。 / Load the fixed incident-runbooks service entry on demand, with no external path input. */
+  'incident-runbooks': () => import('../../plugins/incident-runbooks/server.ts'),
+  /** 按需加载 incident-timeline 的固定服务入口，无外部路径参数。 / Load the fixed incident-timeline service entry on demand, with no external path input. */
+  'incident-timeline': () => import('../../plugins/incident-timeline/server.ts'),
+  /** 按需加载 incident-workbench 的固定服务入口，无外部路径参数。 / Load the fixed incident-workbench service entry on demand, with no external path input. */
+  'incident-workbench': () => import('../../plugins/incident-workbench/server.ts'),
   /** 按需加载 integration-assertions 的固定服务入口，无外部路径参数。 / Load the fixed integration-assertions service entry on demand, with no external path input. */
   'integration-assertions': () => import('../../plugins/integration-assertions/server.ts'),
   /** 按需加载 integration-environments 的固定服务入口，无外部路径参数。 / Load the fixed integration-environments service entry on demand, with no external path input. */

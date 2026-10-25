@@ -22,6 +22,7 @@ export function SuiteExchangePanel({
   preview,
   onAccepted,
   downloadName,
+  description = '预览包含完整引用图、来源许可和实际字节。当前交接包上限 16 MiB。',
 }: {
   invoke: Invoke;
   workspaceId: string;
@@ -33,6 +34,7 @@ export function SuiteExchangePanel({
   preview: (domain: string, action: string, input: unknown, apply: string) => Promise<void>;
   onAccepted: () => Promise<void>;
   downloadName: string;
+  description?: string;
 }) {
   const [selected, setSelected] = useState<string[]>([]),
     [bundle, setBundle] = useState<File>();
@@ -50,7 +52,7 @@ export function SuiteExchangePanel({
     <div className="suite-columns">
       <article>
         <h2>导出固定材料</h2>
-        <p>预览包含完整引用图、来源许可和实际字节。当前交接包上限 16 MiB。</p>
+        <p>{description}</p>
         {Object.entries(domains)
           .filter(([domain]) => !['exchange', 'workbench'].includes(domain))
           .flatMap(([domain, title]) =>

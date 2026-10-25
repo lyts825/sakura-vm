@@ -12,25 +12,26 @@ export const incidentRedactionInput = z
     text: z.string().max(limit),
     format: z.enum(['text', 'json']),
     rules: incidentRedactionRules,
+    systemLiterals: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(1).default([]),
   })
   .strict();
 export type IncidentRedactionOutput = { text: string; replacements: number; warnings: string[] };
 function fail(code: string): never {
   throw new AppError('脱敏材料格式或范围无效', 400, code);
 }
-export function redactIncidentText(raw: z.infer<typeof incidentRedactionInput>): IncidentRedactionOutput {
+export function redactIncidentText(raw: z.input<typeof incidentRedactionInput>): IncidentRedactionOutput {
   const input = incidentRedactionInput.parse(raw),
     { rules } = input;
   const unicode = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u;
   if (Buffer.byteLength(input.text) > limit) fail('INCIDENT_TEXT_LIMIT');
   if ([input.text, ...rules.literals].some((value) => unicode.test(value))) fail('INCIDENT_UNICODE');
-  if (!rules.maskKeys.length && !rules.literals.length) fail('INCIDENT_REDACTION_RULES');
+  if (!rules.maskKeys.length && !rules.literals.length && !input.systemLiterals.length) fail('INCIDENT_REDACTION_RULES');
   if (
     new Set(rules.maskKeys).size !== rules.maskKeys.length ||
     new Set(rules.literals).size !== rules.literals.length
   )
     fail('INCIDENT_REDACTION_DUPLICATE');
-  const escaped = rules.literals
+  const escaped = [...new Set([...rules.literals, ...input.systemLiterals])]
     .slice()
     .sort((a, b) => b.length - a.length)
     .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));

@@ -22,6 +22,7 @@ export const pageLabels: Record<string, string> = {
   'knowledge-studio': '项目知识与文档',
   'supply-audit': '软件供应审查',
   'localization-studio': '本地化交付',
+  'incident-desk': '事件响应与复盘',
 };
 export const tabLabels: Record<string, string> = {
   terminal: '终端',

@@ -128,6 +128,11 @@ const stateSchema = z
 type State = z.infer<typeof stateSchema>;
 export type SuiteState = State;
 const authorizationReads = new AsyncLocalStorage<{ reads: number; depth: number; active: Set<string> }>();
+/** 新对象发布前按一个虚拟根核对完整引用预算，避免组合后形成无法读取的对象。 */
+export function withSuiteReferenceBudget<T>(work: () => T): T {
+  return authorizationReads.getStore() ? work()
+    : authorizationReads.run({ reads: 1, depth: 1, active: new Set() }, work);
+}
 const empty = (): State => ({
   schemaVersion: 1,
   rows: [],
@@ -355,7 +360,9 @@ export class SuiteStore implements S.SuiteRecordsV1 {
     const p = S.suiteSave.parse(raw);
     const scope = { workspaceId: p.workspaceId };
     await this.access(scope);
-    for (const ref of p.references) await this.fixed(scope, ref, origin === 'imported');
+    await withSuiteReferenceBudget(async () => {
+      for (const ref of p.references) await this.fixed(scope, ref, origin === 'imported');
+    });
     if (p.references.some((reference) => reference.domain !== this.domain))
       return this.serializePublication(() => this.publishReferenced(p, kind, seal, origin));
     const id = p.id ?? randomUUID();

@@ -2,8 +2,13 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { supplyHttpSchemas } from '../shared/contracts/supply-http.ts';
 import { localeHttpSchemas } from '../shared/contracts/locale-http.ts';
-const suites = { supply: supplyHttpSchemas, locale: localeHttpSchemas };
-const roots: { [K in keyof typeof suites]: keyof typeof suites[K] } = { supply: 'sources', locale: 'catalogs' };
+import { incidentHttpSchemas } from '../shared/contracts/incident-http.ts';
+const suites = { supply: supplyHttpSchemas, locale: localeHttpSchemas, incident: incidentHttpSchemas };
+const roots: { [K in keyof typeof suites]: keyof (typeof suites)[K] } = {
+  supply: 'sources',
+  locale: 'catalogs',
+  incident: 'cases',
+};
 for (const [prefix, domain] of Object.entries(roots)) {
   const domains = suites[prefix as keyof typeof suites] as Record<string, Record<string, unknown>>;
   const methods = domains[domain];
@@ -21,7 +26,11 @@ const registrySource =
     .map((prefix) => `  ${prefix}: ${prefix}RouteMetadata,`)
     .join('\n') +
   '\n} as const;\nexport const suiteRootRegistry = ' +
-  JSON.stringify(Object.fromEntries(Object.entries(roots).map(([prefix, domain]) => [prefix, prefix + '-' + domain])), null, 2) +
+  JSON.stringify(
+    Object.fromEntries(Object.entries(roots).map(([prefix, domain]) => [prefix, prefix + '-' + domain])),
+    null,
+    2,
+  ) +
   ' as const;\n';
 const registryTarget = new URL('../shared/contracts/suite-routes.registry.generated.ts', import.meta.url);
 if (checking) {

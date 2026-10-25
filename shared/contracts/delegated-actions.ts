@@ -19,6 +19,7 @@ export const delegatedTicketSchema = z
   })
   .strict();
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
+export const delegatedAcknowledgementReason = z.string().trim().min(1).max(1000);
 export const delegatedPlanSchema = z
   .object({
     ticket: delegatedTicketSchema,
@@ -42,8 +43,24 @@ export const delegatedReceiptSchema = z
     intentDigest: digest.nullable(),
     result: suiteJsonSchema.nullable(),
     error: z.string().max(1000).nullable(),
+    acknowledgedAt: z.iso.datetime().nullable().default(null),
+    acknowledgedBy: z.uuid().nullable().default(null),
+    acknowledgementReason: z.string().max(1000).default(''),
   })
-  .strict();
+  .strict()
+  .superRefine((receipt, context) => {
+    const empty =
+      receipt.acknowledgedAt === null &&
+      receipt.acknowledgedBy === null &&
+      receipt.acknowledgementReason === '';
+    const complete =
+      receipt.acknowledgedAt !== null &&
+      receipt.acknowledgedBy === receipt.plan.actorId &&
+      receipt.acknowledgementReason.trim().length > 0 &&
+      ['returned', 'rejected', 'unknown', 'expired'].includes(receipt.status);
+    if (!empty && !complete)
+      context.addIssue({ code: 'custom', message: '回执核对字段不完整或不属于原主体的结束记录' });
+  });
 export const delegatedIntentSchema = z.object({ intentDigest: digest }).strict();
 /** 原清理令牌只留在提供者账本，不随委派计划暴露。 */
 export const delegatedCleanupSummarySchema = cleanupPreviewSchema.omit({ token: true });

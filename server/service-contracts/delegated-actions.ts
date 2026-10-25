@@ -15,6 +15,7 @@ export interface DelegatedActionProvider {
     signal?: AbortSignal,
   ): Promise<DelegatedReceipt>;
   inspect(ticket: DelegatedTicket): Promise<DelegatedReceipt>;
+  acknowledge(ticket: DelegatedTicket, reason: string): Promise<DelegatedReceipt>;
 }
 export interface DelegatedActionsV1 extends DelegatedActionProvider {
   providers(): Promise<{ adapter: DelegatedAdapter; available: boolean }[]>;

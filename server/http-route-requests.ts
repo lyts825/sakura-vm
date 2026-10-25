@@ -1,3 +1,4 @@
+import { incidentHttpRequests } from '../shared/contracts/incident-http.ts';
 import { localeHttpRequests } from '../shared/contracts/locale-http.ts';
 /**
  * 模块职责：汇集 HTTP 路由的线路输入模式，为请求契约选择提供明确的参数结构。
@@ -34,6 +35,7 @@ export const httpRouteRequests = {
   ...knowledgeHttpRequests,
   ...supplyHttpRequests,
   ...localeHttpRequests,
+  ...incidentHttpRequests,
   ...resilienceHttpRequests,
   ...integrationHttpRequests,
   'backups.legacy.post.vms.vmId.backup-download': z.object({ backupId: z.uuid() }).strict(),

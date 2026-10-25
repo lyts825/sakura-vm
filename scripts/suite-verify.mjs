@@ -5,6 +5,7 @@ import { readSuiteFile } from './suite-files.mjs';
 const tools = Object.freeze({
   supply: ['supply-offline.js', 'verifySupplyBundle'],
   locale: ['locale-offline.js', 'verifyLocaleBundle'],
+  incident: ['incident-offline.js', 'verifyIncidentBundle'],
 });
 if (!isMainThread) {
   try {

@@ -8,6 +8,8 @@ import { resourceContext } from './host-runtime/context.ts';
 import { computeIncident, readSuiteText } from './suite-compute.ts';
 import type { IncidentCasesV1, IncidentEvidenceV1, IncidentTimelineV1 } from './service-contracts/incident-desk.ts';
 import type { incidentTimelineInput } from './suite-incident-analysis.ts';
+import * as TimelinePages from '../shared/contracts/incident-timeline-pages.ts';
+import { selectTimelineHeaders, timelineHeader, timelineEvents } from './incident-timeline-pages.ts';
 
 const scope = (input: S.SuiteScope) => ({ workspaceId: input.workspaceId });
 const ref = (row: S.SuiteRecord): S.SuiteRef => ({ domain: row.domain, id: row.id, revision: row.revision });
@@ -132,6 +134,29 @@ export { IncidentEvidence } from './suite-incident-evidence.ts';
 export class IncidentTimeline extends SuiteStore {
   constructor(metadata: PluginMetadata, authorize: SuiteAuthorize, private cases: IncidentCasesV1, private evidence: IncidentEvidenceV1) {
     super('incident-timeline', metadata, authorize, cases, { 'incident-cases': cases, 'incident-evidence': evidence });
+  }
+  async head(raw: z.infer<typeof TimelinePages.incidentTimelinePin>): Promise<TimelinePages.IncidentTimelineHeader> {
+    const input = TimelinePages.incidentTimelinePin.parse(raw);
+    if (input.timeline.domain !== this.domain) suiteFail('INCIDENT_TIMELINE_REQUIRED', '固定对象不是事件时间线', 400);
+    return timelineHeader(await this.get({ ...scope(input), id: input.timeline.id, revision: input.timeline.revision }));
+  }
+  async headers(raw: z.input<typeof TimelinePages.incidentTimelineHeadersRequest>): Promise<TimelinePages.IncidentTimelineHeadersPage> {
+    const input = TimelinePages.incidentTimelineHeadersRequest.parse(raw), s = scope(input);
+    await this.access(s);
+    // 单次读取元数据用于计数和选择，避免为了总数反复解析所有大正文。
+    const selected = selectTimelineHeaders((await this.readState()).rows, { ...input, actor: suiteActor() });
+    const items: TimelinePages.IncidentTimelineHeader[] = [];
+    for (const reference of selected.references)
+      items.push(timelineHeader(await this.get({ ...s, id: reference.id, revision: reference.revision })));
+    await this.access(s);
+    return TimelinePages.incidentTimelineHeadersPage.parse({ items, next: selected.next, total: selected.total,
+      history: input.history, archived: input.archived });
+  }
+  async events(raw: z.input<typeof TimelinePages.incidentTimelineEventsRequest>): Promise<TimelinePages.IncidentTimelineEventPage> {
+    const input = TimelinePages.incidentTimelineEventsRequest.parse(raw);
+    if (input.timeline.domain !== this.domain) suiteFail('INCIDENT_TIMELINE_REQUIRED', '固定对象不是事件时间线', 400);
+    const record = await this.get({ ...scope(input), id: input.timeline.id, revision: input.timeline.revision });
+    return timelineEvents(record, input.cursor, input.limit);
   }
   async assemble(raw: z.infer<typeof I.incidentAssemble>) {
     const input = I.incidentAssemble.parse(raw), s = scope(input), c = await this.cases.scope(s);

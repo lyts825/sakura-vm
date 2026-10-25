@@ -1,5 +1,6 @@
 /** 案例窗口只约束本案例的新动作；原提供者继续持有执行和中断后的证明。 */
 import { z } from 'zod';
+import { AppError } from '../shared/errors.ts';
 import * as S from '../shared/contracts/suite-common.ts';
 import * as I from '../shared/contracts/incident-desk.ts';
 import * as A from '../shared/contracts/incident-actions.ts';
@@ -193,15 +194,98 @@ export class IncidentActions extends SuiteStore implements IncidentActionsV1 {
     if (value.kind === 'manual') return { record, provider: null, providerAvailable: false };
     const host = this.delegated();
     if (!host) return { record, provider: null, providerAvailable: false };
+    const absent = async () => ({
+      record: await this.fixed(scope, input.action),
+      provider: null,
+      providerAvailable: false,
+    });
     const available = (await host.providers()).find(
       (row) => row.adapter === value.providerPlan.input.adapter,
     )?.available;
-    if (!available) return { record, provider: null, providerAvailable: false };
-    const provider = await host.inspect(value.providerPlan.ticket);
+    if (!available) return absent();
+    let provider;
+    try {
+      provider = await host.inspect(value.providerPlan.ticket);
+    } catch (error) {
+      if (
+        error instanceof AppError &&
+        ['DELEGATED_RECEIPT_NOT_FOUND', 'DELEGATED_PROVIDER_UNAVAILABLE'].includes(error.code || '')
+      )
+        return absent();
+      throw error;
+    }
     if (suiteHash(provider.plan) !== suiteHash(value.providerPlan))
       suiteFail('INCIDENT_PROVIDER_RECEIPT_CHANGED');
     await this.fixed(scope, input.action);
     return { record, provider, providerAvailable: true };
+  }
+  private async acknowledgementHead(scope: S.SuiteScope, original: S.SuiteRecord, reason: string) {
+    const head = (await this.readState()).rows
+      .filter(
+        (row) =>
+          row.workspaceId === scope.workspaceId && row.actor === suiteActor() && row.id === original.id,
+      )
+      .reduce<S.SuiteRecord | undefined>(
+        (selected, row) => (!selected || row.sequence > selected.sequence ? row : selected),
+        undefined,
+      );
+    if (!head) suiteFail('SUITE_REVISION_CONFLICT');
+    const record = await this.fixed(scope, ref(head)),
+      value = A.incidentAction.parse(record.content),
+      before = A.incidentDelegatedAction.parse(original.content);
+    if (value.kind !== 'delegated' || suiteHash(value.providerPlan) !== suiteHash(before.providerPlan))
+      suiteFail('SUITE_REVISION_CONFLICT');
+    if (value.receipt?.acknowledgedAt) {
+      if (value.receipt.acknowledgedBy !== suiteActor() || value.receipt.acknowledgementReason !== reason)
+        suiteFail('DELEGATED_ACKNOWLEDGEMENT_CONFLICT', '此动作已有不同的核对记录');
+      return { record, acknowledged: true };
+    }
+    return { record, acknowledged: false };
+  }
+  async acknowledge(raw: z.infer<typeof A.incidentActionAcknowledgement>) {
+    const input = A.incidentActionAcknowledgement.parse(raw),
+      scope = { workspaceId: input.workspaceId };
+    if (input.action.domain !== this.domain) suiteFail('INCIDENT_ACTION_DOMAIN');
+    const record = await this.fixed(scope, input.action),
+      value = A.incidentAction.parse(record.content);
+    if (record.origin !== 'local' || value.kind !== 'delegated')
+      suiteFail('INCIDENT_DELEGATED_ACTION_REQUIRED', '只能核对本机原提供者动作');
+    const head = await this.acknowledgementHead(scope, record, input.reason);
+    if (head.acknowledged) return head.record;
+    if (head.record.revision !== record.revision) suiteFail('SUITE_REVISION_CONFLICT');
+    const receipt = delegatedReceiptSchema.parse(
+      await this.host().acknowledge(value.providerPlan.ticket, input.reason),
+    );
+    if (
+      suiteHash(receipt.plan) !== suiteHash(value.providerPlan) ||
+      receipt.acknowledgedBy !== suiteActor() ||
+      receipt.acknowledgementReason !== input.reason
+    )
+      suiteFail('INCIDENT_PROVIDER_RECEIPT_CHANGED');
+    try {
+      return await this.put(
+        {
+          ...scope,
+          id: record.id,
+          expectedRevision: record.revision,
+          name: record.name,
+          references: record.references,
+          content: json({
+            ...value,
+            phase: receipt.status === 'unknown' ? 'unknown' : 'provider-returned',
+            receipt,
+          }),
+        },
+        'result',
+        true,
+      );
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'SUITE_REVISION_CONFLICT') {
+        const latest = await this.acknowledgementHead(scope, record, input.reason);
+        if (latest.acknowledged) return latest.record;
+      }
+      throw error;
+    }
   }
   async recordManual(raw: z.infer<typeof A.incidentManualActionInput>) {
     const input = A.incidentManualActionInput.parse(raw),

@@ -41,6 +41,7 @@ manifest.scripts = {
   knowledge: manifest.scripts.knowledge,
   supply: manifest.scripts.supply,
   locale: manifest.scripts.locale,
+  incident: manifest.scripts.incident,
   tray: manifest.scripts.tray,
   'update:status': manifest.scripts['update:status'],
   'update:check': manifest.scripts['update:check'],
@@ -75,6 +76,8 @@ for (const file of [
   'supply-cli.mjs',
   'locale-cli.mjs',
   'locale-verify.mjs',
+  'incident-cli.mjs',
+  'incident-verify.mjs',
   'suite-cli.mjs',
   'suite-commands.generated.mjs',
   'suite-verify.mjs',
@@ -96,31 +99,64 @@ for (const file of [
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
 await cp(join(root, 'docs', 'delivery-cli.md'), join(output, '.sakura-server', 'docs', 'delivery-cli.md'));
-for (const file of ['foundry-workbench.md', 'app-runtime-pack.md', 'data-lab.md', 'integration-lab.md', 'resilience-lab.md', 'knowledge-studio.md', 'supply-audit.md', 'localization-studio.md', 'suite-capacity.md'])
+for (const file of [
+  'foundry-workbench.md',
+  'app-runtime-pack.md',
+  'data-lab.md',
+  'integration-lab.md',
+  'resilience-lab.md',
+  'knowledge-studio.md',
+  'supply-audit.md',
+  'localization-studio.md',
+  'incident-desk.md',
+  'suite-capacity.md',
+])
   await cp(join(root, 'docs', file), join(output, '.sakura-server', 'docs', file));
-for (const [command, file] of [['foundry', 'foundry.mjs'], ['app-runtime', 'app-runtime.mjs'], ['data', 'data.mjs'], ['knowledge', 'knowledge.mjs']]) {
-  if (manifest.scripts[command] !== `node scripts/${file}`) throw new Error(`${command} CLI 必须使用纯 Node 入口`);
+for (const [command, file] of [
+  ['foundry', 'foundry.mjs'],
+  ['app-runtime', 'app-runtime.mjs'],
+  ['data', 'data.mjs'],
+  ['knowledge', 'knowledge.mjs'],
+]) {
+  if (manifest.scripts[command] !== `node scripts/${file}`)
+    throw new Error(`${command} CLI 必须使用纯 Node 入口`);
   const result = spawnSync(process.execPath, [join(output, 'scripts', file), 'help'], {
-    cwd: output, encoding: 'utf8', windowsHide: true, env: { ...process.env, NODE_OPTIONS: '' },
+    cwd: output,
+    encoding: 'utf8',
+    windowsHide: true,
+    env: { ...process.env, NODE_OPTIONS: '' },
   });
-  if (result.status !== 0 || !result.stdout.trim()) throw new Error(`运行包 ${command} CLI 不可用：${result.stderr || result.error?.message || result.status}`);
+  if (result.status !== 0 || !result.stdout.trim())
+    throw new Error(
+      `运行包 ${command} CLI 不可用：${result.stderr || result.error?.message || result.status}`,
+    );
 }
-for (const command of ['integration', 'resilience', 'supply']) {
+for (const command of ['integration', 'resilience', 'supply', 'locale', 'incident']) {
   if (manifest.scripts[command] !== `node scripts/cli.mjs ${command}`)
     throw new Error(`${command} CLI 缺少固定分发入口`);
   const result = spawnSync(process.execPath, [join(output, 'scripts', 'cli.mjs'), command, 'help'], {
-    cwd: output, encoding: 'utf8', windowsHide: true, env: { ...process.env, NODE_OPTIONS: '' },
+    cwd: output,
+    encoding: 'utf8',
+    windowsHide: true,
+    env: { ...process.env, NODE_OPTIONS: '' },
   });
   if (result.status !== 0 || !result.stdout.trim())
-    throw new Error(`运行包 ${command} CLI 不可用：${result.stderr || result.error?.message || result.status}`);
+    throw new Error(
+      `运行包 ${command} CLI 不可用：${result.stderr || result.error?.message || result.status}`,
+    );
 }
 if (manifest.scripts.delivery !== 'node scripts/delivery.mjs')
   throw new Error('交付 CLI 必须使用无开发依赖的纯 Node 入口');
 const deliveryCheck = spawnSync(process.execPath, [join(output, 'scripts', 'delivery.mjs'), 'help'], {
-  cwd: output, encoding: 'utf8', windowsHide: true, env: { ...process.env, NODE_OPTIONS: '' },
+  cwd: output,
+  encoding: 'utf8',
+  windowsHide: true,
+  env: { ...process.env, NODE_OPTIONS: '' },
 });
 if (deliveryCheck.status !== 0 || !deliveryCheck.stdout.includes('Sakura 项目交付 CLI'))
-  throw new Error(`运行包交付 CLI 不可用：${deliveryCheck.stderr || deliveryCheck.error?.message || deliveryCheck.status}`);
+  throw new Error(
+    `运行包交付 CLI 不可用：${deliveryCheck.stderr || deliveryCheck.error?.message || deliveryCheck.status}`,
+  );
 const readme = [
   '# Sakura 运行包',
   '',

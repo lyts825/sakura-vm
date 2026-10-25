@@ -1,3 +1,17 @@
+import type * as IncidentContracts from './incident-desk.ts';
+import type * as IncidentReviewContracts from './incident-reviews.ts';
+import type * as IncidentExchangeContracts from './incident-exchange.ts';
+import type * as IncidentWorkbenchContracts from './incident-workbench.ts';
+export interface IncidentCasesV1 extends IncidentContracts.IncidentCasesV1 {}
+export interface IncidentEvidenceV1 extends IncidentContracts.IncidentEvidenceV1 {}
+export interface IncidentTimelineV1 extends IncidentContracts.IncidentTimelineV1 {}
+export interface IncidentHypothesesV1 extends IncidentContracts.IncidentHypothesesV1 {}
+export interface IncidentRunbooksV1 extends IncidentContracts.IncidentRunbooksV1 {}
+export interface IncidentActionsV1 extends IncidentContracts.IncidentActionsV1 {}
+export interface IncidentReviewsV1 extends IncidentReviewContracts.IncidentReviewsV1 {}
+export interface IncidentReportsV1 extends IncidentReviewContracts.IncidentReportsV1 {}
+export interface IncidentExchangeV1 extends IncidentExchangeContracts.IncidentExchangeV1 {}
+export interface IncidentWorkbenchV1 extends IncidentWorkbenchContracts.IncidentWorkbenchV1 {}
 import type * as SnapshotContracts from './incident-snapshots.ts';
 export interface MetricsSnapshotsV1 extends SnapshotContracts.MetricsSnapshotsV1 {}
 export interface HealthSnapshotsV1 extends SnapshotContracts.HealthSnapshotsV1 {}

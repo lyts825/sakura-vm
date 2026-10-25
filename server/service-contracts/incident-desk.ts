@@ -5,6 +5,7 @@ import type * as I from '../../shared/contracts/incident-desk.ts';
 import type * as A from '../../shared/contracts/incident-actions.ts';
 import type * as M from '../../shared/contracts/incident-materials.ts';
 import type * as C from '../../shared/contracts/incident-snapshots.ts';
+import type * as P from '../../shared/contracts/incident-timeline-pages.ts';
 import type { DelegatedReceipt, DelegatedAdapter } from '../../shared/contracts/delegated-actions.ts';
 
 export interface IncidentCasesV1 extends S.SuiteWorkspacePortV1, S.SuiteRecordsV1 {
@@ -29,6 +30,9 @@ export interface IncidentEvidenceV1 extends S.SuiteByteMaterialsV1 {
   capture(input: S.SuiteApproval): Promise<S.SuiteRecord>;
 }
 export interface IncidentTimelineV1 extends S.SuiteRecordsV1 {
+  head(input: z.infer<typeof P.incidentTimelinePin>): Promise<P.IncidentTimelineHeader>;
+  headers(input: z.input<typeof P.incidentTimelineHeadersRequest>): Promise<P.IncidentTimelineHeadersPage>;
+  events(input: z.input<typeof P.incidentTimelineEventsRequest>): Promise<P.IncidentTimelineEventPage>;
   assemble(input: z.infer<typeof I.incidentAssemble>): Promise<S.SuiteRecord>;
   annotateClock(input: S.SuiteScope & { timeline: S.SuiteRef; note: z.infer<typeof I.incidentClockNote> }): Promise<S.SuiteRecord>;
   compare(input: S.SuiteScope & { before: S.SuiteRef; after: S.SuiteRef }): Promise<S.SuiteRecord>;
@@ -48,4 +52,5 @@ export interface IncidentActionsV1 extends S.SuiteRecordsV1 {
   submitAction(input: S.SuiteApproval, signal?: AbortSignal): Promise<S.SuiteRecord>;
   inspect(input: S.SuiteScope & { action: S.SuiteRef }): Promise<{ record: S.SuiteRecord; provider: DelegatedReceipt | null; providerAvailable: boolean }>;
   recordManual(input: z.infer<typeof A.incidentManualActionInput>): Promise<S.SuiteRecord>;
+  acknowledge(input: z.infer<typeof A.incidentActionAcknowledgement>): Promise<S.SuiteRecord>;
 }
