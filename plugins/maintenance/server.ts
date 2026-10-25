@@ -18,6 +18,7 @@ import { Maintenance } from '../../server/maintenance.ts';
 import { retryTarget } from '../../server/plugins/retry.ts';
 import { CleanupPlans } from '../../server/cleanup-plan.ts';
 import { backupBlocks } from '../../server/backup-blocks.ts';
+import { maintenanceActions } from '../../server/delegated-maintenance.ts';
 
 const cleanupCenters = new WeakMap<PluginContext, CleanupPlans>();
 
@@ -43,6 +44,10 @@ export async function activate(host: PluginContext) {
     snapshot: () => retention().cleanupSnapshot(), execute: (revision, signal) => retention().cleanupExecute(revision, signal) });
   cleanupCenters.set(host, cleanup);
   host.onDispose(async () => { await cleanup.close(); cleanupCenters.delete(host); });
+  const actions = maintenanceActions(host.capabilities.metadata.reference('delegated-actions', () => null), cleanup);
+  host.onDispose(() => actions.close());
+  await actions.init();
+  host.provide(maintenanceServices.actions, actions);
   const m = host.vm;
   const maintenance = host.provide(maintenanceServices.maintenance, new Maintenance(m, { deferInitialization: true }));
   // 服务先纳入宿主再初始化维护工作，避免激活中的后台资源失去所属插件。

@@ -47,6 +47,7 @@ import { ImageAssets } from './image-assets.ts';
 import { EgressRules } from './egress-rules.ts';
 import { DataNotebookSessions } from './data-notebook-sessions.ts';
 import { PreparedWorkerSessions } from './prepared-worker-sessions.ts';
+import { DelegatedActions } from './delegated-actions.ts';
 import { preparedWorkerMetadata } from './core-worker-metadata.ts';
 import { createCoreDrillService } from './core-drill-service.ts';
 import { Passkeys } from './passkeys.ts';
@@ -583,6 +584,13 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 200,
   });
+  if (selectedPlugins.includes('incident-actions') || selectedPlugins.includes('flow-connectors')) {
+    await plugins.system.start({
+      id: 'delegatedActions', startup: 'required', requires: ['@delegatedProviders'],
+      create: dependencies => new DelegatedActions(dependencies.get('@delegatedProviders')),
+      initialize: () => {}, dispose: () => {}, disposePhase: ClosePhase.services,
+    });
+  }
   if (selectedPlugins.includes('integration-runners')) {
     await plugins.system.start({
       id: 'preparedWorkerSessions', startup: 'required', requires: ['@machines'], lateRequires: ['@plugins'],

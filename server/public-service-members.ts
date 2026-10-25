@@ -646,6 +646,22 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "stop"
     ]
   },
+  "sakura.service.delegated-actions.v1": {
+    "id": "sakura.service.delegated-actions.v1",
+    "version": 1,
+    "members": [
+      "dispatch",
+      "inspect",
+      "preview",
+      "providers"
+    ],
+    "methods": [
+      "dispatch",
+      "inspect",
+      "preview",
+      "providers"
+    ]
+  },
   "sakura.service.delivery-artifacts.v1": {
     "id": "sakura.service.delivery-artifacts.v1",
     "version": 1,
@@ -2755,6 +2771,20 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "view"
     ]
   },
+  "sakura.service.maintenance-actions.v1": {
+    "id": "sakura.service.maintenance-actions.v1",
+    "version": 1,
+    "members": [
+      "dispatch",
+      "inspect",
+      "preview"
+    ],
+    "methods": [
+      "dispatch",
+      "inspect",
+      "preview"
+    ]
+  },
   "sakura.service.maintenance.v1": {
     "id": "sakura.service.maintenance.v1",
     "version": 1,
@@ -3363,6 +3393,20 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
     "properties": {
       "jobs": "sakura.service.jobs.v1"
     }
+  },
+  "sakura.service.resilience-actions.v1": {
+    "id": "sakura.service.resilience-actions.v1",
+    "version": 1,
+    "members": [
+      "dispatch",
+      "inspect",
+      "preview"
+    ],
+    "methods": [
+      "dispatch",
+      "inspect",
+      "preview"
+    ]
   },
   "sakura.service.resilience-faults.v1": {
     "id": "sakura.service.resilience-faults.v1",

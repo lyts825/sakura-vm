@@ -22,8 +22,11 @@ import { systemServiceContracts, type SystemServiceContracts } from './service-c
 import { cleanupService } from './service-cleanup.ts';
 import type { Features } from './features.ts';
 import type { AuditLog } from './audit.ts';
+import type { DelegatedProviderResolver } from './delegated-actions.ts';
+import { serviceContracts } from './service-contracts.ts';
 
 export interface SystemExternalDependencies {
+  '@delegatedProviders': DelegatedProviderResolver;
   '@machines': Machines;
   '@plugins': Features;
   '@audit': AuditLog;
@@ -156,6 +159,25 @@ export class SystemServices {
       systemArtifactDigest('operation-host'),
     );
     directory.publish(this.caller);
+    this.lifecycle.ready('@delegatedProviders', this.delegatedProviders());
+  }
+  /** 使用最近的实际消费插件及其声明，不能把委派宿主自身当作调用者。 */
+  private delegatedProviders(): DelegatedProviderResolver {
+    return adapter => {
+      const context = resourceContext();
+      const consumer = this.directory.all().find(item => item.identity === context?.serviceConsumerPluginInstanceId &&
+        item.generation === context?.serviceConsumerPluginGeneration);
+      if (!consumer || consumer.source !== 'official' || !['incident-actions', 'flow-connectors'].includes(consumer.pluginId))
+        throw new AppError('委派缺少当前执行消费者', 403, 'DELEGATED_IDENTITY_STALE');
+      const manifest = PLUGINS.find(item => item.id === consumer.pluginId);
+      if (!manifest) throw new AppError('执行消费者未登记', 403, 'DELEGATED_IDENTITY_STALE');
+      const ref = adapter === 'maintenance-cleanup'
+        ? serviceRef('maintenance', 'maintenanceActions', serviceContracts.MaintenanceActions)
+        : adapter === 'resilience-reconcile'
+          ? serviceRef('resilience-runs', 'resilienceActions', serviceContracts.ResilienceActions) : undefined;
+      if (!ref) throw new AppError('委派适配器未登记', 400, 'DELEGATED_ADAPTER_DENIED');
+      return this.broker.lookup(consumer, manifest, ref, true);
+    };
   }
   /** Startup-only API. Public handles are published after the initializer succeeds. */
   /**

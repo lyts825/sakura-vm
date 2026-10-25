@@ -16,7 +16,7 @@ export const manifest = definePlugin({
     pin('resilience-recovery'),
     pin('resilience-scenarios'),
   ],
-  services: ['resilienceRuns'],
+  services: ['resilienceRuns', 'resilienceActions'],
   systemDependencies: [],
   contributes: {
     managed: ['jobs', 'job-retry'],

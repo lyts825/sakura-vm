@@ -50,12 +50,14 @@ export class CleanupPlans {
         candidateCount: candidates.length, estimatedBytes: candidates.reduce((sum, item) => sum + item.bytes, 0) };
     }, signal);
   }
-  execute(id: CleanupProviderId, token: string, signal?: AbortSignal): Promise<CleanupResult> {
+  execute(id: CleanupProviderId, token: string, signal?: AbortSignal, beforeDispatch?: () => Promise<void>): Promise<CleanupResult> {
     return this.track(async (scope) => {
       const plan = this.plans.get(token);
       // 中文：先消费令牌，失败或取消后也必须重新预览。English: Consume before dispatch; failure/cancellation also requires a new preview.
       this.plans.delete(token);
       if (!plan || plan.provider !== id || plan.expires <= this.now()) throw new AppError('清理预览已失效，请重新预览', 409);
+      await beforeDispatch?.();
+      scope.throwIfAborted();
       const result = await this.provider(id).execute(plan.revision, scope);
       return { provider: id, ...result };
     }, signal);

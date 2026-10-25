@@ -1,9 +1,10 @@
 /** 装配独立领域服务；每个消费者通过 broker 取得自己的能力。 Assemble independent domains through consumer-bound broker handles. */
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { ResilienceRuns } from '../../server/resilience-runs.ts';
+import { resilienceActions } from '../../server/delegated-resilience.ts';
 import { resilienceAuthorize } from '../../server/resilience-store.ts';
 import { resilienceHttp } from '../../server/resilience-http.ts';
-import { service } from './services.ts';
+import { service, actionsService } from './services.ts';
 import { service as targets } from '../resilience-targets/services.ts';
 import { service as fixtures } from '../resilience-fixtures/services.ts';
 import { service as guard } from '../resilience-guard/services.ts';
@@ -29,6 +30,10 @@ export async function activate(host: PluginContext) {
   );
   await value.init();
   host.provide(service, value);
+  const actions = resilienceActions(host.capabilities.metadata.reference('delegated-actions', () => null), value);
+  host.onDispose(() => actions.close());
+  await actions.init();
+  host.provide(actionsService, actions);
   host.registerJobs(value.jobs, () => {
     throw new Error('请先核销原运行，再重新预览和批准');
   });

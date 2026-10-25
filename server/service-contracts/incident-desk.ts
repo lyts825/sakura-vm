@@ -2,6 +2,8 @@
 import type { z } from 'zod';
 import type * as S from '../../shared/contracts/suite-common.ts';
 import type * as I from '../../shared/contracts/incident-desk.ts';
+import type * as A from '../../shared/contracts/incident-actions.ts';
+import type { DelegatedReceipt, DelegatedAdapter } from '../../shared/contracts/delegated-actions.ts';
 
 export interface IncidentCasesV1 extends S.SuiteWorkspacePortV1, S.SuiteRecordsV1 {
   open(input: z.infer<typeof I.incidentCaseInput>): Promise<{ workspace: S.SuiteWorkspace; case: S.SuiteRecord }>;
@@ -29,4 +31,11 @@ export interface IncidentHypothesesV1 extends S.SuiteRecordsV1 {
 export interface IncidentRunbooksV1 extends S.SuiteRecordsV1 {
   compile(input: z.infer<typeof I.incidentRunbookInput>): Promise<S.SuiteRecord>;
   previewSteps(input: S.SuiteScope & { runbook: S.SuiteRef }): Promise<S.SuiteRecord>;
+}
+export interface IncidentActionsV1 extends S.SuiteRecordsV1 {
+  providers(): Promise<{ adapter: DelegatedAdapter; available: boolean }[]>;
+  planAction(input: z.infer<typeof A.incidentPlanAction>): Promise<S.SuitePlan>;
+  submitAction(input: S.SuiteApproval, signal?: AbortSignal): Promise<S.SuiteRecord>;
+  inspect(input: S.SuiteScope & { action: S.SuiteRef }): Promise<{ record: S.SuiteRecord; provider: DelegatedReceipt | null; providerAvailable: boolean }>;
+  recordManual(input: z.infer<typeof A.incidentManualActionInput>): Promise<S.SuiteRecord>;
 }

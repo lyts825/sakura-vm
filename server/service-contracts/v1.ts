@@ -1,3 +1,7 @@
+import type * as DelegatedContracts from './delegated-actions.ts';
+export interface DelegatedActionsV1 extends DelegatedContracts.DelegatedActionsV1 {}
+export interface MaintenanceActionsV1 extends DelegatedContracts.MaintenanceActionsV1 {}
+export interface ResilienceActionsV1 extends DelegatedContracts.ResilienceActionsV1 {}
 import type * as LocaleContracts from './locale-studio.ts';
 export interface LocaleCatalogsV1 extends LocaleContracts.LocaleCatalogsV1 {}
 export interface LocaleContextsV1 extends LocaleContracts.LocaleContextsV1 {}

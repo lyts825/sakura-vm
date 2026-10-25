@@ -47,6 +47,7 @@ for (const file of [
   '.sakura-server/assets/network-parent-exec.py',
   '.sakura-server/assets/network-runtime.json',
   '.sakura-server/docs/network-runtime.md',
+  '.sakura-server/docs/delegated-actions.md',
   '.sakura-witness/ha-witness.js',
   '.sakura-witness/docs/ha-witness-maintenance.md',
   '.sakura-server/assets/state-report.sh',

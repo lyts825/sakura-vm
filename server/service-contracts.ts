@@ -8,6 +8,9 @@ import type { ServiceContract } from './service-ref.ts';
 
 /** Stable descriptor IDs are independent of implementation names and paths. */
 export const serviceContracts = {
+  DelegatedActions: PUBLIC_SERVICE_CONTRACTS['sakura.service.delegated-actions.v1'] as ServiceContract<V1.DelegatedActionsV1>,
+  MaintenanceActions: PUBLIC_SERVICE_CONTRACTS['sakura.service.maintenance-actions.v1'] as ServiceContract<V1.MaintenanceActionsV1>,
+  ResilienceActions: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-actions.v1'] as ServiceContract<V1.ResilienceActionsV1>,
   LocaleCatalogs: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-catalogs.v1'] as ServiceContract<V1.LocaleCatalogsV1>,
   LocaleContexts: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-contexts.v1'] as ServiceContract<V1.LocaleContextsV1>,
   LocaleTerminology: PUBLIC_SERVICE_CONTRACTS['sakura.service.locale-terminology.v1'] as ServiceContract<V1.LocaleTerminologyV1>,
@@ -233,6 +236,8 @@ export const officialServiceContracts: Readonly<Record<string, ServiceContract<a
   'images/images': serviceContracts.Images,
   'images/diskImports': serviceContracts.DiskImports,
   'maintenance/maintenance': serviceContracts.Maintenance,
+  'maintenance/maintenanceActions': serviceContracts.MaintenanceActions,
+  'resilience-runs/resilienceActions': serviceContracts.ResilienceActions,
   'metrics/metrics': serviceContracts.Metrics,
   'migration/migration': serviceContracts.DataMigration,
   'network/network': serviceContracts.NetworkProfiles,
@@ -261,6 +266,7 @@ export const officialServiceContracts: Readonly<Record<string, ServiceContract<a
 };
 
 export const systemServiceContracts: Readonly<Record<string, ServiceContract<any>>> = {
+  'delegatedActions': serviceContracts.DelegatedActions,
   'preparedWorkerSessions': serviceContracts.PreparedWorkerSessions,
   'drillSupervision': serviceContracts.DrillSupervision,
   'imageAssets': serviceContracts.ImageAssets,
@@ -315,6 +321,7 @@ export const systemServiceContracts: Readonly<Record<string, ServiceContract<any
 
 /** System assembly returns these contracts; raw values stay in initialization callbacks. */
 export interface SystemServiceContracts {
+  'delegatedActions': V1.DelegatedActionsV1;
   'preparedWorkerSessions': V1.PreparedWorkerSessionsV1;
   'drillSupervision': V1.DrillSupervisionV1;
   'imageAssets': V1.ImageAssetsV1;

@@ -37,7 +37,8 @@ await cp(join(root, 'server/network/worker.mjs'), join(target, 'network-worker.m
 await cp(join(root, 'server/network/bounded-qmp-policy.mjs'), join(target, 'bounded-qmp-policy.mjs'));
 await cp(join(root, 'server/network/parent-exec.py'), join(target, 'network-parent-exec.py'));
 await mkdir(join(root, '.sakura-server/docs'), { recursive: true });
-await cp(join(root, 'docs/network-runtime.md'), join(root, '.sakura-server/docs/network-runtime.md'));
+for (const file of ['network-runtime.md', 'delegated-actions.md'])
+  await cp(join(root, 'docs', file), join(root, '.sakura-server/docs', file));
 const networkSources = [
   'server/network-entry.ts',
   'server/network/core.ts',

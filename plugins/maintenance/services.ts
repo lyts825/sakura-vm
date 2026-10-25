@@ -9,4 +9,5 @@ import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
   maintenance: serviceRef('maintenance', 'maintenance', serviceContracts.Maintenance),
+  actions: serviceRef('maintenance', 'maintenanceActions', serviceContracts.MaintenanceActions),
 };

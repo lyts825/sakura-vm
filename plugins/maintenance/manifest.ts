@@ -11,7 +11,7 @@ export const manifest = definePlugin({
   name: '磁盘与诊断',
   description: '故障诊断、磁盘扩容、空间检查与 QCOW2 整理。',
   category: 'operations',
-  services: ['maintenance'],
+  services: ['maintenance', 'maintenanceActions'],
   systemDependencies: ['retention'],
   contributes: {
     routes: [

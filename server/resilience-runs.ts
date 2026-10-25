@@ -48,6 +48,7 @@ export class ResilienceRuns implements ResilienceRunsV1 {
   private store: ResilienceStore<z.infer<typeof schema>>;
   private generation = resilienceId();
   private controllers = new Map<string, AbortController>();
+  private reconciliations = new Set<string>();
   constructor(
     metadata: PluginMetadata<unknown>,
     private targets: ResilienceTargetsV1,
@@ -375,19 +376,44 @@ export class ResilienceRuns implements ResilienceRunsV1 {
     return this.reconcile(scope, id);
   }
   async reconcile(scope: Scope, id: string) {
-    const run = await this.get(scope, id);
-    if (this.controllers.has(id)) resilienceError('活动运行须先取消，等待原处理器收尾');
-    if (run.state === 'completed') {
-      if (run.cleanup === 'confirmed' && run.intents.some((intent) => intent.step === 'arm'))
-        await this.guard.release(scope, id);
-      return run;
+    return this.reconcileLocked(scope, id);
+  }
+  /** 仅由原插件装配的委派适配器调用；未加入既有 ResilienceRunsV1 公共面。 */
+  async reconcileDelegated(
+    scope: Scope,
+    id: string,
+    expectedDigest: string,
+    signal: AbortSignal,
+    beforeDispatch: () => Promise<void>,
+  ) {
+    return this.reconcileLocked(scope, id, async (run) => {
+      signal.throwIfAborted();
+      if (resilienceHash(run) !== expectedDigest) resilienceError('原运行修订已改变，请重新预览和批准');
+      await beforeDispatch();
+      signal.throwIfAborted();
+    });
+  }
+  private async reconcileLocked(scope: Scope, id: string, beforeDispatch?: (run: Run) => Promise<void>) {
+    if (this.reconciliations.has(id)) resilienceError('原运行正在核销', 'RESILIENCE_RESOURCE_BUSY');
+    this.reconciliations.add(id);
+    try {
+      const run = await this.get(scope, id);
+      if (this.controllers.has(id)) resilienceError('活动运行须先取消，等待原处理器收尾');
+      await beforeDispatch?.(run);
+      if (run.state === 'completed') {
+        if (run.cleanup === 'confirmed' && run.intents.some((intent) => intent.step === 'arm'))
+          await this.guard.release(scope, id);
+        return run;
+      }
+      await this.finish(
+        scope,
+        id,
+        run.intents.some((x) => x.step === 'arm'),
+      );
+      return this.get(scope, id);
+    } finally {
+      this.reconciliations.delete(id);
     }
-    await this.finish(
-      scope,
-      id,
-      run.intents.some((x) => x.step === 'arm'),
-    );
-    return this.get(scope, id);
   }
   async close() {
     for (const c of this.controllers.values()) c.abort(new Error('插件停用'));

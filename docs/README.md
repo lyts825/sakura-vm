@@ -17,6 +17,7 @@
 - [架构与依赖边界](architecture.md)
 - [第三方 WebAssembly 插件](community-plugins.md)
 - [有界计算运行时](compute-runtime.md)
+- [固定动作委派（2.8.0 实施中）](delegated-actions.md)
 - [源码阅读与维护指南](development-guide.md)
 - [HTTP 请求体契约清单](http-request-contracts.md)
 - [统一网络运行时](network-runtime.md)

@@ -2,3 +2,4 @@
 import { serviceRef } from '../../server/service-ref.ts';
 import { serviceContracts } from '../../server/service-contracts.ts';
 export const service = serviceRef('resilience-runs', 'resilienceRuns', serviceContracts.ResilienceRuns);
+export const actionsService = serviceRef('resilience-runs', 'resilienceActions', serviceContracts.ResilienceActions);
