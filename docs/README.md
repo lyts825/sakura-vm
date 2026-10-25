@@ -28,6 +28,7 @@
 - [三个插件包的产品与实施设计](plugin-pack-roadmap.md)：[环境镜像工坊](foundry-pack-design.md)、[应用运行与运维](app-runtime-pack-design.md)、[数据与实验工作台](data-lab-pack-design.md)；实现使用指南见下方三个插件包
 - [第二批三个完整插件包设计](plugin-pack-expansion-design.md)：[接口集成验证](integration-lab-pack-design.md)、[可靠性演练](resilience-lab-pack-design.md)、[项目知识与文档](knowledge-studio-pack-design.md)；设计版本 2.0.0，2.7.0 实施与验收状态见项目状态
 - [第三批十个完整插件包设计](plugin-pack-suite-design.md)：浏览器、软件供应、数据库变更、事件队列、模型评测、媒体、本地化、跨包流程、事件复盘和交互式实验；101 个拟议插件，设计版本 3.0.0，运行实现待开始
+- [第四批十个完整插件包设计](plugin-pack-next-design.md)：需求、架构、代码改造、性能、测试数据、权限复核、集群基线、容量、恢复验证和发布审查；114 个拟议插件，设计版本 4.0.0，运行实现待开始
 - [插件与整合包协议](plugin-protocol.md)
 - [独立运行包自更新](self-update.md)
 - [受管存储与恢复](storage-runtime.md)
