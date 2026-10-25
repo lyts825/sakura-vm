@@ -11,6 +11,8 @@ import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { Metrics } from '../../server/metrics.ts';
 import type { PluginOperation } from '../../server/plugin-api.ts';
+import { IncidentSnapshotProvider } from '../../server/incident-snapshot-provider.ts';
+import { suiteJson } from '../../shared/contracts/suite-common.ts';
 /**
  * 中文：在本次插件激活中构造 Metrics，发布 metricsServices.metrics 服务引用；依赖通过 host 获取，登记的任务和清理由本激活寿命拥有
  * English: Construct Metrics within this activation and publish metricsServices.metrics service references. Resolve dependencies through host; this activation owns registered jobs/cleanup
@@ -20,7 +22,10 @@ import type { PluginOperation } from '../../server/plugin-api.ts';
  * English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting
  */
 export async function activate(host: PluginContext) {
-  host.provide(metricsServices.metrics, new Metrics(host.capabilities.vm));
+  const metrics = host.provide(metricsServices.metrics, new Metrics(host.capabilities.vm));
+  host.provide(metricsServices.snapshots, new IncidentSnapshotProvider('metrics',
+    (target, work) => host.capabilities.execution.run(target, work),
+    async target => suiteJson.parse(await metrics.sample(target.vmId))));
 }
 export const operations: Record<string, PluginOperation> = {
   sample: {

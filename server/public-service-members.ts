@@ -1405,6 +1405,18 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "view"
     ]
   },
+  "sakura.service.health-snapshots.v1": {
+    "id": "sakura.service.health-snapshots.v1",
+    "version": 1,
+    "members": [
+      "readSnapshot",
+      "verifySnapshot"
+    ],
+    "methods": [
+      "readSnapshot",
+      "verifySnapshot"
+    ]
+  },
   "sakura.service.host-mounts.v1": {
     "id": "sakura.service.host-mounts.v1",
     "version": 1,
@@ -2841,6 +2853,18 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "action",
       "sample",
       "view"
+    ]
+  },
+  "sakura.service.metrics-snapshots.v1": {
+    "id": "sakura.service.metrics-snapshots.v1",
+    "version": 1,
+    "members": [
+      "readSnapshot",
+      "verifySnapshot"
+    ],
+    "methods": [
+      "readSnapshot",
+      "verifySnapshot"
     ]
   },
   "sakura.service.metrics.v1": {

@@ -37,7 +37,7 @@ await cp(join(root, 'server/network/worker.mjs'), join(target, 'network-worker.m
 await cp(join(root, 'server/network/bounded-qmp-policy.mjs'), join(target, 'bounded-qmp-policy.mjs'));
 await cp(join(root, 'server/network/parent-exec.py'), join(target, 'network-parent-exec.py'));
 await mkdir(join(root, '.sakura-server/docs'), { recursive: true });
-for (const file of ['network-runtime.md', 'delegated-actions.md'])
+for (const file of ['network-runtime.md', 'delegated-actions.md', 'incident-capture.md'])
   await cp(join(root, 'docs', file), join(root, '.sakura-server/docs', file));
 const networkSources = [
   'server/network-entry.ts',
@@ -59,7 +59,7 @@ await writeFile(join(target, 'compute-runtime.json'), JSON.stringify({ version: 
   files: await Promise.all(['compute-task.js', 'assets/compute-worker.mjs'].map((file) => describe(join(root, '.sakura-server'), file))),
   sources: await Promise.all(['server/compute-task.ts', 'server/compute-worker.mjs', 'server/file-preview.ts',
     'server/file-preview-runtime.ts', 'server/compute-runtime.ts', 'server/suite-supply-analysis.ts', 'server/suite-locale-analysis.ts', 'server/suite-incident-analysis.ts', 'server/suite-incident-redaction.ts',
-    'shared/contracts/supply-audit.ts', 'shared/contracts/locale-studio.ts', 'shared/contracts/incident-desk.ts', 'shared/contracts/cleanup-plan.ts', 'shared/contracts/resilience-lab.ts', 'shared/contracts/image-assets.ts', 'shared/contracts/drill-supervision.ts', 'shared/contracts/suite-common.ts', 'shared/suite-json.ts',
+    'shared/contracts/supply-audit.ts', 'shared/contracts/locale-studio.ts', 'shared/contracts/incident-desk.ts', 'shared/contracts/incident-snapshots.ts', 'shared/contracts/cleanup-plan.ts', 'shared/contracts/resilience-lab.ts', 'shared/contracts/image-assets.ts', 'shared/contracts/drill-supervision.ts', 'shared/contracts/suite-common.ts', 'shared/suite-json.ts',
     'shared/errors.ts'].map((file) => describe(root, file))),
 }, null, 2) + '\n');
 await writeFile(

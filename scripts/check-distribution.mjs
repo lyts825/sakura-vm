@@ -48,6 +48,7 @@ for (const file of [
   '.sakura-server/assets/network-runtime.json',
   '.sakura-server/docs/network-runtime.md',
   '.sakura-server/docs/delegated-actions.md',
+  '.sakura-server/docs/incident-capture.md',
   '.sakura-witness/ha-witness.js',
   '.sakura-witness/docs/ha-witness-maintenance.md',
   '.sakura-server/assets/state-report.sh',
@@ -79,7 +80,7 @@ if (process.platform === 'win32') {
   const files = ['compute-task.js', 'assets/compute-worker.mjs'];
   const sources = ['server/compute-task.ts', 'server/compute-worker.mjs', 'server/file-preview.ts',
     'server/file-preview-runtime.ts', 'server/compute-runtime.ts', 'server/suite-supply-analysis.ts', 'server/suite-locale-analysis.ts', 'server/suite-incident-analysis.ts', 'server/suite-incident-redaction.ts',
-    'shared/contracts/supply-audit.ts', 'shared/contracts/locale-studio.ts', 'shared/contracts/incident-desk.ts', 'shared/contracts/cleanup-plan.ts', 'shared/contracts/resilience-lab.ts', 'shared/contracts/image-assets.ts', 'shared/contracts/drill-supervision.ts', 'shared/contracts/suite-common.ts', 'shared/suite-json.ts',
+    'shared/contracts/supply-audit.ts', 'shared/contracts/locale-studio.ts', 'shared/contracts/incident-desk.ts', 'shared/contracts/incident-snapshots.ts', 'shared/contracts/cleanup-plan.ts', 'shared/contracts/resilience-lab.ts', 'shared/contracts/image-assets.ts', 'shared/contracts/drill-supervision.ts', 'shared/contracts/suite-common.ts', 'shared/suite-json.ts',
     'shared/errors.ts'];
   if (metadata.version !== 1 || !Array.isArray(metadata.files) || !Array.isArray(metadata.sources) ||
       metadata.files.map((entry) => entry.file).join(',') !== files.join(',') ||

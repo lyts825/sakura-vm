@@ -12,7 +12,7 @@ export const manifest = definePlugin({
   description: '持续检查已配置的项目服务。',
   category: 'operations',
   requires: [pin('projects')],
-  services: ['health'],
+  services: ['health', 'healthSnapshots'],
   contributes: {
     routes: [
       {"id":"legacy.get.vms.vmId.health","method":"GET","path":"/api/vms/{vmId}/health","policy":{"access":"controller","roles":["owner","member"],"projectPermission":"read","projectScoped":true,"identity":"fixed-vm","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},

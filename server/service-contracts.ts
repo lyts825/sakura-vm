@@ -8,6 +8,8 @@ import type { ServiceContract } from './service-ref.ts';
 
 /** Stable descriptor IDs are independent of implementation names and paths. */
 export const serviceContracts = {
+  MetricsSnapshots: PUBLIC_SERVICE_CONTRACTS['sakura.service.metrics-snapshots.v1'] as ServiceContract<V1.MetricsSnapshotsV1>,
+  HealthSnapshots: PUBLIC_SERVICE_CONTRACTS['sakura.service.health-snapshots.v1'] as ServiceContract<V1.HealthSnapshotsV1>,
   DelegatedActions: PUBLIC_SERVICE_CONTRACTS['sakura.service.delegated-actions.v1'] as ServiceContract<V1.DelegatedActionsV1>,
   MaintenanceActions: PUBLIC_SERVICE_CONTRACTS['sakura.service.maintenance-actions.v1'] as ServiceContract<V1.MaintenanceActionsV1>,
   ResilienceActions: PUBLIC_SERVICE_CONTRACTS['sakura.service.resilience-actions.v1'] as ServiceContract<V1.ResilienceActionsV1>,
@@ -239,6 +241,8 @@ export const officialServiceContracts: Readonly<Record<string, ServiceContract<a
   'maintenance/maintenanceActions': serviceContracts.MaintenanceActions,
   'resilience-runs/resilienceActions': serviceContracts.ResilienceActions,
   'metrics/metrics': serviceContracts.Metrics,
+  'metrics/metricsSnapshots': serviceContracts.MetricsSnapshots,
+  'service-health/healthSnapshots': serviceContracts.HealthSnapshots,
   'migration/migration': serviceContracts.DataMigration,
   'network/network': serviceContracts.NetworkProfiles,
   'network/certificates': serviceContracts.IngressCertificates,

@@ -3,6 +3,8 @@ import { z } from 'zod';
 import * as S from '../shared/contracts/suite-common.ts';
 import * as I from '../shared/contracts/incident-desk.ts';
 import * as M from '../shared/contracts/incident-materials.ts';
+import * as C from '../shared/contracts/incident-snapshots.ts';
+import type { IncidentSnapshotProvider } from './service-contracts/incident-snapshots.ts';
 import type { PluginMetadata } from './plugin-metadata.ts';
 import { SuiteMaterials } from './suite-materials.ts';
 import {
@@ -27,6 +29,7 @@ export class IncidentEvidence extends SuiteMaterials implements IncidentEvidence
     uploads: PluginMetadata,
     authorize: SuiteAuthorize,
     private cases: IncidentCasesV1,
+    private snapshots: (kind: 'metrics' | 'health') => IncidentSnapshotProvider | undefined = () => undefined,
   ) {
     super(
       'incident-evidence',
@@ -133,14 +136,95 @@ export class IncidentEvidence extends SuiteMaterials implements IncidentEvidence
       true,
     );
   }
+  async captureSources() {
+    await this.access();
+    return (['metrics', 'health'] as const).map((kind) => ({ kind, available: !!this.snapshots(kind) }));
+  }
+  async planCapture(raw: z.infer<typeof C.incidentCaptureInput>) {
+    const input = C.incidentCaptureInput.parse(raw),
+      s = scope(input),
+      c = await this.cases.scope(s);
+    if (I.incidentCase.parse(c.content).status !== 'open') suiteFail('INCIDENT_CASE_NOT_OPEN');
+    const provider =
+      this.snapshots(input.kind) ??
+      suiteFail('INCIDENT_CAPTURE_UNAVAILABLE', '请启用原指标或健康插件，或上传外来材料', 503);
+    const snapshot = C.incidentSnapshot.parse(await provider.readSnapshot(input.target));
+    if (
+      snapshot.binding.kind !== input.kind ||
+      snapshot.binding.actorId !== suiteActor() ||
+      suiteHash(snapshot.data) !== snapshot.binding.snapshotDigest ||
+      suiteHash(snapshot.binding.target) !== suiteHash(input.target)
+    )
+      suiteFail('INCIDENT_SNAPSHOT_STALE');
+    return this.plan(s, 'read-snapshot-capture', json({ input, case: ref(c), snapshot }), [ref(c)]);
+  }
+  async capture(raw: S.SuiteApproval) {
+    const plan = await this.consume(raw, 'read-snapshot-capture'),
+      s = { workspaceId: plan.workspaceId };
+    if (plan.state === 'completed' && plan.result)
+      return this.get({ ...s, id: plan.result.id, revision: plan.result.revision });
+    const value = z
+      .object({ input: C.incidentCaptureInput, case: S.suiteRef, snapshot: C.incidentSnapshot })
+      .strict()
+      .parse(plan.input);
+    const current = await this.cases.scope(s);
+    if (
+      I.incidentCase.parse(current.content).status !== 'open' ||
+      suiteHash(ref(current)) !== suiteHash(value.case)
+    )
+      suiteFail('INCIDENT_CASE_CHANGED');
+    const provider = this.snapshots(value.input.kind) ?? suiteFail('INCIDENT_CAPTURE_UNAVAILABLE');
+    if (suiteHash(value.snapshot.data) !== value.snapshot.binding.snapshotDigest)
+      suiteFail('INCIDENT_SNAPSHOT_STALE');
+    await provider.verifySnapshot(value.snapshot.binding);
+    const source = await this.textSource(
+      s,
+      value.input.name,
+      JSON.stringify(value.snapshot, null, 2),
+      'json',
+      false,
+      [],
+    );
+    await provider.verifySnapshot(value.snapshot.binding);
+    const result = await this.put(
+      {
+        ...s,
+        name: value.input.name,
+        references: [value.case, ref(source)],
+        content: json(
+          I.incidentEvidence.parse({
+            format: 'sakura-incident-evidence/1',
+            case: value.case,
+            source: ref(source),
+            sourceDigest: S.suiteMaterial.parse(source.content).digest,
+            sourceAt:
+              value.input.kind === 'metrics' &&
+              value.snapshot.data &&
+              typeof value.snapshot.data === 'object' &&
+              !Array.isArray(value.snapshot.data)
+                ? I.incidentTime.nullable().parse(value.snapshot.data.sampledAt ?? null)
+                : null,
+            observedAt: value.snapshot.binding.capturedAt,
+            method: value.input.kind,
+            externalStatement: false,
+            capture: value.snapshot.binding,
+            derivation: null,
+          }),
+        ),
+      },
+      'result',
+      true,
+    );
+    await this.complete(plan, result);
+    return result;
+  }
   async redact(raw: z.infer<typeof I.incidentRedact>) {
     const input = I.incidentRedact.parse(raw),
       s = scope(input);
     if (input.evidence.domain !== this.domain) suiteFail('INCIDENT_EVIDENCE_DOMAIN');
     const c = await this.cases.scope(s),
       original = await this.pin({ ...s, id: input.evidence.id, revision: input.evidence.revision });
-    if (I.incidentCase.parse(c.content).status !== 'open')
-      suiteFail('INCIDENT_CASE_NOT_OPEN');
+    if (I.incidentCase.parse(c.content).status !== 'open') suiteFail('INCIDENT_CASE_NOT_OPEN');
     const value = I.incidentEvidence.parse(original.content);
     if (value.case.id !== c.id) suiteFail('INCIDENT_CASE_MISMATCH');
     const material = await this.get({ ...s, id: value.source.id, revision: value.source.revision });

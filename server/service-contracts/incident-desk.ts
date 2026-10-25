@@ -4,6 +4,7 @@ import type * as S from '../../shared/contracts/suite-common.ts';
 import type * as I from '../../shared/contracts/incident-desk.ts';
 import type * as A from '../../shared/contracts/incident-actions.ts';
 import type * as M from '../../shared/contracts/incident-materials.ts';
+import type * as C from '../../shared/contracts/incident-snapshots.ts';
 import type { DelegatedReceipt, DelegatedAdapter } from '../../shared/contracts/delegated-actions.ts';
 
 export interface IncidentCasesV1 extends S.SuiteWorkspacePortV1, S.SuiteRecordsV1 {
@@ -23,6 +24,9 @@ export interface IncidentEvidenceV1 extends S.SuiteByteMaterialsV1 {
   planRedactionReview(input: z.infer<typeof M.incidentRedactionReviewInput>): Promise<S.SuitePlan>;
   reviewRedaction(input: S.SuiteApproval): Promise<S.SuiteRecord>;
   redactionStatus(input: S.SuitePin): Promise<{ reviewed: boolean; exportGranted: boolean; effective: boolean }>;
+  captureSources(): Promise<{ kind: 'metrics' | 'health'; available: boolean }[]>;
+  planCapture(input: z.infer<typeof C.incidentCaptureInput>): Promise<S.SuitePlan>;
+  capture(input: S.SuiteApproval): Promise<S.SuiteRecord>;
 }
 export interface IncidentTimelineV1 extends S.SuiteRecordsV1 {
   assemble(input: z.infer<typeof I.incidentAssemble>): Promise<S.SuiteRecord>;

@@ -13,6 +13,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext, PluginRoute } from '../../server/plugin-api.ts';
 
 import { ServiceHealth } from '../../server/service-health.ts';
+import { IncidentSnapshotProvider } from '../../server/incident-snapshot-provider.ts';
+import { suiteJson } from '../../shared/contracts/suite-common.ts';
 /**
  * 中文：在本次插件激活中构造 ServiceHealth，发布 serviceHealthServices.health 服务引用；依赖通过 host 获取，登记的任务和清理由本激活寿命拥有
  * English: Construct ServiceHealth within this activation and publish serviceHealthServices.health service references. Resolve dependencies through host; this activation owns registered jobs/cleanup
@@ -26,6 +28,10 @@ export async function activate(host: PluginContext) {
     new ServiceHealth(host.vm, host.use(projectsServices.workspaces), { deferInitialization: true }));
   // 先发布健康检查服务再初始化定时工作，让宿主在激活失败或插件关闭时仍能管理服务资源。
   health.init();
+  host.provide(serviceHealthServices.snapshots, new IncidentSnapshotProvider('health',
+    (target, work) => host.capabilities.execution.run(target, work),
+    async target => suiteJson.parse({ services: (await health.view(target.vmId)).services }),
+    async target => suiteJson.parse(await host.use(projectsServices.workspaces).config(target.vmId))));
 }
 /**
  * 中文：按 HTTP 方法与路径将本插件请求分派给领域服务；响应按操作描述写出，未认领请求返回 false 交回总路由

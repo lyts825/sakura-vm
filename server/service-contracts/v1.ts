@@ -1,3 +1,6 @@
+import type * as SnapshotContracts from './incident-snapshots.ts';
+export interface MetricsSnapshotsV1 extends SnapshotContracts.MetricsSnapshotsV1 {}
+export interface HealthSnapshotsV1 extends SnapshotContracts.HealthSnapshotsV1 {}
 import type * as DelegatedContracts from './delegated-actions.ts';
 export interface DelegatedActionsV1 extends DelegatedContracts.DelegatedActionsV1 {}
 export interface MaintenanceActionsV1 extends DelegatedContracts.MaintenanceActionsV1 {}

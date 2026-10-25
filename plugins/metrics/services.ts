@@ -9,4 +9,5 @@ import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
   metrics: serviceRef('metrics', 'metrics', serviceContracts.Metrics),
+  snapshots: serviceRef('metrics', 'metricsSnapshots', serviceContracts.MetricsSnapshots),
 };

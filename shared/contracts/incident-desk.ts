@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as S from './suite-common.ts';
 import { cleanupProviderIdSchema } from './cleanup-plan.ts';
 import { resilienceScopeSchema } from './resilience-lab.ts';
+import { incidentSnapshotBinding } from './incident-snapshots.ts';
 
 export const incidentText = z.string().trim().min(1).max(4000);
 export const incidentTime = z.iso.datetime({ offset: true });
@@ -56,6 +57,7 @@ export const incidentEvidence = z.object({
   observedAt: incidentTime,
   method: z.enum(['upload', 'manual', 'metrics', 'health']),
   externalStatement: z.boolean(),
+  capture: incidentSnapshotBinding.nullable().default(null),
   derivation: z.object({
     original: S.suiteRef,
     originalDigest: S.suiteDigest,
