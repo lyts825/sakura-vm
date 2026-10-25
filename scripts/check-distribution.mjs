@@ -77,8 +77,8 @@ if (process.platform === 'win32') {
   const metadata = JSON.parse(await readFile(join(root, '.sakura-server/assets/compute-runtime.json'), 'utf8'));
   const files = ['compute-task.js', 'assets/compute-worker.mjs'];
   const sources = ['server/compute-task.ts', 'server/compute-worker.mjs', 'server/file-preview.ts',
-    'server/file-preview-runtime.ts', 'server/compute-runtime.ts', 'server/suite-supply-analysis.ts', 'server/suite-locale-analysis.ts',
-    'shared/contracts/supply-audit.ts', 'shared/contracts/locale-studio.ts', 'shared/contracts/suite-common.ts', 'shared/suite-json.ts',
+    'server/file-preview-runtime.ts', 'server/compute-runtime.ts', 'server/suite-supply-analysis.ts', 'server/suite-locale-analysis.ts', 'server/suite-incident-analysis.ts',
+    'shared/contracts/supply-audit.ts', 'shared/contracts/locale-studio.ts', 'shared/contracts/incident-desk.ts', 'shared/contracts/cleanup-plan.ts', 'shared/contracts/resilience-lab.ts', 'shared/contracts/image-assets.ts', 'shared/contracts/drill-supervision.ts', 'shared/contracts/suite-common.ts', 'shared/suite-json.ts',
     'shared/errors.ts'];
   if (metadata.version !== 1 || !Array.isArray(metadata.files) || !Array.isArray(metadata.sources) ||
       metadata.files.map((entry) => entry.file).join(',') !== files.join(',') ||

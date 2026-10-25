@@ -126,6 +126,7 @@ const stateSchema = z
   })
   .strict();
 type State = z.infer<typeof stateSchema>;
+export type SuiteState = State;
 const authorizationReads = new AsyncLocalStorage<{ reads: number; depth: number; active: Set<string> }>();
 const empty = (): State => ({
   schemaVersion: 1,

@@ -15,9 +15,14 @@ import { z } from 'zod';
 import { parseLocaleCatalog, evaluateLocale, renderLocale } from './suite-locale-analysis.ts';
 import * as L from '../shared/contracts/locale-studio.ts';
 import { suiteRef } from '../shared/contracts/suite-common.ts';
+import { assembleIncidentTimeline, incidentTimelineInput } from './suite-incident-analysis.ts';
 
 try {
-  if (workerData?.task === 'localization-studio') {
+  if (workerData?.task === 'incident-desk') {
+    z.literal('timeline').parse(workerData.operation);
+    const result = assembleIncidentTimeline(incidentTimelineInput.parse(workerData.input));
+    parentPort!.postMessage({ ok: true, result });
+  } else if (workerData?.task === 'localization-studio') {
     const operation = z.enum(['catalog', 'checks', 'preview']).parse(workerData.operation);
     let result: unknown;
     if (operation === 'catalog')

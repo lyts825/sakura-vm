@@ -1,13 +1,14 @@
 /** 固定领域计算在受管工作线程执行，正文读取也计入计算准入。 */
 import { computeRuntime } from './compute-runtime.ts';
-import type { SuiteMaterialsV1, SuiteScope, SuiteRef } from '../shared/contracts/suite-common.ts';
+import type { SuiteByteMaterialsV1, SuiteScope, SuiteRef } from '../shared/contracts/suite-common.ts';
 import { suiteMaterial } from '../shared/contracts/suite-common.ts';
 import { suiteFail } from './suite-store.ts';
 
 export type SupplyComputation = 'inventory' | 'dataset' | 'advisories' | 'licenses';
 export type LocaleComputation = 'catalog' | 'checks' | 'preview';
+export type IncidentComputation = 'timeline';
 export async function readSuiteText(
-  source: SuiteMaterialsV1,
+  source: Pick<SuiteByteMaterialsV1, 'get' | 'openRead' | 'readLease' | 'closeRead'>,
   scope: SuiteScope,
   ref: SuiteRef,
   maximum = 32 * 1024 ** 2,
@@ -56,9 +57,9 @@ export function computeLocale<T>(
   return computeSuite('localization-studio', domain, operation, prepare, signal);
 }
 function computeSuite<T>(
-  task: 'supply-audit' | 'localization-studio',
+  task: 'supply-audit' | 'localization-studio' | 'incident-desk',
   domain: string,
-  operation: SupplyComputation | LocaleComputation,
+  operation: SupplyComputation | LocaleComputation | IncidentComputation,
   prepare: () => Promise<unknown>,
   signal?: AbortSignal,
 ): Promise<T> {
@@ -66,7 +67,7 @@ function computeSuite<T>(
     {
       owner: domain,
       label: task + '-' + operation,
-      memoryBytes: 256 * 1024 ** 2,
+      memoryBytes: (task === 'incident-desk' ? 384 : 256) * 1024 ** 2,
       timeoutMs: 60000,
       signal,
       partition: { key: task, limit: 2 },
@@ -75,8 +76,11 @@ function computeSuite<T>(
       source: new URL('./compute-worker.mjs', import.meta.url),
       options: {
         workerData: { task, operation, input: await prepare() },
-        resourceLimits: { maxOldGenerationSizeMb: 192, maxYoungGenerationSizeMb: 32, stackSizeMb: 4 },
+        resourceLimits: { maxOldGenerationSizeMb: task === 'incident-desk' ? 320 : 192, maxYoungGenerationSizeMb: 32, stackSizeMb: 4 },
       },
     }),
   );
+}
+export function computeIncident<T>(domain: string, operation: IncidentComputation, prepare: () => Promise<unknown>, signal?: AbortSignal): Promise<T> {
+  return computeSuite('incident-desk', domain, operation, prepare, signal);
 }
