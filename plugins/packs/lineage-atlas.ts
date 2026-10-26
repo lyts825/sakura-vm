@@ -1,0 +1,3 @@
+/** 数据血缘与影响分析的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'lineage-atlas',name:"数据血缘与影响分析",description:"数据血缘与影响分析：定义、处理、复核和交接。",members:[member('lineageatlas-spaces'),member('lineageatlas-catalogs'),member('lineageatlas-assets'),member('lineageatlas-mappings'),member('lineageatlas-processes'),member('lineageatlas-assertions'),member('lineageatlas-graphs'),member('lineageatlas-impacts'),member('lineageatlas-investigations'),member('lineageatlas-reviews'),member('lineageatlas-reports'),member('lineageatlas-exchange'),member('lineageatlas-workbench')]});

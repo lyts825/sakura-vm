@@ -314,7 +314,7 @@ export class SystemServices {
          */
         vm: () => this.vm(definition.id, raw.get<Machines>('@machines')),
         executionCleanup: () => {
-          if (!['browserSessions', 'databaseRehearsal', 'eventSessions', 'mediaTasks', 'learningToolSessions'].includes(definition.id) ||
+          if (!['browserSessions', 'databaseRehearsal', 'eventSessions', 'mediaTasks', 'learningToolSessions', 'schedulerProbeSessions', 'extensionBuildSessions', 'protocolScenarioSessions', 'multiServiceVirtualizationSessions'].includes(definition.id) ||
             !definition.requires.includes('imageAssets') || !definition.requires.includes('@machines'))
             throw new AppError('固定会话清理依赖未声明', 403, 'SERVICE_DEPENDENCY_DENIED');
           const assets = raw.get<ImageAssets>('imageAssets'), machines = raw.get<Machines>('@machines'),

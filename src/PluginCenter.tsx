@@ -27,7 +27,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { emptySelection, type PluginManifest, type PluginStatus } from '../shared/plugins';
+import { emptySelection, type PluginManifest, type PluginStatus } from '../shared/plugin-protocol.ts';
 import { resolvePlugins } from '../shared/plugin-selection';
 import type { Request } from './feature-shared';
 import { pageLabels, sectionLabels, tabLabels } from './plugin-navigation';

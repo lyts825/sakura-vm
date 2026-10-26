@@ -5,7 +5,7 @@
  * Detailed scope (English): Public entry points include DevelopmentPanel. The scope covers Composing plugin development sections in the current VM and project context. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useMemo, useState } from 'react';
-import { developmentSections, PLUGINS } from '../shared/plugins';
+import { developmentSections, PLUGINS } from './plugin-surfaces.ts';
 import './development.css';
 import type { FeatureProps } from './feature-shared';
 import './features.css';

@@ -2,7 +2,7 @@
  * Generate stable-sorted static plugin/pack catalogs and lazy server loaders, supporting --check for synchronization. */
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath,pathToFileURL } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 /** 将已验证目录 ID 的连字符转下划线，以形成稳定 TS 导入绑定名。
@@ -63,6 +63,12 @@ export async function syncPluginCatalog(check = false) {
   ].join('\n');
   await writeOrCheck(join(root, 'shared', 'plugin-catalog.generated.ts'), catalog, check);
   await writeOrCheck(join(root, 'server', 'plugins', 'loaders.generated.ts'), loaders, check);
+  const surfaces=await Promise.all(ids.map(async id=>{
+    const {manifest}=await import(pathToFileURL(join(root,'plugins',id,'manifest.ts')).href);
+    const {pages,tabs,developmentSections,http}=manifest.contributes;
+    return {id:manifest.id,name:manifest.name,contributes:{pages,tabs,developmentSections,http}};
+  }));
+  await writeOrCheck(join(root,'shared','plugin-surfaces.generated.ts'),"/** 由 scripts/sync-plugin-catalog.ts 生成的界面及请求归属投影。 */\nimport type {PluginSurface} from './plugin-surface-queries.ts';\nexport const PLUGIN_SURFACES:PluginSurface[]="+JSON.stringify(surfaces,null,2)+';\n',check);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))

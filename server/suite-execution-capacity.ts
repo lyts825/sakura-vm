@@ -9,12 +9,12 @@ import { suiteQuota, type SuiteQuota } from '../shared/contracts/suite-common.ts
 import { imageAssetSchema, type ImageAsset } from '../shared/contracts/image-assets.ts';
 import { AppError } from '../shared/errors.ts';
 export const suiteExecutionCapacitySpecs = (directory: string): SuiteRootCapacitySpec[] =>
-  ['browser', 'database', 'event', 'media', 'learning', 'images'].map((profile) => ({
+  ['browser', 'database', 'event', 'media', 'learning', 'schedule-probe', 'extension-build', 'protocol-scenario', 'multi-service', 'native', 'images'].map((profile) => ({
     pluginId: 'suite-execution-' + profile,
     file: join(directory, 'suite-execution', profile, 'state.json'),
     ...(profile === 'images'
       ? {
-          memberDirectories: ['browser', 'database', 'event', 'media', 'learning'].map((id) =>
+          memberDirectories: ['browser', 'database', 'event', 'media', 'learning', 'schedule-probe', 'extension-build', 'protocol-scenario', 'multi-service'].map((id) =>
             join(directory, 'suite-execution', id),
           ),
         }

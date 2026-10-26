@@ -1,0 +1,4 @@
+/** 模拟交接的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {virtserviceRoutes,virtserviceHttp} from '../../shared/contracts/virtservice-routes.generated.ts';
+export const manifest=definePlugin({id:'virtservice-exchange',name:"模拟交接",description:"环境定义、联合快照和报告的隔离交换",category:'development',experimental:true,requires:[pin('virtservice-spaces'),pin('virtservice-contracts'),pin('virtservice-payloads'),pin('virtservice-matchers'),pin('virtservice-states'),pin('virtservice-transitions'),pin('virtservice-faults'),pin('virtservice-scenarios'),pin('virtservice-packages'),pin('virtservice-sessions'),pin('virtservice-traffic'),pin('virtservice-assertions'),pin('virtservice-reports')],services:['virtserviceExchange'],contributes:{http:virtserviceHttp('exchange'),routes:virtserviceRoutes('exchange')}});

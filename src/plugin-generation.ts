@@ -4,7 +4,7 @@
  * 详细范围（中文）：公开入口包括 PluginGeneration, pluginGeneration；职责覆盖在运行代次、阶段、权限或产物变化时撤销旧访问能力，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include PluginGeneration, pluginGeneration. The scope covers Revoking old access capabilities when generation, phase, permissions or artifacts change. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { PLUGINS } from '../shared/plugins';
+import { PLUGINS } from './plugin-surfaces.ts';
 import type { PluginInstanceView } from '../shared/contracts/plugin-runtime';
 
 type Lifetime = { fingerprint: string; running: boolean; controller: AbortController };

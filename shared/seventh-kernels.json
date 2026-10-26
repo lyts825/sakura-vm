@@ -1,0 +1,110 @@
+[
+  {
+    "packId": "data-quality-studio",
+    "contract": "BatchQualityCompute",
+    "id": "batchQualityCompute",
+    "prefix": "qualitydesk"
+  },
+  {
+    "packId": "lineage-atlas",
+    "contract": "LineageGraphCompute",
+    "id": "lineageGraphCompute",
+    "prefix": "lineageatlas"
+  },
+  {
+    "packId": "entity-resolution-studio",
+    "contract": "EntityMatchingCompute",
+    "id": "entityMatchingCompute",
+    "prefix": "entitydesk"
+  },
+  {
+    "packId": "temporal-data-studio",
+    "contract": "TemporalSeriesCompute",
+    "id": "temporalSeriesCompute",
+    "prefix": "temporaldesk"
+  },
+  {
+    "packId": "geospatial-studio",
+    "contract": "VectorGeometryCompute",
+    "id": "vectorGeometryCompute",
+    "prefix": "geodesk"
+  },
+  {
+    "packId": "graph-insight-studio",
+    "contract": "RelationGraphCompute",
+    "id": "relationGraphCompute",
+    "prefix": "graphdesk"
+  },
+  {
+    "packId": "experiment-planner",
+    "contract": "ControlledExperimentCompute",
+    "id": "controlledExperimentCompute",
+    "prefix": "trialplan"
+  },
+  {
+    "packId": "feature-engineering-studio",
+    "contract": "FeatureTransformCompute",
+    "id": "featureTransformCompute",
+    "prefix": "feat"
+  },
+  {
+    "packId": "classical-training-lab",
+    "contract": "ClassicalTrainingSessions",
+    "id": "classicalTrainingSessions",
+    "prefix": "ctrain"
+  },
+  {
+    "packId": "constraint-solver-studio",
+    "contract": "ConstraintSolveSessions",
+    "id": "constraintSolveSessions",
+    "prefix": "csolve"
+  },
+  {
+    "packId": "document-extraction-studio",
+    "contract": "DocumentExtractionSessions",
+    "id": "documentExtractionSessions",
+    "prefix": "dextract"
+  },
+  {
+    "packId": "design-system-studio",
+    "contract": "DesignSystemCompile",
+    "id": "designSystemCompile",
+    "prefix": "dsys"
+  },
+  {
+    "packId": "form-flow-studio",
+    "contract": "FormDefinitionEvaluate",
+    "id": "formDefinitionEvaluate",
+    "prefix": "fform"
+  },
+  {
+    "packId": "notification-template-studio",
+    "contract": "NotificationRenderCompute",
+    "id": "notificationRenderCompute",
+    "prefix": "ntpl"
+  },
+  {
+    "packId": "schedule-semantics-lab",
+    "contract": "ScheduleModelCompute",
+    "id": "scheduleModelCompute",
+    "prefix": "schedlab"
+  },
+  {
+    "packId": "extension-authoring-studio",
+    "contract": "ExtensionTrialRuntime",
+    "id": "extensionTrialRuntime",
+    "prefix": "extforge"
+  },
+  {
+    "packId": "dependency-resolution-studio",
+    "contract": "DependencyConstraintCompute",
+    "id": "dependencyConstraintCompute",
+    "prefix": "depsolve"
+  },
+  {
+    "packId": "replica-sync-lab",
+    "contract": "ReplicaModelCompute",
+    "id": "replicaModelCompute",
+    "prefix": "replab"
+  }
+]

@@ -1,0 +1,4 @@
+/** 归并交接的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {entitydeskRoutes,entitydeskHttp} from '../../shared/contracts/entitydesk-routes.generated.ts';
+export const manifest=definePlugin({id:'entitydesk-exchange',name:"归并交接",description:"规范数据、原映射和证据的隔离交换",category:'development',experimental:true,requires:[pin('entitydesk-spaces'),pin('entitydesk-sources'),pin('entitydesk-normalization'),pin('entitydesk-blocks'),pin('entitydesk-comparators'),pin('entitydesk-candidates'),pin('entitydesk-constraints'),pin('entitydesk-clusters'),pin('entitydesk-decisions'),pin('entitydesk-evaluations'),pin('entitydesk-survivors'),pin('entitydesk-versions'),pin('entitydesk-reports')],services:['entitydeskExchange'],contributes:{http:entitydeskHttp('exchange'),routes:entitydeskRoutes('exchange')}});

@@ -1,0 +1,5535 @@
+[
+  {
+    "id": "data-quality-studio",
+    "name": "数据质量工作室",
+    "alias": "quality-desk",
+    "prefix": "qualitydesk",
+    "group": "data",
+    "root": "qualitydesk-spaces",
+    "members": [
+      {
+        "id": "qualitydesk-spaces",
+        "name": "质量空间",
+        "service": "QualitydeskSpacesV1",
+        "description": "空间、授权修订和额度",
+        "methods": [
+          "create",
+          "configure",
+          "close"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-sources",
+        "name": "批次材料",
+        "service": "QualitydeskSourcesV1",
+        "description": "原始文件、解析档案和许可",
+        "methods": [
+          "upload",
+          "inspect",
+          "pin"
+        ],
+        "requires": [
+          "qualitydesk-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "qualitydesk-partitions",
+        "name": "分区与批次",
+        "service": "QualitydeskPartitionsV1",
+        "description": "业务日期、分区键、批次范围和完整性声明",
+        "methods": [
+          "define",
+          "bind",
+          "seal"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-sources"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-profiles",
+        "name": "批次画像",
+        "service": "QualitydeskProfilesV1",
+        "description": "行数、缺失率、有限分布和计算证据",
+        "methods": [
+          "preview",
+          "compute",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-sources",
+          "qualitydesk-partitions"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-rules",
+        "name": "门槛版本",
+        "service": "QualitydeskRulesV1",
+        "description": "分区覆盖、分布偏移和跨批次门槛",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-partitions",
+          "qualitydesk-profiles"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-baselines",
+        "name": "基线窗口",
+        "service": "QualitydeskBaselinesV1",
+        "description": "历史批次选择、排除原因及冻结统计",
+        "methods": [
+          "select",
+          "calculate",
+          "seal"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-partitions",
+          "qualitydesk-profiles",
+          "qualitydesk-rules"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-runs",
+        "name": "批次检查",
+        "service": "QualitydeskRunsV1",
+        "description": "固定规则与基线的执行意图和结果",
+        "methods": [
+          "preview",
+          "run",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-sources",
+          "qualitydesk-partitions",
+          "qualitydesk-profiles",
+          "qualitydesk-rules",
+          "qualitydesk-baselines"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-findings",
+        "name": "异常处置",
+        "service": "QualitydeskFindingsV1",
+        "description": "问题、归类、业务负责人和复查状态",
+        "methods": [
+          "collect",
+          "classify",
+          "resolve"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-runs"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-reconciliation",
+        "name": "双侧对账",
+        "service": "QualitydeskReconciliationV1",
+        "description": "键对齐、重复键、缺项及精确聚合差异",
+        "methods": [
+          "define",
+          "preview",
+          "compare",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-sources",
+          "qualitydesk-partitions",
+          "qualitydesk-rules"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-exceptions",
+        "name": "限定例外",
+        "service": "QualitydeskExceptionsV1",
+        "description": "问题适用范围、理由、批准时点和到期",
+        "methods": [
+          "prepare",
+          "decide",
+          "expire"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-rules",
+          "qualitydesk-runs",
+          "qualitydesk-findings",
+          "qualitydesk-reconciliation"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-releases",
+        "name": "批次放行",
+        "service": "QualitydeskReleasesV1",
+        "description": "固定检查、对账、未决项和人工放行决定",
+        "methods": [
+          "preview",
+          "decide",
+          "seal"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-partitions",
+          "qualitydesk-runs",
+          "qualitydesk-findings",
+          "qualitydesk-reconciliation",
+          "qualitydesk-exceptions"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-reports",
+        "name": "质量档案",
+        "service": "QualitydeskReportsV1",
+        "description": "趋势、放行范围和原证据索引",
+        "methods": [
+          "assemble",
+          "compare",
+          "seal"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-profiles",
+          "qualitydesk-baselines",
+          "qualitydesk-runs",
+          "qualitydesk-findings",
+          "qualitydesk-reconciliation",
+          "qualitydesk-exceptions",
+          "qualitydesk-releases"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-exchange",
+        "name": "质量交接",
+        "service": "QualitydeskExchangeV1",
+        "description": "材料选择、隔离导入和接收映射",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-sources",
+          "qualitydesk-partitions",
+          "qualitydesk-profiles",
+          "qualitydesk-rules",
+          "qualitydesk-baselines",
+          "qualitydesk-runs",
+          "qualitydesk-findings",
+          "qualitydesk-reconciliation",
+          "qualitydesk-exceptions",
+          "qualitydesk-releases",
+          "qualitydesk-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-checklists",
+        "name": "接收核对单",
+        "service": "QualitydeskChecklistsV1",
+        "description": "已封存档案的接收清单和核对意见",
+        "methods": [
+          "prepare",
+          "check",
+          "seal"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-reports",
+          "qualitydesk-exchange"
+        ],
+        "material": false
+      },
+      {
+        "id": "qualitydesk-workbench",
+        "name": "质量工作台",
+        "service": "QualitydeskWorkbenchV1",
+        "description": "批次看板、问题筛选和保存视图",
+        "methods": [
+          "view",
+          "saveView",
+          "templates"
+        ],
+        "requires": [
+          "qualitydesk-spaces",
+          "qualitydesk-sources",
+          "qualitydesk-partitions",
+          "qualitydesk-profiles",
+          "qualitydesk-rules",
+          "qualitydesk-baselines",
+          "qualitydesk-runs",
+          "qualitydesk-findings",
+          "qualitydesk-reconciliation",
+          "qualitydesk-exceptions",
+          "qualitydesk-releases",
+          "qualitydesk-reports",
+          "qualitydesk-exchange",
+          "qualitydesk-checklists"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "lineage-atlas",
+    "name": "数据血缘与影响分析",
+    "alias": "lineage-atlas",
+    "prefix": "lineageatlas",
+    "group": "data",
+    "root": "lineageatlas-spaces",
+    "members": [
+      {
+        "id": "lineageatlas-spaces",
+        "name": "血缘空间",
+        "service": "LineageatlasSpacesV1",
+        "description": "空间、授权和额度",
+        "methods": [
+          "create",
+          "configure",
+          "close"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-catalogs",
+        "name": "来源目录",
+        "service": "LineageatlasCatalogsV1",
+        "description": "原始清单、命名空间和来源许可",
+        "methods": [
+          "upload",
+          "inspect",
+          "pin"
+        ],
+        "requires": [
+          "lineageatlas-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "lineageatlas-assets",
+        "name": "资产身份",
+        "service": "LineageatlasAssetsV1",
+        "description": "系统、数据集、字段和身份别名",
+        "methods": [
+          "define",
+          "matchIdentity",
+          "seal"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-catalogs"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-mappings",
+        "name": "字段映射",
+        "service": "LineageatlasMappingsV1",
+        "description": "源目标字段、变换类别与缺失声明",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-assets"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-processes",
+        "name": "处理步骤",
+        "service": "LineageatlasProcessesV1",
+        "description": "作业定义、固定输入输出和时段",
+        "methods": [
+          "define",
+          "bind",
+          "seal"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-assets",
+          "lineageatlas-mappings"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-assertions",
+        "name": "血缘证据",
+        "service": "LineageatlasAssertionsV1",
+        "description": "观察、外来声明、人工补录和相互冲突",
+        "methods": [
+          "record",
+          "compare",
+          "classify"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-catalogs",
+          "lineageatlas-assets",
+          "lineageatlas-mappings",
+          "lineageatlas-processes"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-graphs",
+        "name": "图版本",
+        "service": "LineageatlasGraphsV1",
+        "description": "固定节点边、有效期和完整性缺项",
+        "methods": [
+          "compose",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-assets",
+          "lineageatlas-mappings",
+          "lineageatlas-processes",
+          "lineageatlas-assertions"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-impacts",
+        "name": "变更影响",
+        "service": "LineageatlasImpactsV1",
+        "description": "变更集、遍历范围、路径和停止边界",
+        "methods": [
+          "preview",
+          "trace",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-assets",
+          "lineageatlas-assertions",
+          "lineageatlas-graphs"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-investigations",
+        "name": "调查记录",
+        "service": "LineageatlasInvestigationsV1",
+        "description": "未知边、冲突问题、业务确认和证据补充",
+        "methods": [
+          "open",
+          "attach",
+          "resolve"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-assertions",
+          "lineageatlas-graphs",
+          "lineageatlas-impacts"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-reviews",
+        "name": "图复核",
+        "service": "LineageatlasReviewsV1",
+        "description": "身份合并和影响结论的人工决定",
+        "methods": [
+          "prepare",
+          "decide",
+          "seal"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-assets",
+          "lineageatlas-graphs",
+          "lineageatlas-impacts",
+          "lineageatlas-investigations"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-reports",
+        "name": "血缘档案",
+        "service": "LineageatlasReportsV1",
+        "description": "图差异、调查范围和确认时点",
+        "methods": [
+          "assemble",
+          "compare",
+          "seal"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-graphs",
+          "lineageatlas-impacts",
+          "lineageatlas-investigations",
+          "lineageatlas-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-exchange",
+        "name": "血缘交接",
+        "service": "LineageatlasExchangeV1",
+        "description": "原目录、图版本与调查档案的隔离交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-catalogs",
+          "lineageatlas-assets",
+          "lineageatlas-mappings",
+          "lineageatlas-processes",
+          "lineageatlas-assertions",
+          "lineageatlas-graphs",
+          "lineageatlas-impacts",
+          "lineageatlas-investigations",
+          "lineageatlas-reviews",
+          "lineageatlas-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "lineageatlas-workbench",
+        "name": "血缘工作台",
+        "service": "LineageatlasWorkbenchV1",
+        "description": "分层图、证据面板、影响树和保存视图",
+        "methods": [
+          "view",
+          "saveView",
+          "templates"
+        ],
+        "requires": [
+          "lineageatlas-spaces",
+          "lineageatlas-catalogs",
+          "lineageatlas-assets",
+          "lineageatlas-mappings",
+          "lineageatlas-processes",
+          "lineageatlas-assertions",
+          "lineageatlas-graphs",
+          "lineageatlas-impacts",
+          "lineageatlas-investigations",
+          "lineageatlas-reviews",
+          "lineageatlas-reports",
+          "lineageatlas-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "entity-resolution-studio",
+    "name": "实体归并工作室",
+    "alias": "entity-desk",
+    "prefix": "entitydesk",
+    "group": "data",
+    "root": "entitydesk-spaces",
+    "members": [
+      {
+        "id": "entitydesk-spaces",
+        "name": "归并空间",
+        "service": "EntitydeskSpacesV1",
+        "description": "空间、授权和额度",
+        "methods": [
+          "create",
+          "configure",
+          "close"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "entitydesk-sources",
+        "name": "原始台账",
+        "service": "EntitydeskSourcesV1",
+        "description": "原文件、字段档案、记录定位及许可",
+        "methods": [
+          "upload",
+          "inspect",
+          "pin"
+        ],
+        "requires": [
+          "entitydesk-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "entitydesk-normalization",
+        "name": "标准化规则",
+        "service": "EntitydeskNormalizationV1",
+        "description": "大小写、空白、单位和有限词典映射",
+        "methods": [
+          "define",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-sources"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-blocks",
+        "name": "候选分组",
+        "service": "EntitydeskBlocksV1",
+        "description": "阻塞键、邻域范围和候选覆盖声明",
+        "methods": [
+          "define",
+          "estimate",
+          "seal"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-sources",
+          "entitydesk-normalization"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-comparators",
+        "name": "比较器版本",
+        "service": "EntitydeskComparatorsV1",
+        "description": "精确匹配、编辑距离及数值容差",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-normalization"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-candidates",
+        "name": "候选对",
+        "service": "EntitydeskCandidatesV1",
+        "description": "比较任务、逐字段分数和缺失项",
+        "methods": [
+          "preview",
+          "compute",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-sources",
+          "entitydesk-normalization",
+          "entitydesk-blocks",
+          "entitydesk-comparators"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-constraints",
+        "name": "合并约束",
+        "service": "EntitydeskConstraintsV1",
+        "description": "必须同组、禁止同组和互斥来源条件",
+        "methods": [
+          "define",
+          "check",
+          "seal"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-sources",
+          "entitydesk-candidates"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-clusters",
+        "name": "候选簇",
+        "service": "EntitydeskClustersV1",
+        "description": "簇提议、冲突边和连通性解释",
+        "methods": [
+          "propose",
+          "explain",
+          "split"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-candidates",
+          "entitydesk-constraints"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-decisions",
+        "name": "人工裁决",
+        "service": "EntitydeskDecisionsV1",
+        "description": "成对及簇级接受、拒绝、暂缓和理由",
+        "methods": [
+          "prepare",
+          "decide",
+          "seal"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-sources",
+          "entitydesk-candidates",
+          "entitydesk-constraints",
+          "entitydesk-clusters"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-evaluations",
+        "name": "匹配复核",
+        "service": "EntitydeskEvaluationsV1",
+        "description": "固定标注对、抽样范围和匹配指标",
+        "methods": [
+          "defineSet",
+          "evaluate",
+          "compare"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-candidates",
+          "entitydesk-clusters",
+          "entitydesk-decisions"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-survivors",
+        "name": "字段取值",
+        "service": "EntitydeskSurvivorsV1",
+        "description": "来源优先级、逐字段冲突和取值证据",
+        "methods": [
+          "define",
+          "preview",
+          "resolve"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-sources",
+          "entitydesk-normalization",
+          "entitydesk-decisions"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-versions",
+        "name": "规范实体版本",
+        "service": "EntitydeskVersionsV1",
+        "description": "规范记录、原记录映射和拆分历史",
+        "methods": [
+          "compose",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-sources",
+          "entitydesk-decisions",
+          "entitydesk-survivors"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-reports",
+        "name": "归并档案",
+        "service": "EntitydeskReportsV1",
+        "description": "阈值、覆盖、复核、未决项和版本差异",
+        "methods": [
+          "assemble",
+          "compare",
+          "seal"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-candidates",
+          "entitydesk-clusters",
+          "entitydesk-decisions",
+          "entitydesk-evaluations",
+          "entitydesk-versions"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-exchange",
+        "name": "归并交接",
+        "service": "EntitydeskExchangeV1",
+        "description": "规范数据、原映射和证据的隔离交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-sources",
+          "entitydesk-normalization",
+          "entitydesk-blocks",
+          "entitydesk-comparators",
+          "entitydesk-candidates",
+          "entitydesk-constraints",
+          "entitydesk-clusters",
+          "entitydesk-decisions",
+          "entitydesk-evaluations",
+          "entitydesk-survivors",
+          "entitydesk-versions",
+          "entitydesk-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "entitydesk-workbench",
+        "name": "归并工作台",
+        "service": "EntitydeskWorkbenchV1",
+        "description": "双列比较、簇裁决、取值预览和保存视图",
+        "methods": [
+          "view",
+          "saveView",
+          "templates"
+        ],
+        "requires": [
+          "entitydesk-spaces",
+          "entitydesk-sources",
+          "entitydesk-normalization",
+          "entitydesk-blocks",
+          "entitydesk-comparators",
+          "entitydesk-candidates",
+          "entitydesk-constraints",
+          "entitydesk-clusters",
+          "entitydesk-decisions",
+          "entitydesk-evaluations",
+          "entitydesk-survivors",
+          "entitydesk-versions",
+          "entitydesk-reports",
+          "entitydesk-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "temporal-data-studio",
+    "name": "时间数据工作室",
+    "alias": "temporal-desk",
+    "prefix": "temporaldesk",
+    "group": "data",
+    "root": "temporaldesk-spaces",
+    "members": [
+      {
+        "id": "temporaldesk-spaces",
+        "name": "时间空间",
+        "service": "TemporaldeskSpacesV1",
+        "description": "空间、授权和额度",
+        "methods": [
+          "create",
+          "configure",
+          "close"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-sources",
+        "name": "时间材料",
+        "service": "TemporaldeskSourcesV1",
+        "description": "原记录、解析档案和来源许可",
+        "methods": [
+          "upload",
+          "inspect",
+          "pin"
+        ],
+        "requires": [
+          "temporaldesk-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "temporaldesk-calendars",
+        "name": "日历版本",
+        "service": "TemporaldeskCalendarsV1",
+        "description": "时区资料、工作日历及业务日边界",
+        "methods": [
+          "define",
+          "inspect",
+          "seal"
+        ],
+        "requires": [
+          "temporaldesk-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-semantics",
+        "name": "时间语义",
+        "service": "TemporaldeskSemanticsV1",
+        "description": "事件时间、记录时间、精度和不确定区间",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-sources",
+          "temporaldesk-calendars"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-alignment",
+        "name": "时间对齐",
+        "service": "TemporaldeskAlignmentV1",
+        "description": "时区消歧、单位转换及显式偏移规则",
+        "methods": [
+          "define",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-sources",
+          "temporaldesk-calendars",
+          "temporaldesk-semantics"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-intervals",
+        "name": "区间规则",
+        "service": "TemporaldeskIntervalsV1",
+        "description": "开闭端点、重叠、间隙与有效期",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-semantics",
+          "temporaldesk-alignment"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-windows",
+        "name": "窗口定义",
+        "service": "TemporaldeskWindowsV1",
+        "description": "滚动、滑动、会话及重采样窗口",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-calendars",
+          "temporaldesk-semantics",
+          "temporaldesk-alignment"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-latepolicy",
+        "name": "迟到策略",
+        "service": "TemporaldeskLatepolicyV1",
+        "description": "固定水位序列、迟到阈值和更正办法",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-semantics",
+          "temporaldesk-windows"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-runs",
+        "name": "时间处理",
+        "service": "TemporaldeskRunsV1",
+        "description": "对齐、窗口、区间计算和派生数据",
+        "methods": [
+          "preview",
+          "run",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-sources",
+          "temporaldesk-calendars",
+          "temporaldesk-semantics",
+          "temporaldesk-alignment",
+          "temporaldesk-intervals",
+          "temporaldesk-windows",
+          "temporaldesk-latepolicy"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-comparisons",
+        "name": "时间比较",
+        "service": "TemporaldeskComparisonsV1",
+        "description": "规则版本差异、窗口修正和缺口",
+        "methods": [
+          "compare",
+          "explain"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-runs",
+          "temporaldesk-windows",
+          "temporaldesk-latepolicy"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-reviews",
+        "name": "语义复核",
+        "service": "TemporaldeskReviewsV1",
+        "description": "歧义时刻、估计偏移和适用范围决定",
+        "methods": [
+          "prepare",
+          "decide",
+          "seal"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-semantics",
+          "temporaldesk-alignment",
+          "temporaldesk-runs",
+          "temporaldesk-comparisons"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-reports",
+        "name": "时间档案",
+        "service": "TemporaldeskReportsV1",
+        "description": "处理版本、原值追溯和覆盖说明",
+        "methods": [
+          "assemble",
+          "seal"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-runs",
+          "temporaldesk-comparisons",
+          "temporaldesk-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-exchange",
+        "name": "时间交接",
+        "service": "TemporaldeskExchangeV1",
+        "description": "原记录、日历档案及派生版本交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-sources",
+          "temporaldesk-calendars",
+          "temporaldesk-semantics",
+          "temporaldesk-alignment",
+          "temporaldesk-intervals",
+          "temporaldesk-windows",
+          "temporaldesk-latepolicy",
+          "temporaldesk-runs",
+          "temporaldesk-comparisons",
+          "temporaldesk-reviews",
+          "temporaldesk-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "temporaldesk-workbench",
+        "name": "时间工作台",
+        "service": "TemporaldeskWorkbenchV1",
+        "description": "时间轴、歧义队列、窗口预览和保存视图",
+        "methods": [
+          "view",
+          "saveView",
+          "templates"
+        ],
+        "requires": [
+          "temporaldesk-spaces",
+          "temporaldesk-sources",
+          "temporaldesk-calendars",
+          "temporaldesk-semantics",
+          "temporaldesk-alignment",
+          "temporaldesk-intervals",
+          "temporaldesk-windows",
+          "temporaldesk-latepolicy",
+          "temporaldesk-runs",
+          "temporaldesk-comparisons",
+          "temporaldesk-reviews",
+          "temporaldesk-reports",
+          "temporaldesk-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "geospatial-studio",
+    "name": "地理数据工作室",
+    "alias": "geo-desk",
+    "prefix": "geodesk",
+    "group": "data",
+    "root": "geodesk-spaces",
+    "members": [
+      {
+        "id": "geodesk-spaces",
+        "name": "地理空间",
+        "service": "GeodeskSpacesV1",
+        "description": "工作空间、授权和额度",
+        "methods": [
+          "create",
+          "configure",
+          "close"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "geodesk-sources",
+        "name": "地理材料",
+        "service": "GeodeskSourcesV1",
+        "description": "原文件、来源许可和字段档案",
+        "methods": [
+          "upload",
+          "inspect",
+          "pin"
+        ],
+        "requires": [
+          "geodesk-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "geodesk-crs",
+        "name": "坐标档案",
+        "service": "GeodeskCrsV1",
+        "description": "坐标参考、轴顺序、单位及变换版本",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-sources"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-validation",
+        "name": "几何检查",
+        "service": "GeodeskValidationV1",
+        "description": "无效坐标、自交、空几何和修复建议",
+        "methods": [
+          "preview",
+          "check",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-sources",
+          "geodesk-crs"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-layers",
+        "name": "图层版本",
+        "service": "GeodeskLayersV1",
+        "description": "固定要素、属性、范围和父版本",
+        "methods": [
+          "compose",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-sources",
+          "geodesk-crs",
+          "geodesk-validation"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-operations",
+        "name": "几何操作",
+        "service": "GeodeskOperationsV1",
+        "description": "裁剪、相交、缓冲和变换定义",
+        "methods": [
+          "define",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-crs",
+          "geodesk-layers"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-joins",
+        "name": "空间连接",
+        "service": "GeodeskJoinsV1",
+        "description": "包含、相交、最近邻及多匹配策略",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-crs",
+          "geodesk-layers"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-indexes",
+        "name": "空间索引",
+        "service": "GeodeskIndexesV1",
+        "description": "图层固定版本的索引及覆盖账本",
+        "methods": [
+          "build",
+          "inspect",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-layers"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-runs",
+        "name": "空间计算",
+        "service": "GeodeskRunsV1",
+        "description": "固定工具任务、派生图层和逐要素错误",
+        "methods": [
+          "preview",
+          "run",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-crs",
+          "geodesk-validation",
+          "geodesk-layers",
+          "geodesk-operations",
+          "geodesk-joins",
+          "geodesk-indexes"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-measures",
+        "name": "地理计量",
+        "service": "GeodeskMeasuresV1",
+        "description": "距离、长度、面积及分组汇总",
+        "methods": [
+          "define",
+          "calculate",
+          "compare"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-crs",
+          "geodesk-layers",
+          "geodesk-runs"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-styles",
+        "name": "地图样式",
+        "service": "GeodeskStylesV1",
+        "description": "分类色、标注、图例和显示精度",
+        "methods": [
+          "define",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-layers",
+          "geodesk-measures"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-reviews",
+        "name": "地图复核",
+        "service": "GeodeskReviewsV1",
+        "description": "修复选择、缺失区域和用途限制决定",
+        "methods": [
+          "prepare",
+          "decide",
+          "seal"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-validation",
+          "geodesk-layers",
+          "geodesk-runs",
+          "geodesk-measures",
+          "geodesk-styles"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-reports",
+        "name": "地理档案",
+        "service": "GeodeskReportsV1",
+        "description": "输入输出、地图视图及计量依据",
+        "methods": [
+          "assemble",
+          "seal"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-layers",
+          "geodesk-runs",
+          "geodesk-measures",
+          "geodesk-styles",
+          "geodesk-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-exchange",
+        "name": "图层交接",
+        "service": "GeodeskExchangeV1",
+        "description": "图层、坐标档案和地图报告交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-sources",
+          "geodesk-crs",
+          "geodesk-validation",
+          "geodesk-layers",
+          "geodesk-operations",
+          "geodesk-joins",
+          "geodesk-indexes",
+          "geodesk-runs",
+          "geodesk-measures",
+          "geodesk-styles",
+          "geodesk-reviews",
+          "geodesk-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "geodesk-workbench",
+        "name": "地理工作台",
+        "service": "GeodeskWorkbenchV1",
+        "description": "图层树、地图、属性表和保存视图",
+        "methods": [
+          "view",
+          "saveView",
+          "templates"
+        ],
+        "requires": [
+          "geodesk-spaces",
+          "geodesk-sources",
+          "geodesk-crs",
+          "geodesk-validation",
+          "geodesk-layers",
+          "geodesk-operations",
+          "geodesk-joins",
+          "geodesk-indexes",
+          "geodesk-runs",
+          "geodesk-measures",
+          "geodesk-styles",
+          "geodesk-reviews",
+          "geodesk-reports",
+          "geodesk-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "graph-insight-studio",
+    "name": "关系图分析工作室",
+    "alias": "graph-desk",
+    "prefix": "graphdesk",
+    "group": "data",
+    "root": "graphdesk-spaces",
+    "members": [
+      {
+        "id": "graphdesk-spaces",
+        "name": "关系空间",
+        "service": "GraphdeskSpacesV1",
+        "description": "空间、授权和额度",
+        "methods": [
+          "create",
+          "configure",
+          "close"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "graphdesk-sources",
+        "name": "图材料",
+        "service": "GraphdeskSourcesV1",
+        "description": "节点边原表、字段档案和许可",
+        "methods": [
+          "upload",
+          "inspect",
+          "pin"
+        ],
+        "requires": [
+          "graphdesk-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "graphdesk-entities",
+        "name": "节点目录",
+        "service": "GraphdeskEntitiesV1",
+        "description": "稳定节点、类型、属性及别名",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-sources"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-edges",
+        "name": "关系目录",
+        "service": "GraphdeskEdgesV1",
+        "description": "有向性、多重边、权重与边证据",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-sources",
+          "graphdesk-entities"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-projections",
+        "name": "图投影",
+        "service": "GraphdeskProjectionsV1",
+        "description": "节点筛选、边聚合、方向和时间截面",
+        "methods": [
+          "compose",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-entities",
+          "graphdesk-edges"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-queries",
+        "name": "路径查询",
+        "service": "GraphdeskQueriesV1",
+        "description": "有限关系模式、起终点和遍历界限",
+        "methods": [
+          "define",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-entities",
+          "graphdesk-edges",
+          "graphdesk-projections"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-algorithms",
+        "name": "算法档案",
+        "service": "GraphdeskAlgorithmsV1",
+        "description": "连通分量、度数、最短路径和固定迭代",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-projections"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-runs",
+        "name": "图计算",
+        "service": "GraphdeskRunsV1",
+        "description": "固定图任务、结果表和收敛记录",
+        "methods": [
+          "preview",
+          "run",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-projections",
+          "graphdesk-queries",
+          "graphdesk-algorithms"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-comparisons",
+        "name": "结构比较",
+        "service": "GraphdeskComparisonsV1",
+        "description": "节点边差异、指标适用条件与变化",
+        "methods": [
+          "compare",
+          "explain"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-projections",
+          "graphdesk-runs"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-annotations",
+        "name": "结果复核",
+        "service": "GraphdeskAnnotationsV1",
+        "description": "发现、证据引用、解释和人工意见",
+        "methods": [
+          "record",
+          "review",
+          "seal"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-entities",
+          "graphdesk-edges",
+          "graphdesk-runs",
+          "graphdesk-comparisons"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-views",
+        "name": "图视图",
+        "service": "GraphdeskViewsV1",
+        "description": "布局种子、坐标、聚合和展示范围",
+        "methods": [
+          "compose",
+          "layout",
+          "save"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-projections",
+          "graphdesk-runs",
+          "graphdesk-annotations"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-reports",
+        "name": "图分析档案",
+        "service": "GraphdeskReportsV1",
+        "description": "固定投影、算法、结果、解释和图视图",
+        "methods": [
+          "assemble",
+          "seal"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-projections",
+          "graphdesk-runs",
+          "graphdesk-comparisons",
+          "graphdesk-annotations",
+          "graphdesk-views"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-exchange",
+        "name": "关系图交接",
+        "service": "GraphdeskExchangeV1",
+        "description": "原图、投影、结果和说明的隔离交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-sources",
+          "graphdesk-entities",
+          "graphdesk-edges",
+          "graphdesk-projections",
+          "graphdesk-queries",
+          "graphdesk-algorithms",
+          "graphdesk-runs",
+          "graphdesk-comparisons",
+          "graphdesk-annotations",
+          "graphdesk-views",
+          "graphdesk-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "graphdesk-workbench",
+        "name": "关系图工作台",
+        "service": "GraphdeskWorkbenchV1",
+        "description": "节点边编辑、路径表、算法比较和导航",
+        "methods": [
+          "view",
+          "saveView",
+          "templates"
+        ],
+        "requires": [
+          "graphdesk-spaces",
+          "graphdesk-sources",
+          "graphdesk-entities",
+          "graphdesk-edges",
+          "graphdesk-projections",
+          "graphdesk-queries",
+          "graphdesk-algorithms",
+          "graphdesk-runs",
+          "graphdesk-comparisons",
+          "graphdesk-annotations",
+          "graphdesk-views",
+          "graphdesk-reports",
+          "graphdesk-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "experiment-planner",
+    "name": "对照实验规划",
+    "alias": "experiment-plan",
+    "prefix": "trialplan",
+    "group": "data",
+    "root": "trialplan-spaces",
+    "members": [
+      {
+        "id": "trialplan-spaces",
+        "name": "规划空间",
+        "service": "TrialplanSpacesV1",
+        "description": "空间、授权和额度",
+        "methods": [
+          "create",
+          "configure",
+          "close"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "trialplan-questions",
+        "name": "研究问题",
+        "service": "TrialplanQuestionsV1",
+        "description": "方案对照、目标差异、假设和适用范围",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "trialplan-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-populations",
+        "name": "单位与总体",
+        "service": "TrialplanPopulationsV1",
+        "description": "单位清单、纳入规则、分层和簇关系",
+        "methods": [
+          "upload",
+          "define",
+          "seal"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-questions"
+        ],
+        "material": true
+      },
+      {
+        "id": "trialplan-outcomes",
+        "name": "指标定义",
+        "service": "TrialplanOutcomesV1",
+        "description": "主要指标、分母、窗口和缺失策略",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-questions",
+          "trialplan-populations"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-allocations",
+        "name": "分组设计",
+        "service": "TrialplanAllocationsV1",
+        "description": "分配比例、分层、区组及固定种子策略",
+        "methods": [
+          "define",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-populations"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-powerplans",
+        "name": "规模模拟",
+        "service": "TrialplanPowerplansV1",
+        "description": "基线假设、效应场景、模拟和不确定性",
+        "methods": [
+          "define",
+          "preview",
+          "simulate",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-questions",
+          "trialplan-populations",
+          "trialplan-outcomes",
+          "trialplan-allocations"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-assignments",
+        "name": "分配版本",
+        "service": "TrialplanAssignmentsV1",
+        "description": "固定单位分配表及算法回执",
+        "methods": [
+          "preview",
+          "generate",
+          "seal"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-populations",
+          "trialplan-allocations",
+          "trialplan-powerplans"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-observations",
+        "name": "观测材料",
+        "service": "TrialplanObservationsV1",
+        "description": "原资料、实际接触、偏离及数据截止",
+        "methods": [
+          "upload",
+          "validate",
+          "pin"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-populations",
+          "trialplan-outcomes",
+          "trialplan-assignments"
+        ],
+        "material": true
+      },
+      {
+        "id": "trialplan-analyses",
+        "name": "分析计划与结果",
+        "service": "TrialplanAnalysesV1",
+        "description": "预设方法、固定观测、估计和覆盖",
+        "methods": [
+          "define",
+          "sealPlan",
+          "preview",
+          "run",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-questions",
+          "trialplan-populations",
+          "trialplan-outcomes",
+          "trialplan-allocations",
+          "trialplan-assignments",
+          "trialplan-observations"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-sensitivity",
+        "name": "敏感性分析",
+        "service": "TrialplanSensitivityV1",
+        "description": "缺失、异常值和偏离的预设替代场景",
+        "methods": [
+          "define",
+          "run",
+          "compare"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-outcomes",
+          "trialplan-observations",
+          "trialplan-analyses"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-reviews",
+        "name": "设计与结果复核",
+        "service": "TrialplanReviewsV1",
+        "description": "计划时序、偏离、解释及限制决定",
+        "methods": [
+          "prepare",
+          "decide",
+          "seal"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-questions",
+          "trialplan-powerplans",
+          "trialplan-assignments",
+          "trialplan-observations",
+          "trialplan-analyses",
+          "trialplan-sensitivity"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-reports",
+        "name": "实验规划档案",
+        "service": "TrialplanReportsV1",
+        "description": "设计、模拟、观测、结果和限制的固定索引",
+        "methods": [
+          "assemble",
+          "compare",
+          "seal"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-questions",
+          "trialplan-powerplans",
+          "trialplan-assignments",
+          "trialplan-observations",
+          "trialplan-analyses",
+          "trialplan-sensitivity",
+          "trialplan-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-exchange",
+        "name": "实验资料交接",
+        "service": "TrialplanExchangeV1",
+        "description": "计划、分配和允许披露的资料交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-questions",
+          "trialplan-populations",
+          "trialplan-outcomes",
+          "trialplan-allocations",
+          "trialplan-powerplans",
+          "trialplan-assignments",
+          "trialplan-observations",
+          "trialplan-analyses",
+          "trialplan-sensitivity",
+          "trialplan-reviews",
+          "trialplan-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "trialplan-workbench",
+        "name": "实验规划工作台",
+        "service": "TrialplanWorkbenchV1",
+        "description": "假设编辑、规模曲线、分组及偏离检查",
+        "methods": [
+          "view",
+          "saveView",
+          "templates"
+        ],
+        "requires": [
+          "trialplan-spaces",
+          "trialplan-questions",
+          "trialplan-populations",
+          "trialplan-outcomes",
+          "trialplan-allocations",
+          "trialplan-powerplans",
+          "trialplan-assignments",
+          "trialplan-observations",
+          "trialplan-analyses",
+          "trialplan-sensitivity",
+          "trialplan-reviews",
+          "trialplan-reports",
+          "trialplan-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "feature-engineering-studio",
+    "name": "特征工程工作室",
+    "alias": "features",
+    "prefix": "feat",
+    "group": "creation",
+    "root": "feat-spaces",
+    "members": [
+      {
+        "id": "feat-spaces",
+        "name": "特征空间",
+        "service": "FeatSpacesV1",
+        "description": "空间、额度及模板选择",
+        "methods": [
+          "create",
+          "templates",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "feat-sources",
+        "name": "表格来源",
+        "service": "FeatSourcesV1",
+        "description": "原始 CSV/JSONL 字节、固定修订与列摘要",
+        "methods": [
+          "upload",
+          "pin",
+          "read"
+        ],
+        "requires": [
+          "feat-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "feat-schemas",
+        "name": "特征类型",
+        "service": "FeatSchemasV1",
+        "description": "列角色、缺失标记、类别和数值域",
+        "methods": [
+          "define",
+          "validate"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-sources"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-partitions",
+        "name": "样本分区",
+        "service": "FeatPartitionsV1",
+        "description": "训练/验证/测试成员、实体组与时间界限",
+        "methods": [
+          "define",
+          "checkOverlap"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-sources",
+          "feat-schemas"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-transforms",
+        "name": "变换配方",
+        "service": "FeatTransformsV1",
+        "description": "固定运算节点、类型推导和依赖顺序",
+        "methods": [
+          "compose",
+          "checkGraph"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-schemas"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-joins",
+        "name": "关联配方",
+        "service": "FeatJoinsV1",
+        "description": "关联键、基数、重复处理与来源时点",
+        "methods": [
+          "define",
+          "checkCardinality"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-sources",
+          "feat-schemas",
+          "feat-partitions"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-windows",
+        "name": "历史窗口",
+        "service": "FeatWindowsV1",
+        "description": "观察时点、回看区间与边界约定",
+        "methods": [
+          "define",
+          "checkAvailability"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-schemas",
+          "feat-partitions"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-fits",
+        "name": "拟合参数",
+        "service": "FeatFitsV1",
+        "description": "仅由训练成员计算的统计量、词表和参数摘要",
+        "methods": [
+          "fit",
+          "inspect"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-sources",
+          "feat-schemas",
+          "feat-partitions",
+          "feat-transforms",
+          "feat-joins",
+          "feat-windows"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-selections",
+        "name": "特征选择",
+        "service": "FeatSelectionsV1",
+        "description": "固定列集合、筛选标准及训练域分数",
+        "methods": [
+          "rank",
+          "select"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-partitions",
+          "feat-fits"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-runs",
+        "name": "特征生成",
+        "service": "FeatRunsV1",
+        "description": "固定计划、工具任务与输出矩阵字节",
+        "methods": [
+          "preview",
+          "start",
+          "status",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-sources",
+          "feat-schemas",
+          "feat-partitions",
+          "feat-transforms",
+          "feat-joins",
+          "feat-windows",
+          "feat-fits",
+          "feat-selections"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-checks",
+        "name": "泄漏与结果检查",
+        "service": "FeatChecksV1",
+        "description": "分区交叉、未来信息、未知类别及输出统计",
+        "methods": [
+          "evaluate",
+          "explain"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-schemas",
+          "feat-partitions",
+          "feat-joins",
+          "feat-windows",
+          "feat-fits",
+          "feat-runs"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-artifacts",
+        "name": "特征版本",
+        "service": "FeatArtifactsV1",
+        "description": "配方、拟合参数及矩阵的固定引用图",
+        "methods": [
+          "assemble",
+          "seal",
+          "compare"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-sources",
+          "feat-schemas",
+          "feat-partitions",
+          "feat-transforms",
+          "feat-joins",
+          "feat-windows",
+          "feat-fits",
+          "feat-selections",
+          "feat-runs",
+          "feat-checks"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-reviews",
+        "name": "使用复核",
+        "service": "FeatReviewsV1",
+        "description": "数据适用域、人工例外及接受记录",
+        "methods": [
+          "review",
+          "decide"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-artifacts",
+          "feat-checks"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-exchange",
+        "name": "特征交接",
+        "service": "FeatExchangeV1",
+        "description": "有界封套、隔离接收与本地 ID 映射",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-sources",
+          "feat-schemas",
+          "feat-partitions",
+          "feat-transforms",
+          "feat-joins",
+          "feat-windows",
+          "feat-fits",
+          "feat-selections",
+          "feat-runs",
+          "feat-checks",
+          "feat-artifacts",
+          "feat-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "feat-workbench",
+        "name": "特征工作台",
+        "service": "FeatWorkbenchV1",
+        "description": "配方画布、列来源、运行与版本导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "feat-spaces",
+          "feat-sources",
+          "feat-schemas",
+          "feat-partitions",
+          "feat-transforms",
+          "feat-joins",
+          "feat-windows",
+          "feat-fits",
+          "feat-selections",
+          "feat-runs",
+          "feat-checks",
+          "feat-artifacts",
+          "feat-reviews",
+          "feat-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "classical-training-lab",
+    "name": "经典模型训练实验",
+    "alias": "trainlab",
+    "prefix": "ctrain",
+    "group": "creation",
+    "root": "ctrain-spaces",
+    "members": [
+      {
+        "id": "ctrain-spaces",
+        "name": "训练空间",
+        "service": "CtrainSpacesV1",
+        "description": "空间、额度、模板及访问修订",
+        "methods": [
+          "create",
+          "templates",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "ctrain-datasets",
+        "name": "训练材料",
+        "service": "CtrainDatasetsV1",
+        "description": "CSV/JSONL 原始字节、列角色和固定样本",
+        "methods": [
+          "upload",
+          "pin",
+          "inspect"
+        ],
+        "requires": [
+          "ctrain-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "ctrain-targets",
+        "name": "学习目标",
+        "service": "CtrainTargetsV1",
+        "description": "任务类型、标签、类别及度量方向",
+        "methods": [
+          "define",
+          "check"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-partitions",
+        "name": "评估分区",
+        "service": "CtrainPartitionsV1",
+        "description": "训练、验证、测试、实体组和交叉验证成员",
+        "methods": [
+          "define",
+          "checkOverlap"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets",
+          "ctrain-targets"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-estimators",
+        "name": "算法配方",
+        "service": "CtrainEstimatorsV1",
+        "description": "固定算法、参数类型、预处理和工具摘要",
+        "methods": [
+          "configure",
+          "validate"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-targets",
+          "ctrain-partitions"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-searches",
+        "name": "候选搜索",
+        "service": "CtrainSearchesV1",
+        "description": "有界候选表、选择规则及预算分配",
+        "methods": [
+          "expand",
+          "freeze"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-estimators",
+          "ctrain-partitions"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-runs",
+        "name": "训练任务",
+        "service": "CtrainRunsV1",
+        "description": "训练意图、原工具票据、模型字节与日志",
+        "methods": [
+          "preview",
+          "start",
+          "status",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets",
+          "ctrain-targets",
+          "ctrain-partitions",
+          "ctrain-estimators",
+          "ctrain-searches"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-predictions",
+        "name": "固定预测",
+        "service": "CtrainPredictionsV1",
+        "description": "模型版本对应的逐行预测、概率及推理票据",
+        "methods": [
+          "predict",
+          "read",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets",
+          "ctrain-partitions",
+          "ctrain-runs"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-metrics",
+        "name": "评估指标",
+        "service": "CtrainMetricsV1",
+        "description": "逐分区指标、混淆表、残差和样本缺项",
+        "methods": [
+          "calculate",
+          "slice"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets",
+          "ctrain-targets",
+          "ctrain-partitions",
+          "ctrain-predictions"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-comparisons",
+        "name": "候选比较",
+        "service": "CtrainComparisonsV1",
+        "description": "固定验证域排序、平局规则及差异",
+        "methods": [
+          "compare",
+          "select"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-searches",
+          "ctrain-runs",
+          "ctrain-metrics"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-explanations",
+        "name": "模型解释",
+        "service": "CtrainExplanationsV1",
+        "description": "系数、树结构或有限扰动观察",
+        "methods": [
+          "inspect",
+          "explain"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets",
+          "ctrain-runs",
+          "ctrain-predictions",
+          "ctrain-metrics"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-registry",
+        "name": "模型登记",
+        "service": "CtrainRegistryV1",
+        "description": "模型引用、输入约定、预处理及适用域",
+        "methods": [
+          "register",
+          "seal",
+          "compare"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets",
+          "ctrain-targets",
+          "ctrain-partitions",
+          "ctrain-estimators",
+          "ctrain-runs",
+          "ctrain-comparisons"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-reports",
+        "name": "训练报告",
+        "service": "CtrainReportsV1",
+        "description": "数据/工具/候选摘要、限制与人工接受",
+        "methods": [
+          "assemble",
+          "review",
+          "seal"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets",
+          "ctrain-targets",
+          "ctrain-partitions",
+          "ctrain-estimators",
+          "ctrain-searches",
+          "ctrain-runs",
+          "ctrain-predictions",
+          "ctrain-metrics",
+          "ctrain-comparisons",
+          "ctrain-explanations",
+          "ctrain-registry"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-exchange",
+        "name": "模型交接",
+        "service": "CtrainExchangeV1",
+        "description": "白名单模型格式、报告封套及隔离映射",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets",
+          "ctrain-targets",
+          "ctrain-partitions",
+          "ctrain-estimators",
+          "ctrain-searches",
+          "ctrain-runs",
+          "ctrain-predictions",
+          "ctrain-metrics",
+          "ctrain-comparisons",
+          "ctrain-explanations",
+          "ctrain-registry",
+          "ctrain-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "ctrain-workbench",
+        "name": "训练工作台",
+        "service": "CtrainWorkbenchV1",
+        "description": "目标配置、候选矩阵、误差与模型导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "ctrain-spaces",
+          "ctrain-datasets",
+          "ctrain-targets",
+          "ctrain-partitions",
+          "ctrain-estimators",
+          "ctrain-searches",
+          "ctrain-runs",
+          "ctrain-predictions",
+          "ctrain-metrics",
+          "ctrain-comparisons",
+          "ctrain-explanations",
+          "ctrain-registry",
+          "ctrain-reports",
+          "ctrain-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "constraint-solver-studio",
+    "name": "约束求解工作室",
+    "alias": "solve",
+    "prefix": "csolve",
+    "group": "creation",
+    "root": "csolve-spaces",
+    "members": [
+      {
+        "id": "csolve-spaces",
+        "name": "求解空间",
+        "service": "CsolveSpacesV1",
+        "description": "空间、模板、额度及访问修订",
+        "methods": [
+          "create",
+          "templates",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "csolve-variables",
+        "name": "决策变量",
+        "service": "CsolveVariablesV1",
+        "description": "稳定变量 ID、中文说明、单位和取值类型",
+        "methods": [
+          "define",
+          "list"
+        ],
+        "requires": [
+          "csolve-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-domains",
+        "name": "取值域",
+        "service": "CsolveDomainsV1",
+        "description": "布尔/整数边界、候选集合及界限来源",
+        "methods": [
+          "define",
+          "validate"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-variables"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-constraints",
+        "name": "约束模型",
+        "service": "CsolveConstraintsV1",
+        "description": "线性关系、基数和固定时段冲突",
+        "methods": [
+          "compose",
+          "checkTypes"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-variables",
+          "csolve-domains"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-objectives",
+        "name": "目标模型",
+        "service": "CsolveObjectivesV1",
+        "description": "线性目标、方向、分层优先级和系数",
+        "methods": [
+          "define",
+          "validate"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-variables",
+          "csolve-domains"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-scenarios",
+        "name": "情景版本",
+        "service": "CsolveScenariosV1",
+        "description": "固定参数替换、启用约束与比较基线",
+        "methods": [
+          "derive",
+          "diff"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-variables",
+          "csolve-domains",
+          "csolve-constraints",
+          "csolve-objectives"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-runs",
+        "name": "求解任务",
+        "service": "CsolveRunsV1",
+        "description": "完整模型计划、求解器票据、日志与状态",
+        "methods": [
+          "preview",
+          "start",
+          "status",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-variables",
+          "csolve-domains",
+          "csolve-constraints",
+          "csolve-objectives",
+          "csolve-scenarios"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-solutions",
+        "name": "候选方案",
+        "service": "CsolveSolutionsV1",
+        "description": "变量赋值、目标值、界限及求解来源",
+        "methods": [
+          "capture",
+          "compare"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-variables",
+          "csolve-objectives",
+          "csolve-runs"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-validation",
+        "name": "独立验证",
+        "service": "CsolveValidationV1",
+        "description": "按原模型重新计算的逐约束结果",
+        "methods": [
+          "verify",
+          "explain"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-variables",
+          "csolve-domains",
+          "csolve-constraints",
+          "csolve-objectives",
+          "csolve-scenarios",
+          "csolve-solutions"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-conflicts",
+        "name": "冲突解释",
+        "service": "CsolveConflictsV1",
+        "description": "不可满足候选子集、最小性范围与核验轨迹",
+        "methods": [
+          "analyze",
+          "read"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-constraints",
+          "csolve-scenarios",
+          "csolve-runs"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-sensitivity",
+        "name": "情景比较",
+        "service": "CsolveSensitivityV1",
+        "description": "有界参数扰动、重新求解意图及结果差异",
+        "methods": [
+          "preview",
+          "compare"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-scenarios",
+          "csolve-runs",
+          "csolve-solutions",
+          "csolve-validation"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-decisions",
+        "name": "方案接受",
+        "service": "CsolveDecisionsV1",
+        "description": "人工选择、未满足前提、例外和封存引用",
+        "methods": [
+          "review",
+          "decide",
+          "seal"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-scenarios",
+          "csolve-solutions",
+          "csolve-validation",
+          "csolve-conflicts",
+          "csolve-sensitivity"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-exchange",
+        "name": "方案交接",
+        "service": "CsolveExchangeV1",
+        "description": "模型及证据封套、隔离映射与核验",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-variables",
+          "csolve-domains",
+          "csolve-constraints",
+          "csolve-objectives",
+          "csolve-scenarios",
+          "csolve-runs",
+          "csolve-solutions",
+          "csolve-validation",
+          "csolve-conflicts",
+          "csolve-sensitivity",
+          "csolve-decisions"
+        ],
+        "material": false
+      },
+      {
+        "id": "csolve-workbench",
+        "name": "求解工作台",
+        "service": "CsolveWorkbenchV1",
+        "description": "变量表、约束编辑、方案比较与冲突定位",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "csolve-spaces",
+          "csolve-variables",
+          "csolve-domains",
+          "csolve-constraints",
+          "csolve-objectives",
+          "csolve-scenarios",
+          "csolve-runs",
+          "csolve-solutions",
+          "csolve-validation",
+          "csolve-conflicts",
+          "csolve-sensitivity",
+          "csolve-decisions",
+          "csolve-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "document-extraction-studio",
+    "name": "文档结构提取",
+    "alias": "extractdoc",
+    "prefix": "dextract",
+    "group": "creation",
+    "root": "dextract-spaces",
+    "members": [
+      {
+        "id": "dextract-spaces",
+        "name": "提取空间",
+        "service": "DextractSpacesV1",
+        "description": "空间、额度、模板与访问修订",
+        "methods": [
+          "create",
+          "templates",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "dextract-sources",
+        "name": "原文材料",
+        "service": "DextractSourcesV1",
+        "description": "PDF/PNG/JPEG 原字节、许可和摘要",
+        "methods": [
+          "upload",
+          "pin",
+          "inspect"
+        ],
+        "requires": [
+          "dextract-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "dextract-pages",
+        "name": "页面拆解",
+        "service": "DextractPagesV1",
+        "description": "页索引、尺寸、旋转、文本层与页图字节",
+        "methods": [
+          "prepare",
+          "status",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-sources"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-layouts",
+        "name": "版面区域",
+        "service": "DextractLayoutsV1",
+        "description": "段落、标题、表格候选与阅读顺序",
+        "methods": [
+          "detect",
+          "edit",
+          "validate"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-pages"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-ocr",
+        "name": "字符识别",
+        "service": "DextractOcrV1",
+        "description": "固定语言模型、区域识别任务和字符位置",
+        "methods": [
+          "preview",
+          "start",
+          "status",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-pages",
+          "dextract-layouts"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-tables",
+        "name": "表格重建",
+        "service": "DextractTablesV1",
+        "description": "行列、合并单元格、跨页候选与来源框",
+        "methods": [
+          "reconstruct",
+          "edit",
+          "check"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-pages",
+          "dextract-layouts",
+          "dextract-ocr"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-schemas",
+        "name": "字段约定",
+        "service": "DextractSchemasV1",
+        "description": "字段名、类型、必填及有限提取规则",
+        "methods": [
+          "define",
+          "validate"
+        ],
+        "requires": [
+          "dextract-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-fields",
+        "name": "字段提取",
+        "service": "DextractFieldsV1",
+        "description": "字段候选、标准值、来源片段及歧义",
+        "methods": [
+          "extract",
+          "explain"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-pages",
+          "dextract-layouts",
+          "dextract-ocr",
+          "dextract-tables",
+          "dextract-schemas"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-checks",
+        "name": "结果检查",
+        "service": "DextractChecksV1",
+        "description": "缺项、类型、总和约束与重复候选发现",
+        "methods": [
+          "evaluate",
+          "listFindings"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-tables",
+          "dextract-schemas",
+          "dextract-fields"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-corrections",
+        "name": "人工纠错",
+        "service": "DextractCorrectionsV1",
+        "description": "原值、修订值、原因、页内证据及编辑历史",
+        "methods": [
+          "propose",
+          "apply",
+          "compare"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-pages",
+          "dextract-ocr",
+          "dextract-tables",
+          "dextract-fields",
+          "dextract-checks"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-datasets",
+        "name": "数据版本",
+        "service": "DextractDatasetsV1",
+        "description": "按固定纠错修订组装的文本、表格及字段结果",
+        "methods": [
+          "assemble",
+          "seal",
+          "read"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-sources",
+          "dextract-pages",
+          "dextract-layouts",
+          "dextract-ocr",
+          "dextract-tables",
+          "dextract-schemas",
+          "dextract-fields",
+          "dextract-checks",
+          "dextract-corrections"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-reviews",
+        "name": "提取复核",
+        "service": "DextractReviewsV1",
+        "description": "页覆盖、抽检范围、人工决定与未决项",
+        "methods": [
+          "review",
+          "decide"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-datasets",
+          "dextract-checks",
+          "dextract-corrections"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-exchange",
+        "name": "提取交接",
+        "service": "DextractExchangeV1",
+        "description": "原件选择、结构数据与映射封套",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-sources",
+          "dextract-pages",
+          "dextract-layouts",
+          "dextract-ocr",
+          "dextract-tables",
+          "dextract-schemas",
+          "dextract-fields",
+          "dextract-checks",
+          "dextract-corrections",
+          "dextract-datasets",
+          "dextract-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "dextract-workbench",
+        "name": "提取工作台",
+        "service": "DextractWorkbenchV1",
+        "description": "源页/结果对照、区域编辑与复核导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "dextract-spaces",
+          "dextract-sources",
+          "dextract-pages",
+          "dextract-layouts",
+          "dextract-ocr",
+          "dextract-tables",
+          "dextract-schemas",
+          "dextract-fields",
+          "dextract-checks",
+          "dextract-corrections",
+          "dextract-datasets",
+          "dextract-reviews",
+          "dextract-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "design-system-studio",
+    "name": "设计系统工作室",
+    "alias": "designsys",
+    "prefix": "dsys",
+    "group": "creation",
+    "root": "dsys-spaces",
+    "members": [
+      {
+        "id": "dsys-spaces",
+        "name": "系统空间",
+        "service": "DsysSpacesV1",
+        "description": "空间、模板及访问修订",
+        "methods": [
+          "create",
+          "templates",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "dsys-tokens",
+        "name": "设计变量",
+        "service": "DsysTokensV1",
+        "description": "类型化颜色、间距、圆角、层级及引用",
+        "methods": [
+          "define",
+          "resolve",
+          "diff"
+        ],
+        "requires": [
+          "dsys-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-themes",
+        "name": "主题集合",
+        "service": "DsysThemesV1",
+        "description": "主题继承、语义别名与覆盖规则",
+        "methods": [
+          "compose",
+          "validate"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-tokens"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-typography",
+        "name": "排版规格",
+        "service": "DsysTypographyV1",
+        "description": "字体档案、字阶、行距与回退约定",
+        "methods": [
+          "define",
+          "preview"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-tokens",
+          "dsys-themes"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-icons",
+        "name": "图标资源",
+        "service": "DsysIconsV1",
+        "description": "受限 SVG 字节、命名、许可和可见范围",
+        "methods": [
+          "upload",
+          "sanitize",
+          "inspect"
+        ],
+        "requires": [
+          "dsys-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "dsys-components",
+        "name": "组件规格",
+        "service": "DsysComponentsV1",
+        "description": "固定组件树、属性、插槽和变量引用",
+        "methods": [
+          "compose",
+          "validate"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-tokens",
+          "dsys-themes",
+          "dsys-typography",
+          "dsys-icons"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-states",
+        "name": "状态矩阵",
+        "service": "DsysStatesV1",
+        "description": "组件状态、允许组合、触发语义与示例值",
+        "methods": [
+          "define",
+          "expand",
+          "checkCoverage"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-components"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-layouts",
+        "name": "版式样例",
+        "service": "DsysLayoutsV1",
+        "description": "布局容器、断点及固定组件组合",
+        "methods": [
+          "compose",
+          "preview"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-themes",
+          "dsys-components",
+          "dsys-states"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-checks",
+        "name": "系统检查",
+        "service": "DsysChecksV1",
+        "description": "引用完整性、主题覆盖、对比度及静态尺寸约束",
+        "methods": [
+          "evaluate",
+          "explain"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-tokens",
+          "dsys-themes",
+          "dsys-typography",
+          "dsys-icons",
+          "dsys-components",
+          "dsys-states",
+          "dsys-layouts"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-builds",
+        "name": "产物编译",
+        "service": "DsysBuildsV1",
+        "description": "固定编译计划、变量/CSS 字节及输出清单",
+        "methods": [
+          "preview",
+          "start",
+          "status",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-tokens",
+          "dsys-themes",
+          "dsys-typography",
+          "dsys-icons",
+          "dsys-components",
+          "dsys-states",
+          "dsys-layouts",
+          "dsys-checks"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-reviews",
+        "name": "版本复核",
+        "service": "DsysReviewsV1",
+        "description": "版本差异、例外、接受与不可变发布记录",
+        "methods": [
+          "review",
+          "decide",
+          "seal"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-checks",
+          "dsys-builds"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-exchange",
+        "name": "系统交接",
+        "service": "DsysExchangeV1",
+        "description": "设计源、编译产物及许可封套",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-tokens",
+          "dsys-themes",
+          "dsys-typography",
+          "dsys-icons",
+          "dsys-components",
+          "dsys-states",
+          "dsys-layouts",
+          "dsys-checks",
+          "dsys-builds",
+          "dsys-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "dsys-workbench",
+        "name": "系统工作台",
+        "service": "DsysWorkbenchV1",
+        "description": "变量编辑、主题预览、状态矩阵与版本导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "dsys-spaces",
+          "dsys-tokens",
+          "dsys-themes",
+          "dsys-typography",
+          "dsys-icons",
+          "dsys-components",
+          "dsys-states",
+          "dsys-layouts",
+          "dsys-checks",
+          "dsys-builds",
+          "dsys-reviews",
+          "dsys-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "form-flow-studio",
+    "name": "表单流程工作室",
+    "alias": "forms",
+    "prefix": "fform",
+    "group": "creation",
+    "root": "fform-spaces",
+    "members": [
+      {
+        "id": "fform-spaces",
+        "name": "表单空间",
+        "service": "FformSpacesV1",
+        "description": "空间、模板、额度与访问修订",
+        "methods": [
+          "create",
+          "templates",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "fform-fields",
+        "name": "字段目录",
+        "service": "FformFieldsV1",
+        "description": "稳定字段 ID、输入类型、标签与帮助文本",
+        "methods": [
+          "define",
+          "validate"
+        ],
+        "requires": [
+          "fform-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-schemas",
+        "name": "数据约定",
+        "service": "FformSchemasV1",
+        "description": "类型、枚举、默认值、必填和规范化规则",
+        "methods": [
+          "define",
+          "check"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-fields"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-logic",
+        "name": "条件逻辑",
+        "service": "FformLogicV1",
+        "description": "显隐、计算与跳转的有限表达式图",
+        "methods": [
+          "compose",
+          "checkGraph"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-fields",
+          "fform-schemas"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-pages",
+        "name": "步骤编排",
+        "service": "FformPagesV1",
+        "description": "页面、字段顺序、导航和可达性",
+        "methods": [
+          "compose",
+          "checkReachability"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-fields",
+          "fform-logic"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-fixtures",
+        "name": "样例材料",
+        "service": "FformFixturesV1",
+        "description": "合成试填值、路径期望和边界案例",
+        "methods": [
+          "define",
+          "generate"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-fields",
+          "fform-schemas",
+          "fform-pages"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-validations",
+        "name": "校验执行",
+        "service": "FformValidationsV1",
+        "description": "字段/跨字段规则结果、路径覆盖和错误顺序",
+        "methods": [
+          "preview",
+          "run",
+          "status",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-fields",
+          "fform-schemas",
+          "fform-logic",
+          "fform-pages",
+          "fform-fixtures"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-previews",
+        "name": "交互预览",
+        "service": "FformPreviewsV1",
+        "description": "固定定义预览会话、草稿及导航轨迹",
+        "methods": [
+          "open",
+          "answer",
+          "navigate",
+          "close"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-fields",
+          "fform-schemas",
+          "fform-logic",
+          "fform-pages",
+          "fform-validations"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-submissions",
+        "name": "试填记录",
+        "service": "FformSubmissionsV1",
+        "description": "明示为本地样例的提交、错误和字段来源",
+        "methods": [
+          "capture",
+          "read",
+          "erasePreview"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-schemas",
+          "fform-previews"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-versions",
+        "name": "表单版本",
+        "service": "FformVersionsV1",
+        "description": "定义、提示、样例及覆盖结果的固定引用图",
+        "methods": [
+          "assemble",
+          "seal",
+          "diff"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-fields",
+          "fform-schemas",
+          "fform-logic",
+          "fform-pages",
+          "fform-fixtures",
+          "fform-validations",
+          "fform-submissions"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-reviews",
+        "name": "表单复核",
+        "service": "FformReviewsV1",
+        "description": "业务要求、人工体验意见及发布接受",
+        "methods": [
+          "review",
+          "decide"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-versions",
+          "fform-validations"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-exchange",
+        "name": "表单交接",
+        "service": "FformExchangeV1",
+        "description": "定义与样例封套、模式检查及本地映射",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-fields",
+          "fform-schemas",
+          "fform-logic",
+          "fform-pages",
+          "fform-fixtures",
+          "fform-validations",
+          "fform-previews",
+          "fform-submissions",
+          "fform-versions",
+          "fform-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "fform-workbench",
+        "name": "表单工作台",
+        "service": "FformWorkbenchV1",
+        "description": "字段/步骤编辑、路径图、预览与版本导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "fform-spaces",
+          "fform-fields",
+          "fform-schemas",
+          "fform-logic",
+          "fform-pages",
+          "fform-fixtures",
+          "fform-validations",
+          "fform-previews",
+          "fform-submissions",
+          "fform-versions",
+          "fform-reviews",
+          "fform-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "notification-template-studio",
+    "name": "通知模板工作室",
+    "alias": "notifytpl",
+    "prefix": "ntpl",
+    "group": "creation",
+    "root": "ntpl-spaces",
+    "members": [
+      {
+        "id": "ntpl-spaces",
+        "name": "通知空间",
+        "service": "NtplSpacesV1",
+        "description": "空间、模板、额度和访问修订",
+        "methods": [
+          "create",
+          "templates",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "ntpl-variables",
+        "name": "变量约定",
+        "service": "NtplVariablesV1",
+        "description": "字段类型、必填、默认值和敏感标记",
+        "methods": [
+          "define",
+          "validate"
+        ],
+        "requires": [
+          "ntpl-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-channels",
+        "name": "渠道档案",
+        "service": "NtplChannelsV1",
+        "description": "站内、纯文本和受限邮件的长度/内容规则",
+        "methods": [
+          "define",
+          "check"
+        ],
+        "requires": [
+          "ntpl-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-templates",
+        "name": "内容模板",
+        "service": "NtplTemplatesV1",
+        "description": "标题、正文、片段及有限条件语法",
+        "methods": [
+          "compose",
+          "parse",
+          "diff"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-variables",
+          "ntpl-channels"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-locales",
+        "name": "语言变体",
+        "service": "NtplLocalesV1",
+        "description": "语言、格式约定、回退顺序和变量覆盖",
+        "methods": [
+          "define",
+          "checkCoverage"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-variables",
+          "ntpl-templates"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-assets",
+        "name": "模板资产",
+        "service": "NtplAssetsV1",
+        "description": "本地 PNG/JPEG、尺寸、替代文本与许可",
+        "methods": [
+          "upload",
+          "inspect",
+          "pin"
+        ],
+        "requires": [
+          "ntpl-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "ntpl-audiences",
+        "name": "合成收件人",
+        "service": "NtplAudiencesV1",
+        "description": "明示为合成的成员、变量、偏好和边界样例",
+        "methods": [
+          "define",
+          "generate"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-variables",
+          "ntpl-locales"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-rules",
+        "name": "内容选择",
+        "service": "NtplRulesV1",
+        "description": "模板/语言/渠道选择及本地抑制规则",
+        "methods": [
+          "compose",
+          "simulate"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-channels",
+          "ntpl-templates",
+          "ntpl-locales",
+          "ntpl-audiences"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-renders",
+        "name": "固定渲染",
+        "service": "NtplRendersV1",
+        "description": "完整渲染计划、文本/HTML 字节及逐样例来源",
+        "methods": [
+          "preview",
+          "start",
+          "status",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-variables",
+          "ntpl-channels",
+          "ntpl-templates",
+          "ntpl-locales",
+          "ntpl-assets",
+          "ntpl-audiences",
+          "ntpl-rules"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-inboxes",
+        "name": "虚拟收件箱",
+        "service": "NtplInboxesV1",
+        "description": "本地模拟投递意图、去重记录及渲染引用",
+        "methods": [
+          "previewDelivery",
+          "deliverLocal",
+          "list",
+          "reconcile"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-audiences",
+          "ntpl-rules",
+          "ntpl-renders"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-checks",
+        "name": "内容检查",
+        "service": "NtplChecksV1",
+        "description": "未定义变量、转义、长度、链接及语言缺项",
+        "methods": [
+          "evaluate",
+          "explain"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-variables",
+          "ntpl-channels",
+          "ntpl-templates",
+          "ntpl-locales",
+          "ntpl-assets",
+          "ntpl-renders",
+          "ntpl-inboxes"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-releases",
+        "name": "模板版本",
+        "service": "NtplReleasesV1",
+        "description": "固定来源、覆盖、人工复核和接受记录",
+        "methods": [
+          "assemble",
+          "review",
+          "seal"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-variables",
+          "ntpl-channels",
+          "ntpl-templates",
+          "ntpl-locales",
+          "ntpl-assets",
+          "ntpl-audiences",
+          "ntpl-rules",
+          "ntpl-renders",
+          "ntpl-inboxes",
+          "ntpl-checks"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-exchange",
+        "name": "通知交接",
+        "service": "NtplExchangeV1",
+        "description": "模板、资产和选定模拟证据的封套",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-variables",
+          "ntpl-channels",
+          "ntpl-templates",
+          "ntpl-locales",
+          "ntpl-assets",
+          "ntpl-audiences",
+          "ntpl-rules",
+          "ntpl-renders",
+          "ntpl-inboxes",
+          "ntpl-checks",
+          "ntpl-releases"
+        ],
+        "material": false
+      },
+      {
+        "id": "ntpl-workbench",
+        "name": "通知工作台",
+        "service": "NtplWorkbenchV1",
+        "description": "模板编辑、渠道/语言矩阵和虚拟收件箱导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "ntpl-spaces",
+          "ntpl-variables",
+          "ntpl-channels",
+          "ntpl-templates",
+          "ntpl-locales",
+          "ntpl-assets",
+          "ntpl-audiences",
+          "ntpl-rules",
+          "ntpl-renders",
+          "ntpl-inboxes",
+          "ntpl-checks",
+          "ntpl-releases",
+          "ntpl-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "schedule-semantics-lab",
+    "name": "调度语义实验",
+    "alias": "schedule-lab",
+    "prefix": "schedlab",
+    "group": "engineering",
+    "root": "schedlab-spaces",
+    "members": [
+      {
+        "id": "schedlab-spaces",
+        "name": "调度空间",
+        "service": "SchedlabSpacesV1",
+        "description": "空间、授权修订和额度根账本",
+        "methods": [
+          "create",
+          "list",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "schedlab-calendars",
+        "name": "日历集合",
+        "service": "SchedlabCalendarsV1",
+        "description": "工作日、排除日期和显式节假日材料",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "schedlab-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-clocks",
+        "name": "时钟档案",
+        "service": "SchedlabClocksV1",
+        "description": "时区数据库版本、墙上时间与单调时间映射",
+        "methods": [
+          "save",
+          "resolve",
+          "seal"
+        ],
+        "requires": [
+          "schedlab-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-rules",
+        "name": "周期规则",
+        "service": "SchedlabRulesV1",
+        "description": "固定间隔和受限五字段周期表达式",
+        "methods": [
+          "save",
+          "expand",
+          "seal"
+        ],
+        "requires": [
+          "schedlab-spaces",
+          "schedlab-calendars",
+          "schedlab-clocks"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-policies",
+        "name": "触发策略",
+        "service": "SchedlabPoliciesV1",
+        "description": "重叠、错过、重试和退避策略",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "schedlab-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-workloads",
+        "name": "工作负载",
+        "service": "SchedlabWorkloadsV1",
+        "description": "固定任务时长、确定性失败点与幂等键模型",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "schedlab-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-scenarios",
+        "name": "场景编排",
+        "service": "SchedlabScenariosV1",
+        "description": "时钟跳变、暂停、重启和规则修订时间表",
+        "methods": [
+          "compose",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "schedlab-spaces",
+          "schedlab-clocks",
+          "schedlab-rules",
+          "schedlab-policies",
+          "schedlab-workloads"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-simulations",
+        "name": "虚拟推进",
+        "service": "SchedlabSimulationsV1",
+        "description": "虚拟事件队列、触发原因与模拟回执",
+        "methods": [
+          "preview",
+          "run",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "schedlab-spaces",
+          "schedlab-calendars",
+          "schedlab-clocks",
+          "schedlab-rules",
+          "schedlab-policies",
+          "schedlab-workloads",
+          "schedlab-scenarios"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-harness",
+        "name": "固定调度器",
+        "service": "SchedlabHarnessV1",
+        "description": "专属客户机工具会话、真实时钟探针与资源票据",
+        "methods": [
+          "preview",
+          "start",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "schedlab-spaces",
+          "schedlab-rules",
+          "schedlab-policies",
+          "schedlab-workloads",
+          "schedlab-scenarios",
+          "projects"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-observations",
+        "name": "触发观察",
+        "service": "SchedlabObservationsV1",
+        "description": "原始触发流、序号、丢失声明与时间换算",
+        "methods": [
+          "capture",
+          "readEvents",
+          "coverage"
+        ],
+        "requires": [
+          "schedlab-spaces",
+          "schedlab-clocks",
+          "schedlab-simulations",
+          "schedlab-harness"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-checks",
+        "name": "语义判断",
+        "service": "SchedlabChecksV1",
+        "description": "漏发、重复、顺序、延迟和退避比较",
+        "methods": [
+          "evaluate",
+          "compare",
+          "explain"
+        ],
+        "requires": [
+          "schedlab-spaces",
+          "schedlab-rules",
+          "schedlab-policies",
+          "schedlab-scenarios",
+          "schedlab-observations"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-reports",
+        "name": "调度报告",
+        "service": "SchedlabReportsV1",
+        "description": "规则版本、覆盖范围、人工说明和核销索引",
+        "methods": [
+          "assemble",
+          "review",
+          "seal"
+        ],
+        "requires": [
+          "schedlab-spaces",
+          "schedlab-scenarios",
+          "schedlab-simulations",
+          "schedlab-harness",
+          "schedlab-observations",
+          "schedlab-checks"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-exchange",
+        "name": "调度交接",
+        "service": "SchedlabExchangeV1",
+        "description": "规则、场景与报告的隔离交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "schedlab-spaces",
+          "schedlab-calendars",
+          "schedlab-clocks",
+          "schedlab-rules",
+          "schedlab-policies",
+          "schedlab-workloads",
+          "schedlab-scenarios",
+          "schedlab-simulations",
+          "schedlab-harness",
+          "schedlab-observations",
+          "schedlab-checks",
+          "schedlab-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "schedlab-workbench",
+        "name": "调度工作台",
+        "service": "SchedlabWorkbenchV1",
+        "description": "日历、双时钟轨迹、差异和恢复导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "schedlab-spaces",
+          "schedlab-calendars",
+          "schedlab-clocks",
+          "schedlab-rules",
+          "schedlab-policies",
+          "schedlab-workloads",
+          "schedlab-scenarios",
+          "schedlab-simulations",
+          "schedlab-harness",
+          "schedlab-observations",
+          "schedlab-checks",
+          "schedlab-reports",
+          "schedlab-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "extension-authoring-studio",
+    "name": "社区扩展开发工坊",
+    "alias": "extension-forge",
+    "prefix": "extforge",
+    "group": "engineering",
+    "root": "extforge-spaces",
+    "members": [
+      {
+        "id": "extforge-spaces",
+        "name": "开发空间",
+        "service": "ExtforgeSpacesV1",
+        "description": "空间授权、模板修订和额度根账本",
+        "methods": [
+          "create",
+          "list",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "extforge-sources",
+        "name": "源码材料",
+        "service": "ExtforgeSourcesV1",
+        "description": "固定源码树、文件修订和源摘要",
+        "methods": [
+          "upload",
+          "edit",
+          "pin"
+        ],
+        "requires": [
+          "extforge-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "extforge-manifests",
+        "name": "扩展声明",
+        "service": "ExtforgeManifestsV1",
+        "description": "插件标识、版本、描述和发布者公钥引用",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "extforge-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-interfaces",
+        "name": "表单接口",
+        "service": "ExtforgeInterfacesV1",
+        "description": "路由、面板、字段及输入约束",
+        "methods": [
+          "save",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-manifests"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-toolchains",
+        "name": "工具档案",
+        "service": "ExtforgeToolchainsV1",
+        "description": "固定离线编译器、SDK、参数与支持范围",
+        "methods": [
+          "importProfile",
+          "inspect",
+          "seal"
+        ],
+        "requires": [
+          "extforge-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-builds",
+        "name": "受控编译",
+        "service": "ExtforgeBuildsV1",
+        "description": "专属客户机、构建意图、WASM 与诊断字节",
+        "methods": [
+          "preview",
+          "start",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-sources",
+          "extforge-toolchains",
+          "projects"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-inspections",
+        "name": "模块检查",
+        "service": "ExtforgeInspectionsV1",
+        "description": "导入、导出、内存、函数表及大小判断",
+        "methods": [
+          "inspect",
+          "explain"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-builds"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-cases",
+        "name": "用例材料",
+        "service": "ExtforgeCasesV1",
+        "description": "JSON 输入、结果断言、边界与错误期望",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-interfaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-trials",
+        "name": "沙箱试运行",
+        "service": "ExtforgeTrialsV1",
+        "description": "固定产物的原调用、输出和清理回执",
+        "methods": [
+          "preview",
+          "run",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-builds",
+          "extforge-inspections",
+          "extforge-cases"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-signatures",
+        "name": "签名核对",
+        "service": "ExtforgeSignaturesV1",
+        "description": "待签字节、公钥指纹、外部签名及验证结果",
+        "methods": [
+          "prepareEnvelope",
+          "importSignature",
+          "verify"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-manifests",
+          "extforge-interfaces",
+          "extforge-builds"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-bundles",
+        "name": "发行候选",
+        "service": "ExtforgeBundlesV1",
+        "description": "WASM、目录条目、相对 URL 与不可变版本集合",
+        "methods": [
+          "assemble",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-manifests",
+          "extforge-interfaces",
+          "extforge-builds",
+          "extforge-inspections",
+          "extforge-signatures"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-reviews",
+        "name": "发布审阅",
+        "service": "ExtforgeReviewsV1",
+        "description": "用例结论、描述适用性、未覆盖项和人工决定",
+        "methods": [
+          "review",
+          "compare",
+          "seal"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-inspections",
+          "extforge-trials",
+          "extforge-bundles"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-reports",
+        "name": "开发报告",
+        "service": "ExtforgeReportsV1",
+        "description": "构建环境、检查、试运行和审阅证据",
+        "methods": [
+          "assemble",
+          "seal"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-builds",
+          "extforge-inspections",
+          "extforge-trials",
+          "extforge-signatures",
+          "extforge-bundles",
+          "extforge-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-exchange",
+        "name": "工坊交接",
+        "service": "ExtforgeExchangeV1",
+        "description": "源码、开发档案和发行候选的隔离交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-sources",
+          "extforge-manifests",
+          "extforge-interfaces",
+          "extforge-toolchains",
+          "extforge-builds",
+          "extforge-inspections",
+          "extforge-cases",
+          "extforge-trials",
+          "extforge-signatures",
+          "extforge-bundles",
+          "extforge-reviews",
+          "extforge-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-catalogs",
+        "name": "目录预演",
+        "service": "ExtforgeCatalogsV1",
+        "description": "多候选目录、版本碰撞和同源路径检查",
+        "methods": [
+          "compose",
+          "validate",
+          "exportCatalog"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-manifests",
+          "extforge-bundles",
+          "extforge-reviews"
+        ],
+        "material": false
+      },
+      {
+        "id": "extforge-workbench",
+        "name": "开发工作台",
+        "service": "ExtforgeWorkbenchV1",
+        "description": "源码、表单、构建、用例、签名和目录导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "extforge-spaces",
+          "extforge-sources",
+          "extforge-manifests",
+          "extforge-interfaces",
+          "extforge-toolchains",
+          "extforge-builds",
+          "extforge-inspections",
+          "extforge-cases",
+          "extforge-trials",
+          "extforge-signatures",
+          "extforge-bundles",
+          "extforge-reviews",
+          "extforge-reports",
+          "extforge-exchange",
+          "extforge-catalogs"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "dependency-resolution-studio",
+    "name": "依赖求解工作室",
+    "alias": "dependency-solve",
+    "prefix": "depsolve",
+    "group": "engineering",
+    "root": "depsolve-spaces",
+    "members": [
+      {
+        "id": "depsolve-spaces",
+        "name": "求解空间",
+        "service": "DepsolveSpacesV1",
+        "description": "空间、授权修订及额度根账本",
+        "methods": [
+          "create",
+          "list",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "depsolve-catalogs",
+        "name": "固定仓库",
+        "service": "DepsolveCatalogsV1",
+        "description": "包版本、依赖边、平台标记和内容摘要材料",
+        "methods": [
+          "upload",
+          "validate",
+          "pin"
+        ],
+        "requires": [
+          "depsolve-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "depsolve-roots",
+        "name": "根需求",
+        "service": "DepsolveRootsV1",
+        "description": "直接需求、能力请求和替代候选",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "depsolve-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-platforms",
+        "name": "目标档案",
+        "service": "DepsolvePlatformsV1",
+        "description": "操作系统、架构、运行版本及显式条件",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "depsolve-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-constraints",
+        "name": "约束模型",
+        "service": "DepsolveConstraintsV1",
+        "description": "版本域、冲突、同伴依赖和多实例策略",
+        "methods": [
+          "compile",
+          "explain",
+          "seal"
+        ],
+        "requires": [
+          "depsolve-spaces",
+          "depsolve-catalogs",
+          "depsolve-roots",
+          "depsolve-platforms"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-candidates",
+        "name": "候选策略",
+        "service": "DepsolveCandidatesV1",
+        "description": "旧锁偏好、更新范围和确定性排序规则",
+        "methods": [
+          "save",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "depsolve-spaces",
+          "depsolve-catalogs",
+          "depsolve-roots",
+          "depsolve-platforms"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-solves",
+        "name": "求解运行",
+        "service": "DepsolveSolvesV1",
+        "description": "固定模型、搜索轨迹、候选赋值和任务回执",
+        "methods": [
+          "preview",
+          "run",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "depsolve-spaces",
+          "depsolve-constraints",
+          "depsolve-candidates"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-proofs",
+        "name": "结果核验",
+        "service": "DepsolveProofsV1",
+        "description": "逐约束复查、冲突子集与完备性标记",
+        "methods": [
+          "checkAssignment",
+          "explainConflict",
+          "coverage"
+        ],
+        "requires": [
+          "depsolve-spaces",
+          "depsolve-constraints",
+          "depsolve-candidates",
+          "depsolve-solves"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-comparisons",
+        "name": "方案对比",
+        "service": "DepsolveComparisonsV1",
+        "description": "候选版本、直接/传递变化和排除原因",
+        "methods": [
+          "compare",
+          "annotate"
+        ],
+        "requires": [
+          "depsolve-spaces",
+          "depsolve-catalogs",
+          "depsolve-solves",
+          "depsolve-proofs"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-locks",
+        "name": "锁定计划",
+        "service": "DepsolveLocksV1",
+        "description": "中立精确版本集合、依赖边及固定输入摘要",
+        "methods": [
+          "assemble",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "depsolve-spaces",
+          "depsolve-catalogs",
+          "depsolve-roots",
+          "depsolve-platforms",
+          "depsolve-solves",
+          "depsolve-proofs",
+          "depsolve-comparisons"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-reports",
+        "name": "求解报告",
+        "service": "DepsolveReportsV1",
+        "description": "决策说明、冲突、范围和人工接受记录",
+        "methods": [
+          "assemble",
+          "review",
+          "seal"
+        ],
+        "requires": [
+          "depsolve-spaces",
+          "depsolve-constraints",
+          "depsolve-solves",
+          "depsolve-proofs",
+          "depsolve-comparisons",
+          "depsolve-locks"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-exchange",
+        "name": "求解交接",
+        "service": "DepsolveExchangeV1",
+        "description": "元数据、约束、锁定计划和报告的隔离交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "depsolve-spaces",
+          "depsolve-catalogs",
+          "depsolve-roots",
+          "depsolve-platforms",
+          "depsolve-constraints",
+          "depsolve-candidates",
+          "depsolve-solves",
+          "depsolve-proofs",
+          "depsolve-comparisons",
+          "depsolve-locks",
+          "depsolve-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "depsolve-workbench",
+        "name": "依赖工作台",
+        "service": "DepsolveWorkbenchV1",
+        "description": "需求编辑、选择路径、冲突定位和对比导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "depsolve-spaces",
+          "depsolve-catalogs",
+          "depsolve-roots",
+          "depsolve-platforms",
+          "depsolve-constraints",
+          "depsolve-candidates",
+          "depsolve-solves",
+          "depsolve-proofs",
+          "depsolve-comparisons",
+          "depsolve-locks",
+          "depsolve-reports",
+          "depsolve-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "protocol-state-lab",
+    "name": "协议状态实验",
+    "alias": "protocol-state",
+    "prefix": "protostate",
+    "group": "engineering",
+    "root": "protostate-spaces",
+    "members": [
+      {
+        "id": "protostate-spaces",
+        "name": "协议空间",
+        "service": "ProtostateSpacesV1",
+        "description": "空间、授权修订和额度根账本",
+        "methods": [
+          "create",
+          "list",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "protostate-grammars",
+        "name": "消息语法",
+        "service": "ProtostateGrammarsV1",
+        "description": "固定字段、长度、枚举和有限重复规则",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "protostate-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-messages",
+        "name": "消息材料",
+        "service": "ProtostateMessagesV1",
+        "description": "原始字节、字段解析和固定消息样本",
+        "methods": [
+          "upload",
+          "encode",
+          "decode"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-grammars"
+        ],
+        "material": true
+      },
+      {
+        "id": "protostate-machines",
+        "name": "状态模型",
+        "service": "ProtostateMachinesV1",
+        "description": "起始/结束状态、转换及允许消息集合",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-grammars"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-guards",
+        "name": "条件约束",
+        "service": "ProtostateGuardsV1",
+        "description": "字段比较、变量绑定和有界定时条件",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-grammars",
+          "protostate-machines"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-scenarios",
+        "name": "对话场景",
+        "service": "ProtostateScenariosV1",
+        "description": "请求序列、分片边界、关闭和期望分支",
+        "methods": [
+          "compose",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-messages",
+          "protostate-machines",
+          "protostate-guards"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-generators",
+        "name": "有界变体",
+        "service": "ProtostateGeneratorsV1",
+        "description": "固定种子、边界变值、重排及覆盖计划",
+        "methods": [
+          "define",
+          "expand",
+          "seal"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-grammars",
+          "protostate-messages",
+          "protostate-scenarios"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-targets",
+        "name": "目标制品",
+        "service": "ProtostateTargetsV1",
+        "description": "用户提供的固定服务字节、启动档案与端口声明",
+        "methods": [
+          "upload",
+          "inspect",
+          "pin"
+        ],
+        "requires": [
+          "protostate-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "protostate-runs",
+        "name": "协议运行",
+        "service": "ProtostateRunsV1",
+        "description": "专属工具会话、原目标进程和逐连接回执",
+        "methods": [
+          "preview",
+          "start",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-grammars",
+          "protostate-messages",
+          "protostate-machines",
+          "protostate-guards",
+          "protostate-scenarios",
+          "protostate-generators",
+          "protostate-targets",
+          "projects"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-traces",
+        "name": "对话轨迹",
+        "service": "ProtostateTracesV1",
+        "description": "双向字节、顺序、解析投影与丢失声明",
+        "methods": [
+          "decode",
+          "readFrames",
+          "coverage"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-grammars",
+          "protostate-runs"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-properties",
+        "name": "性质判断",
+        "service": "ProtostatePropertiesV1",
+        "description": "状态合法性、响应约定和终止性质",
+        "methods": [
+          "evaluate",
+          "compare",
+          "explain"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-machines",
+          "protostate-guards",
+          "protostate-scenarios",
+          "protostate-runs",
+          "protostate-traces"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-reductions",
+        "name": "失败缩减",
+        "service": "ProtostateReductionsV1",
+        "description": "固定失败判据、候选序列及重复观察",
+        "methods": [
+          "preview",
+          "reduce",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-scenarios",
+          "protostate-generators",
+          "protostate-targets",
+          "protostate-runs",
+          "protostate-traces",
+          "protostate-properties"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-reports",
+        "name": "协议报告",
+        "service": "ProtostateReportsV1",
+        "description": "规格、覆盖、反例、人工说明及核销证据",
+        "methods": [
+          "assemble",
+          "review",
+          "seal"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-grammars",
+          "protostate-machines",
+          "protostate-scenarios",
+          "protostate-runs",
+          "protostate-traces",
+          "protostate-properties",
+          "protostate-reductions"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-exchange",
+        "name": "协议交接",
+        "service": "ProtostateExchangeV1",
+        "description": "规格、场景、轨迹与反例的隔离交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-grammars",
+          "protostate-messages",
+          "protostate-machines",
+          "protostate-guards",
+          "protostate-scenarios",
+          "protostate-generators",
+          "protostate-targets",
+          "protostate-runs",
+          "protostate-traces",
+          "protostate-properties",
+          "protostate-reductions",
+          "protostate-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "protostate-workbench",
+        "name": "协议工作台",
+        "service": "ProtostateWorkbenchV1",
+        "description": "字节与字段联动、状态图、轨迹和失败导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "protostate-spaces",
+          "protostate-grammars",
+          "protostate-messages",
+          "protostate-machines",
+          "protostate-guards",
+          "protostate-scenarios",
+          "protostate-generators",
+          "protostate-targets",
+          "protostate-runs",
+          "protostate-traces",
+          "protostate-properties",
+          "protostate-reductions",
+          "protostate-reports",
+          "protostate-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "replica-sync-lab",
+    "name": "副本同步实验",
+    "alias": "replica-lab",
+    "prefix": "replab",
+    "group": "engineering",
+    "root": "replab-spaces",
+    "members": [
+      {
+        "id": "replab-spaces",
+        "name": "副本空间",
+        "service": "ReplabSpacesV1",
+        "description": "空间、授权修订及额度根账本",
+        "methods": [
+          "create",
+          "list",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "replab-schemas",
+        "name": "数据模型",
+        "service": "ReplabSchemasV1",
+        "description": "有限键、值类型、删除标记和字段约束",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "replab-spaces"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-replicas",
+        "name": "副本定义",
+        "service": "ReplabReplicasV1",
+        "description": "副本标识、初始数据和持久游标模型",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-schemas"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-operations",
+        "name": "操作历史",
+        "service": "ReplabOperationsV1",
+        "description": "固定写入、删除、增量和原始操作身份",
+        "methods": [
+          "upload",
+          "compose",
+          "seal"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-schemas",
+          "replab-replicas"
+        ],
+        "material": true
+      },
+      {
+        "id": "replab-clocks",
+        "name": "因果时钟",
+        "service": "ReplabClocksV1",
+        "description": "逻辑时钟、版本向量及墙钟偏差档案",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-replicas"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-channels",
+        "name": "传递模型",
+        "service": "ReplabChannelsV1",
+        "description": "方向、断连、延迟、重复和重排计划",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-replicas"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-policies",
+        "name": "合并策略",
+        "service": "ReplabPoliciesV1",
+        "description": "明确规则、相同时间决胜和墓碑保留条件",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-schemas",
+          "replab-clocks"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-scenarios",
+        "name": "实验编排",
+        "service": "ReplabScenariosV1",
+        "description": "固定事件计划、交付边界及待证性质",
+        "methods": [
+          "compose",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-replicas",
+          "replab-operations",
+          "replab-clocks",
+          "replab-channels",
+          "replab-policies"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-runs",
+        "name": "有限重放",
+        "service": "ReplabRunsV1",
+        "description": "原始事件轨迹、逐副本快照和执行回执",
+        "methods": [
+          "preview",
+          "run",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-schemas",
+          "replab-replicas",
+          "replab-operations",
+          "replab-clocks",
+          "replab-channels",
+          "replab-policies",
+          "replab-scenarios"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-conflicts",
+        "name": "冲突解释",
+        "service": "ReplabConflictsV1",
+        "description": "并发写关系、规则选择与人工裁决候选",
+        "methods": [
+          "inspect",
+          "proposeResolution",
+          "seal"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-operations",
+          "replab-clocks",
+          "replab-policies",
+          "replab-runs"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-judgments",
+        "name": "性质判断",
+        "service": "ReplabJudgmentsV1",
+        "description": "收敛、保留、顺序及反例的可重算判断",
+        "methods": [
+          "evaluate",
+          "compare",
+          "explain"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-schemas",
+          "replab-scenarios",
+          "replab-runs",
+          "replab-conflicts"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-reports",
+        "name": "同步报告",
+        "service": "ReplabReportsV1",
+        "description": "模型范围、固定历史、判断及人工说明",
+        "methods": [
+          "assemble",
+          "review",
+          "seal"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-replicas",
+          "replab-clocks",
+          "replab-channels",
+          "replab-policies",
+          "replab-scenarios",
+          "replab-runs",
+          "replab-conflicts",
+          "replab-judgments"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-exchange",
+        "name": "同步交接",
+        "service": "ReplabExchangeV1",
+        "description": "模型、历史和报告的隔离交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-schemas",
+          "replab-replicas",
+          "replab-operations",
+          "replab-clocks",
+          "replab-channels",
+          "replab-policies",
+          "replab-scenarios",
+          "replab-runs",
+          "replab-conflicts",
+          "replab-judgments",
+          "replab-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "replab-workbench",
+        "name": "同步工作台",
+        "service": "ReplabWorkbenchV1",
+        "description": "副本时间轴、数据对比、冲突及反例导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "replab-spaces",
+          "replab-schemas",
+          "replab-replicas",
+          "replab-operations",
+          "replab-clocks",
+          "replab-channels",
+          "replab-policies",
+          "replab-scenarios",
+          "replab-runs",
+          "replab-conflicts",
+          "replab-judgments",
+          "replab-reports",
+          "replab-exchange"
+        ],
+        "material": false
+      }
+    ]
+  },
+  {
+    "id": "service-virtualization-studio",
+    "name": "多服务模拟工作室",
+    "alias": "service-virtualization",
+    "prefix": "virtservice",
+    "group": "engineering",
+    "root": "virtservice-spaces",
+    "members": [
+      {
+        "id": "virtservice-spaces",
+        "name": "模拟空间",
+        "service": "VirtserviceSpacesV1",
+        "description": "空间、授权修订和额度根账本",
+        "methods": [
+          "create",
+          "list",
+          "archive"
+        ],
+        "requires": [],
+        "material": false
+      },
+      {
+        "id": "virtservice-contracts",
+        "name": "服务目录",
+        "service": "VirtserviceContractsV1",
+        "description": "服务身份、操作、请求与响应合同",
+        "methods": [
+          "upload",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "virtservice-spaces"
+        ],
+        "material": true
+      },
+      {
+        "id": "virtservice-payloads",
+        "name": "响应材料",
+        "service": "VirtservicePayloadsV1",
+        "description": "固定正文、字段映射及虚构数据集",
+        "methods": [
+          "upload",
+          "compose",
+          "pin"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts"
+        ],
+        "material": true
+      },
+      {
+        "id": "virtservice-matchers",
+        "name": "匹配规则",
+        "service": "VirtserviceMatchersV1",
+        "description": "方法、路径、字段条件及显式优先级",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-states",
+        "name": "服务状态",
+        "service": "VirtserviceStatesV1",
+        "description": "各服务初始键值、状态模式及重置基线",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts",
+          "virtservice-payloads"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-transitions",
+        "name": "联动规则",
+        "service": "VirtserviceTransitionsV1",
+        "description": "局部状态变化、固定内部调用及联合提交次序",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts",
+          "virtservice-matchers",
+          "virtservice-states"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-faults",
+        "name": "故障档案",
+        "service": "VirtserviceFaultsV1",
+        "description": "指定服务/操作的延迟、错误与断连脚本",
+        "methods": [
+          "save",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts",
+          "virtservice-matchers"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-scenarios",
+        "name": "消费者场景",
+        "service": "VirtserviceScenariosV1",
+        "description": "固定请求、跨服务期望、分支点与检查点要求",
+        "methods": [
+          "compose",
+          "preview",
+          "seal"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts",
+          "virtservice-payloads",
+          "virtservice-states",
+          "virtservice-transitions",
+          "virtservice-faults"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-packages",
+        "name": "环境版本",
+        "service": "VirtservicePackagesV1",
+        "description": "服务拓扑、端点槽位、完整定义和工具要求",
+        "methods": [
+          "assemble",
+          "validate",
+          "seal"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts",
+          "virtservice-payloads",
+          "virtservice-matchers",
+          "virtservice-states",
+          "virtservice-transitions",
+          "virtservice-faults",
+          "virtservice-scenarios"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-sessions",
+        "name": "环境会话",
+        "service": "VirtserviceSessionsV1",
+        "description": "原客户机、内部监听、联合检查点及分支回执",
+        "methods": [
+          "preview",
+          "start",
+          "checkpoint",
+          "fork",
+          "cancel",
+          "reconcile"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-packages",
+          "virtservice-scenarios",
+          "projects"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-traffic",
+        "name": "请求证据",
+        "service": "VirtserviceTrafficV1",
+        "description": "原请求序号、服务间因果关联和选定正文",
+        "methods": [
+          "capture",
+          "readRequests",
+          "coverage"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts",
+          "virtservice-sessions"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-assertions",
+        "name": "场景判断",
+        "service": "VirtserviceAssertionsV1",
+        "description": "合同匹配、联合状态、分支差异及覆盖",
+        "methods": [
+          "evaluate",
+          "compare",
+          "explain"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts",
+          "virtservice-scenarios",
+          "virtservice-packages",
+          "virtservice-sessions",
+          "virtservice-traffic"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-reports",
+        "name": "模拟报告",
+        "service": "VirtserviceReportsV1",
+        "description": "环境版本、固定分支、判断和原资源核销索引",
+        "methods": [
+          "assemble",
+          "review",
+          "seal"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-packages",
+          "virtservice-sessions",
+          "virtservice-traffic",
+          "virtservice-assertions"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-exchange",
+        "name": "模拟交接",
+        "service": "VirtserviceExchangeV1",
+        "description": "环境定义、联合快照和报告的隔离交换",
+        "methods": [
+          "export",
+          "inspectImport",
+          "acceptImport"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts",
+          "virtservice-payloads",
+          "virtservice-matchers",
+          "virtservice-states",
+          "virtservice-transitions",
+          "virtservice-faults",
+          "virtservice-scenarios",
+          "virtservice-packages",
+          "virtservice-sessions",
+          "virtservice-traffic",
+          "virtservice-assertions",
+          "virtservice-reports"
+        ],
+        "material": false
+      },
+      {
+        "id": "virtservice-workbench",
+        "name": "模拟工作台",
+        "service": "VirtserviceWorkbenchV1",
+        "description": "服务图、联动编辑、检查点树和逐请求导航",
+        "methods": [
+          "view",
+          "templates"
+        ],
+        "requires": [
+          "virtservice-spaces",
+          "virtservice-contracts",
+          "virtservice-payloads",
+          "virtservice-matchers",
+          "virtservice-states",
+          "virtservice-transitions",
+          "virtservice-faults",
+          "virtservice-scenarios",
+          "virtservice-packages",
+          "virtservice-sessions",
+          "virtservice-traffic",
+          "virtservice-assertions",
+          "virtservice-reports",
+          "virtservice-exchange"
+        ],
+        "material": false
+      }
+    ]
+  }
+]

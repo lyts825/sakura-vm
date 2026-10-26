@@ -1,0 +1,3 @@
+/** 多服务模拟工作室的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'service-virtualization-studio',name:"多服务模拟工作室",description:"多服务模拟工作室：定义、处理、复核和交接。",members:[member('virtservice-spaces'),member('virtservice-contracts'),member('virtservice-payloads'),member('virtservice-matchers'),member('virtservice-states'),member('virtservice-transitions'),member('virtservice-faults'),member('virtservice-scenarios'),member('virtservice-packages'),member('virtservice-sessions'),member('virtservice-traffic'),member('virtservice-assertions'),member('virtservice-reports'),member('virtservice-exchange'),member('virtservice-workbench')]});

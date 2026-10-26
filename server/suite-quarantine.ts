@@ -82,8 +82,31 @@ export class SuiteQuarantineExchange extends SuiteStore {
     auth: SuiteAuthorize,
     protected sources: S.SuiteMaterialsV1,
     peers: Readonly<Record<string, S.SuiteRecordsV1>>,
+    private readonly materialStores?: Readonly<Record<string, S.SuiteByteMaterialsV1>>,
   ) {
     super(domain, metadata, auth, sources, peers);
+  }
+  /** 固定装配的原字节所有者；旧包仍只返回其单一 sources。 */
+  protected materialProvider(domain: string): S.SuiteByteMaterialsV1 {
+    const stores = this.materialProviders();
+    return Object.hasOwn(stores, domain)
+      ? stores[domain]
+      : suiteFail('SUITE_QUARANTINE_MATERIAL_PROVIDER');
+  }
+  protected materialProviders(): Readonly<Record<string, S.SuiteByteMaterialsV1>> {
+    return this.materialStores ?? { [this.sourcesDomainForQuarantine()]: this.sources };
+  }
+  private async ownedUploads(scope: S.SuiteScope) {
+    const uploads: { provider: S.SuiteByteMaterialsV1; upload: S.SuiteUpload }[] = [];
+    const ids = new Set<string>();
+    for (const provider of Object.values(this.materialProviders()))
+      for (const upload of await provider.uploads(scope)) {
+        if (ids.has(upload.id)) suiteFail('SUITE_QUARANTINE_UPLOAD_DUPLICATE');
+        ids.add(upload.id);
+        uploads.push({ provider, upload });
+        if (uploads.length > 10000) suiteFail('SUITE_QUARANTINE_UPLOAD_LIMIT');
+      }
+    return uploads;
   }
   async quarantines(raw: S.SuiteScope): Promise<S.SuiteQuarantine[]> {
     const scope = S.suiteScope.parse(raw);
@@ -117,8 +140,6 @@ export class SuiteQuarantineExchange extends SuiteStore {
           if (row.domain !== domain || row.workspaceId !== scope.workspaceId || row.actor !== suiteActor())
             suiteFail('SUITE_QUARANTINE_OWNER');
           const material = row.kind === 'source' ? S.suiteMaterial.parse(row.content) : null;
-          if (material && domain !== this.sourcesDomainForQuarantine())
-            suiteFail('SUITE_QUARANTINE_MATERIAL_PROVIDER');
           records.push({
             reference: reference(row),
             name: row.name,
@@ -128,7 +149,7 @@ export class SuiteQuarantineExchange extends SuiteStore {
             references: row.references,
             control: suiteControlReceipt(row),
             material,
-            policy: material ? await this.sources.policy(pin(scope, reference(row))) : null,
+            policy: material ? await this.materialProvider(domain).policy(pin(scope, reference(row))) : null,
           });
         }
         if (page.next === null) break;
@@ -149,7 +170,7 @@ export class SuiteQuarantineExchange extends SuiteStore {
     return snapshotSchema.parse({
       records,
       publications,
-      uploads: await this.sources.uploads(scope),
+      uploads: (await this.ownedUploads(scope)).map(({ upload }) => upload),
       reservations: info.reservations,
     });
   }
@@ -375,9 +396,9 @@ export class SuiteQuarantineExchange extends SuiteStore {
           this.assertProgress(input.snapshot!, before);
           const removed = await this.removeRecords(destination, before.records),
             discarded: string[] = [];
-          for (const upload of await this.sources.uploads(destination))
+          for (const { provider, upload } of await this.ownedUploads(destination))
             if (upload.state !== 'discarded') {
-              await this.sources.discardUpload({ ...destination, id: upload.id });
+              await provider.discardUpload({ ...destination, id: upload.id });
               discarded.push(upload.id);
             }
           const after = await this.snapshot(destination);

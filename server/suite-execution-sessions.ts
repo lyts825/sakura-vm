@@ -5,10 +5,10 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import * as S from '../shared/contracts/suite-execution.ts';
+import * as S from '../shared/contracts/seventh-execution.ts';
 import { suiteQuota } from '../shared/contracts/suite-common.ts';
 import type { ImageAssetsV1 } from './service-contracts/image-assets.ts';
-import type { SuiteExecutionSessionsV1 } from './service-contracts/suite-execution.ts';
+import type { SuiteExecutionSessionsV1 } from './service-contracts/seventh-execution.ts';
 import type { VmAccess } from './vm-access.ts';
 import type { PluginDirectory } from './plugin-directory.ts';
 import type { SuiteCapacity } from './suite-capacity.ts';
@@ -704,6 +704,16 @@ export class SuiteExecutionSessions implements SuiteExecutionSessionsV1 {
     if (!r) fail('SUITE_EXECUTION_NOT_FOUND');
     this.owns(r.receipt, input.workspaceId, who);
     return r.receipt;
+  }
+  /** 新四类提供者允许按原批准定位原会话；恢复不创建资源，也不重放输入。 */
+  async resolve(raw: { workspaceId: string; planId: string }): Promise<S.SuiteExecutionReceipt | null> {
+    const input = z.object({ workspaceId: z.uuid(), planId: z.uuid() }).strict().parse(raw),
+      who = this.caller();
+    await captureOperationCheck()();
+    const plan = (await this.ledger.read()).plans.find((p) => p.id === input.planId);
+    if (!plan) fail('SUITE_EXECUTION_PLAN_CHANGED');
+    this.owns(plan, input.workspaceId, who);
+    return plan.sessionId ? this.inspect({ workspaceId: input.workspaceId, id: plan.sessionId }) : null;
   }
   async cancel(raw: z.infer<typeof S.suiteExecutionPin>) {
     const input = S.suiteExecutionPin.parse(raw);

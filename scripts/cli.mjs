@@ -9,11 +9,13 @@ import { readFile, open, lstat, unlink } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { guestArguments, guestExecution } from './guest-cli.mjs';
+import {seventhAliases,seventhCli} from './seventh-cli.mjs';
 const base = `http://127.0.0.1:${process.env.SAKURA_PORT || 7337}`;
 const [action = 'help', name, ...args] = process.argv.slice(2);
 /** 解析 CLI 命令并通过已认证本机 API 调用基础或可选插件能力；交互终端接管输入与窗口尺寸，长任务响应取消。参数和服务错误向顶层传播，退出时释放终端状态。
  * Dispatch CLI arguments through authenticated local APIs to core or optional plugin capabilities; interactive terminals take over input/size and long work supports cancellation. Argument/service errors propagate and exit restores terminal state. */
 async function main() {
+  if(seventhAliases.has(action)&&['help','--help','verify'].includes(name||'help')){try{const value=await seventhCli(action,[name||'help',...args]);console.log(value?.help||JSON.stringify(value,null,2));}catch(error){console.error(error.message);process.exitCode=error.exitCode||2;}return;}
   if (
     ["supply","locale","incident","browser","database","evaluation","learning","media","flow","event"].includes(action) &&
     ['help', '--help', 'verify'].includes(name || 'help')
@@ -127,6 +129,7 @@ async function main() {
         throw Object.assign(new Error(result.error), { code: result.code, status: response.status });
       return result;
     }
+    if(seventhAliases.has(action)){const value=await seventhCli(action,[name,...args].filter(Boolean),{api});console.log(value?.help||JSON.stringify(value,null,2));return;}
     if (action === 'integration') {
       const result = await (
         await import('./integration-cli.mjs')
@@ -775,6 +778,7 @@ async function main() {
     console.error(
       `Sakura: ${error.message}. ${error.message === 'fetch failed' ? 'Run npm start first.' : ''}`,
     );
+    if(seventhAliases.has(action)){process.exitCode=error.exitCode||(/CLEANUP_PENDING|CLEANUP_UNKNOWN/.test(error.code||'')?4:/UNSUPPORTED|NOT_SUPPORTED|UNAVAILABLE|SEVENTH_RUNNING/.test(error.code||'')?3:2);return;}
     process.exitCode = ["supply","locale","incident","browser","database","evaluation","learning","media","flow","event"].includes(action)
       ? error.exitCode || (error.status === 409 ? 3 : 2)
       : 1;

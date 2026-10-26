@@ -96,6 +96,10 @@ test('manager reads live unload and cleanup state without an activation snapshot
      * 协作入口 / Collaborators: `host.provide`.
      */
     activate: async (host) => {
+      host.provide(metricsContract.snapshots, {
+        readSnapshot: async () => { throw new Error('该生命周期夹具不采集快照'); },
+        verifySnapshot: async () => ({confirmed:true as const}),
+      });
       host.provide(metricsContract.metrics, {
         /**
          * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。

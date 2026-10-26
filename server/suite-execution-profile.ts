@@ -1,6 +1,6 @@
 /** 本体构造的固定档案；不通过公共服务接收命令、工具路径或档案选择器。 */
 import type { z } from 'zod';
-import type { SuiteExecutionProfileId, SuiteExecutionReceipt } from '../shared/contracts/suite-execution.ts';
+import type { SuiteExecutionProfileId, SuiteExecutionReceipt } from '../shared/contracts/seventh-execution.ts';
 export interface SuiteExecutionProfile {
   readonly id: SuiteExecutionProfileId;
   readonly consumers: readonly string[];

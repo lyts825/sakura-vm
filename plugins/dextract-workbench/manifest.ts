@@ -1,0 +1,4 @@
+/** 提取工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {dextractRoutes,dextractHttp} from '../../shared/contracts/dextract-routes.generated.ts';
+export const manifest=definePlugin({id:'dextract-workbench',name:"提取工作台",description:"源页/结果对照、区域编辑与复核导航",category:'development',experimental:true,requires:[pin('dextract-spaces'),pin('dextract-sources'),pin('dextract-pages'),pin('dextract-layouts'),pin('dextract-ocr'),pin('dextract-tables'),pin('dextract-schemas'),pin('dextract-fields'),pin('dextract-checks'),pin('dextract-corrections'),pin('dextract-datasets'),pin('dextract-reviews'),pin('dextract-exchange')],systemDependencies:['documentExtractionSessions'],services:['dextractWorkbench'],contributes:{pages:['document-extraction-studio'],http:dextractHttp('workbench'),routes:dextractRoutes('workbench')}});

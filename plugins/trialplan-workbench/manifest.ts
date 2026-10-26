@@ -1,0 +1,4 @@
+/** 实验规划工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {trialplanRoutes,trialplanHttp} from '../../shared/contracts/trialplan-routes.generated.ts';
+export const manifest=definePlugin({id:'trialplan-workbench',name:"实验规划工作台",description:"假设编辑、规模曲线、分组及偏离检查",category:'development',experimental:true,requires:[pin('trialplan-spaces'),pin('trialplan-questions'),pin('trialplan-populations'),pin('trialplan-outcomes'),pin('trialplan-allocations'),pin('trialplan-powerplans'),pin('trialplan-assignments'),pin('trialplan-observations'),pin('trialplan-analyses'),pin('trialplan-sensitivity'),pin('trialplan-reviews'),pin('trialplan-reports'),pin('trialplan-exchange')],systemDependencies:['controlledExperimentCompute'],services:['trialplanWorkbench'],contributes:{pages:['experiment-planner'],http:trialplanHttp('workbench'),routes:trialplanRoutes('workbench')}});

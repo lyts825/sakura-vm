@@ -1,0 +1,4 @@
+/** 时间工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {temporaldeskRoutes,temporaldeskHttp} from '../../shared/contracts/temporaldesk-routes.generated.ts';
+export const manifest=definePlugin({id:'temporaldesk-workbench',name:"时间工作台",description:"时间轴、歧义队列、窗口预览和保存视图",category:'development',experimental:true,requires:[pin('temporaldesk-spaces'),pin('temporaldesk-sources'),pin('temporaldesk-calendars'),pin('temporaldesk-semantics'),pin('temporaldesk-alignment'),pin('temporaldesk-intervals'),pin('temporaldesk-windows'),pin('temporaldesk-latepolicy'),pin('temporaldesk-runs'),pin('temporaldesk-comparisons'),pin('temporaldesk-reviews'),pin('temporaldesk-reports'),pin('temporaldesk-exchange')],systemDependencies:['temporalSeriesCompute'],services:['temporaldeskWorkbench'],contributes:{pages:['temporal-data-studio'],http:temporaldeskHttp('workbench'),routes:temporaldeskRoutes('workbench')}});

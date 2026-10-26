@@ -8,14 +8,17 @@ export interface SuiteBundleManifest {
   digest: string;
   files: { path: string; bytes: number; digest: string }[];
 }
+export interface SuiteBundleOptions { maximumBytes?: number; }
 export function canonicalBundle(value: unknown): string;
 export function encodeSuiteBundle(
   format: string,
   entries: SuiteBundleEntry[],
+  options?: SuiteBundleOptions,
 ): { data: Buffer; manifest: SuiteBundleManifest };
 export function decodeSuiteBundle(
   data: Uint8Array,
   expectedFormat: string,
+  options?: SuiteBundleOptions,
 ): {
   manifest: SuiteBundleManifest;
   entries: { path: string; data: Buffer }[];

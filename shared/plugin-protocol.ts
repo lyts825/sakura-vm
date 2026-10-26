@@ -16,7 +16,7 @@ import type {
 } from './plugin-schema.ts';
 
 export const PLUGIN_API_VERSION = 5;
-export const BUILTIN_PLUGIN_VERSION = '2.8.1';
+export const BUILTIN_PLUGIN_VERSION = '2.12.0';
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type PluginPack = z.infer<typeof pluginPackSchema>;
 export type PluginSelection = z.infer<typeof pluginSelectionSchema>;

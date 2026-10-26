@@ -1,0 +1,17 @@
+/** 求解运行：绑定本插件元数据、直接提供者和固定计算。 */
+import type {PluginContext,PluginRoute} from '../../server/plugin-api.ts';
+import {suiteAuthorize,suiteService,suiteRoute} from '../../server/suite-http.ts';
+import {DepsolveSolves} from '../../server/seventh-domains.generated.ts';
+import {requiredSeventhComputePort} from '../../server/seventh-compute-port-required.ts';
+import {seventhSchemas} from '../../shared/contracts/seventh-http.ts';
+import {depsolveRouteMetadata} from '../../shared/contracts/depsolve-routes.generated.ts';
+import {services} from './services.ts';
+import {services as peer0} from '../depsolve-spaces/services.ts';
+import {services as peer1} from '../depsolve-constraints/services.ts';
+import {services as peer2} from '../depsolve-candidates/services.ts';
+export {manifest} from './manifest.ts';
+const schemas=seventhSchemas('depsolve-solves');
+export async function activate(host:PluginContext){const service=new DepsolveSolves('depsolve-solves',host.capabilities.metadata.reference('state',()=>null),host.capabilities.metadata.reference('uploads',()=>null),suiteAuthorize(host),host.use(peer0.domain),{'depsolve-spaces':host.use(peer0.domain),'depsolve-constraints':host.use(peer1.domain),'depsolve-candidates':host.use(peer2.domain)},requiredSeventhComputePort(host.system.optional('dependencyConstraintCompute')),host.signal);host.provide(services.domain,suiteService(schemas,service));host.onDispose(()=>service.dispose());}
+export const route=suiteRoute('depsolve-solves',schemas,services.domain,depsolveRouteMetadata['solves']);
+export const httpHandlers:Record<string,PluginRoute>=Object.fromEntries(Object.keys(schemas).map(id=>[id,route]));
+export const responseContracts=Object.fromEntries(Object.entries(schemas).map(([id,{response}])=>[id,{kind:'json' as const,statuses:[200],schema:response}]));

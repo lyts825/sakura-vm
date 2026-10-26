@@ -1,0 +1,4 @@
+/** 调度工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {schedlabRoutes,schedlabHttp} from '../../shared/contracts/schedlab-routes.generated.ts';
+export const manifest=definePlugin({id:'schedlab-workbench',name:"调度工作台",description:"日历、双时钟轨迹、差异和恢复导航",category:'development',experimental:true,requires:[pin('schedlab-spaces'),pin('schedlab-calendars'),pin('schedlab-clocks'),pin('schedlab-rules'),pin('schedlab-policies'),pin('schedlab-workloads'),pin('schedlab-scenarios'),pin('schedlab-simulations'),pin('schedlab-harness'),pin('schedlab-observations'),pin('schedlab-checks'),pin('schedlab-reports'),pin('schedlab-exchange')],systemDependencies:['scheduleModelCompute'],services:['schedlabWorkbench'],contributes:{pages:['schedule-semantics-lab'],http:schedlabHttp('workbench'),routes:schedlabRoutes('workbench')}});

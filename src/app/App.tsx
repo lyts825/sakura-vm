@@ -58,7 +58,7 @@ import { distroName, type Request } from '../feature-shared';
 import { mayLeaveEditor } from '../file-editor-state';
 
 import type { VMView } from '../../shared/contracts/vm.ts';
-import { pluginSurfaceOwner, pluginSurfaceEnabled } from '../../shared/plugins';
+import { pluginSurfaceOwner, pluginSurfaceEnabled } from '../plugin-surfaces.ts';
 import { ClipboardSettings } from '../ClipboardSettings';
 import type { PaletteAction, PaletteTarget } from '../CommandPalette';
 import { LocaleSettings } from '../LocaleSettings';

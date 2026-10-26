@@ -1,0 +1,3 @@
+/** 经典模型训练实验的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'classical-training-lab',name:"经典模型训练实验",description:"经典模型训练实验：定义、处理、复核和交接。",members:[member('ctrain-spaces'),member('ctrain-datasets'),member('ctrain-targets'),member('ctrain-partitions'),member('ctrain-estimators'),member('ctrain-searches'),member('ctrain-runs'),member('ctrain-predictions'),member('ctrain-metrics'),member('ctrain-comparisons'),member('ctrain-explanations'),member('ctrain-registry'),member('ctrain-reports'),member('ctrain-exchange'),member('ctrain-workbench')]});

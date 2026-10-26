@@ -1,0 +1,3 @@
+/** 对照实验规划的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'experiment-planner',name:"对照实验规划",description:"对照实验规划：定义、处理、复核和交接。",members:[member('trialplan-spaces'),member('trialplan-questions'),member('trialplan-populations'),member('trialplan-outcomes'),member('trialplan-allocations'),member('trialplan-powerplans'),member('trialplan-assignments'),member('trialplan-observations'),member('trialplan-analyses'),member('trialplan-sensitivity'),member('trialplan-reviews'),member('trialplan-reports'),member('trialplan-exchange'),member('trialplan-workbench')]});

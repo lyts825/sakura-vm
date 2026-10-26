@@ -6,7 +6,7 @@ import {
   suiteExecutionReceipt,
   type SuiteExecutionReceipt,
   type SuiteExecutionProfileId,
-} from '../shared/contracts/suite-execution.ts';
+} from '../shared/contracts/seventh-execution.ts';
 import type { OwnedImageVm, ImageAsset } from '../shared/contracts/image-assets.ts';
 import type { ImageAssets, OriginalImageVmCleanupPort } from './image-assets.ts';
 import { MetadataStore } from './metadata-store.ts';
@@ -21,6 +21,10 @@ export type SuiteExecutionCleanupFactory = ((
   imageInventory: () => Promise<ImageAsset[]>;
 };
 const bindings: Record<string, { profile: SuiteExecutionProfileId; consumers: string[] }> = {
+  schedulerProbeSessions: {profile:'schedule-probe',consumers:['official:schedlab-harness']},
+  extensionBuildSessions: {profile:'extension-build',consumers:['official:extforge-builds']},
+  protocolScenarioSessions: {profile:'protocol-scenario',consumers:['official:protostate-runs']},
+  multiServiceVirtualizationSessions: {profile:'multi-service',consumers:['official:virtservice-sessions']},
   browserSessions: { profile: 'browser', consumers: ['official:browser-runners'] },
   databaseRehearsal: { profile: 'database', consumers: ['official:database-fixtures'] },
   eventSessions: { profile: 'event', consumers: ['official:event-brokers'] },

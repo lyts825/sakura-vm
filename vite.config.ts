@@ -35,10 +35,12 @@ export default defineConfig(
           const path = id.replaceAll('\\', '/');
           // 仅浏览器拆公共目录；SSR 保留独立入口 / Split shared catalogs only in browser builds; retain independent SSR entries.
           if (!isSsrBuild) {
+            if (/\/shared\/plugin-protocol\.ts$/.test(path)) return 'plugin-protocol';
+            if (/\/(?:shared\/plugin-(?:surfaces\.generated|surface-queries)|src\/plugin-surfaces)\.ts$/.test(path)) return 'plugin-surfaces';
             // 路由目录与界面独立缓存 / Keep generated wire routing independently cacheable from UI changes.
             if (/\/shared\/contracts\/api-client\.generated\.ts$/.test(path)) return 'operation-catalog';
             if (/\/shared\/plugin-(?:schema|resolver|selection)\.ts$/.test(path)) return 'plugin-contracts';
-            if (/\/shared\/(?:plugins|plugin-(?:catalog\.generated|protocol))\.ts$/.test(path) ||
+            if (/\/shared\/(?:plugins|plugin-catalog\.generated)\.ts$/.test(path) ||
               /\/plugins\/[^/]+\/manifest\.ts$/.test(path) || /\/plugins\/packs\/[^/]+\.ts$/.test(path))
               return 'plugin-catalog';
           }

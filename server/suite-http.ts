@@ -6,6 +6,7 @@ import { captureOperationCheck } from './operation-context.ts';
 import { sendJson } from './http-response.ts';
 import { suiteFail, suiteActor } from './suite-store.ts';
 import { isSuiteJsonBounded } from '../shared/contracts/suite-common.ts';
+import { SERVICE_LIFECYCLE } from './service-lifecycle.ts';
 export type SuiteMethods = Readonly<
   Record<string, { request: z.ZodType; response: z.ZodType; read: boolean }>
 >;
@@ -19,7 +20,17 @@ export function suiteAuthorize(host: PluginContext) {
 export function suiteService<T extends object>(schemas: SuiteMethods, implementation: T): T {
   const methods = new Map<string, unknown>();
   return new Proxy(implementation, {
+    has(target, key) {
+      return key === SERVICE_LIFECYCLE || Reflect.has(target, key);
+    },
     get(target, key, receiver) {
+      if (key === SERVICE_LIFECYCLE) {
+        const dispose = Reflect.get(target, 'dispose', target);
+        if (typeof dispose === 'function') return dispose.bind(target);
+        // 业务 close 继续走严格参数校验，不能充当无参析构。
+        const close = !Object.hasOwn(schemas, 'close') && Reflect.get(target, 'close', target);
+        return typeof close === 'function' ? close.bind(target) : undefined;
+      }
       if (typeof key !== 'string' || !Object.hasOwn(schemas, key)) return Reflect.get(target, key, receiver);
       if (!methods.has(key))
         methods.set(key, async (raw: unknown = {}) => {

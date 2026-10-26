@@ -4,7 +4,7 @@
  * 详细范围（中文）：公开入口包括 readSessionState；职责覆盖恢复并校验浏览器保存的导航选择，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include readSessionState. The scope covers Restoring and validating navigation selections persisted in browser storage. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { PLUGINS } from '../../shared/plugins';
+import { PLUGINS } from '../plugin-surfaces.ts';
 
 type SessionState = { selected: string; page: string; tab: string };
 const sessionPages = new Set([

@@ -25,7 +25,7 @@ export async function writeSuiteOutput(file, bytes) {
     if (!complete) await removeSuitePartial(file, identity);
   }
 }
-export function createSuiteCli({ prefix, label, sourceDomain, maximumFile, verify }) {
+export function createSuiteCli({ prefix, label, sourceDomain, maximumFile, maximumBundle = 16 * 1024 ** 2, verify }) {
   if (!Object.hasOwn(suiteCommands, prefix) || !Object.hasOwn(suiteCommands[prefix], sourceDomain))
     throw new Error('领域 CLI 配置不存在');
   const methods = suiteCommands[prefix];
@@ -143,7 +143,7 @@ ${Object.entries(methods)
             bytes.toString('base64') !== part.data ||
             part.offset !== offset + bytes.length ||
             (!part.eof && !bytes.length) ||
-            part.offset > 16 * 1024 ** 2
+            part.offset > maximumBundle
           )
             throw new Error('下载回执不一致');
           let written = 0;

@@ -1,0 +1,4 @@
+/** 归并工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {entitydeskRoutes,entitydeskHttp} from '../../shared/contracts/entitydesk-routes.generated.ts';
+export const manifest=definePlugin({id:'entitydesk-workbench',name:"归并工作台",description:"双列比较、簇裁决、取值预览和保存视图",category:'development',experimental:true,requires:[pin('entitydesk-spaces'),pin('entitydesk-sources'),pin('entitydesk-normalization'),pin('entitydesk-blocks'),pin('entitydesk-comparators'),pin('entitydesk-candidates'),pin('entitydesk-constraints'),pin('entitydesk-clusters'),pin('entitydesk-decisions'),pin('entitydesk-evaluations'),pin('entitydesk-survivors'),pin('entitydesk-versions'),pin('entitydesk-reports'),pin('entitydesk-exchange')],systemDependencies:['entityMatchingCompute'],services:['entitydeskWorkbench'],contributes:{pages:['entity-resolution-studio'],http:entitydeskHttp('workbench'),routes:entitydeskRoutes('workbench')}});

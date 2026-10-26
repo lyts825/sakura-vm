@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import { isDeepStrictEqual } from 'node:util';
 import type { HttpResponseContract } from '../shared/contracts/http-response.ts';
-import contracts from '../docs/schemas/operations.json' with { type: 'json' };
+import {runtimeOperationContracts as contracts} from './operation-contracts.generated.mjs';
 import { operationDeclarationSchema, type OperationDeclaration } from '../shared/contracts/operations.ts';
 import { coreOperations, coreRequestSchema, coreResponseContracts } from './core-operations.ts';
 import { pluginRouteResponses } from '../shared/contracts/plugin-route-responses.ts';
@@ -242,7 +242,7 @@ export const operationEntries: readonly OperationEntry[] = [
   ...pluginHttpRoutes().map((route): OperationEntry => {
     const id = route.owner + '.' + route.id;
     const responseContract = (pluginRouteResponses as Readonly<Record<string, HttpResponseContract>>)[id];
-    const typed = (contracts as Record<string, { id: string; request?: Record<string, unknown> | null; response?: Record<string, unknown> | null; status: number }>)[id];
+    const typed = contracts[id];
     if (route.handler === 'operation' && !typed?.response)
       throw new Error('插件操作缺少响应契约：' + id);
     const input = requestContract(id, route.policy, route.method, undefined, typed?.request || undefined);

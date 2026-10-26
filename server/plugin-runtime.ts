@@ -24,6 +24,7 @@ import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 import { TerminalBackend, type TerminalService } from './terminal-backend.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import { SystemServices } from './system-services.ts';
+import { SERVICE_LIFECYCLE } from './service-lifecycle.ts';
 
 import { resolvePlugins } from '../shared/plugin-selection.ts';
 import { emptySelection, PLUGINS } from '../shared/plugins.ts';
@@ -550,13 +551,19 @@ export class PluginRuntime {
                * 契约：此声明定义调用形状，本身不执行 I/O；业务验证与副作用由实现方执行。
                * Contract: Defines the call shape and performs no I/O itself; the implementation performs domain validation and effects.
                */
+              [SERVICE_LIFECYCLE]?: () => Promise<void> | void;
               close?: () => Promise<void> | void; jobs?: JobsV1 } | undefined;
             if (!service || closedServices.has(service)) return;
             // Some domain contracts expose jobs() as a query. Only a task store
             // supplies close/list; a same-named query is not a lifecycle handle.
             const jobs = service.jobs && typeof service.jobs.list === 'function' &&
               typeof service.jobs.close === 'function' ? service.jobs : undefined;
-            if (service.close) await service.close();
+            // 已接入符号的领域服务不再把业务 close 误当作销毁方法。
+            if (SERVICE_LIFECYCLE in service) {
+              const dispose = service[SERVICE_LIFECYCLE];
+              if (typeof dispose === 'function') await dispose();
+              else if (jobs) await jobs.close();
+            } else if (service.close) await service.close();
             else if (jobs) await jobs.close();
             if (jobs?.list().some((job) => job.admission === 'cleanup-pending'))
               throw new AppError('插件任务仍有资源等待领域恢复', 503, 'PLUGIN_CLEANUP_PENDING');

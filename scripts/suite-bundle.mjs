@@ -40,7 +40,13 @@ function validPath(path) {
       /^(?:objects\/[a-z]+-[a-z-]+|materials)\/[a-f0-9-]{36}-[a-f0-9]{64}\.(?:json|bin)$/.test(path))
   );
 }
-export function encodeSuiteBundle(format, raw) {
+function bundleLimit(options) {
+  const limit = options?.maximumBytes ?? SUITE_BUNDLE_LIMIT;
+  check(Number.isSafeInteger(limit) && limit >= 1024 * 1024 && limit <= 256 * 1024 ** 2, 'BUNDLE_LIMIT_OPTION');
+  return limit;
+}
+export function encodeSuiteBundle(format, raw, options) {
+  const maximumBytes = bundleLimit(options);
   check(/^sakura-[a-z][a-z-]+\/1$/.test(format), 'BUNDLE_FORMAT');
   check(Array.isArray(raw) && raw.length > 0 && raw.length <= 2000, 'BUNDLE_ENTRY_LIMIT');
   let total = 0;
@@ -52,9 +58,9 @@ export function encodeSuiteBundle(format, raw) {
           'BUNDLE_PATH',
         );
         seen.add(entry.path.toLowerCase());
-        check(entry.data instanceof Uint8Array && entry.data.byteLength <= SUITE_BUNDLE_LIMIT, 'BUNDLE_SIZE');
+        check(entry.data instanceof Uint8Array && entry.data.byteLength <= maximumBytes, 'BUNDLE_SIZE');
         total += entry.data.byteLength + Buffer.byteLength(entry.path) * 2 + 76;
-        check(total <= SUITE_BUNDLE_LIMIT, 'BUNDLE_SIZE');
+        check(total <= maximumBytes, 'BUNDLE_SIZE');
         const data = Buffer.from(entry.data);
         return { path: entry.path, data };
       })
@@ -92,7 +98,7 @@ export function encodeSuiteBundle(format, raw) {
     local.push(header, name, entry.data);
     central.push(directory, name);
     offset += header.length + name.length + entry.data.length;
-    check(offset <= SUITE_BUNDLE_LIMIT, 'BUNDLE_SIZE');
+    check(offset <= maximumBytes, 'BUNDLE_SIZE');
   }
   const centralBytes = central.reduce((n, b) => n + b.length, 0),
     end = Buffer.alloc(22);
@@ -101,12 +107,13 @@ export function encodeSuiteBundle(format, raw) {
   end.writeUInt16LE(entries.length, 10);
   end.writeUInt32LE(centralBytes, 12);
   end.writeUInt32LE(offset, 16);
-  check(offset + centralBytes + end.length <= SUITE_BUNDLE_LIMIT, 'BUNDLE_SIZE');
+  check(offset + centralBytes + end.length <= maximumBytes, 'BUNDLE_SIZE');
   return { data: Buffer.concat([...local, ...central, end]), manifest };
 }
-export function decodeSuiteBundle(raw, expectedFormat) {
+export function decodeSuiteBundle(raw, expectedFormat, options) {
+  const maximumBytes = bundleLimit(options);
   check(
-    raw instanceof Uint8Array && raw.byteLength >= 22 && raw.byteLength <= SUITE_BUNDLE_LIMIT,
+    raw instanceof Uint8Array && raw.byteLength >= 22 && raw.byteLength <= maximumBytes,
     'BUNDLE_SIZE',
   );
   const data = Buffer.from(raw);

@@ -1,0 +1,4 @@
+/** 开发工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {extforgeRoutes,extforgeHttp} from '../../shared/contracts/extforge-routes.generated.ts';
+export const manifest=definePlugin({id:'extforge-workbench',name:"开发工作台",description:"源码、表单、构建、用例、签名和目录导航",category:'development',experimental:true,requires:[pin('extforge-spaces'),pin('extforge-sources'),pin('extforge-manifests'),pin('extforge-interfaces'),pin('extforge-toolchains'),pin('extforge-builds'),pin('extforge-inspections'),pin('extforge-cases'),pin('extforge-trials'),pin('extforge-signatures'),pin('extforge-bundles'),pin('extforge-reviews'),pin('extforge-reports'),pin('extforge-exchange'),pin('extforge-catalogs')],systemDependencies:['extensionTrialRuntime'],services:['extforgeWorkbench'],contributes:{pages:['extension-authoring-studio'],http:extforgeHttp('workbench'),routes:extforgeRoutes('workbench')}});

@@ -1,0 +1,4 @@
+/** 训练工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {ctrainRoutes,ctrainHttp} from '../../shared/contracts/ctrain-routes.generated.ts';
+export const manifest=definePlugin({id:'ctrain-workbench',name:"训练工作台",description:"目标配置、候选矩阵、误差与模型导航",category:'development',experimental:true,requires:[pin('ctrain-spaces'),pin('ctrain-datasets'),pin('ctrain-targets'),pin('ctrain-partitions'),pin('ctrain-estimators'),pin('ctrain-searches'),pin('ctrain-runs'),pin('ctrain-predictions'),pin('ctrain-metrics'),pin('ctrain-comparisons'),pin('ctrain-explanations'),pin('ctrain-registry'),pin('ctrain-reports'),pin('ctrain-exchange')],systemDependencies:['classicalTrainingSessions'],services:['ctrainWorkbench'],contributes:{pages:['classical-training-lab'],http:ctrainHttp('workbench'),routes:ctrainRoutes('workbench')}});

@@ -1,0 +1,4 @@
+/** 协议工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {protostateRoutes,protostateHttp} from '../../shared/contracts/protostate-routes.generated.ts';
+export const manifest=definePlugin({id:'protostate-workbench',name:"协议工作台",description:"字节与字段联动、状态图、轨迹和失败导航",category:'development',experimental:true,requires:[pin('protostate-spaces'),pin('protostate-grammars'),pin('protostate-messages'),pin('protostate-machines'),pin('protostate-guards'),pin('protostate-scenarios'),pin('protostate-generators'),pin('protostate-targets'),pin('protostate-runs'),pin('protostate-traces'),pin('protostate-properties'),pin('protostate-reductions'),pin('protostate-reports'),pin('protostate-exchange')],systemDependencies:['protocolScenarioSessions'],services:['protostateWorkbench'],contributes:{pages:['protocol-state-lab'],http:protostateHttp('workbench'),routes:protostateRoutes('workbench')}});

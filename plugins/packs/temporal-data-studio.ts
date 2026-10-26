@@ -1,0 +1,3 @@
+/** 时间数据工作室的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'temporal-data-studio',name:"时间数据工作室",description:"时间数据工作室：定义、处理、复核和交接。",members:[member('temporaldesk-spaces'),member('temporaldesk-sources'),member('temporaldesk-calendars'),member('temporaldesk-semantics'),member('temporaldesk-alignment'),member('temporaldesk-intervals'),member('temporaldesk-windows'),member('temporaldesk-latepolicy'),member('temporaldesk-runs'),member('temporaldesk-comparisons'),member('temporaldesk-reviews'),member('temporaldesk-reports'),member('temporaldesk-exchange'),member('temporaldesk-workbench')]});

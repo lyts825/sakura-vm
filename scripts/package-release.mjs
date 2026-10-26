@@ -5,9 +5,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { writeReleaseManifest } from './release-manifest.mjs';
+import {checkSeventhDistribution} from './check-seventh-distribution.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+const declarations=await readFile(join(root,'shared/plugin-catalog.generated.ts'),'utf8');
+const pluginCount=[...declarations.matchAll(/import \{ manifest as /g)].length,packCount=[...declarations.matchAll(/import \{ pack as /g)].length;
 for (const name of ['graphql', 'selfsigned', 'ssh2', 'ws', 'zod', 'undici', 'pg'])
   if (!Object.hasOwn(manifest.dependencies, name)) throw new Error(`缺少运行依赖：${name}`);
 // Validate the completed build before creating a package or release manifest.
@@ -100,6 +103,12 @@ for (const file of [
   'browser-cli.mjs',
   'browser-verify.mjs',
   'suite-cli.mjs',
+  'seventh-cli.mjs',
+  'seventh-verify.mjs',
+  'seventh-image-cli.mjs',
+  'seventh-material-cli.mjs',
+  'seventh-runtime-assets.mjs',
+  'check-seventh-distribution.mjs',
   'suite-commands.generated.mjs',
   'suite-verify.mjs',
   'supply-verify.mjs',
@@ -119,6 +128,9 @@ for (const file of [
   'release-manifest.mjs',
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
+// Help uses only built-in Node modules, so validate all aliases before installing dependencies.
+const seventhHelp=spawnSync(process.execPath,['--input-type=module','--eval',"import {seventhCli,seventhAliases} from './scripts/seventh-cli.mjs';for(const alias of seventhAliases){const value=await seventhCli(alias,['help']);if(!value?.help?.includes('run-template'))throw new Error(alias+' help unavailable');}console.log('20 seventh CLIs checked');"],{cwd:output,encoding:'utf8',windowsHide:true,env:{...process.env,NODE_OPTIONS:''}});
+if(seventhHelp.status!==0)throw new Error('第七批纯 Node CLI 不可用：'+(seventhHelp.stderr||seventhHelp.error?.message||seventhHelp.status));
 await cp(join(root, 'docs', 'delivery-cli.md'), join(output, '.sakura-server', 'docs', 'delivery-cli.md'));
 for (const file of [
   'foundry-workbench.md',
@@ -131,8 +143,12 @@ for (const file of [
   'localization-studio.md',
   'incident-desk.md',
   'suite-capacity.md',
+  'seventh-tool-images.md',
+  'seventh-plugin-packs.md',
+  'release-2.12.0.md',
 ])
   await cp(join(root, 'docs', file), join(output, '.sakura-server', 'docs', file));
+await checkSeventhDistribution(output);
 for (const [command, file] of [
   ['foundry', 'foundry.mjs'],
   ['app-runtime', 'app-runtime.mjs'],
@@ -193,7 +209,12 @@ const readme = [
   '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行依赖以随包 `package.json` 为准。',
   '已配置含 Linux QEMU、swtpm、virtiofsd 和 OVMF 的 WSL 发行版时，也可先运行 `npm run check:wsl`，再用 `npm run start:wsl` 启动可用 TPM 与 Virtio-FS 的 Linux 后端；数据单独保存在该发行版的 Linux 文件系统中。',
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
-  `${manifest.version} 共包含 201 个插件、26 个插件包。新增 browser-lab、supply-audit、database-evolution、event-lab、model-evaluation、media-studio、localization-studio、flow-studio、incident-desk 和 learning-lab 十个完整包；各包按需启用，使用指南与版本说明位于 .sakura-server/docs。固定工具的预备镜像、容量和支持平台见 suite-execution.md。模型评测已验收合成协议，真实本地模型调用验收按用户要求跳过，未下载模型。安全修复说明见 .sakura-server/docs/release-2.8.1.md。`,
+  `${manifest.version} 共包含 ${pluginCount} 个插件、${packCount} 个插件包。第七批新增 20 个插件包、285 个插件。插件按需启用，重启后加载。使用指南与版本说明位于 .sakura-server/docs。`,
+  '第七批 CLI 使用 `npm run sakura -- <别名> help`。20 个别名为 quality-desk、lineage-atlas、entity-desk、temporal-desk、geo-desk、graph-desk、experiment-plan、features、trainlab、solve、extractdoc、designsys、forms、notifytpl、schedule-lab、extension-forge、dependency-solve、protocol-state、replica-lab 和 service-virtualization。`templates` 读取 3 个本包模板；`run-template <workspaceId> <templateId> [覆盖参数.json]` 保存预览计划后执行固定动作。',
+  'Windows x64 原生训练、求解和文档提取的完整受管运行时位于 `.sakura-server/assets/seventh-creation/`，随包核验逐文件 SHA-256。工具继续使用无网络能力的 AppContainer 和 Job。其他平台拒绝原生动作。核验分发资源可运行 `node scripts/check-seventh-distribution.mjs`。',
+  '四个 VM 包先显式导入已预备的独立 Alpine x86_64 qcow2：`npm run sakura -- extension-forge image-import <prepared.qcow2>`。导入仅核验并登记原镜像字节，首个 VM 任务另核验客户机实际工具。运行模板用 `--image <返回的镜像 SHA-256> --seconds 120`。镜像至少须有 SSH、Python 3 和 cgroup v2；扩展编译另需 clang、LLD 的 wasm32 目标。工具实际版本保存在执行回执。运行包不含本地测试镜像，不会自动联网安装 VM 工具。每个 profile 全局最多 1 个活动或未核销会话。新安装的完整准备步骤见 `.sakura-server/docs/seventh-tool-images.md`。',
+  '镜像上传中断后先运行 `image-imports`，用 `image-import <原文件> --resume <原上传 ID>` 继续。明确放弃用 `image-discard <原上传 ID>`。任务原计划可用领域 `status`、`reconcile` 查询，执行不自动重放。退出码 0 为操作完成，1 为已知失败，2 为输入或传输失败，3 为不确定或不支持，4 为清理未确认；用户中断沿用 130。',
+  '第七批交接封套最大 64 MiB。离线核验可运行 `node scripts/seventh-verify.mjs <packId> <交接.zip>`，无需启动宿主服务。离线校验验证封套和材料完整性，外来结果、身份和旧批准仍作为外部参考，不能直接成为本地执行通过。',
   '可分别启用 foundry（9 个插件）、app-runtime（9 个插件）和 data-lab（10 个插件）。三个包分别完成镜像制作、应用部署维护和数据实验，互不要求安装对方。纯 Node CLI 入口为 npm run foundry -- help、npm run app-runtime -- help、npm run data -- help；完整使用指南随包保存在 .sakura-server/docs/foundry-workbench.md、app-runtime-pack.md 和 data-lab.md。依赖准备与实际执行均由用户显式提交。',
   '',
   '也可分别启用 integration-lab（11 个插件）、resilience-lab（10 个插件）和 knowledge-studio（10 个插件），完成接口联调、隔离副本故障演练和材料整理与引用发布。CLI 入口为 npm run integration -- help、npm run resilience -- help、npm run knowledge -- help；使用指南为 .sakura-server/docs/integration-lab.md、resilience-lab.md 和 knowledge-studio.md。故障演练需通过本机监管实测，Windows x64 以外的平台明确拒绝；知识上传与检索无需创建虚拟机。',

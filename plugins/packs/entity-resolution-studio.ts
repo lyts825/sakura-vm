@@ -1,0 +1,3 @@
+/** 实体归并工作室的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'entity-resolution-studio',name:"实体归并工作室",description:"实体归并工作室：定义、处理、复核和交接。",members:[member('entitydesk-spaces'),member('entitydesk-sources'),member('entitydesk-normalization'),member('entitydesk-blocks'),member('entitydesk-comparators'),member('entitydesk-candidates'),member('entitydesk-constraints'),member('entitydesk-clusters'),member('entitydesk-decisions'),member('entitydesk-evaluations'),member('entitydesk-survivors'),member('entitydesk-versions'),member('entitydesk-reports'),member('entitydesk-exchange'),member('entitydesk-workbench')]});

@@ -4,6 +4,30 @@
  */
 import type { BrowserIdeV1, CapabilityChecksV1, ColdMigrationsV1, CommunityPluginsV1, DisasterRecoveryDrillV1, HaHostFailoverV1, HaLocalFailoversV1, HostMountsV1, HostPeersV1, MediaDevicesV1, NotebookEnvironmentsV1, ProcessInteropV1, ProjectTerminalsV1, SnapshotReplicationsV1, TrustedBootServiceV1, VirtioFsSharesV1 } from './service-contracts/v1.ts';
 export interface HostServiceContracts {
+// seventh-kernel-hosts
+  batchQualityCompute: import('./service-contracts/v1.ts').BatchQualityComputeV1;
+  lineageGraphCompute: import('./service-contracts/v1.ts').LineageGraphComputeV1;
+  entityMatchingCompute: import('./service-contracts/v1.ts').EntityMatchingComputeV1;
+  temporalSeriesCompute: import('./service-contracts/v1.ts').TemporalSeriesComputeV1;
+  vectorGeometryCompute: import('./service-contracts/v1.ts').VectorGeometryComputeV1;
+  relationGraphCompute: import('./service-contracts/v1.ts').RelationGraphComputeV1;
+  controlledExperimentCompute: import('./service-contracts/v1.ts').ControlledExperimentComputeV1;
+  featureTransformCompute: import('./service-contracts/v1.ts').FeatureTransformComputeV1;
+  classicalTrainingSessions: import('./service-contracts/v1.ts').ClassicalTrainingSessionsV1;
+  constraintSolveSessions: import('./service-contracts/v1.ts').ConstraintSolveSessionsV1;
+  documentExtractionSessions: import('./service-contracts/v1.ts').DocumentExtractionSessionsV1;
+  designSystemCompile: import('./service-contracts/v1.ts').DesignSystemCompileV1;
+  formDefinitionEvaluate: import('./service-contracts/v1.ts').FormDefinitionEvaluateV1;
+  notificationRenderCompute: import('./service-contracts/v1.ts').NotificationRenderComputeV1;
+  scheduleModelCompute: import('./service-contracts/v1.ts').ScheduleModelComputeV1;
+  extensionTrialRuntime: import('./service-contracts/v1.ts').ExtensionTrialRuntimeV1;
+  dependencyConstraintCompute: import('./service-contracts/v1.ts').DependencyConstraintComputeV1;
+  replicaModelCompute: import('./service-contracts/v1.ts').ReplicaModelComputeV1;
+// seventh-kernel-hosts-end
+  schedulerProbeSessions: import('./service-contracts/v1.ts').SchedulerProbeSessionsV1;
+  extensionBuildSessions: import('./service-contracts/v1.ts').ExtensionBuildSessionsV1;
+  protocolScenarioSessions: import('./service-contracts/v1.ts').ProtocolScenarioSessionsV1;
+  multiServiceVirtualizationSessions: import('./service-contracts/v1.ts').MultiServiceVirtualizationSessionsV1;
   evaluationCalls: import('./service-contracts/v1.ts').EvaluationCallsV1;
   learningToolSessions: import('./service-contracts/v1.ts').LearningToolSessionsV1;
   mediaTasks: import('./service-contracts/v1.ts').MediaTasksV1;

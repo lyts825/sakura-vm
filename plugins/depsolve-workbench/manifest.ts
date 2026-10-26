@@ -1,0 +1,4 @@
+/** 依赖工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {depsolveRoutes,depsolveHttp} from '../../shared/contracts/depsolve-routes.generated.ts';
+export const manifest=definePlugin({id:'depsolve-workbench',name:"依赖工作台",description:"需求编辑、选择路径、冲突定位和对比导航",category:'development',experimental:true,requires:[pin('depsolve-spaces'),pin('depsolve-catalogs'),pin('depsolve-roots'),pin('depsolve-platforms'),pin('depsolve-constraints'),pin('depsolve-candidates'),pin('depsolve-solves'),pin('depsolve-proofs'),pin('depsolve-comparisons'),pin('depsolve-locks'),pin('depsolve-reports'),pin('depsolve-exchange')],systemDependencies:['dependencyConstraintCompute'],services:['depsolveWorkbench'],contributes:{pages:['dependency-resolution-studio'],http:depsolveHttp('workbench'),routes:depsolveRoutes('workbench')}});

@@ -146,6 +146,7 @@ export const HOST_BUDGETS: Readonly<Record<string, Budget>> = Object.freeze({
   'network.worker': { capacity: 8 },
   'compute.worker': { capacity: 4 },
   'compute.memory': { capacity: 512 * 1024 ** 2, reserved: 32 * 1024 ** 2 },
+  'native.memory': { capacity: 2 * 1024 ** 3 },
 });
 
 /**

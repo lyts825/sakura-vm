@@ -1,0 +1,4 @@
+/** 时间交接的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {temporaldeskRoutes,temporaldeskHttp} from '../../shared/contracts/temporaldesk-routes.generated.ts';
+export const manifest=definePlugin({id:'temporaldesk-exchange',name:"时间交接",description:"原记录、日历档案及派生版本交换",category:'development',experimental:true,requires:[pin('temporaldesk-spaces'),pin('temporaldesk-sources'),pin('temporaldesk-calendars'),pin('temporaldesk-semantics'),pin('temporaldesk-alignment'),pin('temporaldesk-intervals'),pin('temporaldesk-windows'),pin('temporaldesk-latepolicy'),pin('temporaldesk-runs'),pin('temporaldesk-comparisons'),pin('temporaldesk-reviews'),pin('temporaldesk-reports')],services:['temporaldeskExchange'],contributes:{http:temporaldeskHttp('exchange'),routes:temporaldeskRoutes('exchange')}});

@@ -1,0 +1,3 @@
+/** 关系图分析工作室的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'graph-insight-studio',name:"关系图分析工作室",description:"关系图分析工作室：定义、处理、复核和交接。",members:[member('graphdesk-spaces'),member('graphdesk-sources'),member('graphdesk-entities'),member('graphdesk-edges'),member('graphdesk-projections'),member('graphdesk-queries'),member('graphdesk-algorithms'),member('graphdesk-runs'),member('graphdesk-comparisons'),member('graphdesk-annotations'),member('graphdesk-views'),member('graphdesk-reports'),member('graphdesk-exchange'),member('graphdesk-workbench')]});

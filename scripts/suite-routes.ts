@@ -10,8 +10,11 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { supplyHttpSchemas } from '../shared/contracts/supply-http.ts';
 import { localeHttpSchemas } from '../shared/contracts/locale-http.ts';
 import { incidentHttpSchemas } from '../shared/contracts/incident-http.ts';
-const suites = { learning: learningHttpSchemas, media: mediaHttpSchemas, flow: flowHttpSchemas, event: eventHttpSchemas, browser: browserHttpSchemas, database: databaseHttpSchemas, evaluation: evaluationHttpSchemas, supply: supplyHttpSchemas, locale: localeHttpSchemas, incident: incidentHttpSchemas };
-const roots: { [K in keyof typeof suites]: keyof (typeof suites)[K] } = {
+import { seventhHttpSchemas } from '../shared/contracts/seventh-http.ts';
+import seventhCatalog from '../shared/seventh-catalog.json';
+const suites = { ...seventhHttpSchemas, learning: learningHttpSchemas, media: mediaHttpSchemas, flow: flowHttpSchemas, event: eventHttpSchemas, browser: browserHttpSchemas, database: databaseHttpSchemas, evaluation: evaluationHttpSchemas, supply: supplyHttpSchemas, locale: localeHttpSchemas, incident: incidentHttpSchemas };
+const roots: Record<string,string> = {
+  ...Object.fromEntries(seventhCatalog.map(p=>[p.prefix,p.root.slice(p.prefix.length+1)])),
   flow: 'definitions',
   media: 'sources',
   learning: 'courses',
@@ -30,6 +33,13 @@ for (const [prefix, domain] of Object.entries(roots)) {
     throw new Error(`Suite root capacity contract is missing: ${prefix}-${domain}`);
 }
 const checking = process.argv.includes('--check');
+// 新二十包共用的控制方法仅保存一次；成员仍从同一严格方法表生成完整声明。
+const seventhPrefixes=new Set(seventhCatalog.map(pack=>pack.prefix));
+const seventhMembers=Object.values(seventhHttpSchemas).flatMap(domains=>Object.entries(domains).filter(([name])=>name!=='exchange').map(([,methods])=>Object.fromEntries(Object.entries(methods).map(([name,value])=>[name,value.read]))));
+const seventhBase=Object.fromEntries(Object.entries(seventhMembers[0]).filter(([name,read])=>seventhMembers.every(methods=>Object.hasOwn(methods,name)&&methods[name]===read)));
+const baseSource='/** 由 scripts/suite-routes.ts 生成的共同控制策略；成员展开后仍保留完整路由。 */\nexport const seventhRouteBase='+JSON.stringify(seventhBase,null,2)+' as const;\n';
+const baseTarget=new URL('../shared/contracts/seventh-routes-base.generated.ts',import.meta.url);
+if(checking){if((await readFile(baseTarget,'utf8')).replaceAll('\r\n','\n')!==baseSource)throw new Error('Seventh route base is stale');}else await writeFile(baseTarget,baseSource);
 const registrySource =
   '/** 由 scripts/suite-routes.ts 生成的轻量领域路由索引。 */\n' +
   Object.keys(suites)
@@ -58,7 +68,8 @@ for (const [prefix, domains] of Object.entries(suites)) {
       Object.fromEntries(Object.entries(methods).map(([method, schema]) => [method, schema.read])),
     ]),
   );
-  const source = `/** 由 scripts/suite-routes.ts 生成，禁止手工修改。 */\nimport { suiteRoutes, suiteHttp } from '../suite-routes.ts';\nexport const ${prefix}RouteMetadata = ${JSON.stringify(metadata, null, 2)} as const;\nexport type ${prefix[0].toUpperCase() + prefix.slice(1)}RouteDomain = keyof typeof ${prefix}RouteMetadata;\nexport const ${prefix}Routes = (domain: ${prefix[0].toUpperCase() + prefix.slice(1)}RouteDomain) => suiteRoutes('${prefix}', domain, ${prefix}RouteMetadata[domain]);\nexport const ${prefix}Http = (domain: ${prefix[0].toUpperCase() + prefix.slice(1)}RouteDomain) => suiteHttp('${prefix}', domain);\n`;
+  const shared=seventhPrefixes.has(prefix),literal=shared?'{' +Object.entries(metadata).map(([domain,methods])=>JSON.stringify(domain)+':'+(domain==='exchange'?JSON.stringify(methods):'{...seventhRouteBase,'+Object.entries(methods).filter(([name])=>!Object.hasOwn(seventhBase,name)).map(([name,read])=>JSON.stringify(name)+':'+read).join(',')+'}')).join(',')+'}':JSON.stringify(metadata,null,2);
+  const source = `/** 由 scripts/suite-routes.ts 生成，禁止手工修改。 */\nimport { suiteRoutes, suiteHttp } from '../suite-routes.ts';\n${shared?"import { seventhRouteBase } from './seventh-routes-base.generated.ts';\n":''}export const ${prefix}RouteMetadata = ${literal} as const;\nexport type ${prefix[0].toUpperCase() + prefix.slice(1)}RouteDomain = keyof typeof ${prefix}RouteMetadata;\nexport const ${prefix}Routes = (domain: ${prefix[0].toUpperCase() + prefix.slice(1)}RouteDomain) => suiteRoutes('${prefix}', domain, ${prefix}RouteMetadata[domain]);\nexport const ${prefix}Http = (domain: ${prefix[0].toUpperCase() + prefix.slice(1)}RouteDomain) => suiteHttp('${prefix}', domain);\n`;
   const target = new URL(`../shared/contracts/${prefix}-routes.generated.ts`, import.meta.url);
   if (checking) {
     if ((await readFile(target, 'utf8')).replaceAll('\r\n', '\n') !== source)

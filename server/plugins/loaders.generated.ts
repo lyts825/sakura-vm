@@ -56,6 +56,64 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'commands': () => import('../../plugins/commands/server.ts'),
   /** 按需加载 containers 的固定服务入口，无外部路径参数。 / Load the fixed containers service entry on demand, with no external path input. */
   'containers': () => import('../../plugins/containers/server.ts'),
+  /** 按需加载 csolve-conflicts 的固定服务入口，无外部路径参数。 / Load the fixed csolve-conflicts service entry on demand, with no external path input. */
+  'csolve-conflicts': () => import('../../plugins/csolve-conflicts/server.ts'),
+  /** 按需加载 csolve-constraints 的固定服务入口，无外部路径参数。 / Load the fixed csolve-constraints service entry on demand, with no external path input. */
+  'csolve-constraints': () => import('../../plugins/csolve-constraints/server.ts'),
+  /** 按需加载 csolve-decisions 的固定服务入口，无外部路径参数。 / Load the fixed csolve-decisions service entry on demand, with no external path input. */
+  'csolve-decisions': () => import('../../plugins/csolve-decisions/server.ts'),
+  /** 按需加载 csolve-domains 的固定服务入口，无外部路径参数。 / Load the fixed csolve-domains service entry on demand, with no external path input. */
+  'csolve-domains': () => import('../../plugins/csolve-domains/server.ts'),
+  /** 按需加载 csolve-exchange 的固定服务入口，无外部路径参数。 / Load the fixed csolve-exchange service entry on demand, with no external path input. */
+  'csolve-exchange': () => import('../../plugins/csolve-exchange/server.ts'),
+  /** 按需加载 csolve-objectives 的固定服务入口，无外部路径参数。 / Load the fixed csolve-objectives service entry on demand, with no external path input. */
+  'csolve-objectives': () => import('../../plugins/csolve-objectives/server.ts'),
+  /** 按需加载 csolve-runs 的固定服务入口，无外部路径参数。 / Load the fixed csolve-runs service entry on demand, with no external path input. */
+  'csolve-runs': () => import('../../plugins/csolve-runs/server.ts'),
+  /** 按需加载 csolve-scenarios 的固定服务入口，无外部路径参数。 / Load the fixed csolve-scenarios service entry on demand, with no external path input. */
+  'csolve-scenarios': () => import('../../plugins/csolve-scenarios/server.ts'),
+  /** 按需加载 csolve-sensitivity 的固定服务入口，无外部路径参数。 / Load the fixed csolve-sensitivity service entry on demand, with no external path input. */
+  'csolve-sensitivity': () => import('../../plugins/csolve-sensitivity/server.ts'),
+  /** 按需加载 csolve-solutions 的固定服务入口，无外部路径参数。 / Load the fixed csolve-solutions service entry on demand, with no external path input. */
+  'csolve-solutions': () => import('../../plugins/csolve-solutions/server.ts'),
+  /** 按需加载 csolve-spaces 的固定服务入口，无外部路径参数。 / Load the fixed csolve-spaces service entry on demand, with no external path input. */
+  'csolve-spaces': () => import('../../plugins/csolve-spaces/server.ts'),
+  /** 按需加载 csolve-validation 的固定服务入口，无外部路径参数。 / Load the fixed csolve-validation service entry on demand, with no external path input. */
+  'csolve-validation': () => import('../../plugins/csolve-validation/server.ts'),
+  /** 按需加载 csolve-variables 的固定服务入口，无外部路径参数。 / Load the fixed csolve-variables service entry on demand, with no external path input. */
+  'csolve-variables': () => import('../../plugins/csolve-variables/server.ts'),
+  /** 按需加载 csolve-workbench 的固定服务入口，无外部路径参数。 / Load the fixed csolve-workbench service entry on demand, with no external path input. */
+  'csolve-workbench': () => import('../../plugins/csolve-workbench/server.ts'),
+  /** 按需加载 ctrain-comparisons 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-comparisons service entry on demand, with no external path input. */
+  'ctrain-comparisons': () => import('../../plugins/ctrain-comparisons/server.ts'),
+  /** 按需加载 ctrain-datasets 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-datasets service entry on demand, with no external path input. */
+  'ctrain-datasets': () => import('../../plugins/ctrain-datasets/server.ts'),
+  /** 按需加载 ctrain-estimators 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-estimators service entry on demand, with no external path input. */
+  'ctrain-estimators': () => import('../../plugins/ctrain-estimators/server.ts'),
+  /** 按需加载 ctrain-exchange 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-exchange service entry on demand, with no external path input. */
+  'ctrain-exchange': () => import('../../plugins/ctrain-exchange/server.ts'),
+  /** 按需加载 ctrain-explanations 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-explanations service entry on demand, with no external path input. */
+  'ctrain-explanations': () => import('../../plugins/ctrain-explanations/server.ts'),
+  /** 按需加载 ctrain-metrics 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-metrics service entry on demand, with no external path input. */
+  'ctrain-metrics': () => import('../../plugins/ctrain-metrics/server.ts'),
+  /** 按需加载 ctrain-partitions 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-partitions service entry on demand, with no external path input. */
+  'ctrain-partitions': () => import('../../plugins/ctrain-partitions/server.ts'),
+  /** 按需加载 ctrain-predictions 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-predictions service entry on demand, with no external path input. */
+  'ctrain-predictions': () => import('../../plugins/ctrain-predictions/server.ts'),
+  /** 按需加载 ctrain-registry 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-registry service entry on demand, with no external path input. */
+  'ctrain-registry': () => import('../../plugins/ctrain-registry/server.ts'),
+  /** 按需加载 ctrain-reports 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-reports service entry on demand, with no external path input. */
+  'ctrain-reports': () => import('../../plugins/ctrain-reports/server.ts'),
+  /** 按需加载 ctrain-runs 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-runs service entry on demand, with no external path input. */
+  'ctrain-runs': () => import('../../plugins/ctrain-runs/server.ts'),
+  /** 按需加载 ctrain-searches 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-searches service entry on demand, with no external path input. */
+  'ctrain-searches': () => import('../../plugins/ctrain-searches/server.ts'),
+  /** 按需加载 ctrain-spaces 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-spaces service entry on demand, with no external path input. */
+  'ctrain-spaces': () => import('../../plugins/ctrain-spaces/server.ts'),
+  /** 按需加载 ctrain-targets 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-targets service entry on demand, with no external path input. */
+  'ctrain-targets': () => import('../../plugins/ctrain-targets/server.ts'),
+  /** 按需加载 ctrain-workbench 的固定服务入口，无外部路径参数。 / Load the fixed ctrain-workbench service entry on demand, with no external path input. */
+  'ctrain-workbench': () => import('../../plugins/ctrain-workbench/server.ts'),
   /** 按需加载 data-datasets 的固定服务入口，无外部路径参数。 / Load the fixed data-datasets service entry on demand, with no external path input. */
   'data-datasets': () => import('../../plugins/data-datasets/server.ts'),
   /** 按需加载 data-exchange 的固定服务入口，无外部路径参数。 / Load the fixed data-exchange service entry on demand, with no external path input. */
@@ -112,8 +170,118 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'delivery-runners': () => import('../../plugins/delivery-runners/server.ts'),
   /** 按需加载 delivery-workbench 的固定服务入口，无外部路径参数。 / Load the fixed delivery-workbench service entry on demand, with no external path input. */
   'delivery-workbench': () => import('../../plugins/delivery-workbench/server.ts'),
+  /** 按需加载 depsolve-candidates 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-candidates service entry on demand, with no external path input. */
+  'depsolve-candidates': () => import('../../plugins/depsolve-candidates/server.ts'),
+  /** 按需加载 depsolve-catalogs 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-catalogs service entry on demand, with no external path input. */
+  'depsolve-catalogs': () => import('../../plugins/depsolve-catalogs/server.ts'),
+  /** 按需加载 depsolve-comparisons 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-comparisons service entry on demand, with no external path input. */
+  'depsolve-comparisons': () => import('../../plugins/depsolve-comparisons/server.ts'),
+  /** 按需加载 depsolve-constraints 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-constraints service entry on demand, with no external path input. */
+  'depsolve-constraints': () => import('../../plugins/depsolve-constraints/server.ts'),
+  /** 按需加载 depsolve-exchange 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-exchange service entry on demand, with no external path input. */
+  'depsolve-exchange': () => import('../../plugins/depsolve-exchange/server.ts'),
+  /** 按需加载 depsolve-locks 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-locks service entry on demand, with no external path input. */
+  'depsolve-locks': () => import('../../plugins/depsolve-locks/server.ts'),
+  /** 按需加载 depsolve-platforms 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-platforms service entry on demand, with no external path input. */
+  'depsolve-platforms': () => import('../../plugins/depsolve-platforms/server.ts'),
+  /** 按需加载 depsolve-proofs 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-proofs service entry on demand, with no external path input. */
+  'depsolve-proofs': () => import('../../plugins/depsolve-proofs/server.ts'),
+  /** 按需加载 depsolve-reports 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-reports service entry on demand, with no external path input. */
+  'depsolve-reports': () => import('../../plugins/depsolve-reports/server.ts'),
+  /** 按需加载 depsolve-roots 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-roots service entry on demand, with no external path input. */
+  'depsolve-roots': () => import('../../plugins/depsolve-roots/server.ts'),
+  /** 按需加载 depsolve-solves 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-solves service entry on demand, with no external path input. */
+  'depsolve-solves': () => import('../../plugins/depsolve-solves/server.ts'),
+  /** 按需加载 depsolve-spaces 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-spaces service entry on demand, with no external path input. */
+  'depsolve-spaces': () => import('../../plugins/depsolve-spaces/server.ts'),
+  /** 按需加载 depsolve-workbench 的固定服务入口，无外部路径参数。 / Load the fixed depsolve-workbench service entry on demand, with no external path input. */
+  'depsolve-workbench': () => import('../../plugins/depsolve-workbench/server.ts'),
   /** 按需加载 desktop 的固定服务入口，无外部路径参数。 / Load the fixed desktop service entry on demand, with no external path input. */
   'desktop': () => import('../../plugins/desktop/server.ts'),
+  /** 按需加载 dextract-checks 的固定服务入口，无外部路径参数。 / Load the fixed dextract-checks service entry on demand, with no external path input. */
+  'dextract-checks': () => import('../../plugins/dextract-checks/server.ts'),
+  /** 按需加载 dextract-corrections 的固定服务入口，无外部路径参数。 / Load the fixed dextract-corrections service entry on demand, with no external path input. */
+  'dextract-corrections': () => import('../../plugins/dextract-corrections/server.ts'),
+  /** 按需加载 dextract-datasets 的固定服务入口，无外部路径参数。 / Load the fixed dextract-datasets service entry on demand, with no external path input. */
+  'dextract-datasets': () => import('../../plugins/dextract-datasets/server.ts'),
+  /** 按需加载 dextract-exchange 的固定服务入口，无外部路径参数。 / Load the fixed dextract-exchange service entry on demand, with no external path input. */
+  'dextract-exchange': () => import('../../plugins/dextract-exchange/server.ts'),
+  /** 按需加载 dextract-fields 的固定服务入口，无外部路径参数。 / Load the fixed dextract-fields service entry on demand, with no external path input. */
+  'dextract-fields': () => import('../../plugins/dextract-fields/server.ts'),
+  /** 按需加载 dextract-layouts 的固定服务入口，无外部路径参数。 / Load the fixed dextract-layouts service entry on demand, with no external path input. */
+  'dextract-layouts': () => import('../../plugins/dextract-layouts/server.ts'),
+  /** 按需加载 dextract-ocr 的固定服务入口，无外部路径参数。 / Load the fixed dextract-ocr service entry on demand, with no external path input. */
+  'dextract-ocr': () => import('../../plugins/dextract-ocr/server.ts'),
+  /** 按需加载 dextract-pages 的固定服务入口，无外部路径参数。 / Load the fixed dextract-pages service entry on demand, with no external path input. */
+  'dextract-pages': () => import('../../plugins/dextract-pages/server.ts'),
+  /** 按需加载 dextract-reviews 的固定服务入口，无外部路径参数。 / Load the fixed dextract-reviews service entry on demand, with no external path input. */
+  'dextract-reviews': () => import('../../plugins/dextract-reviews/server.ts'),
+  /** 按需加载 dextract-schemas 的固定服务入口，无外部路径参数。 / Load the fixed dextract-schemas service entry on demand, with no external path input. */
+  'dextract-schemas': () => import('../../plugins/dextract-schemas/server.ts'),
+  /** 按需加载 dextract-sources 的固定服务入口，无外部路径参数。 / Load the fixed dextract-sources service entry on demand, with no external path input. */
+  'dextract-sources': () => import('../../plugins/dextract-sources/server.ts'),
+  /** 按需加载 dextract-spaces 的固定服务入口，无外部路径参数。 / Load the fixed dextract-spaces service entry on demand, with no external path input. */
+  'dextract-spaces': () => import('../../plugins/dextract-spaces/server.ts'),
+  /** 按需加载 dextract-tables 的固定服务入口，无外部路径参数。 / Load the fixed dextract-tables service entry on demand, with no external path input. */
+  'dextract-tables': () => import('../../plugins/dextract-tables/server.ts'),
+  /** 按需加载 dextract-workbench 的固定服务入口，无外部路径参数。 / Load the fixed dextract-workbench service entry on demand, with no external path input. */
+  'dextract-workbench': () => import('../../plugins/dextract-workbench/server.ts'),
+  /** 按需加载 dsys-builds 的固定服务入口，无外部路径参数。 / Load the fixed dsys-builds service entry on demand, with no external path input. */
+  'dsys-builds': () => import('../../plugins/dsys-builds/server.ts'),
+  /** 按需加载 dsys-checks 的固定服务入口，无外部路径参数。 / Load the fixed dsys-checks service entry on demand, with no external path input. */
+  'dsys-checks': () => import('../../plugins/dsys-checks/server.ts'),
+  /** 按需加载 dsys-components 的固定服务入口，无外部路径参数。 / Load the fixed dsys-components service entry on demand, with no external path input. */
+  'dsys-components': () => import('../../plugins/dsys-components/server.ts'),
+  /** 按需加载 dsys-exchange 的固定服务入口，无外部路径参数。 / Load the fixed dsys-exchange service entry on demand, with no external path input. */
+  'dsys-exchange': () => import('../../plugins/dsys-exchange/server.ts'),
+  /** 按需加载 dsys-icons 的固定服务入口，无外部路径参数。 / Load the fixed dsys-icons service entry on demand, with no external path input. */
+  'dsys-icons': () => import('../../plugins/dsys-icons/server.ts'),
+  /** 按需加载 dsys-layouts 的固定服务入口，无外部路径参数。 / Load the fixed dsys-layouts service entry on demand, with no external path input. */
+  'dsys-layouts': () => import('../../plugins/dsys-layouts/server.ts'),
+  /** 按需加载 dsys-reviews 的固定服务入口，无外部路径参数。 / Load the fixed dsys-reviews service entry on demand, with no external path input. */
+  'dsys-reviews': () => import('../../plugins/dsys-reviews/server.ts'),
+  /** 按需加载 dsys-spaces 的固定服务入口，无外部路径参数。 / Load the fixed dsys-spaces service entry on demand, with no external path input. */
+  'dsys-spaces': () => import('../../plugins/dsys-spaces/server.ts'),
+  /** 按需加载 dsys-states 的固定服务入口，无外部路径参数。 / Load the fixed dsys-states service entry on demand, with no external path input. */
+  'dsys-states': () => import('../../plugins/dsys-states/server.ts'),
+  /** 按需加载 dsys-themes 的固定服务入口，无外部路径参数。 / Load the fixed dsys-themes service entry on demand, with no external path input. */
+  'dsys-themes': () => import('../../plugins/dsys-themes/server.ts'),
+  /** 按需加载 dsys-tokens 的固定服务入口，无外部路径参数。 / Load the fixed dsys-tokens service entry on demand, with no external path input. */
+  'dsys-tokens': () => import('../../plugins/dsys-tokens/server.ts'),
+  /** 按需加载 dsys-typography 的固定服务入口，无外部路径参数。 / Load the fixed dsys-typography service entry on demand, with no external path input. */
+  'dsys-typography': () => import('../../plugins/dsys-typography/server.ts'),
+  /** 按需加载 dsys-workbench 的固定服务入口，无外部路径参数。 / Load the fixed dsys-workbench service entry on demand, with no external path input. */
+  'dsys-workbench': () => import('../../plugins/dsys-workbench/server.ts'),
+  /** 按需加载 entitydesk-blocks 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-blocks service entry on demand, with no external path input. */
+  'entitydesk-blocks': () => import('../../plugins/entitydesk-blocks/server.ts'),
+  /** 按需加载 entitydesk-candidates 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-candidates service entry on demand, with no external path input. */
+  'entitydesk-candidates': () => import('../../plugins/entitydesk-candidates/server.ts'),
+  /** 按需加载 entitydesk-clusters 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-clusters service entry on demand, with no external path input. */
+  'entitydesk-clusters': () => import('../../plugins/entitydesk-clusters/server.ts'),
+  /** 按需加载 entitydesk-comparators 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-comparators service entry on demand, with no external path input. */
+  'entitydesk-comparators': () => import('../../plugins/entitydesk-comparators/server.ts'),
+  /** 按需加载 entitydesk-constraints 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-constraints service entry on demand, with no external path input. */
+  'entitydesk-constraints': () => import('../../plugins/entitydesk-constraints/server.ts'),
+  /** 按需加载 entitydesk-decisions 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-decisions service entry on demand, with no external path input. */
+  'entitydesk-decisions': () => import('../../plugins/entitydesk-decisions/server.ts'),
+  /** 按需加载 entitydesk-evaluations 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-evaluations service entry on demand, with no external path input. */
+  'entitydesk-evaluations': () => import('../../plugins/entitydesk-evaluations/server.ts'),
+  /** 按需加载 entitydesk-exchange 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-exchange service entry on demand, with no external path input. */
+  'entitydesk-exchange': () => import('../../plugins/entitydesk-exchange/server.ts'),
+  /** 按需加载 entitydesk-normalization 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-normalization service entry on demand, with no external path input. */
+  'entitydesk-normalization': () => import('../../plugins/entitydesk-normalization/server.ts'),
+  /** 按需加载 entitydesk-reports 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-reports service entry on demand, with no external path input. */
+  'entitydesk-reports': () => import('../../plugins/entitydesk-reports/server.ts'),
+  /** 按需加载 entitydesk-sources 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-sources service entry on demand, with no external path input. */
+  'entitydesk-sources': () => import('../../plugins/entitydesk-sources/server.ts'),
+  /** 按需加载 entitydesk-spaces 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-spaces service entry on demand, with no external path input. */
+  'entitydesk-spaces': () => import('../../plugins/entitydesk-spaces/server.ts'),
+  /** 按需加载 entitydesk-survivors 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-survivors service entry on demand, with no external path input. */
+  'entitydesk-survivors': () => import('../../plugins/entitydesk-survivors/server.ts'),
+  /** 按需加载 entitydesk-versions 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-versions service entry on demand, with no external path input. */
+  'entitydesk-versions': () => import('../../plugins/entitydesk-versions/server.ts'),
+  /** 按需加载 entitydesk-workbench 的固定服务入口，无外部路径参数。 / Load the fixed entitydesk-workbench service entry on demand, with no external path input. */
+  'entitydesk-workbench': () => import('../../plugins/entitydesk-workbench/server.ts'),
   /** 按需加载 evaluation-comparisons 的固定服务入口，无外部路径参数。 / Load the fixed evaluation-comparisons service entry on demand, with no external path input. */
   'evaluation-comparisons': () => import('../../plugins/evaluation-comparisons/server.ts'),
   /** 按需加载 evaluation-datasets 的固定服务入口，无外部路径参数。 / Load the fixed evaluation-datasets service entry on demand, with no external path input. */
@@ -158,6 +326,94 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'event-workbench': () => import('../../plugins/event-workbench/server.ts'),
   /** 按需加载 extensions 的固定服务入口，无外部路径参数。 / Load the fixed extensions service entry on demand, with no external path input. */
   'extensions': () => import('../../plugins/extensions/server.ts'),
+  /** 按需加载 extforge-builds 的固定服务入口，无外部路径参数。 / Load the fixed extforge-builds service entry on demand, with no external path input. */
+  'extforge-builds': () => import('../../plugins/extforge-builds/server.ts'),
+  /** 按需加载 extforge-bundles 的固定服务入口，无外部路径参数。 / Load the fixed extforge-bundles service entry on demand, with no external path input. */
+  'extforge-bundles': () => import('../../plugins/extforge-bundles/server.ts'),
+  /** 按需加载 extforge-cases 的固定服务入口，无外部路径参数。 / Load the fixed extforge-cases service entry on demand, with no external path input. */
+  'extforge-cases': () => import('../../plugins/extforge-cases/server.ts'),
+  /** 按需加载 extforge-catalogs 的固定服务入口，无外部路径参数。 / Load the fixed extforge-catalogs service entry on demand, with no external path input. */
+  'extforge-catalogs': () => import('../../plugins/extforge-catalogs/server.ts'),
+  /** 按需加载 extforge-exchange 的固定服务入口，无外部路径参数。 / Load the fixed extforge-exchange service entry on demand, with no external path input. */
+  'extforge-exchange': () => import('../../plugins/extforge-exchange/server.ts'),
+  /** 按需加载 extforge-inspections 的固定服务入口，无外部路径参数。 / Load the fixed extforge-inspections service entry on demand, with no external path input. */
+  'extforge-inspections': () => import('../../plugins/extforge-inspections/server.ts'),
+  /** 按需加载 extforge-interfaces 的固定服务入口，无外部路径参数。 / Load the fixed extforge-interfaces service entry on demand, with no external path input. */
+  'extforge-interfaces': () => import('../../plugins/extforge-interfaces/server.ts'),
+  /** 按需加载 extforge-manifests 的固定服务入口，无外部路径参数。 / Load the fixed extforge-manifests service entry on demand, with no external path input. */
+  'extforge-manifests': () => import('../../plugins/extforge-manifests/server.ts'),
+  /** 按需加载 extforge-reports 的固定服务入口，无外部路径参数。 / Load the fixed extforge-reports service entry on demand, with no external path input. */
+  'extforge-reports': () => import('../../plugins/extforge-reports/server.ts'),
+  /** 按需加载 extforge-reviews 的固定服务入口，无外部路径参数。 / Load the fixed extforge-reviews service entry on demand, with no external path input. */
+  'extforge-reviews': () => import('../../plugins/extforge-reviews/server.ts'),
+  /** 按需加载 extforge-signatures 的固定服务入口，无外部路径参数。 / Load the fixed extforge-signatures service entry on demand, with no external path input. */
+  'extforge-signatures': () => import('../../plugins/extforge-signatures/server.ts'),
+  /** 按需加载 extforge-sources 的固定服务入口，无外部路径参数。 / Load the fixed extforge-sources service entry on demand, with no external path input. */
+  'extforge-sources': () => import('../../plugins/extforge-sources/server.ts'),
+  /** 按需加载 extforge-spaces 的固定服务入口，无外部路径参数。 / Load the fixed extforge-spaces service entry on demand, with no external path input. */
+  'extforge-spaces': () => import('../../plugins/extforge-spaces/server.ts'),
+  /** 按需加载 extforge-toolchains 的固定服务入口，无外部路径参数。 / Load the fixed extforge-toolchains service entry on demand, with no external path input. */
+  'extforge-toolchains': () => import('../../plugins/extforge-toolchains/server.ts'),
+  /** 按需加载 extforge-trials 的固定服务入口，无外部路径参数。 / Load the fixed extforge-trials service entry on demand, with no external path input. */
+  'extforge-trials': () => import('../../plugins/extforge-trials/server.ts'),
+  /** 按需加载 extforge-workbench 的固定服务入口，无外部路径参数。 / Load the fixed extforge-workbench service entry on demand, with no external path input. */
+  'extforge-workbench': () => import('../../plugins/extforge-workbench/server.ts'),
+  /** 按需加载 feat-artifacts 的固定服务入口，无外部路径参数。 / Load the fixed feat-artifacts service entry on demand, with no external path input. */
+  'feat-artifacts': () => import('../../plugins/feat-artifacts/server.ts'),
+  /** 按需加载 feat-checks 的固定服务入口，无外部路径参数。 / Load the fixed feat-checks service entry on demand, with no external path input. */
+  'feat-checks': () => import('../../plugins/feat-checks/server.ts'),
+  /** 按需加载 feat-exchange 的固定服务入口，无外部路径参数。 / Load the fixed feat-exchange service entry on demand, with no external path input. */
+  'feat-exchange': () => import('../../plugins/feat-exchange/server.ts'),
+  /** 按需加载 feat-fits 的固定服务入口，无外部路径参数。 / Load the fixed feat-fits service entry on demand, with no external path input. */
+  'feat-fits': () => import('../../plugins/feat-fits/server.ts'),
+  /** 按需加载 feat-joins 的固定服务入口，无外部路径参数。 / Load the fixed feat-joins service entry on demand, with no external path input. */
+  'feat-joins': () => import('../../plugins/feat-joins/server.ts'),
+  /** 按需加载 feat-partitions 的固定服务入口，无外部路径参数。 / Load the fixed feat-partitions service entry on demand, with no external path input. */
+  'feat-partitions': () => import('../../plugins/feat-partitions/server.ts'),
+  /** 按需加载 feat-reviews 的固定服务入口，无外部路径参数。 / Load the fixed feat-reviews service entry on demand, with no external path input. */
+  'feat-reviews': () => import('../../plugins/feat-reviews/server.ts'),
+  /** 按需加载 feat-runs 的固定服务入口，无外部路径参数。 / Load the fixed feat-runs service entry on demand, with no external path input. */
+  'feat-runs': () => import('../../plugins/feat-runs/server.ts'),
+  /** 按需加载 feat-schemas 的固定服务入口，无外部路径参数。 / Load the fixed feat-schemas service entry on demand, with no external path input. */
+  'feat-schemas': () => import('../../plugins/feat-schemas/server.ts'),
+  /** 按需加载 feat-selections 的固定服务入口，无外部路径参数。 / Load the fixed feat-selections service entry on demand, with no external path input. */
+  'feat-selections': () => import('../../plugins/feat-selections/server.ts'),
+  /** 按需加载 feat-sources 的固定服务入口，无外部路径参数。 / Load the fixed feat-sources service entry on demand, with no external path input. */
+  'feat-sources': () => import('../../plugins/feat-sources/server.ts'),
+  /** 按需加载 feat-spaces 的固定服务入口，无外部路径参数。 / Load the fixed feat-spaces service entry on demand, with no external path input. */
+  'feat-spaces': () => import('../../plugins/feat-spaces/server.ts'),
+  /** 按需加载 feat-transforms 的固定服务入口，无外部路径参数。 / Load the fixed feat-transforms service entry on demand, with no external path input. */
+  'feat-transforms': () => import('../../plugins/feat-transforms/server.ts'),
+  /** 按需加载 feat-windows 的固定服务入口，无外部路径参数。 / Load the fixed feat-windows service entry on demand, with no external path input. */
+  'feat-windows': () => import('../../plugins/feat-windows/server.ts'),
+  /** 按需加载 feat-workbench 的固定服务入口，无外部路径参数。 / Load the fixed feat-workbench service entry on demand, with no external path input. */
+  'feat-workbench': () => import('../../plugins/feat-workbench/server.ts'),
+  /** 按需加载 fform-exchange 的固定服务入口，无外部路径参数。 / Load the fixed fform-exchange service entry on demand, with no external path input. */
+  'fform-exchange': () => import('../../plugins/fform-exchange/server.ts'),
+  /** 按需加载 fform-fields 的固定服务入口，无外部路径参数。 / Load the fixed fform-fields service entry on demand, with no external path input. */
+  'fform-fields': () => import('../../plugins/fform-fields/server.ts'),
+  /** 按需加载 fform-fixtures 的固定服务入口，无外部路径参数。 / Load the fixed fform-fixtures service entry on demand, with no external path input. */
+  'fform-fixtures': () => import('../../plugins/fform-fixtures/server.ts'),
+  /** 按需加载 fform-logic 的固定服务入口，无外部路径参数。 / Load the fixed fform-logic service entry on demand, with no external path input. */
+  'fform-logic': () => import('../../plugins/fform-logic/server.ts'),
+  /** 按需加载 fform-pages 的固定服务入口，无外部路径参数。 / Load the fixed fform-pages service entry on demand, with no external path input. */
+  'fform-pages': () => import('../../plugins/fform-pages/server.ts'),
+  /** 按需加载 fform-previews 的固定服务入口，无外部路径参数。 / Load the fixed fform-previews service entry on demand, with no external path input. */
+  'fform-previews': () => import('../../plugins/fform-previews/server.ts'),
+  /** 按需加载 fform-reviews 的固定服务入口，无外部路径参数。 / Load the fixed fform-reviews service entry on demand, with no external path input. */
+  'fform-reviews': () => import('../../plugins/fform-reviews/server.ts'),
+  /** 按需加载 fform-schemas 的固定服务入口，无外部路径参数。 / Load the fixed fform-schemas service entry on demand, with no external path input. */
+  'fform-schemas': () => import('../../plugins/fform-schemas/server.ts'),
+  /** 按需加载 fform-spaces 的固定服务入口，无外部路径参数。 / Load the fixed fform-spaces service entry on demand, with no external path input. */
+  'fform-spaces': () => import('../../plugins/fform-spaces/server.ts'),
+  /** 按需加载 fform-submissions 的固定服务入口，无外部路径参数。 / Load the fixed fform-submissions service entry on demand, with no external path input. */
+  'fform-submissions': () => import('../../plugins/fform-submissions/server.ts'),
+  /** 按需加载 fform-validations 的固定服务入口，无外部路径参数。 / Load the fixed fform-validations service entry on demand, with no external path input. */
+  'fform-validations': () => import('../../plugins/fform-validations/server.ts'),
+  /** 按需加载 fform-versions 的固定服务入口，无外部路径参数。 / Load the fixed fform-versions service entry on demand, with no external path input. */
+  'fform-versions': () => import('../../plugins/fform-versions/server.ts'),
+  /** 按需加载 fform-workbench 的固定服务入口，无外部路径参数。 / Load the fixed fform-workbench service entry on demand, with no external path input. */
+  'fform-workbench': () => import('../../plugins/fform-workbench/server.ts'),
   /** 按需加载 files 的固定服务入口，无外部路径参数。 / Load the fixed files service entry on demand, with no external path input. */
   'files': () => import('../../plugins/files/server.ts'),
   /** 按需加载 flow-approvals 的固定服务入口，无外部路径参数。 / Load the fixed flow-approvals service entry on demand, with no external path input. */
@@ -198,8 +454,66 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'foundry-sources': () => import('../../plugins/foundry-sources/server.ts'),
   /** 按需加载 foundry-workbench 的固定服务入口，无外部路径参数。 / Load the fixed foundry-workbench service entry on demand, with no external path input. */
   'foundry-workbench': () => import('../../plugins/foundry-workbench/server.ts'),
+  /** 按需加载 geodesk-crs 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-crs service entry on demand, with no external path input. */
+  'geodesk-crs': () => import('../../plugins/geodesk-crs/server.ts'),
+  /** 按需加载 geodesk-exchange 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-exchange service entry on demand, with no external path input. */
+  'geodesk-exchange': () => import('../../plugins/geodesk-exchange/server.ts'),
+  /** 按需加载 geodesk-indexes 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-indexes service entry on demand, with no external path input. */
+  'geodesk-indexes': () => import('../../plugins/geodesk-indexes/server.ts'),
+  /** 按需加载 geodesk-joins 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-joins service entry on demand, with no external path input. */
+  'geodesk-joins': () => import('../../plugins/geodesk-joins/server.ts'),
+  /** 按需加载 geodesk-layers 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-layers service entry on demand, with no external path input. */
+  'geodesk-layers': () => import('../../plugins/geodesk-layers/server.ts'),
+  /** 按需加载 geodesk-measures 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-measures service entry on demand, with no external path input. */
+  'geodesk-measures': () => import('../../plugins/geodesk-measures/server.ts'),
+  /** 按需加载 geodesk-operations 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-operations service entry on demand, with no external path input. */
+  'geodesk-operations': () => import('../../plugins/geodesk-operations/server.ts'),
+  /** 按需加载 geodesk-reports 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-reports service entry on demand, with no external path input. */
+  'geodesk-reports': () => import('../../plugins/geodesk-reports/server.ts'),
+  /** 按需加载 geodesk-reviews 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-reviews service entry on demand, with no external path input. */
+  'geodesk-reviews': () => import('../../plugins/geodesk-reviews/server.ts'),
+  /** 按需加载 geodesk-runs 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-runs service entry on demand, with no external path input. */
+  'geodesk-runs': () => import('../../plugins/geodesk-runs/server.ts'),
+  /** 按需加载 geodesk-sources 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-sources service entry on demand, with no external path input. */
+  'geodesk-sources': () => import('../../plugins/geodesk-sources/server.ts'),
+  /** 按需加载 geodesk-spaces 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-spaces service entry on demand, with no external path input. */
+  'geodesk-spaces': () => import('../../plugins/geodesk-spaces/server.ts'),
+  /** 按需加载 geodesk-styles 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-styles service entry on demand, with no external path input. */
+  'geodesk-styles': () => import('../../plugins/geodesk-styles/server.ts'),
+  /** 按需加载 geodesk-validation 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-validation service entry on demand, with no external path input. */
+  'geodesk-validation': () => import('../../plugins/geodesk-validation/server.ts'),
+  /** 按需加载 geodesk-workbench 的固定服务入口，无外部路径参数。 / Load the fixed geodesk-workbench service entry on demand, with no external path input. */
+  'geodesk-workbench': () => import('../../plugins/geodesk-workbench/server.ts'),
   /** 按需加载 git 的固定服务入口，无外部路径参数。 / Load the fixed git service entry on demand, with no external path input. */
   'git': () => import('../../plugins/git/server.ts'),
+  /** 按需加载 graphdesk-algorithms 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-algorithms service entry on demand, with no external path input. */
+  'graphdesk-algorithms': () => import('../../plugins/graphdesk-algorithms/server.ts'),
+  /** 按需加载 graphdesk-annotations 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-annotations service entry on demand, with no external path input. */
+  'graphdesk-annotations': () => import('../../plugins/graphdesk-annotations/server.ts'),
+  /** 按需加载 graphdesk-comparisons 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-comparisons service entry on demand, with no external path input. */
+  'graphdesk-comparisons': () => import('../../plugins/graphdesk-comparisons/server.ts'),
+  /** 按需加载 graphdesk-edges 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-edges service entry on demand, with no external path input. */
+  'graphdesk-edges': () => import('../../plugins/graphdesk-edges/server.ts'),
+  /** 按需加载 graphdesk-entities 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-entities service entry on demand, with no external path input. */
+  'graphdesk-entities': () => import('../../plugins/graphdesk-entities/server.ts'),
+  /** 按需加载 graphdesk-exchange 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-exchange service entry on demand, with no external path input. */
+  'graphdesk-exchange': () => import('../../plugins/graphdesk-exchange/server.ts'),
+  /** 按需加载 graphdesk-projections 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-projections service entry on demand, with no external path input. */
+  'graphdesk-projections': () => import('../../plugins/graphdesk-projections/server.ts'),
+  /** 按需加载 graphdesk-queries 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-queries service entry on demand, with no external path input. */
+  'graphdesk-queries': () => import('../../plugins/graphdesk-queries/server.ts'),
+  /** 按需加载 graphdesk-reports 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-reports service entry on demand, with no external path input. */
+  'graphdesk-reports': () => import('../../plugins/graphdesk-reports/server.ts'),
+  /** 按需加载 graphdesk-runs 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-runs service entry on demand, with no external path input. */
+  'graphdesk-runs': () => import('../../plugins/graphdesk-runs/server.ts'),
+  /** 按需加载 graphdesk-sources 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-sources service entry on demand, with no external path input. */
+  'graphdesk-sources': () => import('../../plugins/graphdesk-sources/server.ts'),
+  /** 按需加载 graphdesk-spaces 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-spaces service entry on demand, with no external path input. */
+  'graphdesk-spaces': () => import('../../plugins/graphdesk-spaces/server.ts'),
+  /** 按需加载 graphdesk-views 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-views service entry on demand, with no external path input. */
+  'graphdesk-views': () => import('../../plugins/graphdesk-views/server.ts'),
+  /** 按需加载 graphdesk-workbench 的固定服务入口，无外部路径参数。 / Load the fixed graphdesk-workbench service entry on demand, with no external path input. */
+  'graphdesk-workbench': () => import('../../plugins/graphdesk-workbench/server.ts'),
   /** 按需加载 ide 的固定服务入口，无外部路径参数。 / Load the fixed ide service entry on demand, with no external path input. */
   'ide': () => import('../../plugins/ide/server.ts'),
   /** 按需加载 images 的固定服务入口，无外部路径参数。 / Load the fixed images service entry on demand, with no external path input. */
@@ -290,6 +604,32 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'learning-workbench': () => import('../../plugins/learning-workbench/server.ts'),
   /** 按需加载 library 的固定服务入口，无外部路径参数。 / Load the fixed library service entry on demand, with no external path input. */
   'library': () => import('../../plugins/library/server.ts'),
+  /** 按需加载 lineageatlas-assertions 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-assertions service entry on demand, with no external path input. */
+  'lineageatlas-assertions': () => import('../../plugins/lineageatlas-assertions/server.ts'),
+  /** 按需加载 lineageatlas-assets 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-assets service entry on demand, with no external path input. */
+  'lineageatlas-assets': () => import('../../plugins/lineageatlas-assets/server.ts'),
+  /** 按需加载 lineageatlas-catalogs 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-catalogs service entry on demand, with no external path input. */
+  'lineageatlas-catalogs': () => import('../../plugins/lineageatlas-catalogs/server.ts'),
+  /** 按需加载 lineageatlas-exchange 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-exchange service entry on demand, with no external path input. */
+  'lineageatlas-exchange': () => import('../../plugins/lineageatlas-exchange/server.ts'),
+  /** 按需加载 lineageatlas-graphs 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-graphs service entry on demand, with no external path input. */
+  'lineageatlas-graphs': () => import('../../plugins/lineageatlas-graphs/server.ts'),
+  /** 按需加载 lineageatlas-impacts 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-impacts service entry on demand, with no external path input. */
+  'lineageatlas-impacts': () => import('../../plugins/lineageatlas-impacts/server.ts'),
+  /** 按需加载 lineageatlas-investigations 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-investigations service entry on demand, with no external path input. */
+  'lineageatlas-investigations': () => import('../../plugins/lineageatlas-investigations/server.ts'),
+  /** 按需加载 lineageatlas-mappings 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-mappings service entry on demand, with no external path input. */
+  'lineageatlas-mappings': () => import('../../plugins/lineageatlas-mappings/server.ts'),
+  /** 按需加载 lineageatlas-processes 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-processes service entry on demand, with no external path input. */
+  'lineageatlas-processes': () => import('../../plugins/lineageatlas-processes/server.ts'),
+  /** 按需加载 lineageatlas-reports 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-reports service entry on demand, with no external path input. */
+  'lineageatlas-reports': () => import('../../plugins/lineageatlas-reports/server.ts'),
+  /** 按需加载 lineageatlas-reviews 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-reviews service entry on demand, with no external path input. */
+  'lineageatlas-reviews': () => import('../../plugins/lineageatlas-reviews/server.ts'),
+  /** 按需加载 lineageatlas-spaces 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-spaces service entry on demand, with no external path input. */
+  'lineageatlas-spaces': () => import('../../plugins/lineageatlas-spaces/server.ts'),
+  /** 按需加载 lineageatlas-workbench 的固定服务入口，无外部路径参数。 / Load the fixed lineageatlas-workbench service entry on demand, with no external path input. */
+  'lineageatlas-workbench': () => import('../../plugins/lineageatlas-workbench/server.ts'),
   /** 按需加载 locale-catalogs 的固定服务入口，无外部路径参数。 / Load the fixed locale-catalogs service entry on demand, with no external path input. */
   'locale-catalogs': () => import('../../plugins/locale-catalogs/server.ts'),
   /** 按需加载 locale-checks 的固定服务入口，无外部路径参数。 / Load the fixed locale-checks service entry on demand, with no external path input. */
@@ -336,6 +676,34 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'migration': () => import('../../plugins/migration/server.ts'),
   /** 按需加载 network 的固定服务入口，无外部路径参数。 / Load the fixed network service entry on demand, with no external path input. */
   'network': () => import('../../plugins/network/server.ts'),
+  /** 按需加载 ntpl-assets 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-assets service entry on demand, with no external path input. */
+  'ntpl-assets': () => import('../../plugins/ntpl-assets/server.ts'),
+  /** 按需加载 ntpl-audiences 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-audiences service entry on demand, with no external path input. */
+  'ntpl-audiences': () => import('../../plugins/ntpl-audiences/server.ts'),
+  /** 按需加载 ntpl-channels 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-channels service entry on demand, with no external path input. */
+  'ntpl-channels': () => import('../../plugins/ntpl-channels/server.ts'),
+  /** 按需加载 ntpl-checks 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-checks service entry on demand, with no external path input. */
+  'ntpl-checks': () => import('../../plugins/ntpl-checks/server.ts'),
+  /** 按需加载 ntpl-exchange 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-exchange service entry on demand, with no external path input. */
+  'ntpl-exchange': () => import('../../plugins/ntpl-exchange/server.ts'),
+  /** 按需加载 ntpl-inboxes 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-inboxes service entry on demand, with no external path input. */
+  'ntpl-inboxes': () => import('../../plugins/ntpl-inboxes/server.ts'),
+  /** 按需加载 ntpl-locales 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-locales service entry on demand, with no external path input. */
+  'ntpl-locales': () => import('../../plugins/ntpl-locales/server.ts'),
+  /** 按需加载 ntpl-releases 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-releases service entry on demand, with no external path input. */
+  'ntpl-releases': () => import('../../plugins/ntpl-releases/server.ts'),
+  /** 按需加载 ntpl-renders 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-renders service entry on demand, with no external path input. */
+  'ntpl-renders': () => import('../../plugins/ntpl-renders/server.ts'),
+  /** 按需加载 ntpl-rules 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-rules service entry on demand, with no external path input. */
+  'ntpl-rules': () => import('../../plugins/ntpl-rules/server.ts'),
+  /** 按需加载 ntpl-spaces 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-spaces service entry on demand, with no external path input. */
+  'ntpl-spaces': () => import('../../plugins/ntpl-spaces/server.ts'),
+  /** 按需加载 ntpl-templates 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-templates service entry on demand, with no external path input. */
+  'ntpl-templates': () => import('../../plugins/ntpl-templates/server.ts'),
+  /** 按需加载 ntpl-variables 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-variables service entry on demand, with no external path input. */
+  'ntpl-variables': () => import('../../plugins/ntpl-variables/server.ts'),
+  /** 按需加载 ntpl-workbench 的固定服务入口，无外部路径参数。 / Load the fixed ntpl-workbench service entry on demand, with no external path input. */
+  'ntpl-workbench': () => import('../../plugins/ntpl-workbench/server.ts'),
   /** 按需加载 pipelines 的固定服务入口，无外部路径参数。 / Load the fixed pipelines service entry on demand, with no external path input. */
   'pipelines': () => import('../../plugins/pipelines/server.ts'),
   /** 按需加载 platform 的固定服务入口，无外部路径参数。 / Load the fixed platform service entry on demand, with no external path input. */
@@ -344,10 +712,98 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'project-search': () => import('../../plugins/project-search/server.ts'),
   /** 按需加载 projects 的固定服务入口，无外部路径参数。 / Load the fixed projects service entry on demand, with no external path input. */
   'projects': () => import('../../plugins/projects/server.ts'),
+  /** 按需加载 protostate-exchange 的固定服务入口，无外部路径参数。 / Load the fixed protostate-exchange service entry on demand, with no external path input. */
+  'protostate-exchange': () => import('../../plugins/protostate-exchange/server.ts'),
+  /** 按需加载 protostate-generators 的固定服务入口，无外部路径参数。 / Load the fixed protostate-generators service entry on demand, with no external path input. */
+  'protostate-generators': () => import('../../plugins/protostate-generators/server.ts'),
+  /** 按需加载 protostate-grammars 的固定服务入口，无外部路径参数。 / Load the fixed protostate-grammars service entry on demand, with no external path input. */
+  'protostate-grammars': () => import('../../plugins/protostate-grammars/server.ts'),
+  /** 按需加载 protostate-guards 的固定服务入口，无外部路径参数。 / Load the fixed protostate-guards service entry on demand, with no external path input. */
+  'protostate-guards': () => import('../../plugins/protostate-guards/server.ts'),
+  /** 按需加载 protostate-machines 的固定服务入口，无外部路径参数。 / Load the fixed protostate-machines service entry on demand, with no external path input. */
+  'protostate-machines': () => import('../../plugins/protostate-machines/server.ts'),
+  /** 按需加载 protostate-messages 的固定服务入口，无外部路径参数。 / Load the fixed protostate-messages service entry on demand, with no external path input. */
+  'protostate-messages': () => import('../../plugins/protostate-messages/server.ts'),
+  /** 按需加载 protostate-properties 的固定服务入口，无外部路径参数。 / Load the fixed protostate-properties service entry on demand, with no external path input. */
+  'protostate-properties': () => import('../../plugins/protostate-properties/server.ts'),
+  /** 按需加载 protostate-reductions 的固定服务入口，无外部路径参数。 / Load the fixed protostate-reductions service entry on demand, with no external path input. */
+  'protostate-reductions': () => import('../../plugins/protostate-reductions/server.ts'),
+  /** 按需加载 protostate-reports 的固定服务入口，无外部路径参数。 / Load the fixed protostate-reports service entry on demand, with no external path input. */
+  'protostate-reports': () => import('../../plugins/protostate-reports/server.ts'),
+  /** 按需加载 protostate-runs 的固定服务入口，无外部路径参数。 / Load the fixed protostate-runs service entry on demand, with no external path input. */
+  'protostate-runs': () => import('../../plugins/protostate-runs/server.ts'),
+  /** 按需加载 protostate-scenarios 的固定服务入口，无外部路径参数。 / Load the fixed protostate-scenarios service entry on demand, with no external path input. */
+  'protostate-scenarios': () => import('../../plugins/protostate-scenarios/server.ts'),
+  /** 按需加载 protostate-spaces 的固定服务入口，无外部路径参数。 / Load the fixed protostate-spaces service entry on demand, with no external path input. */
+  'protostate-spaces': () => import('../../plugins/protostate-spaces/server.ts'),
+  /** 按需加载 protostate-targets 的固定服务入口，无外部路径参数。 / Load the fixed protostate-targets service entry on demand, with no external path input. */
+  'protostate-targets': () => import('../../plugins/protostate-targets/server.ts'),
+  /** 按需加载 protostate-traces 的固定服务入口，无外部路径参数。 / Load the fixed protostate-traces service entry on demand, with no external path input. */
+  'protostate-traces': () => import('../../plugins/protostate-traces/server.ts'),
+  /** 按需加载 protostate-workbench 的固定服务入口，无外部路径参数。 / Load the fixed protostate-workbench service entry on demand, with no external path input. */
+  'protostate-workbench': () => import('../../plugins/protostate-workbench/server.ts'),
+  /** 按需加载 qualitydesk-baselines 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-baselines service entry on demand, with no external path input. */
+  'qualitydesk-baselines': () => import('../../plugins/qualitydesk-baselines/server.ts'),
+  /** 按需加载 qualitydesk-checklists 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-checklists service entry on demand, with no external path input. */
+  'qualitydesk-checklists': () => import('../../plugins/qualitydesk-checklists/server.ts'),
+  /** 按需加载 qualitydesk-exceptions 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-exceptions service entry on demand, with no external path input. */
+  'qualitydesk-exceptions': () => import('../../plugins/qualitydesk-exceptions/server.ts'),
+  /** 按需加载 qualitydesk-exchange 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-exchange service entry on demand, with no external path input. */
+  'qualitydesk-exchange': () => import('../../plugins/qualitydesk-exchange/server.ts'),
+  /** 按需加载 qualitydesk-findings 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-findings service entry on demand, with no external path input. */
+  'qualitydesk-findings': () => import('../../plugins/qualitydesk-findings/server.ts'),
+  /** 按需加载 qualitydesk-partitions 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-partitions service entry on demand, with no external path input. */
+  'qualitydesk-partitions': () => import('../../plugins/qualitydesk-partitions/server.ts'),
+  /** 按需加载 qualitydesk-profiles 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-profiles service entry on demand, with no external path input. */
+  'qualitydesk-profiles': () => import('../../plugins/qualitydesk-profiles/server.ts'),
+  /** 按需加载 qualitydesk-reconciliation 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-reconciliation service entry on demand, with no external path input. */
+  'qualitydesk-reconciliation': () => import('../../plugins/qualitydesk-reconciliation/server.ts'),
+  /** 按需加载 qualitydesk-releases 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-releases service entry on demand, with no external path input. */
+  'qualitydesk-releases': () => import('../../plugins/qualitydesk-releases/server.ts'),
+  /** 按需加载 qualitydesk-reports 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-reports service entry on demand, with no external path input. */
+  'qualitydesk-reports': () => import('../../plugins/qualitydesk-reports/server.ts'),
+  /** 按需加载 qualitydesk-rules 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-rules service entry on demand, with no external path input. */
+  'qualitydesk-rules': () => import('../../plugins/qualitydesk-rules/server.ts'),
+  /** 按需加载 qualitydesk-runs 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-runs service entry on demand, with no external path input. */
+  'qualitydesk-runs': () => import('../../plugins/qualitydesk-runs/server.ts'),
+  /** 按需加载 qualitydesk-sources 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-sources service entry on demand, with no external path input. */
+  'qualitydesk-sources': () => import('../../plugins/qualitydesk-sources/server.ts'),
+  /** 按需加载 qualitydesk-spaces 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-spaces service entry on demand, with no external path input. */
+  'qualitydesk-spaces': () => import('../../plugins/qualitydesk-spaces/server.ts'),
+  /** 按需加载 qualitydesk-workbench 的固定服务入口，无外部路径参数。 / Load the fixed qualitydesk-workbench service entry on demand, with no external path input. */
+  'qualitydesk-workbench': () => import('../../plugins/qualitydesk-workbench/server.ts'),
   /** 按需加载 recipes 的固定服务入口，无外部路径参数。 / Load the fixed recipes service entry on demand, with no external path input. */
   'recipes': () => import('../../plugins/recipes/server.ts'),
   /** 按需加载 repair 的固定服务入口，无外部路径参数。 / Load the fixed repair service entry on demand, with no external path input. */
   'repair': () => import('../../plugins/repair/server.ts'),
+  /** 按需加载 replab-channels 的固定服务入口，无外部路径参数。 / Load the fixed replab-channels service entry on demand, with no external path input. */
+  'replab-channels': () => import('../../plugins/replab-channels/server.ts'),
+  /** 按需加载 replab-clocks 的固定服务入口，无外部路径参数。 / Load the fixed replab-clocks service entry on demand, with no external path input. */
+  'replab-clocks': () => import('../../plugins/replab-clocks/server.ts'),
+  /** 按需加载 replab-conflicts 的固定服务入口，无外部路径参数。 / Load the fixed replab-conflicts service entry on demand, with no external path input. */
+  'replab-conflicts': () => import('../../plugins/replab-conflicts/server.ts'),
+  /** 按需加载 replab-exchange 的固定服务入口，无外部路径参数。 / Load the fixed replab-exchange service entry on demand, with no external path input. */
+  'replab-exchange': () => import('../../plugins/replab-exchange/server.ts'),
+  /** 按需加载 replab-judgments 的固定服务入口，无外部路径参数。 / Load the fixed replab-judgments service entry on demand, with no external path input. */
+  'replab-judgments': () => import('../../plugins/replab-judgments/server.ts'),
+  /** 按需加载 replab-operations 的固定服务入口，无外部路径参数。 / Load the fixed replab-operations service entry on demand, with no external path input. */
+  'replab-operations': () => import('../../plugins/replab-operations/server.ts'),
+  /** 按需加载 replab-policies 的固定服务入口，无外部路径参数。 / Load the fixed replab-policies service entry on demand, with no external path input. */
+  'replab-policies': () => import('../../plugins/replab-policies/server.ts'),
+  /** 按需加载 replab-replicas 的固定服务入口，无外部路径参数。 / Load the fixed replab-replicas service entry on demand, with no external path input. */
+  'replab-replicas': () => import('../../plugins/replab-replicas/server.ts'),
+  /** 按需加载 replab-reports 的固定服务入口，无外部路径参数。 / Load the fixed replab-reports service entry on demand, with no external path input. */
+  'replab-reports': () => import('../../plugins/replab-reports/server.ts'),
+  /** 按需加载 replab-runs 的固定服务入口，无外部路径参数。 / Load the fixed replab-runs service entry on demand, with no external path input. */
+  'replab-runs': () => import('../../plugins/replab-runs/server.ts'),
+  /** 按需加载 replab-scenarios 的固定服务入口，无外部路径参数。 / Load the fixed replab-scenarios service entry on demand, with no external path input. */
+  'replab-scenarios': () => import('../../plugins/replab-scenarios/server.ts'),
+  /** 按需加载 replab-schemas 的固定服务入口，无外部路径参数。 / Load the fixed replab-schemas service entry on demand, with no external path input. */
+  'replab-schemas': () => import('../../plugins/replab-schemas/server.ts'),
+  /** 按需加载 replab-spaces 的固定服务入口，无外部路径参数。 / Load the fixed replab-spaces service entry on demand, with no external path input. */
+  'replab-spaces': () => import('../../plugins/replab-spaces/server.ts'),
+  /** 按需加载 replab-workbench 的固定服务入口，无外部路径参数。 / Load the fixed replab-workbench service entry on demand, with no external path input. */
+  'replab-workbench': () => import('../../plugins/replab-workbench/server.ts'),
   /** 按需加载 resilience-faults 的固定服务入口，无外部路径参数。 / Load the fixed resilience-faults service entry on demand, with no external path input. */
   'resilience-faults': () => import('../../plugins/resilience-faults/server.ts'),
   /** 按需加载 resilience-fixtures 的固定服务入口，无外部路径参数。 / Load the fixed resilience-fixtures service entry on demand, with no external path input. */
@@ -372,6 +828,34 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'runtimes': () => import('../../plugins/runtimes/server.ts'),
   /** 按需加载 sandbox 的固定服务入口，无外部路径参数。 / Load the fixed sandbox service entry on demand, with no external path input. */
   'sandbox': () => import('../../plugins/sandbox/server.ts'),
+  /** 按需加载 schedlab-calendars 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-calendars service entry on demand, with no external path input. */
+  'schedlab-calendars': () => import('../../plugins/schedlab-calendars/server.ts'),
+  /** 按需加载 schedlab-checks 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-checks service entry on demand, with no external path input. */
+  'schedlab-checks': () => import('../../plugins/schedlab-checks/server.ts'),
+  /** 按需加载 schedlab-clocks 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-clocks service entry on demand, with no external path input. */
+  'schedlab-clocks': () => import('../../plugins/schedlab-clocks/server.ts'),
+  /** 按需加载 schedlab-exchange 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-exchange service entry on demand, with no external path input. */
+  'schedlab-exchange': () => import('../../plugins/schedlab-exchange/server.ts'),
+  /** 按需加载 schedlab-harness 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-harness service entry on demand, with no external path input. */
+  'schedlab-harness': () => import('../../plugins/schedlab-harness/server.ts'),
+  /** 按需加载 schedlab-observations 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-observations service entry on demand, with no external path input. */
+  'schedlab-observations': () => import('../../plugins/schedlab-observations/server.ts'),
+  /** 按需加载 schedlab-policies 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-policies service entry on demand, with no external path input. */
+  'schedlab-policies': () => import('../../plugins/schedlab-policies/server.ts'),
+  /** 按需加载 schedlab-reports 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-reports service entry on demand, with no external path input. */
+  'schedlab-reports': () => import('../../plugins/schedlab-reports/server.ts'),
+  /** 按需加载 schedlab-rules 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-rules service entry on demand, with no external path input. */
+  'schedlab-rules': () => import('../../plugins/schedlab-rules/server.ts'),
+  /** 按需加载 schedlab-scenarios 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-scenarios service entry on demand, with no external path input. */
+  'schedlab-scenarios': () => import('../../plugins/schedlab-scenarios/server.ts'),
+  /** 按需加载 schedlab-simulations 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-simulations service entry on demand, with no external path input. */
+  'schedlab-simulations': () => import('../../plugins/schedlab-simulations/server.ts'),
+  /** 按需加载 schedlab-spaces 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-spaces service entry on demand, with no external path input. */
+  'schedlab-spaces': () => import('../../plugins/schedlab-spaces/server.ts'),
+  /** 按需加载 schedlab-workbench 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-workbench service entry on demand, with no external path input. */
+  'schedlab-workbench': () => import('../../plugins/schedlab-workbench/server.ts'),
+  /** 按需加载 schedlab-workloads 的固定服务入口，无外部路径参数。 / Load the fixed schedlab-workloads service entry on demand, with no external path input. */
+  'schedlab-workloads': () => import('../../plugins/schedlab-workloads/server.ts'),
   /** 按需加载 secrets 的固定服务入口，无外部路径参数。 / Load the fixed secrets service entry on demand, with no external path input. */
   'secrets': () => import('../../plugins/secrets/server.ts'),
   /** 按需加载 service-health 的固定服务入口，无外部路径参数。 / Load the fixed service-health service entry on demand, with no external path input. */
@@ -400,10 +884,96 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'supply-workbench': () => import('../../plugins/supply-workbench/server.ts'),
   /** 按需加载 sync 的固定服务入口，无外部路径参数。 / Load the fixed sync service entry on demand, with no external path input. */
   'sync': () => import('../../plugins/sync/server.ts'),
+  /** 按需加载 temporaldesk-alignment 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-alignment service entry on demand, with no external path input. */
+  'temporaldesk-alignment': () => import('../../plugins/temporaldesk-alignment/server.ts'),
+  /** 按需加载 temporaldesk-calendars 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-calendars service entry on demand, with no external path input. */
+  'temporaldesk-calendars': () => import('../../plugins/temporaldesk-calendars/server.ts'),
+  /** 按需加载 temporaldesk-comparisons 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-comparisons service entry on demand, with no external path input. */
+  'temporaldesk-comparisons': () => import('../../plugins/temporaldesk-comparisons/server.ts'),
+  /** 按需加载 temporaldesk-exchange 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-exchange service entry on demand, with no external path input. */
+  'temporaldesk-exchange': () => import('../../plugins/temporaldesk-exchange/server.ts'),
+  /** 按需加载 temporaldesk-intervals 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-intervals service entry on demand, with no external path input. */
+  'temporaldesk-intervals': () => import('../../plugins/temporaldesk-intervals/server.ts'),
+  /** 按需加载 temporaldesk-latepolicy 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-latepolicy service entry on demand, with no external path input. */
+  'temporaldesk-latepolicy': () => import('../../plugins/temporaldesk-latepolicy/server.ts'),
+  /** 按需加载 temporaldesk-reports 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-reports service entry on demand, with no external path input. */
+  'temporaldesk-reports': () => import('../../plugins/temporaldesk-reports/server.ts'),
+  /** 按需加载 temporaldesk-reviews 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-reviews service entry on demand, with no external path input. */
+  'temporaldesk-reviews': () => import('../../plugins/temporaldesk-reviews/server.ts'),
+  /** 按需加载 temporaldesk-runs 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-runs service entry on demand, with no external path input. */
+  'temporaldesk-runs': () => import('../../plugins/temporaldesk-runs/server.ts'),
+  /** 按需加载 temporaldesk-semantics 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-semantics service entry on demand, with no external path input. */
+  'temporaldesk-semantics': () => import('../../plugins/temporaldesk-semantics/server.ts'),
+  /** 按需加载 temporaldesk-sources 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-sources service entry on demand, with no external path input. */
+  'temporaldesk-sources': () => import('../../plugins/temporaldesk-sources/server.ts'),
+  /** 按需加载 temporaldesk-spaces 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-spaces service entry on demand, with no external path input. */
+  'temporaldesk-spaces': () => import('../../plugins/temporaldesk-spaces/server.ts'),
+  /** 按需加载 temporaldesk-windows 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-windows service entry on demand, with no external path input. */
+  'temporaldesk-windows': () => import('../../plugins/temporaldesk-windows/server.ts'),
+  /** 按需加载 temporaldesk-workbench 的固定服务入口，无外部路径参数。 / Load the fixed temporaldesk-workbench service entry on demand, with no external path input. */
+  'temporaldesk-workbench': () => import('../../plugins/temporaldesk-workbench/server.ts'),
   /** 按需加载 terminal-workspace 的固定服务入口，无外部路径参数。 / Load the fixed terminal-workspace service entry on demand, with no external path input. */
   'terminal-workspace': () => import('../../plugins/terminal-workspace/server.ts'),
   /** 按需加载 toolchains 的固定服务入口，无外部路径参数。 / Load the fixed toolchains service entry on demand, with no external path input. */
   'toolchains': () => import('../../plugins/toolchains/server.ts'),
   /** 按需加载 transfers 的固定服务入口，无外部路径参数。 / Load the fixed transfers service entry on demand, with no external path input. */
   'transfers': () => import('../../plugins/transfers/server.ts'),
+  /** 按需加载 trialplan-allocations 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-allocations service entry on demand, with no external path input. */
+  'trialplan-allocations': () => import('../../plugins/trialplan-allocations/server.ts'),
+  /** 按需加载 trialplan-analyses 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-analyses service entry on demand, with no external path input. */
+  'trialplan-analyses': () => import('../../plugins/trialplan-analyses/server.ts'),
+  /** 按需加载 trialplan-assignments 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-assignments service entry on demand, with no external path input. */
+  'trialplan-assignments': () => import('../../plugins/trialplan-assignments/server.ts'),
+  /** 按需加载 trialplan-exchange 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-exchange service entry on demand, with no external path input. */
+  'trialplan-exchange': () => import('../../plugins/trialplan-exchange/server.ts'),
+  /** 按需加载 trialplan-observations 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-observations service entry on demand, with no external path input. */
+  'trialplan-observations': () => import('../../plugins/trialplan-observations/server.ts'),
+  /** 按需加载 trialplan-outcomes 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-outcomes service entry on demand, with no external path input. */
+  'trialplan-outcomes': () => import('../../plugins/trialplan-outcomes/server.ts'),
+  /** 按需加载 trialplan-populations 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-populations service entry on demand, with no external path input. */
+  'trialplan-populations': () => import('../../plugins/trialplan-populations/server.ts'),
+  /** 按需加载 trialplan-powerplans 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-powerplans service entry on demand, with no external path input. */
+  'trialplan-powerplans': () => import('../../plugins/trialplan-powerplans/server.ts'),
+  /** 按需加载 trialplan-questions 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-questions service entry on demand, with no external path input. */
+  'trialplan-questions': () => import('../../plugins/trialplan-questions/server.ts'),
+  /** 按需加载 trialplan-reports 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-reports service entry on demand, with no external path input. */
+  'trialplan-reports': () => import('../../plugins/trialplan-reports/server.ts'),
+  /** 按需加载 trialplan-reviews 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-reviews service entry on demand, with no external path input. */
+  'trialplan-reviews': () => import('../../plugins/trialplan-reviews/server.ts'),
+  /** 按需加载 trialplan-sensitivity 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-sensitivity service entry on demand, with no external path input. */
+  'trialplan-sensitivity': () => import('../../plugins/trialplan-sensitivity/server.ts'),
+  /** 按需加载 trialplan-spaces 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-spaces service entry on demand, with no external path input. */
+  'trialplan-spaces': () => import('../../plugins/trialplan-spaces/server.ts'),
+  /** 按需加载 trialplan-workbench 的固定服务入口，无外部路径参数。 / Load the fixed trialplan-workbench service entry on demand, with no external path input. */
+  'trialplan-workbench': () => import('../../plugins/trialplan-workbench/server.ts'),
+  /** 按需加载 virtservice-assertions 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-assertions service entry on demand, with no external path input. */
+  'virtservice-assertions': () => import('../../plugins/virtservice-assertions/server.ts'),
+  /** 按需加载 virtservice-contracts 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-contracts service entry on demand, with no external path input. */
+  'virtservice-contracts': () => import('../../plugins/virtservice-contracts/server.ts'),
+  /** 按需加载 virtservice-exchange 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-exchange service entry on demand, with no external path input. */
+  'virtservice-exchange': () => import('../../plugins/virtservice-exchange/server.ts'),
+  /** 按需加载 virtservice-faults 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-faults service entry on demand, with no external path input. */
+  'virtservice-faults': () => import('../../plugins/virtservice-faults/server.ts'),
+  /** 按需加载 virtservice-matchers 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-matchers service entry on demand, with no external path input. */
+  'virtservice-matchers': () => import('../../plugins/virtservice-matchers/server.ts'),
+  /** 按需加载 virtservice-packages 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-packages service entry on demand, with no external path input. */
+  'virtservice-packages': () => import('../../plugins/virtservice-packages/server.ts'),
+  /** 按需加载 virtservice-payloads 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-payloads service entry on demand, with no external path input. */
+  'virtservice-payloads': () => import('../../plugins/virtservice-payloads/server.ts'),
+  /** 按需加载 virtservice-reports 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-reports service entry on demand, with no external path input. */
+  'virtservice-reports': () => import('../../plugins/virtservice-reports/server.ts'),
+  /** 按需加载 virtservice-scenarios 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-scenarios service entry on demand, with no external path input. */
+  'virtservice-scenarios': () => import('../../plugins/virtservice-scenarios/server.ts'),
+  /** 按需加载 virtservice-sessions 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-sessions service entry on demand, with no external path input. */
+  'virtservice-sessions': () => import('../../plugins/virtservice-sessions/server.ts'),
+  /** 按需加载 virtservice-spaces 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-spaces service entry on demand, with no external path input. */
+  'virtservice-spaces': () => import('../../plugins/virtservice-spaces/server.ts'),
+  /** 按需加载 virtservice-states 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-states service entry on demand, with no external path input. */
+  'virtservice-states': () => import('../../plugins/virtservice-states/server.ts'),
+  /** 按需加载 virtservice-traffic 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-traffic service entry on demand, with no external path input. */
+  'virtservice-traffic': () => import('../../plugins/virtservice-traffic/server.ts'),
+  /** 按需加载 virtservice-transitions 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-transitions service entry on demand, with no external path input. */
+  'virtservice-transitions': () => import('../../plugins/virtservice-transitions/server.ts'),
+  /** 按需加载 virtservice-workbench 的固定服务入口，无外部路径参数。 / Load the fixed virtservice-workbench service entry on demand, with no external path input. */
+  'virtservice-workbench': () => import('../../plugins/virtservice-workbench/server.ts'),
 };

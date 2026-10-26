@@ -6,8 +6,10 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
+import {checkSeventhDistribution} from './check-seventh-distribution.mjs';
 
 const root = process.cwd();
+await checkSeventhDistribution(root,{sourceRoot:root});
 for (const file of ['sakura-sans-ui-OFL.txt', 'sakura-serif-ui-OFL.txt', 'sakura-mono-OFL.txt']) {
   const original = await readFile(join(root, 'src', 'assets', 'fonts', file));
   if (!original.equals(await readFile(join(root, 'dist', 'licenses', 'fonts', file))))

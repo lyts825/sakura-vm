@@ -1,0 +1,3 @@
+/** 数据质量工作室的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'data-quality-studio',name:"数据质量工作室",description:"数据质量工作室：定义、处理、复核和交接。",members:[member('qualitydesk-spaces'),member('qualitydesk-sources'),member('qualitydesk-partitions'),member('qualitydesk-profiles'),member('qualitydesk-rules'),member('qualitydesk-baselines'),member('qualitydesk-runs'),member('qualitydesk-findings'),member('qualitydesk-reconciliation'),member('qualitydesk-exceptions'),member('qualitydesk-releases'),member('qualitydesk-reports'),member('qualitydesk-exchange'),member('qualitydesk-checklists'),member('qualitydesk-workbench')]});

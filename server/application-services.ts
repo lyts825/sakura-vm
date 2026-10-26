@@ -1,3 +1,5 @@
+import {SeventhComputePort} from './seventh-compute.ts';
+import {SeventhProtocolSessions,SeventhVirtualizationSessions} from './seventh-combined-sessions.ts';
 import { mediaExecutionProfile } from './suite-media-profile.ts';
 /**
  * 模块职责：创建并连接应用领域服务及恢复来源；服务就绪和关闭由共同生命周期约束。
@@ -49,6 +51,8 @@ import { EgressRules } from './egress-rules.ts';
 import { DataNotebookSessions } from './data-notebook-sessions.ts';
 import { PreparedWorkerSessions } from './prepared-worker-sessions.ts';
 import { SuiteExecutionSessions } from './suite-execution-sessions.ts';
+import {legacySuiteExecutionSessions} from './suite-execution-legacy.ts';
+import {seventhScheduleExecutionProfile,seventhExtensionExecutionProfile,seventhProtocolExecutionProfile,seventhVirtualizationExecutionProfile} from './seventh-engineering-profiles.ts';
 import { browserExecutionProfile, databaseExecutionProfile, eventExecutionProfile, learningExecutionProfile } from './suite-execution-profiles.ts';
 import { suiteCapacity } from './suite-capacity.ts';
 import { EvaluationCalls } from './evaluation-calls.ts';
@@ -597,10 +601,34 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       initialize: () => {}, dispose: () => {}, disposePhase: ClosePhase.services,
     });
   }
+// seventh-kernel-factories
+  if(selectedPlugins.some(id=>id.startsWith('qualitydesk-')))await plugins.system.start({id:'batchQualityCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('data-quality-studio','core:batchQualityCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('lineageatlas-')))await plugins.system.start({id:'lineageGraphCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('lineage-atlas','core:lineageGraphCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('entitydesk-')))await plugins.system.start({id:'entityMatchingCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('entity-resolution-studio','core:entityMatchingCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('temporaldesk-')))await plugins.system.start({id:'temporalSeriesCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('temporal-data-studio','core:temporalSeriesCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('geodesk-')))await plugins.system.start({id:'vectorGeometryCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('geospatial-studio','core:vectorGeometryCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('graphdesk-')))await plugins.system.start({id:'relationGraphCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('graph-insight-studio','core:relationGraphCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('trialplan-')))await plugins.system.start({id:'controlledExperimentCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('experiment-planner','core:controlledExperimentCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('feat-')))await plugins.system.start({id:'featureTransformCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('feature-engineering-studio','core:featureTransformCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('ctrain-')))await plugins.system.start({id:'classicalTrainingSessions',startup:'required',requires:[],create:()=>new SeventhComputePort('classical-training-lab','core:classicalTrainingSessions'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('csolve-')))await plugins.system.start({id:'constraintSolveSessions',startup:'required',requires:[],create:()=>new SeventhComputePort('constraint-solver-studio','core:constraintSolveSessions'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('dextract-')))await plugins.system.start({id:'documentExtractionSessions',startup:'required',requires:[],create:()=>new SeventhComputePort('document-extraction-studio','core:documentExtractionSessions'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('dsys-')))await plugins.system.start({id:'designSystemCompile',startup:'required',requires:[],create:()=>new SeventhComputePort('design-system-studio','core:designSystemCompile'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('fform-')))await plugins.system.start({id:'formDefinitionEvaluate',startup:'required',requires:[],create:()=>new SeventhComputePort('form-flow-studio','core:formDefinitionEvaluate'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('ntpl-')))await plugins.system.start({id:'notificationRenderCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('notification-template-studio','core:notificationRenderCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('schedlab-')))await plugins.system.start({id:'scheduleModelCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('schedule-semantics-lab','core:scheduleModelCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('extforge-')))await plugins.system.start({id:'extensionTrialRuntime',startup:'required',requires:[],create:()=>new SeventhComputePort('extension-authoring-studio','core:extensionTrialRuntime'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('depsolve-')))await plugins.system.start({id:'dependencyConstraintCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('dependency-resolution-studio','core:dependencyConstraintCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('replab-')))await plugins.system.start({id:'replicaModelCompute',startup:'required',requires:[],create:()=>new SeventhComputePort('replica-sync-lab','core:replicaModelCompute'),initialize:()=>{},dispose:()=>{},disposePhase:ClosePhase.services});
+// seventh-kernel-factories-end
+  if(selectedPlugins.includes('schedlab-harness'))await plugins.system.start({id:'schedulerProbeSessions',startup:'required',requires:['@machines','@pluginDirectory','imageAssets'],create:dependencies=>new SuiteExecutionSessions(dependencies.vm(),dependencies.get('imageAssets'),dependencies.get('@pluginDirectory'),suiteCapacity(),seventhScheduleExecutionProfile,dependencies.executionCleanup()),initialize:value=>value.init(),dispose:value=>value?.close(),disposePhase:ClosePhase.services});
+  if(selectedPlugins.includes('extforge-builds'))await plugins.system.start({id:'extensionBuildSessions',startup:'required',requires:['@machines','@pluginDirectory','imageAssets'],create:dependencies=>new SuiteExecutionSessions(dependencies.vm(),dependencies.get('imageAssets'),dependencies.get('@pluginDirectory'),suiteCapacity(),seventhExtensionExecutionProfile,dependencies.executionCleanup()),initialize:value=>value.init(),dispose:value=>value?.close(),disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('protostate-')))await plugins.system.start({id:'protocolScenarioSessions',startup:'required',requires:['@machines','@pluginDirectory','imageAssets'],create:dependencies=>new SeventhProtocolSessions(dependencies.vm(),dependencies.get('imageAssets'),dependencies.get('@pluginDirectory'),suiteCapacity(),seventhProtocolExecutionProfile,dependencies.executionCleanup()),initialize:value=>value.init(),dispose:value=>value?.close(),disposePhase:ClosePhase.services});
+  if(selectedPlugins.some(id=>id.startsWith('virtservice-')))await plugins.system.start({id:'multiServiceVirtualizationSessions',startup:'required',requires:['@machines','@pluginDirectory','imageAssets'],create:dependencies=>new SeventhVirtualizationSessions(dependencies.vm(),dependencies.get('imageAssets'),dependencies.get('@pluginDirectory'),suiteCapacity(),seventhVirtualizationExecutionProfile,dependencies.executionCleanup()),initialize:value=>value.init(),dispose:value=>value?.close(),disposePhase:ClosePhase.services});
   if (selectedPlugins.includes('browser-runners')) {
     await plugins.system.start({
       id: 'browserSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
-      create: dependencies => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+      create: dependencies => legacySuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
         dependencies.get('@pluginDirectory'), suiteCapacity(), browserExecutionProfile, dependencies.executionCleanup()),
       initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
     });
@@ -608,7 +636,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   if (selectedPlugins.includes('database-fixtures')) {
     await plugins.system.start({
       id: 'databaseRehearsal', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
-      create: dependencies => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+      create: dependencies => legacySuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
         dependencies.get('@pluginDirectory'), suiteCapacity(), databaseExecutionProfile, dependencies.executionCleanup()),
       initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
     });
@@ -616,7 +644,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   if (selectedPlugins.includes('media-workers') || selectedPlugins.includes('media-inspect')) {
     await plugins.system.start({
       id: 'mediaTasks', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
-      create: (dependencies) => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+      create: (dependencies) => legacySuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
         dependencies.get('@pluginDirectory'), suiteCapacity(), mediaExecutionProfile, dependencies.executionCleanup()),
       initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
     });
@@ -624,7 +652,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   if (selectedPlugins.includes('learning-sessions')) {
     await plugins.system.start({
       id: 'learningToolSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
-      create: (dependencies) => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+      create: (dependencies) => legacySuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
         dependencies.get('@pluginDirectory'), suiteCapacity(), learningExecutionProfile, dependencies.executionCleanup()),
       initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
     });
@@ -632,7 +660,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   if (selectedPlugins.includes('event-brokers')) {
     await plugins.system.start({
       id: 'eventSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
-      create: dependencies => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+      create: dependencies => legacySuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
         dependencies.get('@pluginDirectory'), suiteCapacity(), eventExecutionProfile, dependencies.executionCleanup()),
       initialize: value => value.init(), dispose: value => value?.close(), disposePhase: ClosePhase.services,
     });

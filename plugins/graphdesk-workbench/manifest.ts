@@ -1,0 +1,4 @@
+/** 关系图工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {graphdeskRoutes,graphdeskHttp} from '../../shared/contracts/graphdesk-routes.generated.ts';
+export const manifest=definePlugin({id:'graphdesk-workbench',name:"关系图工作台",description:"节点边编辑、路径表、算法比较和导航",category:'development',experimental:true,requires:[pin('graphdesk-spaces'),pin('graphdesk-sources'),pin('graphdesk-entities'),pin('graphdesk-edges'),pin('graphdesk-projections'),pin('graphdesk-queries'),pin('graphdesk-algorithms'),pin('graphdesk-runs'),pin('graphdesk-comparisons'),pin('graphdesk-annotations'),pin('graphdesk-views'),pin('graphdesk-reports'),pin('graphdesk-exchange')],systemDependencies:['relationGraphCompute'],services:['graphdeskWorkbench'],contributes:{pages:['graph-insight-studio'],http:graphdeskHttp('workbench'),routes:graphdeskRoutes('workbench')}});

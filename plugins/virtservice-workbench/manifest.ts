@@ -1,0 +1,4 @@
+/** 模拟工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {virtserviceRoutes,virtserviceHttp} from '../../shared/contracts/virtservice-routes.generated.ts';
+export const manifest=definePlugin({id:'virtservice-workbench',name:"模拟工作台",description:"服务图、联动编辑、检查点树和逐请求导航",category:'development',experimental:true,requires:[pin('virtservice-spaces'),pin('virtservice-contracts'),pin('virtservice-payloads'),pin('virtservice-matchers'),pin('virtservice-states'),pin('virtservice-transitions'),pin('virtservice-faults'),pin('virtservice-scenarios'),pin('virtservice-packages'),pin('virtservice-sessions'),pin('virtservice-traffic'),pin('virtservice-assertions'),pin('virtservice-reports'),pin('virtservice-exchange')],systemDependencies:['multiServiceVirtualizationSessions'],services:['virtserviceWorkbench'],contributes:{pages:['service-virtualization-studio'],http:virtserviceHttp('workbench'),routes:virtserviceRoutes('workbench')}});

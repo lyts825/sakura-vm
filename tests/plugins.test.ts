@@ -735,11 +735,17 @@ test('plugin activation failure is isolated and prevents dependent activation', 
 test('the complete pack activates all adapters and releases every lifecycle listener', async () => {
   const vm = machines();
   const [{ PluginDirectory }, { SystemServices }, { ImageAssets }, { EgressRules },
-    { PreparedWorkerSessions }, { preparedWorkerMetadata }, { createCoreDrillService }] = await Promise.all([
+    { PreparedWorkerSessions }, { preparedWorkerMetadata }, { createCoreDrillService },
+    { SeventhComputePort }, { SuiteExecutionSessions }, { SeventhProtocolSessions, SeventhVirtualizationSessions },
+    { seventhScheduleExecutionProfile, seventhExtensionExecutionProfile,
+      seventhProtocolExecutionProfile, seventhVirtualizationExecutionProfile }, { suiteCapacity }] = await Promise.all([
     import('../server/plugin-directory.ts'), import('../server/system-services.ts'),
     import('../server/image-assets.ts'), import('../server/egress-rules.ts'),
     import('../server/prepared-worker-sessions.ts'), import('../server/core-worker-metadata.ts'),
     import('../server/core-drill-service.ts'),
+    import('../server/seventh-compute.ts'), import('../server/suite-execution-sessions.ts'),
+    import('../server/seventh-combined-sessions.ts'), import('../server/seventh-engineering-profiles.ts'),
+    import('../server/suite-capacity.ts'),
   ]);
   const pluginDirectory = new PluginDirectory(), system = new SystemServices(pluginDirectory);
   system.ready('@machines', vm);
@@ -775,6 +781,59 @@ test('the complete pack activates all adapters and releases every lifecycle list
       }, dependencies.get('@pluginDirectory')),
       initialize: () => {}, dispose: value => value?.close(),
     });
+    const kernels = [
+      ['batchQualityCompute', 'data-quality-studio'],
+      ['lineageGraphCompute', 'lineage-atlas'],
+      ['entityMatchingCompute', 'entity-resolution-studio'],
+      ['temporalSeriesCompute', 'temporal-data-studio'],
+      ['vectorGeometryCompute', 'geospatial-studio'],
+      ['relationGraphCompute', 'graph-insight-studio'],
+      ['controlledExperimentCompute', 'experiment-planner'],
+      ['featureTransformCompute', 'feature-engineering-studio'],
+      ['classicalTrainingSessions', 'classical-training-lab'],
+      ['constraintSolveSessions', 'constraint-solver-studio'],
+      ['documentExtractionSessions', 'document-extraction-studio'],
+      ['designSystemCompile', 'design-system-studio'],
+      ['formDefinitionEvaluate', 'form-flow-studio'],
+      ['notificationRenderCompute', 'notification-template-studio'],
+      ['scheduleModelCompute', 'schedule-semantics-lab'],
+      ['extensionTrialRuntime', 'extension-authoring-studio'],
+      ['dependencyConstraintCompute', 'dependency-resolution-studio'],
+      ['replicaModelCompute', 'replica-sync-lab'],
+    ] as const;
+    for (const [id, packId] of kernels) await system.start({
+      id, startup: 'required', requires: [],
+      create: () => new SeventhComputePort(packId, 'core:' + id),
+      initialize: () => {}, dispose: () => {},
+    });
+    await system.start({
+      id: 'schedulerProbeSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      create: dependencies => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+        dependencies.get('@pluginDirectory'), suiteCapacity(), seventhScheduleExecutionProfile,
+        dependencies.executionCleanup()),
+      initialize: value => value.init(), dispose: value => value?.close(),
+    });
+    await system.start({
+      id: 'extensionBuildSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      create: dependencies => new SuiteExecutionSessions(dependencies.vm(), dependencies.get('imageAssets'),
+        dependencies.get('@pluginDirectory'), suiteCapacity(), seventhExtensionExecutionProfile,
+        dependencies.executionCleanup()),
+      initialize: value => value.init(), dispose: value => value?.close(),
+    });
+    await system.start({
+      id: 'protocolScenarioSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      create: dependencies => new SeventhProtocolSessions(dependencies.vm(), dependencies.get('imageAssets'),
+        dependencies.get('@pluginDirectory'), suiteCapacity(), seventhProtocolExecutionProfile,
+        dependencies.executionCleanup()),
+      initialize: value => value.init(), dispose: value => value?.close(),
+    });
+    await system.start({
+      id: 'multiServiceVirtualizationSessions', startup: 'required', requires: ['@machines', '@pluginDirectory', 'imageAssets'],
+      create: dependencies => new SeventhVirtualizationSessions(dependencies.vm(), dependencies.get('imageAssets'),
+        dependencies.get('@pluginDirectory'), suiteCapacity(), seventhVirtualizationExecutionProfile,
+        dependencies.executionCleanup()),
+      initialize: value => value.init(), dispose: value => value?.close(),
+    });
     host = await Features.create(vm, resolvePlugins({ ...emptySelection(), packs: ['complete'] }),
       () => true, pluginDirectory, system);
     system.ready('@plugins', host);
@@ -782,6 +841,9 @@ test('the complete pack activates all adapters and releases every lifecycle list
     assert.equal(host.enabled.size, PLUGINS.length);
     assert.ok(vm.listenerCount('change') > 0);
     assert.ok(host.jobStores().length > 10);
+    const previews = host.serviceValue<{ close(): Promise<unknown> }>('fformPreviews');
+    assert.ok(previews);
+    await assert.rejects(previews.close(), error => error instanceof Error && error.name === 'ZodError');
   } finally {
     try { await host?.close(); } finally { await system.close(); }
   }

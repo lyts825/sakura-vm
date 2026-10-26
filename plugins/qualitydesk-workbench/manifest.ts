@@ -1,0 +1,4 @@
+/** 质量工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {qualitydeskRoutes,qualitydeskHttp} from '../../shared/contracts/qualitydesk-routes.generated.ts';
+export const manifest=definePlugin({id:'qualitydesk-workbench',name:"质量工作台",description:"批次看板、问题筛选和保存视图",category:'development',experimental:true,requires:[pin('qualitydesk-spaces'),pin('qualitydesk-sources'),pin('qualitydesk-partitions'),pin('qualitydesk-profiles'),pin('qualitydesk-rules'),pin('qualitydesk-baselines'),pin('qualitydesk-runs'),pin('qualitydesk-findings'),pin('qualitydesk-reconciliation'),pin('qualitydesk-exceptions'),pin('qualitydesk-releases'),pin('qualitydesk-reports'),pin('qualitydesk-exchange'),pin('qualitydesk-checklists')],systemDependencies:['batchQualityCompute'],services:['qualitydeskWorkbench'],contributes:{pages:['data-quality-studio'],http:qualitydeskHttp('workbench'),routes:qualitydeskRoutes('workbench')}});

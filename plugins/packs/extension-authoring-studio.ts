@@ -1,0 +1,3 @@
+/** 社区扩展开发工坊的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'extension-authoring-studio',name:"社区扩展开发工坊",description:"社区扩展开发工坊：定义、处理、复核和交接。",members:[member('extforge-spaces'),member('extforge-sources'),member('extforge-manifests'),member('extforge-interfaces'),member('extforge-toolchains'),member('extforge-builds'),member('extforge-inspections'),member('extforge-cases'),member('extforge-trials'),member('extforge-signatures'),member('extforge-bundles'),member('extforge-reviews'),member('extforge-reports'),member('extforge-exchange'),member('extforge-catalogs'),member('extforge-workbench')]});

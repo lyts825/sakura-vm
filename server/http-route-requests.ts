@@ -1,3 +1,4 @@
+import { seventhHttpRequests } from '../shared/contracts/seventh-http.ts';
 import { learningHttpRequests } from '../shared/contracts/learning-http.ts';
 import { mediaHttpRequests } from '../shared/contracts/media-http.ts';
 import { flowHttpRequests } from '../shared/contracts/flow-http.ts';
@@ -35,6 +36,7 @@ import { repairActionSchema } from '../shared/contracts/repair-session.ts';
 
 /** HTTP route inputs are used by the handlers, admission and generated clients. */
 export const httpRouteRequests = {
+  ...seventhHttpRequests,
   ...deliveryHttpRequests,
   ...foundryHttpRequests,
   ...appRouteRequests,

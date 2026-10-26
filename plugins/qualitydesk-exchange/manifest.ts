@@ -1,0 +1,4 @@
+/** 质量交接的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {qualitydeskRoutes,qualitydeskHttp} from '../../shared/contracts/qualitydesk-routes.generated.ts';
+export const manifest=definePlugin({id:'qualitydesk-exchange',name:"质量交接",description:"材料选择、隔离导入和接收映射",category:'development',experimental:true,requires:[pin('qualitydesk-spaces'),pin('qualitydesk-sources'),pin('qualitydesk-partitions'),pin('qualitydesk-profiles'),pin('qualitydesk-rules'),pin('qualitydesk-baselines'),pin('qualitydesk-runs'),pin('qualitydesk-findings'),pin('qualitydesk-reconciliation'),pin('qualitydesk-exceptions'),pin('qualitydesk-releases'),pin('qualitydesk-reports')],services:['qualitydeskExchange'],contributes:{http:qualitydeskHttp('exchange'),routes:qualitydeskRoutes('exchange')}});

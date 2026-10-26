@@ -73,6 +73,7 @@ type HelperOptions = Omit<ProcessAdmission, 'kind' | 'mode'> & {
  */
 type SpawnHelper = (file: string, args: string[]) => ChildProcess;
 export const hostProcessAdapters = {
+  'seventh-creation-sandbox': 'tool',
   'windows-probe': 'tool',
   'ssh-permissions': 'tool',
   'trusted-boot-probe': 'tool',

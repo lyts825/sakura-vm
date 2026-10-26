@@ -58,6 +58,18 @@ for (const id of Object.keys(pluginRouteResponses))
   if (!Object.hasOwn(operations, id)) throw new Error(`Response contract has no declared route: ${id}`);
 const operationsFile = new URL('operations.json', folder);
 const operationsText = JSON.stringify(operations, null, 2) + '\n';
+// 运行时只需要请求后备模式和响应存在标记。相同模式只存一次，避免把完整文档解析为TS字面量类型。
+const requestSchemas:Record<string,unknown>={},requestKeys=new Map<string,string>();
+const runtimeOperations=Object.fromEntries(Object.entries(operations).map(([id,raw])=>{
+  const op=raw as {id:string;request?:Record<string,unknown>|null;response?:unknown;status:number};
+  let request:string|undefined;
+  if(op.request){const key=JSON.stringify(op.request);request=requestKeys.get(key);if(!request){request='r'+requestKeys.size;requestKeys.set(key,request);requestSchemas[request]=op.request;}}
+  return [id,{id:op.id,status:op.status,response:!!op.response,...(request?{request}:{})}];
+}));
+const runtimeText='/** 由 scripts/plugin-schema.ts 生成的去重运行索引；完整模式见 docs/schemas/operations.json。 */\nconst schemas='+JSON.stringify(requestSchemas)+';\nconst entries='+JSON.stringify(runtimeOperations)+';\nexport const runtimeOperationContracts=Object.fromEntries(Object.entries(entries).map(([id,value])=>[id,{...value,request:value.request?schemas[value.request]:undefined}]));\n';
+const runtimeFile=new URL('../server/operation-contracts.generated.mjs',import.meta.url);
+if(checking){if((await readFile(runtimeFile,'utf8')).replaceAll('\r\n','\n')!==runtimeText)throw new Error('Runtime operation index is stale');}
+else await writeFile(runtimeFile,runtimeText);
 if (checking) {
   if ((await readFile(operationsFile, 'utf8')).replaceAll('\r\n', '\n') !== operationsText)
     throw new Error(`Operation contracts are stale: ${operationsFile.pathname}`);

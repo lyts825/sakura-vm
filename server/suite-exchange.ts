@@ -110,20 +110,32 @@ export class SuiteExchange extends SuiteQuarantineExchange {
       receivedName?: string;
       projection?: SuiteExportProjection;
       verifyBundle?: (data: Uint8Array) => void;
+      materialStores?: Readonly<Record<string, S.SuiteByteMaterialsV1>>;
+      bundleLimit?: number;
+      /** 仅由固定装配显式提供；旧包继续使用原枚举与原上传行为。 */
+      materialUpload?: (
+        store: S.SuiteByteMaterialsV1,
+        input: S.SuiteScope & { name: string; format: string; bytes: number; digest: string; allowExport: boolean },
+      ) => Promise<S.SuiteUpload>;
     } = {},
   ) {
-    super(domain, metadata, auth, sources, peers);
+    super(domain, metadata, auth, sources, peers, options.materialStores);
+    if (!Number.isSafeInteger(this.maximumBundleBytes) || this.maximumBundleBytes < 1024 ** 2 || this.maximumBundleBytes > 256 * 1024 ** 2)
+      suiteFail('SUITE_BUNDLE_LIMIT_OPTION');
+    if (options.materialStores && Object.keys(options.materialStores).some((id) => !Object.hasOwn(peers, id)))
+      suiteFail('SUITE_BUNDLE_MATERIAL_PROVIDER');
     this.files = new SuiteMaterials(
       domain,
       blobMetadata,
       uploads,
       auth,
       2 * 1024 ** 3,
-      SUITE_BUNDLE_LIMIT,
+      this.maximumBundleBytes,
       ['bundle'],
       sources,
     );
   }
+  private get maximumBundleBytes() { return this.options.bundleLimit ?? SUITE_BUNDLE_LIMIT; }
   private peer(domain: string) {
     return (
       (Object.hasOwn(this.peers, domain) ? this.peers[domain] : undefined) ??
@@ -131,14 +143,14 @@ export class SuiteExchange extends SuiteQuarantineExchange {
     );
   }
   private async bytes(
-    store: S.SuiteMaterialsV1,
+    store: S.SuiteByteMaterialsV1,
     scope: S.SuiteScope,
     ref: S.SuiteRef,
     purpose: 'read' | 'export',
   ) {
     const row = await store.get({ ...scope, id: ref.id, revision: ref.revision }),
       material = S.suiteMaterial.parse(row.content);
-    if (material.bytes > SUITE_BUNDLE_LIMIT) suiteFail('SUITE_BUNDLE_LIMIT', '本版交接包最多 16 MiB', 413);
+    if (material.bytes > this.maximumBundleBytes) suiteFail('SUITE_BUNDLE_LIMIT', '材料超过此交接包的明确限额', 413);
     const buffers: Buffer[] = [];
     for (let offset = 0; offset < material.bytes;) {
       const part = await store.readSource({
@@ -218,18 +230,17 @@ export class SuiteExchange extends SuiteQuarantineExchange {
       const payload = Buffer.from(suiteCanonical(record));
       size += payload.length + 1024;
       if (record.kind === 'source') size += S.suiteMaterial.parse(record.content).bytes;
-      if (size > SUITE_BUNDLE_LIMIT - 128 * 1024)
-        suiteFail('SUITE_BUNDLE_LIMIT', '完整交接材料超过 16 MiB', 413);
+      if (size > this.maximumBundleBytes - 128 * 1024)
+        suiteFail('SUITE_BUNDLE_LIMIT', '完整交接材料超过实例限额', 413);
       entries.push({ path: objectPath(reference(record)), data: payload });
       if (record.kind === 'source') {
-        if (record.domain !== this.sourcesDomain()) suiteFail('SUITE_BUNDLE_SOURCE_DOMAIN');
         entries.push({
           path: materialPath(reference(record)),
-          data: await this.bytes(this.sources, scope, reference(record), 'export'),
+          data: await this.bytes(this.materialProvider(record.domain), scope, reference(record), 'export'),
         });
       }
     }
-    return { ...encodeSuiteBundle(this.format, entries), projection: undefined };
+    return { ...encodeSuiteBundle(this.format, entries, {maximumBytes:this.maximumBundleBytes}), projection: undefined };
   }
   private async collectProjection(
     scope: S.SuiteScope,
@@ -258,11 +269,11 @@ export class SuiteExchange extends SuiteQuarantineExchange {
         sources++;
         entries.push({ path: materialPath(reference(record)), data });
       }
-      if (size > SUITE_BUNDLE_LIMIT - 128 * 1024)
-        suiteFail('SUITE_BUNDLE_LIMIT', '便携交接材料超过 16 MiB', 413);
+      if (size > this.maximumBundleBytes - 128 * 1024)
+        suiteFail('SUITE_BUNDLE_LIMIT', '便携交接材料超过实例限额', 413);
     }
     if (sources !== material.size) suiteFail('SUITE_BUNDLE_MATERIAL');
-    const archive = encodeSuiteBundle(this.format, entries);
+    const archive = encodeSuiteBundle(this.format, entries, {maximumBytes:this.maximumBundleBytes});
     // 使用接收端同一结构校验器，拒绝悬空引用、错误修订和未声明字节。
     this.validate(archive.data);
     const projection = projectionStamp.parse({
@@ -381,7 +392,7 @@ export class SuiteExchange extends SuiteQuarantineExchange {
       purpose: 'export',
     });
     for (const guard of guards) {
-      const current = await this.sources.policy({
+      const current = await this.materialProvider(guard.ref.domain).policy({
         workspaceId: input.workspaceId,
         id: guard.ref.id,
         revision: guard.ref.revision,
@@ -402,8 +413,7 @@ export class SuiteExchange extends SuiteQuarantineExchange {
       visited.add(key(ref));
       const row = await this.fixed(scope, ref);
       if (row.kind === 'source') {
-        if (row.domain !== this.sourcesDomain()) suiteFail('SUITE_BUNDLE_SOURCE_DOMAIN');
-        const policy = await this.sources.policy({ ...scope, id: row.id, revision: row.revision });
+        const policy = await this.materialProvider(row.domain).policy({ ...scope, id: row.id, revision: row.revision });
         if (!policy.allowRead || !policy.allowExport)
           suiteFail('SUITE_SOURCE_PERMISSION', '原材料当前禁止导出', 403);
         guards.push({ ref, revision: policy.revision });
@@ -420,7 +430,7 @@ export class SuiteExchange extends SuiteQuarantineExchange {
     const input = S.suiteScope
       .extend({
         name: S.suiteName,
-        bytes: z.number().int().positive().max(SUITE_BUNDLE_LIMIT),
+        bytes: z.number().int().positive().max(this.maximumBundleBytes),
         digest: S.suiteDigest,
       })
       .strict()
@@ -464,7 +474,7 @@ export class SuiteExchange extends SuiteQuarantineExchange {
   private validate(data: Buffer): Graph {
     let decoded: ReturnType<typeof decodeSuiteBundle>;
     try {
-      decoded = decodeSuiteBundle(data, this.format);
+      decoded = decodeSuiteBundle(data, this.format, {maximumBytes:this.maximumBundleBytes});
     } catch {
       suiteFail('SUITE_BUNDLE_INVALID', '交接包结构或摘要无效', 400);
     }
@@ -499,7 +509,7 @@ export class SuiteExchange extends SuiteQuarantineExchange {
       rows.push(row);
       used.add(entry.path);
       if (row.kind === 'source') {
-        if (row.domain !== this.sourcesDomain()) suiteFail('SUITE_BUNDLE_SOURCE_DOMAIN');
+        this.materialProvider(row.domain);
         const metadata = S.suiteMaterial.parse(row.content),
           path = materialPath(reference(row)),
           bytes = decoded.entries.find((e) => e.path === path)?.data;
@@ -616,22 +626,26 @@ export class SuiteExchange extends SuiteQuarantineExchange {
           if (row.kind === 'source') {
             const data = graph.material.get(key(reference(row)))!,
               material = S.suiteMaterial.parse(row.content);
-            const upload = await this.sources.beginUpload({
+            const store = this.materialProvider(row.domain);
+            const uploadInput = {
               ...destination,
               name: row.name,
-              format: S.suiteUploadInput.shape.format.parse(material.format),
+              format: material.format,
               bytes: data.length,
               digest: suiteSha(data),
               allowExport: false,
-            });
+            };
+            const upload = this.options.materialUpload
+              ? await this.options.materialUpload(store, uploadInput)
+              : await store.beginUpload({ ...uploadInput, format: S.suiteUploadInput.shape.format.parse(uploadInput.format) });
             for (let offset = 0; offset < data.length; offset += 512 * 1024)
-              await this.sources.appendUpload({
+              await store.appendUpload({
                 ...destination,
                 id: upload.id,
                 offset,
                 data: data.subarray(offset, offset + 512 * 1024).toString('base64'),
               });
-            result = await this.sources.finishUpload({ ...destination, id: upload.id });
+            result = await store.finishUpload({ ...destination, id: upload.id });
           } else
             result = await this.peer(row.domain).importRecord({
               ...destination,
@@ -737,7 +751,7 @@ export class SuiteExchange extends SuiteQuarantineExchange {
           after.format !== before.format
         )
           suiteFail('SUITE_IMPORT_MAPPING');
-        await this.bytes(this.sources, target, mapped, 'read');
+        await this.bytes(this.materialProvider(row.domain), target, mapped, 'read');
       } else {
         if (
           received.origin !== 'imported' ||

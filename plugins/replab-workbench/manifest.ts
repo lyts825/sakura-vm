@@ -1,0 +1,4 @@
+/** 同步工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {replabRoutes,replabHttp} from '../../shared/contracts/replab-routes.generated.ts';
+export const manifest=definePlugin({id:'replab-workbench',name:"同步工作台",description:"副本时间轴、数据对比、冲突及反例导航",category:'development',experimental:true,requires:[pin('replab-spaces'),pin('replab-schemas'),pin('replab-replicas'),pin('replab-operations'),pin('replab-clocks'),pin('replab-channels'),pin('replab-policies'),pin('replab-scenarios'),pin('replab-runs'),pin('replab-conflicts'),pin('replab-judgments'),pin('replab-reports'),pin('replab-exchange')],systemDependencies:['replicaModelCompute'],services:['replabWorkbench'],contributes:{pages:['replica-sync-lab'],http:replabHttp('workbench'),routes:replabRoutes('workbench')}});

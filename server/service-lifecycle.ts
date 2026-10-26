@@ -6,6 +6,9 @@
  */
 import { AppError } from '../shared/errors.ts';
 
+/** 宿主专用销毁标记，不属于领域 V1 或 HTTP 方法。 */
+export const SERVICE_LIFECYCLE: unique symbol = Symbol('sakura.service.lifecycle');
+
 export type ServiceDependencyResolver = Readonly<{
   /**
    * 签名 / Signature: ServiceDependencyResolver.get.

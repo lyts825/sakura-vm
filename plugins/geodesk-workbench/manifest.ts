@@ -1,0 +1,4 @@
+/** 地理工作台的明确依赖和线路声明。 */
+import {definePlugin,pin} from '../../shared/plugin-protocol.ts';
+import {geodeskRoutes,geodeskHttp} from '../../shared/contracts/geodesk-routes.generated.ts';
+export const manifest=definePlugin({id:'geodesk-workbench',name:"地理工作台",description:"图层树、地图、属性表和保存视图",category:'development',experimental:true,requires:[pin('geodesk-spaces'),pin('geodesk-sources'),pin('geodesk-crs'),pin('geodesk-validation'),pin('geodesk-layers'),pin('geodesk-operations'),pin('geodesk-joins'),pin('geodesk-indexes'),pin('geodesk-runs'),pin('geodesk-measures'),pin('geodesk-styles'),pin('geodesk-reviews'),pin('geodesk-reports'),pin('geodesk-exchange')],systemDependencies:['vectorGeometryCompute'],services:['geodeskWorkbench'],contributes:{pages:['geospatial-studio'],http:geodeskHttp('workbench'),routes:geodeskRoutes('workbench')}});

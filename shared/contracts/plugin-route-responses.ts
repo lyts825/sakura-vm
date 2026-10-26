@@ -1,3 +1,4 @@
+import { seventhHttpResponses } from './seventh-http.ts';
 import { learningHttpResponses } from './learning-http.ts';
 import { mediaHttpResponses } from './media-http.ts';
 import { flowHttpResponses } from './flow-http.ts';
@@ -4910,7 +4911,7 @@ export const pluginRouteResponses = {
   'repair.view': { kind: 'json', statuses: [200], media: 'application/json', schema: repairSessionSchema },
   ...deliveryHttpResponses,
   ...foundryHttpResponses,
-  ...Object.fromEntries<HttpResponseContract>(Object.entries({ ...appRouteResponses, ...dataHttpResponses, ...knowledgeHttpResponses, ...resilienceHttpResponses, ...integrationHttpResponses, ...supplyHttpResponses, ...localeHttpResponses, ...incidentHttpResponses, ...flowHttpResponses, ...mediaHttpResponses, ...learningHttpResponses, ...eventHttpResponses, ...browserHttpResponses, ...databaseHttpResponses, ...evaluationHttpResponses }).map(([key, schema]) => [key, { kind: 'json' as const, statuses: [200], media: 'application/json', schema }])),
+  ...Object.fromEntries<HttpResponseContract>(Object.entries({ ...seventhHttpResponses, ...appRouteResponses, ...dataHttpResponses, ...knowledgeHttpResponses, ...resilienceHttpResponses, ...integrationHttpResponses, ...supplyHttpResponses, ...localeHttpResponses, ...incidentHttpResponses, ...flowHttpResponses, ...mediaHttpResponses, ...learningHttpResponses, ...eventHttpResponses, ...browserHttpResponses, ...databaseHttpResponses, ...evaluationHttpResponses }).map(([key, schema]) => [key, { kind: 'json' as const, statuses: [200], media: 'application/json', schema }])),
   'repair.act': { kind: 'json', statuses: [200], media: 'application/json', schema: repairActionResponseSchema },
   'recipes.post.vms.vmId.recipe.apply-plan': {
     kind: 'json', statuses: [200], media: 'application/json', schema: projectsGetVmsVmIdProjectResponseSchema,

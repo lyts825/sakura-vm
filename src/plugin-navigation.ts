@@ -4,7 +4,7 @@
  * 详细范围（中文）：公开入口包括 pageLabels, tabLabels, sectionLabels, pluginNavigation；职责覆盖将已声明插件贡献映射为导航标签与归属，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include pageLabels, tabLabels, sectionLabels, pluginNavigation. The scope covers Mapping declared plugin contributions to navigation labels and ownership. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { PLUGINS, pluginSurfaceEnabled, type PluginRuntimeView } from '../shared/plugins';
+import { PLUGINS, pluginSurfaceEnabled, type PluginRuntimeView } from './plugin-surfaces.ts';
 
 export const pageLabels: Record<string, string> = {
   workspace: '工作空间',

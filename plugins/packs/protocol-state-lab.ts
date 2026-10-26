@@ -1,0 +1,3 @@
+/** 协议状态实验的完整成员集合。 */
+import {definePack,member} from '../../shared/plugin-protocol.ts';
+export const pack=definePack({id:'protocol-state-lab',name:"协议状态实验",description:"协议状态实验：定义、处理、复核和交接。",members:[member('protostate-spaces'),member('protostate-grammars'),member('protostate-messages'),member('protostate-machines'),member('protostate-guards'),member('protostate-scenarios'),member('protostate-generators'),member('protostate-targets'),member('protostate-runs'),member('protostate-traces'),member('protostate-properties'),member('protostate-reductions'),member('protostate-reports'),member('protostate-exchange'),member('protostate-workbench')]});

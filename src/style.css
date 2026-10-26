@@ -278,6 +278,8 @@ kbd {
   flex-direction: column;
   flex-shrink: 0;
   padding: clamp(24px, 3vh, 30px) var(--spacing-md) 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--sidebar);
   border-right: 1px solid var(--line);
 }
@@ -320,6 +322,7 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex-shrink: 0;
 }
 .nav-group {
   display: flex;
