@@ -156,8 +156,10 @@ export interface SeventhRecordsV1 extends S.SuiteRecordsV1 {
   view(input: S.SuiteScope): Promise<S.SuiteJson>;
 }
 export interface SeventhRootV1 extends SeventhRecordsV1, S.SuiteMaterialsV1 {
-  archive(input: S.SuitePin): Promise<S.SuiteRecord>;
-  archive(input: S.SuiteScope & { expectedRevision: number }): Promise<S.SuiteWorkspace>;
+  archive: {
+    (input: S.SuitePin): Promise<S.SuiteRecord>;
+    (input: S.SuiteScope & { expectedRevision: number }): Promise<S.SuiteWorkspace>;
+  };
 }
 export interface SeventhMaterialsV1 extends SeventhRecordsV1, S.SuiteByteMaterialsV1 {
   beginUpload(input: z.input<typeof seventhMaterialUpload>): Promise<S.SuiteUpload>;
