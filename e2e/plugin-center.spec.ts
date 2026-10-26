@@ -251,36 +251,74 @@ const view = (page: Page, name: string) =>
 test('plugin catalog searches, combines filters, and keeps the base configuration empty', async ({
   page,
 }) => {
-  await setup(page);
+  const state = await setup(page);
+  await expect(view(page, '整合包')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('article')).toHaveCount(3);
+  await expect(page.locator('.plugin-card')).toHaveCount(PLUGIN_PACKS.length);
+  await expect(page.getByRole('article').locator('h3')).toHaveText(['日常使用', '开发工作台', '运维与备份']);
+  for (const group of ['核心细分', '环境与交付', '工程验证', '数据与建模', '内容与设计', '流程与扩展实验', '实验与兼容'])
+    await page.getByLabel(`展开${group}整合包`).click();
+  await expect(page.getByRole('article')).toHaveCount(PLUGIN_PACKS.length);
+  await page.getByRole('searchbox').fill('完整兼容');
+  await expect(page.getByRole('article', { name: '完整兼容', exact: true })).toBeVisible();
+  await expect(page.getByRole('article')).toHaveCount(1);
+  await page.getByRole('searchbox').fill('qualitydesk-rules');
+  await expect(page.getByRole('article', { name: '数据质量工作室', exact: true })).toBeVisible();
+  await page.getByRole('searchbox').fill('日常使用');
+  const essentials = page.getByRole('article', { name: '日常使用', exact: true });
+  await essentials.getByLabel('日常使用的更多选项').click();
+  await essentials.getByRole('button', { name: '查看成员与依赖' }).click();
+  await expect(view(page, '插件目录')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('article')).toHaveCount(5);
+  await page.getByRole('button', { name: '清除范围', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
+  await view(page, '整合包').click();
+  await page.getByRole('searchbox').fill('日常使用');
+  await essentials.getByLabel('日常使用的更多选项').click();
+  await essentials.getByRole('button', { name: '查看成员与依赖' }).click();
+  await page.getByRole('button', { name: '返回整合包', exact: true }).click();
+  await expect(view(page, '整合包')).toHaveAttribute('aria-pressed', 'true');
+  await view(page, '插件目录').click();
+  await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
+  await page.getByRole('group', { name: '按用途查看' }).getByRole('button', { name: '数据与建模', exact: true }).click();
+  await page.getByRole('searchbox').fill('qualitydesk');
+  await expect(page.getByRole('article')).toHaveCount(15);
+  await page.getByRole('group', { name: '按用途查看' }).getByRole('button', { name: '全部用途', exact: true }).click();
+  await page.getByRole('searchbox').fill('repair');
+  await expect(page.getByRole('article', { name: 'AI 修复会话', exact: true })).toBeVisible();
   const filters = page.getByRole('button', { name: '插件筛选更多选项' });
   await expect(filters).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByLabel('按插件状态筛选')).toBeHidden();
   await page.getByRole('searchbox').fill('FILES');
-  await expect(page.getByRole('article')).toHaveCount(1);
+  await expect(page.getByRole('article')).toHaveCount(2);
   await expect(page.getByRole('article', { name: '文件工作台', exact: true })).toBeVisible();
+  await expect(page.getByRole('article', { name: '批次画像', exact: true })).toBeVisible();
   await filters.focus();
   await filters.press('Enter');
   await expect(filters).toHaveAttribute('aria-expanded', 'true');
   await page
     .getByRole('group', { name: '按用途查看' })
-    .getByRole('button', { name: '项目开发', exact: true })
+    .getByRole('button', { name: '工程验证', exact: true })
     .click();
   await expect(page.getByRole('heading', { name: '没有找到匹配的插件' })).toBeVisible();
   await filters.click();
   await expect(page.getByLabel('按插件状态筛选')).toBeHidden();
-  await expect(filters).toContainText('项目开发');
+  await expect(filters).toContainText('工程验证');
   await expect(page.getByRole('article')).toHaveCount(0);
   await page.getByRole('button', { name: '清除筛选', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
   await view(page, '我的配置').click();
   await expect(page.getByRole('heading', { name: '从基础版开始，也很好。' })).toBeVisible();
-  await page.getByRole('button', { name: '浏览插件目录' }).click();
+  await page.getByRole('button', { name: '浏览整合包' }).click();
+  await expect(view(page, '整合包')).toHaveAttribute('aria-pressed', 'true');
+  await view(page, '插件目录').click();
   await filters.click();
   await page.getByLabel('按插件状态筛选').selectOption('active');
   await expect(page.getByRole('article')).toHaveCount(0);
   await page.getByRole('button', { name: '重置筛选', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
+  expect(state.selection()).toEqual(emptySelection());
+  expect(state.writes()).toBe(0);
 });
 
 /**
@@ -371,6 +409,15 @@ test('pack selection, independent retention and removal preserve shared dependen
   await expect(page.getByRole('heading', { name: '从基础版开始，也很好。' })).toBeVisible();
   await expect(page.locator('.plugin-restart')).toHaveCount(0);
   expect(state.writes()).toBe(4);
+  await view(page, '整合包').click();
+  await page.getByRole('searchbox').fill('实验室');
+  const lab = page.getByRole('article', { name: '实验室', exact: true });
+  await lab.getByRole('button', { name: '选用整合包' }).click();
+  await page.getByRole('searchbox').fill('');
+  await expect(lab).toBeVisible();
+  await lab.getByRole('button', { name: '移除整合包' }).click();
+  expect(state.selection()).toEqual(emptySelection());
+  expect(state.writes()).toBe(6);
 });
 
 /**
@@ -395,6 +442,7 @@ test('runtime, pending removal and dependency failures remain distinct', async (
       metrics: { phase: 'active', activationMs: 7 },
     },
   });
+  await view(page, '插件目录').click();
   await expect(
     page.getByRole('article', { name: '资源采样', exact: true }).locator('.plugin-state'),
   ).toHaveText('运行中');
@@ -432,6 +480,7 @@ test('failed reads can be retried and rejected changes preserve the current sele
   await expect(page.getByRole('alert')).toContainText('插件服务暂时不可用');
   await expect(page.getByRole('heading', { name: '暂时无法读取插件' })).toBeVisible();
   await page.getByRole('button', { name: '重新读取' }).click();
+  await view(page, '插件目录').click();
   const files = page.getByRole('article', { name: '文件工作台', exact: true });
   await files.getByRole('button', { name: '启用插件' }).click();
   await expect(page.getByRole('alert')).toContainText('保存失败，请重试');
@@ -454,14 +503,27 @@ test('failed reads can be retried and rejected changes preserve the current sele
 test('catalog and packs fit desktop, mobile and night theme', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1050 });
   await setup(page);
+  await expect(page.getByRole('article')).toHaveCount(3);
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: 'artifacts/plugin-center-2.12.1/default-desktop.png', animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('group', { name: '按用途查看' }).getByRole('button')).toHaveCount(9);
+  await expect(page.locator('.plugin-pack-group')).toHaveCount(8);
+  await page.screenshot({ path: 'artifacts/plugin-center-2.12.1/default-mobile.png', fullPage: true, animations: 'disabled' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.setViewportSize({ width: 320, height: 700 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await view(page, '插件目录').click();
   await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: 'artifacts/plugins-catalog-desktop.png', animations: 'disabled' });
+  await page.screenshot({ path: 'artifacts/plugin-center-2.12.1/catalog-desktop.png', animations: 'disabled' });
   await view(page, '整合包').click();
-  await expect(page.getByRole('article')).toHaveCount(PLUGIN_PACKS.length);
-  await page.screenshot({ path: 'artifacts/plugins-packs-desktop.png', animations: 'disabled' });
+  await expect(page.locator('.plugin-card')).toHaveCount(PLUGIN_PACKS.length);
+  await expect(page.getByRole('article')).toHaveCount(3);
+  await page.screenshot({ path: 'artifacts/plugin-center-2.12.1/packs-desktop.png', animations: 'disabled' });
   await page.getByRole('button', { name: '切换到夜樱主题' }).click();
-  await page.screenshot({ path: 'artifacts/plugins-packs-night.png', animations: 'disabled' });
+  await page.screenshot({ path: 'artifacts/plugin-center-2.12.1/packs-night.png', animations: 'disabled' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('searchbox').fill('日常使用');
   await expect(page.getByRole('article')).toHaveCount(1);
@@ -469,7 +531,7 @@ test('catalog and packs fit desktop, mobile and night theme', async ({ page }) =
   await expect(page.locator('.plugin-restart')).toBeVisible();
   await expect(page.getByRole('button', { name: '移除整合包' })).toBeEnabled();
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: 'artifacts/plugins-mobile.png', fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: 'artifacts/plugin-center-2.12.1/mobile.png', fullPage: true, animations: 'disabled' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.getByRole('button', { name: '切换到花昼主题' }).click();
   await view(page, '插件目录').click();
@@ -479,7 +541,7 @@ test('catalog and packs fit desktop, mobile and night theme', async ({ page }) =
   await page.getByLabel('文件工作台的更多选项').click();
   await expect(page.getByRole('button', { name: '保留为独立选择' })).toBeVisible();
   await page.screenshot({
-    path: 'artifacts/plugins-more-options-mobile.png',
+    path: 'artifacts/plugin-center-2.12.1/more-options-mobile.png',
     fullPage: true,
     animations: 'disabled',
   });

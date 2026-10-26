@@ -146,6 +146,7 @@ for (const file of [
   'seventh-tool-images.md',
   'seventh-plugin-packs.md',
   'release-2.12.0.md',
+  'release-2.12.1.md',
 ])
   await cp(join(root, 'docs', file), join(output, '.sakura-server', 'docs', file));
 await checkSeventhDistribution(output);

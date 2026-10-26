@@ -1,6 +1,6 @@
 {
   "name": "sakura-vm",
-  "version": "2.12.0",
+  "version": "2.12.1",
   "private": true,
   "type": "module",
   "description": "A WSL-inspired local Linux workspace, powered by PosixLoom and QEMU",
@@ -33,7 +33,7 @@
     "ha:witness": "node scripts/launch-witness.mjs",
     "check:wsl": "node scripts/wsl-runtime.mjs --check",
     "test": "tsx --test --test-concurrency=4 tests/*.test.ts",
-    "test:e2e": "playwright test",
+    "test:e2e": "node --import tsx node_modules/@playwright/test/cli.js test",
     "test:integration": "playwright test --config playwright.integration.config.ts",
     "verify:vm": "npm run test:vm && npm run test:plugins:vm && npm run test:live-migration-distributed && npm run test:sandbox && npm run test:engineering && npm run test:integration",
     "test:production": "node scripts/smoke-production.mjs",

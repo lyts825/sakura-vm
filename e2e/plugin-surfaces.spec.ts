@@ -7156,6 +7156,12 @@ test('the empty install shows the core and the current plugin catalog', async ({
   await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button')).toHaveCount(3);
   await page.getByRole('button', { name: '插件中心' }).click();
   await expect(page.locator('.plugin-summary')).toContainText(/0\s*个插件运行中/);
+  await expect(page.getByRole('group', { name: '插件浏览方式' })
+    .getByRole('button', { name: /整合包/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('article')).toHaveCount(3);
+  await expect(page.locator('.plugin-card')).toHaveCount(PLUGIN_PACKS.length);
+  await page.getByRole('group', { name: '插件浏览方式' })
+    .getByRole('button', { name: /插件目录/ }).click();
   await expect(page.locator('.plugin-card')).toHaveCount(PLUGINS.length);
   await page
     .getByRole('group', { name: '插件浏览方式' })

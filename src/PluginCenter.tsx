@@ -34,6 +34,7 @@ import { pageLabels, sectionLabels, tabLabels } from './plugin-navigation';
 import './plugins.css';
 import { CommunityPluginCenter } from './CommunityPluginCenter';
 import { PluginErrorBoundary } from './plugin-boundary';
+import { compareCatalogPacks, packCatalogGroup, pluginCatalogGroups, pluginCatalogPurposes } from './plugin-catalog-view';
 
 /**
  * 中文：呈现管理插件选择、依赖、生命周期与恢复入口中的 DeferredRecoveryPanel 界面，组合 Panel，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
@@ -68,18 +69,6 @@ const stateLabels: Record<StateFilter, string> = {
   pending: '待重启生效',
   errors: '启动异常',
 };
-const packOrder = [
-  'essentials',
-  'developer',
-  'operations',
-  'desktop',
-  'development',
-  'environment',
-  'monitoring',
-  'lab',
-  'complete',
-];
-const categoryOrder = Object.keys(categories);
 const systemServiceNames: Record<string, string> = {
   terminalSharing: '共享终端', browserExtensions: '浏览器扩展', memoryReclaim: '内存回收',
   gpuProfiles: 'GPU 配置', buildFarm: '构建任务', native: '原生集成', nativeClipboard: '原生剪贴板',
@@ -139,11 +128,14 @@ export function PluginCenter({ request }: { request: Request }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState('');
-  const [view, setView] = useState<View>('plugins');
+  const [view, setView] = useState<View>('packs');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
+  const [memberPack, setMemberPack] = useState('');
+  const catalogRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const pending = useRef<AbortController | null>(null);
   /**
    * 中文：读取 GET /plugins，完成管理插件选择、依赖、生命周期与恢复入口的数据交互并更新忙碌标记、错误反馈、status 状态；异步失败传给此处的捕获分支或外层动作反馈
@@ -234,6 +226,10 @@ export function PluginCenter({ request }: { request: Request }) {
       ),
     [status],
   );
+  const purposes = useMemo(() => pluginCatalogPurposes(status?.plugins || [], status?.packs || []), [status]);
+  const availableGroups = pluginCatalogGroups.filter(group =>
+    status?.packs.some(pack => packCatalogGroup(pack.id) === group.id) ||
+    status?.plugins.some(plugin => purposes.get(plugin.id)?.has(group.id)));
   /**
    * 中文：在管理插件选择、依赖、生命周期与恢复入口流程中服务端视图，搜索或查询文本，category 状态，stateFilter 状态，moreOptionsOpen 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
    * English: In Managing plugin selection, dependencies, lifecycle and recovery entry points, server view, search/query text, category state, stateFilter state, moreOptionsOpen state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
@@ -248,9 +244,10 @@ export function PluginCenter({ request }: { request: Request }) {
     setCategory('all');
     setStateFilter('all');
     setMoreOptionsOpen(false);
+    setMemberPack('');
   };
   const filterSummary = [
-    category !== 'all' ? categories[category as keyof typeof categories].label : '',
+    category !== 'all' ? availableGroups.find(group => group.id === category)?.label : '',
     stateFilter !== 'all' ? stateLabels[stateFilter] : '',
   ]
     .filter(Boolean)
@@ -281,38 +278,52 @@ export function PluginCenter({ request }: { request: Request }) {
    * English: Inputs: values: the string[] domain value in the signature
    */
   const matches = (values: string[]) => values.join(' ').toLocaleLowerCase().includes(needle);
+  const memberIds = memberPack ? new Set(packContents.get(memberPack) || []) : null;
+  const memberPackName = status?.packs.find(pack => pack.id === memberPack)?.name || memberPack;
   const plugins =
     status?.plugins
       .filter((plugin) => {
         const state = pluginState(status, plugin.id);
         return (
           (view !== 'selected' || affected.has(plugin.id)) &&
-          (category === 'all' || plugin.category === category) &&
+          (!memberIds || memberIds.has(plugin.id)) &&
+          (category === 'all' || [...(purposes.get(plugin.id) || [])].some(id => id === category)) &&
           (stateFilter === 'all' ||
             (stateFilter === 'active' && status.active.includes(plugin.id)) ||
             (stateFilter === 'pending' && (added.includes(plugin.id) || removed.includes(plugin.id))) ||
             (stateFilter === 'errors' && state.tone === 'error')) &&
-          matches([plugin.id, plugin.name, plugin.description, categories[plugin.category].label])
+          matches([plugin.id, plugin.name, plugin.description,
+            ...availableGroups.filter(group => purposes.get(plugin.id)?.has(group.id)).map(group => group.label)])
         );
       })
-      .sort((a, b) => categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category)) || [];
+      .sort((a, b) => {
+        const rank = (id: string) => availableGroups.findIndex(group => purposes.get(id)?.has(group.id));
+        return rank(a.id) - rank(b.id) || a.name.localeCompare(b.name, 'zh-CN');
+      }) || [];
   const packs =
     status?.packs
       .filter(
         (pack) =>
           (view !== 'selected' || status.selection.packs.includes(pack.id)) &&
+          (category === 'all' || packCatalogGroup(pack.id) === category) &&
           matches([
             pack.id,
             pack.name,
             pack.description,
+            availableGroups.find(group => group.id === packCatalogGroup(pack.id))?.label || '',
+            ...(packContents.get(pack.id) || []),
             ...(packContents.get(pack.id) || []).map(pluginName),
           ]),
       )
-      .sort(
-        (a, b) =>
-          (packOrder.indexOf(a.id) < 0 ? packOrder.length : packOrder.indexOf(a.id)) -
-          (packOrder.indexOf(b.id) < 0 ? packOrder.length : packOrder.indexOf(b.id)),
-      ) || [];
+      .sort(compareCatalogPacks) || [];
+
+  /** 中文：打开包的成员与依赖目录，焦点回到搜索框并保留可清除的范围。 English: Open a bounded member directory and return focus to its search input. */
+  const inspectPackMembers = (id: string) => {
+    chooseView('plugins');
+    setMemberPack(id);
+    catalogRef.current?.scrollIntoView({ block: 'start' });
+    searchRef.current?.focus({ preventScroll: true });
+  };
 
   /**
    * 中文：按显式选择、计划、活动状态和依赖根渲染插件卡片；仍被其他根需要的插件不能简单取消，入口同时显示贡献、风险和权限信息。
@@ -383,6 +394,8 @@ export function PluginCenter({ request }: { request: Request }) {
             更多选项 <span>功能与依赖</span>
           </summary>
           <dl>
+            <dt>用途</dt>
+            <dd>{availableGroups.filter(group => purposes.get(plugin.id)?.has(group.id)).map(group => group.label).join('、')}</dd>
             <dt>功能入口</dt>
             <dd>{surfaces.length ? surfaces.join('、') : '为已有界面或后台服务提供配套能力'}</dd>
             <dt>必需依赖</dt>
@@ -520,6 +533,9 @@ export function PluginCenter({ request }: { request: Request }) {
           <summary aria-label={`${pack.name}的更多选项`}>
             更多选项 <span>含依赖共 {resolved.length} 个插件</span>
           </summary>
+          <button className="secondary compact plugin-members-link" onClick={() => inspectPackMembers(pack.id)}>
+            查看成员与依赖
+          </button>
           <p>{resolved.map(pluginName).join('、')}</p>
           {selected && retained.length > 0 && (
             <p>移除此整合包后仍保留：{retained.map(pluginName).join('、')}。</p>
@@ -703,12 +719,12 @@ export function PluginCenter({ request }: { request: Request }) {
               {message}
             </p>
           ))}
-          <div className="plugin-catalog-bar">
+          <div className="plugin-catalog-bar" ref={catalogRef}>
             <div className="plugin-views" role="group" aria-label="插件浏览方式">
               {(
                 [
-                  ['plugins', '插件目录', status.plugins.length, Puzzle],
                   ['packs', '整合包', status.packs.length, Boxes],
+                  ['plugins', '插件目录', status.plugins.length, Puzzle],
                   ['selected', '我的配置', affected.size, Check],
                 ] as const
               ).map(([id, label, count, Icon]) => (
@@ -722,6 +738,7 @@ export function PluginCenter({ request }: { request: Request }) {
             <label className="plugin-search">
               <Search size={16} />
               <input
+                ref={searchRef}
                 type="search"
                 aria-label="搜索插件或整合包"
                 placeholder={view === 'packs' ? '搜索整合包或成员…' : '搜索名称、用途或标识…'}
@@ -735,6 +752,31 @@ export function PluginCenter({ request }: { request: Request }) {
               )}
             </label>
           </div>
+          <div className="plugin-purpose-filter">
+            <div className="plugin-categories" role="group" aria-label="按用途查看">
+              {[{ id: 'all', label: '全部用途' }, ...availableGroups].map(({ id, label }) => (
+                <button key={id} aria-pressed={category === id} onClick={() => setCategory(id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {view === 'plugins' && (
+            <div className="plugin-member-scope" role="region" aria-label="插件目录范围">
+              <p>{memberPack
+                ? `${memberPackName}：含依赖共 ${memberIds?.size || 0} 个插件。`
+                : '单独选择插件，或从整合包详情查看所需成员与依赖。'}</p>
+              <div>
+                {memberPack && <button className="text-button" onClick={() => setMemberPack('')}>清除范围</button>}
+                <button className="text-button" onClick={() => {
+                  const group = memberPack ? packCatalogGroup(memberPack) : 'all';
+                  chooseView('packs');
+                  setCategory(group);
+                  searchRef.current?.focus({ preventScroll: true });
+                }}>返回整合包</button>
+              </div>
+            </div>
+          )}
           {view !== 'packs' && (
             <div className="plugin-more-options">
               <button
@@ -752,15 +794,6 @@ export function PluginCenter({ request }: { request: Request }) {
                 <ChevronDown size={14} className="plugin-options-chevron" />
               </button>
               <div className="plugin-filters" id="plugin-filters" hidden={!moreOptionsOpen}>
-                <div className="plugin-categories" role="group" aria-label="按用途查看">
-                  {[['all', '全部'], ...Object.entries(categories).map(([id, item]) => [id, item.label])].map(
-                    ([id, label]) => (
-                      <button key={id} aria-pressed={category === id} onClick={() => setCategory(id)}>
-                        {label}
-                      </button>
-                    ),
-                  )}
-                </div>
                 <div className="plugin-filter-actions">
                   <select
                     value={stateFilter}
@@ -791,7 +824,7 @@ export function PluginCenter({ request }: { request: Request }) {
           <div className="plugin-results-heading">
             <p>
               {view === 'packs'
-                ? '按场景组合，必需依赖自动补齐；共享插件只加载一次。'
+                ? '从常用组合开始，按用途展开更多整合包。必需依赖自动补齐，共享插件只加载一次。'
                 : view === 'selected'
                   ? '独立选择与整合包共同决定下次启动的插件。'
                   : '随当前版本提供，按需启用。可选配套需另行选择。'}
@@ -820,16 +853,31 @@ export function PluginCenter({ request }: { request: Request }) {
               </p>
               <button
                 className="secondary compact"
-                onClick={() => chooseView(view === 'selected' && affected.size === 0 ? 'plugins' : view)}
+                onClick={() => chooseView(view === 'selected' && affected.size === 0 ? 'packs' : view)}
               >
-                {view === 'selected' && affected.size === 0 ? '浏览插件目录' : '清除筛选'}
+                {view === 'selected' && affected.size === 0 ? '浏览整合包' : '清除筛选'}
               </button>
             </div>
-          ) : (
-            <div className="plugin-grid">
-              {view === 'packs' ? packs.map(renderPack) : plugins.map(renderPlugin)}
+          ) : view === 'packs' ? (
+            <div className="plugin-pack-groups">
+              {availableGroups.map(group => {
+                const members = packs.filter(pack => packCatalogGroup(pack.id) === group.id);
+                if (members.length === 0) return null;
+                const selectedMembers = members.filter(pack => status.selection.packs.includes(pack.id));
+                return (
+                  <details className="plugin-pack-group" key={`${group.id}:${category}:${needle}:${selectedMembers.length}`}
+                    open={group.id === 'core' || !!needle || category !== 'all' || selectedMembers.length > 0}>
+                    <summary aria-label={`展开${group.label}整合包`}>
+                      <span className="plugin-group-title">{group.label}<span>{members.length} 个包</span></span>
+                      <span className="plugin-group-description">{group.description}</span>
+                      <ChevronDown size={17} className="plugin-group-chevron" />
+                    </summary>
+                    <div className="plugin-group-body"><div className="plugin-grid">{members.map(renderPack)}</div></div>
+                  </details>
+                );
+              })}
             </div>
-          )}
+          ) : <div className="plugin-grid">{plugins.map(renderPlugin)}</div>}
           <p className="plugin-footnote">
             <ShieldCheck size={14} />
             上方为随 Sakura 提供的内置插件。选择保存在本机，停用后数据仍保留。

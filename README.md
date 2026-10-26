@@ -2,9 +2,11 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
-应用与内置包版本：**2.12.0**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+应用与内置包版本：**2.12.1**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
 
-本版增加第七批 20 个插件包、285 个内部插件，完整目录为 486 个插件、46 个包。包及内部成员、实际工具、页面、HTTP、CLI、容量和恢复见[二十包使用指南](docs/seventh-plugin-packs.md)，镜像准备见[固定工具镜像](docs/seventh-tool-images.md)。交付状态和验收见[项目状态](PROJECT_STATUS.md)。
+本版按用途整理插件中心，默认展示整合包，优先呈现日常使用、开发和运维组合。完整目录保持 486 个插件、46 个包，已有插件选择和依赖关系保持兼容。
+
+2.12.0 增加第七批 20 个插件包、285 个内部插件。包及内部成员、实际工具、页面、HTTP、CLI、容量和恢复见[二十包使用指南](docs/seventh-plugin-packs.md)，镜像准备见[固定工具镜像](docs/seventh-tool-images.md)。交付状态和验收见[项目状态](PROJECT_STATUS.md)。
 
 2.8.0 新增 10 个完整插件包、101 个插件，覆盖浏览器验收、软件供应审查、数据库变更、事件队列、模型评测、媒体处理、本地化、跨包流程、事件复盘和交互式实验。各包提供工作台、严格 HTTP 契约、纯 Node CLI 和离线交接。使用入口见下表；变更、验收范围与限制见 [2.8.0 版本说明](docs/release-2.8.0.md)。
 
@@ -20,36 +22,30 @@
 
 文件、桌面、多终端、项目、Git、同步、备份、监控等均为可选插件。**默认不启用任何插件或整合包**，也不运行它们的后台任务。默认导航为「工作空间 / 插件中心 / 系统设置」，实例标签为「终端 / 配置」。
 
-当前源码目录有 **201 个插件、26 个整合包**。新增十包保持实验性，并纳入“完整兼容包”；默认选择仍为空。在「插件中心」单独选择插件，或按场景选择整合包：
+当前源码目录有 486 个插件、46 个整合包。插件中心默认按用途展示整合包，展开常用核心，其余用途组可按需展开。包详情可查看内部成员，单插件目录保留独立选择和运行状态筛选。
 
-| 整合包                     | 内容                                                   |
-| -------------------------- | ------------------------------------------------------ |
-| `essentials` 日常使用      | 文件、镜像、快照与多终端                               |
-| `developer` 开发工作台     | 项目、代码、Git、工具、网络、私密配置与快捷命令        |
-| `operations` 运维与备份    | 备份、同步、监控、诊断、整理与数据迁移                 |
-| `desktop` 图形桌面         | KDE Plasma、文件与快照；桌面仍为实验性                 |
-| `lab` 实验室               | 沙箱、自动化、独立调度器、容器及扩展能力适配器         |
-| `complete` 完整兼容        | 全部内置可选能力，包括实验功能                         |
-| `development` 开发工具组合 | 工具安装、项目搜索、代码检查、收藏命令、流水线、运行时 |
-| `environment` 环境互通组合 | 环境配方与 IDE 接入，可分别启用                        |
-| `monitoring` 监控组合      | 资源采样与项目服务健康检查，可分别启用                 |
-| `delivery` 项目交付        | 固定输入、隔离构建、规则核对、制品预览与签名交接       |
-| `foundry` 环境镜像工坊     | 来源与蓝图、离线材料、制作、清理、验收、发布与交接     |
-| `app-runtime` 应用运行     | 制品、目标、配置、数据、部署、路由、观察与冷备恢复     |
-| `data-lab` 数据与实验      | 数据来源、不可变数据集、变换、质量、Notebook 与实验交接 |
-| `integration-lab` 接口集成验证 | 规格、环境、样例、模拟接口、场景、执行、断言、负载与报告交接 |
-| `resilience-lab` 可靠性演练 | 隔离夹具、独立监管、故障、业务探测、恢复、报告与清理 |
-| `knowledge-studio` 项目知识与文档 | 固定来源、解析、索引、引用、条目、文档、审阅、阅读发布与交接 |
-| `supply-audit` 软件供应审查 | 依赖、公告、许可、来源、门槛、人工例外、报告与离线交接 |
-| `localization-studio` 本地化交付 | 目录、上下文、术语、逐键译文、固定预览、审阅、语言文件及补丁 |
-| `incident-desk` 事件响应与复盘 | 固定证据、时间线、假设、原处置回执、人审报告与脱敏交接 |
-| `browser-lab` 浏览器验收 | 固定样站、真实 Chromium、像素基线与有限可访问性检查 |
-| `database-evolution` 数据库变更 | PostgreSQL 隔离迁移、检查和新副本恢复 |
-| `event-lab` 事件与队列 | 真实生产与消费、确认丢失、重投、幂等和轨迹报告 |
-| `model-evaluation` 模型评测 | 固定样例、本机文本协议、规则与人工评分、配对比较 |
-| `media-studio` 媒体处理 | 真实 FFmpeg 转换、字幕、集合、审核和交接 |
-| `flow-studio` 跨包流程 | 固定 DAG、逐步批准、等待、原接口执行和知识发布 |
-| `learning-lab` 交互式实验 | 固定课程、真实文件练习、检查点和自学报告 |
+| 用途分类 | 整合包 | 选择方式 |
+| --- | --- | --- |
+| 常用核心（3） | `essentials` 日常使用、`developer` 开发工作台、`operations` 运维与备份 | 从文件与终端、项目开发或数据保护开始 |
+| 核心细分（3） | `development`、`environment`、`monitoring` | 默认收起；分别细选开发工具、环境互通和监控 |
+| 环境与交付（4） | `desktop`、`delivery`、`foundry`、`app-runtime` | 图形桌面、项目交付、环境镜像和应用运行 |
+| 工程验证（8） | `integration-lab`、`browser-lab`、`database-evolution`、`event-lab`、`resilience-lab`、`supply-audit`、`incident-desk`、`dependency-resolution-studio` | 按接口、浏览器、数据库、队列、安全审查或故障处理任务选择 |
+| 数据与建模（12） | `data-lab`、`data-quality-studio`、`lineage-atlas`、`entity-resolution-studio`、`temporal-data-studio`、`geospatial-studio`、`graph-insight-studio`、`experiment-planner`、`feature-engineering-studio`、`classical-training-lab`、`constraint-solver-studio`、`model-evaluation` | 数据处理、分析、实验规划、训练、求解与评测 |
+| 内容与设计（8） | `knowledge-studio`、`document-extraction-studio`、`design-system-studio`、`form-flow-studio`、`notification-template-studio`、`media-studio`、`localization-studio`、`learning-lab` | 文档、知识、设计、表单、模板、媒体、本地化和学习 |
+| 流程与扩展实验（6） | `flow-studio`、`schedule-semantics-lab`、`extension-authoring-studio`、`protocol-state-lab`、`replica-sync-lab`、`service-virtualization-studio` | 流程编排、扩展开发与协议、调度、副本和服务实验 |
+| 实验与兼容（2） | `lab`、`complete` | 默认收起；用于进阶试用或恢复完整入口 |
+
+搜索、明确选择用途分类或已有包选择时，对应分组自动展开。包详情中的“查看成员与依赖”可进入限定该包范围的单插件目录，也可清除范围或返回整合包。
+
+`developer` 已包含 `development` 和 `environment`；`operations` 已包含 `monitoring`。这些细分包仍可独立选择。
+
+| 使用组合 | 选择的整合包 | 含必需依赖、去重后的插件数 |
+| --- | --- | ---: |
+| 日常使用 | `essentials` | 5 |
+| 日常开发 | `essentials`、`developer` | 18 |
+| 开发与运维 | `essentials`、`developer`、`operations` | 25 |
+
+表中数量表示选用后的计划插件数；首次启动仍为 0。除 `complete` 外的场景包共覆盖 485 个插件；`repair`（AI 修复会话）可独立选择，也包含在 `complete` 中。`complete` 会选入全部 486 个插件，包括实验能力和后台任务。
 
 整合包可引用子整合包；必需依赖自动补齐并去重，可选配套不会自动启用。选择保存后，**退出并重新启动 Sakura 服务才会生效**，仅刷新浏览器无效；重启会停止当前实例。移除整合包时，其他整合包或独立选择仍需要的插件继续保留。
 
@@ -165,7 +161,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 | 插件包 | 完整流程 | 使用说明 |
 | --- | --- | --- |
 | `foundry`（9 个插件） | 固定来源与配方、预取材料、离线构建、身份清理、独立实例验证、发布与交接 | [环境镜像工坊](docs/foundry-workbench.md) |
-| `app-runtime`（9 个插件） | 导入制品、准备目标、配置与数据、部署和健康切换、持续观察、冷备与恢复 | [应用运行与运维](docs/app-runtime-pack.md) |
+| `app-runtime`（9 个业务插件，另含命令面板） | 导入制品、准备目标、配置与数据、部署和健康切换、持续观察、冷备与恢复 | [应用运行与运维](docs/app-runtime-pack.md) |
 | `data-lab`（10 个插件） | 文件或只读数据库捕获、封存版本、SQL 与质量检查、Notebook、参数实验、Study 交接 | [数据与实验工作台](docs/data-lab.md) |
 
 三个包互不要求安装对方。`delivery` 可选用工坊镜像，应用包可显式接收经过当前信任检查的交付版本。新包提供同一鉴权下的界面、HTTP 和纯 Node CLI：`npm run foundry -- help`、`npm run app-runtime -- help`、`npm run data -- help`。首次启用只登记能力；实际创建实例、准备依赖或运行内容需要提交对应操作。
