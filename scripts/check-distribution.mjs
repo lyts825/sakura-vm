@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import {checkSeventhDistribution} from './check-seventh-distribution.mjs';
+import { BUILD_TARGETS } from './build-targets.mjs';
 
 const root = process.cwd();
 await checkSeventhDistribution(root,{sourceRoot:root});
@@ -27,24 +28,12 @@ for (const name of ['tsx', 'vite', 'react', 'react-dom', '@xterm/xterm', '@novnc
 for (const file of [
   'dist/index.html',
   'dist/single-app.html',
-  '.sakura-server/index.js',
+  ...BUILD_TARGETS.map(target => target.output),
   'scripts/trusted-update.mjs',
   'scripts/sign-release.mjs',
   'scripts/self-update.mjs',
   'scripts/release-manifest.mjs',
   'scripts/network-client.mjs',
-  '.sakura-server/network-entry.js',
-  '.sakura-server/compute-task.js',
-  '.sakura-server/supply-offline.js',
-  '.sakura-server/locale-offline.js',
-  '.sakura-server/incident-offline.js',
-  '.sakura-server/browser-offline.js',
-  '.sakura-server/database-offline.js',
-  '.sakura-server/event-offline.js',
-  '.sakura-server/evaluation-offline.js',
-  '.sakura-server/media-offline.js',
-  '.sakura-server/flow-offline.js',
-  '.sakura-server/learning-offline.js',
   '.sakura-server/assets/compute-worker.mjs',
   '.sakura-server/assets/compute-runtime.json',
   '.sakura-server/assets/network-worker.mjs',
@@ -59,7 +48,6 @@ for (const file of [
   '.sakura-server/docs/network-runtime.md',
   '.sakura-server/docs/delegated-actions.md',
   '.sakura-server/docs/incident-capture.md',
-  '.sakura-witness/ha-witness.js',
   '.sakura-witness/docs/ha-witness-maintenance.md',
   '.sakura-server/assets/state-report.sh',
   '.sakura-server/assets/engineering-runner.py',

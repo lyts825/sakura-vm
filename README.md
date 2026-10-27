@@ -2,7 +2,7 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
-应用与内置包版本：**2.12.1**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+应用与内置包版本：**2.12.2**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
 
 本版按用途整理插件中心，默认展示整合包，优先呈现日常使用、开发和运维组合。完整目录保持 486 个插件、46 个包，已有插件选择和依赖关系保持兼容。
 

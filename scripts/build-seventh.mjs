@@ -5,15 +5,16 @@ import {createHash} from 'node:crypto';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {copySeventhNative} from './seventh-runtime-assets.mjs';
+import {BUILD_TARGETS} from './build-targets.mjs';
 const root=fileURLToPath(new URL('..',import.meta.url)),output=join(root,'.sakura-server');
-for(const entry of ['server/seventh-worker-task.ts','server/seventh-offline.ts'])await build({root,build:{ssr:entry,outDir:output,emptyOutDir:false}});
+for(const target of BUILD_TARGETS.filter(target=>target.group==='seventh'))await build({root,build:{ssr:target.entry,outDir:join(root,target.outDir),emptyOutDir:target.emptyOutDir}});
 await mkdir(join(output,'assets'),{recursive:true});
 for(const file of ['seventh-worker.mjs','seventh-engineering-worker.py','seventh-creation-native-worker.py']){
  await cp(join(root,'server',file),join(output,file));await cp(join(root,'server',file),join(output,'assets',file));
 }
 await cp(join(root,'shared/seventh-catalog.json'),join(output,'seventh-catalog.json'));
 await mkdir(join(output,'docs'),{recursive:true});
-for(const name of ['seventh-tool-images.md','seventh-plugin-packs.md','seventh-plugin-members.md','release-2.12.0.md','release-2.12.1.md'])await cp(join(root,'docs',name),join(output,'docs',name));
+for(const name of ['seventh-tool-images.md','seventh-plugin-packs.md','seventh-plugin-members.md','release-2.12.0.md','release-2.12.1.md','release-2.12.2.md'])await cp(join(root,'docs',name),join(output,'docs',name));
 await mkdir(join(output,'native/seventh-creation-sandbox'),{recursive:true});
 for(const name of ['README.md','requirements.txt'])await cp(join(root,'native/seventh-creation-sandbox',name),join(output,'native/seventh-creation-sandbox',name));
 const native=process.platform==='win32'&&process.arch==='x64'?await copySeventhNative(resolve(process.env.SAKURA_SEVENTH_NATIVE_ASSETS??join(root,'.tools/seventh-creation')),join(output,'assets/seventh-creation'),{worker:join(root,'server/seventh-creation-native-worker.py'),source:join(root,'native/seventh-creation-sandbox/Program.cs')}):null;

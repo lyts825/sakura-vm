@@ -62,7 +62,7 @@ const canonical = (file: string) => file.replaceAll('\\', '/').replace(/\.[cm]?[
 export function domainOwner(file: string): Domain | undefined {
   file = canonical(file);
   if (owners[file]) return owners[file];
-  if (/^server\/application(?:-|$)/.test(file) || file === 'server/system-services') return 'composition';
+  if (/^server\/application(?:-|\/|$)/.test(file) || file === 'server/system-services') return 'composition';
   if (/^server\/ha(?:-|$)/.test(file)) return 'failover';
   if (/^server\/live-migration(?:-|$)/.test(file)) return 'migration';
   if (file.startsWith('server/network/')) return 'network';

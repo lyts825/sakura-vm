@@ -39,6 +39,8 @@ export function pluginBoundaryErrors(file: string, source: ts.SourceFile): strin
     specifier = specifier.replaceAll('\\', '/');
     const path = posix.normalize(specifier.startsWith('.')
       ? posix.join(posix.dirname(file), specifier) : specifier).replace(/\.[cm]?[jt]sx?$/, '');
+    if (path.startsWith('server/application/') && !/^server\/application(?:[./-])/.test(file))
+      report(node, 'Only application composition modules may import service assembly stages');
     if (
       /(?:^|\/)machines$/.test(path) &&
       !hostAdapters.has(file) &&

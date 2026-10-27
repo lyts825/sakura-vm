@@ -1,13 +1,14 @@
 /** 沿 TypeScript 导入图检查浏览器、服务、插件及网络边界，并核对打包脚本入口与受约束资源访问。
  * Inspect browser/service/plugin/network boundaries along the TypeScript import graph and verify packaged script entry points and constrained resource access. */
 import { readdir, readFile } from 'node:fs/promises';
-import { dirname, relative, resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { isBuiltin } from 'node:module';
 import ts from 'typescript';
-import { networkBoundaryErrors, staticString } from './network-boundaries.ts';
+import { networkBoundaryErrors } from './network-boundaries.ts';
 import { resourceBoundaryErrors } from './resource-boundaries.ts';
 import { pluginBoundaryErrors } from './plugin-boundaries.ts';
 import { domainBoundaryErrors } from './domain-boundaries.ts';
+import { moduleCandidates, moduleDependencies } from './module-dependencies.ts';
 
 // Check eager value dependencies. Type imports and lazy plugin loading do not
 // participate in module initialization and are deliberately excluded.
@@ -26,54 +27,36 @@ const known = new Set(files);
  * Format source paths as slash-normalized workspace-relative diagnostic labels. */
 const label = (file: string) => relative(process.cwd(), file).replaceAll('\\', '/');
 const graph = new Map<string, string[]>();
+const runtimeGraph = new Map<string, string[]>();
 const builtins = new Map<string, string[]>();
+const unresolvedLoads = new Map<string, number[]>();
 const errors: string[] = [];
 const sources = new Map<string, ts.SourceFile>();
 for (const file of files) {
   const source = ts.createSourceFile(file, await readFile(file, 'utf8'), ts.ScriptTarget.Latest, true);
   sources.set(file, source);
   const edges: string[] = [];
+  const runtimeEdges: string[] = [];
   const nodeImports: string[] = [];
-  for (const statement of source.statements) {
-    if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue;
-    if (!statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-    const clause = ts.isImportDeclaration(statement) ? statement.importClause : undefined;
-    const bindings = clause?.namedBindings;
-    if (clause?.isTypeOnly || (ts.isExportDeclaration(statement) && statement.isTypeOnly)) continue;
-    if (
-      bindings &&
-      ts.isNamedImports(bindings) &&
-      !clause?.name &&
-      bindings.elements.length &&
-      bindings.elements.every((entry) => entry.isTypeOnly)
-    )
+  const unresolved: number[] = [];
+  for (const { specifier, eager, node } of moduleDependencies(source)) {
+    if (!specifier) {
+      unresolved.push(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1);
       continue;
-    if (
-      ts.isExportDeclaration(statement) &&
-      statement.exportClause &&
-      ts.isNamedExports(statement.exportClause) &&
-      statement.exportClause.elements.length &&
-      statement.exportClause.elements.every((entry) => entry.isTypeOnly)
-    )
-      continue;
-    const specifier = statement.moduleSpecifier.text;
+    }
     if (!specifier.startsWith('.')) {
       if (isBuiltin(specifier)) nodeImports.push(specifier);
       continue;
     }
-    const base = resolve(dirname(file), specifier);
-    const target = [
-      base,
-      ...['.ts', '.tsx', '.js', '.mjs', '.cjs'].map((extension) => base + extension),
-      base.replace(/\.js$/, '.ts'),
-      resolve(base, 'index.ts'),
-      resolve(base, 'index.js'),
-    ].find((candidate) => known.has(candidate));
+    const target = moduleCandidates(file, specifier).find(candidate => known.has(candidate));
     if (!target) continue;
-    edges.push(target);
+    runtimeEdges.push(target);
+    if (eager) edges.push(target);
   }
   graph.set(file, edges);
+  runtimeGraph.set(file, runtimeEdges);
   builtins.set(file, nodeImports);
+  unresolvedLoads.set(file, unresolved);
 }
 
 // Follow client helper modules as well as entry points, so an intermediate
@@ -84,9 +67,11 @@ const browserVisited = new Set<string>();
 function visitBrowser(file: string) {
   if (browserVisited.has(file)) return;
   browserVisited.add(file);
+  for (const line of unresolvedLoads.get(file) || [])
+    errors.push(`${label(file)}:${line}: browser module dependencies must use statically declared paths`);
   for (const specifier of builtins.get(file) || [])
     errors.push(`${label(file)}: browser dependency on ${specifier}`);
-  for (const target of graph.get(file) || []) {
+  for (const target of runtimeGraph.get(file) || []) {
     if (label(target).startsWith('server/'))
       errors.push(`${label(file)}: browser runtime dependency on ${label(target)}`);
     else visitBrowser(target);
@@ -153,46 +138,9 @@ async function visitNetwork(file: string) {
   errors.push(...resourceBoundaryErrors(label(file), source));
   errors.push(...pluginBoundaryErrors(label(file), source));
   errors.push(...domainBoundaryErrors(label(file), source));
-  const dependencies: string[] = [];
-  /** 识别静态 import/export、import-equals 与动态加载表达式，收集实际运行依赖而跳过纯类型边界。
-   * Recognize import/export/import-equals/dynamic loads and collect runtime dependencies rather than type-only edges. */
-  function collect(node: ts.Node) {
-    if (
-      (ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly) ||
-      (ts.isExportDeclaration(node) && !node.isTypeOnly)
-    ) {
-      const specifier = staticString(node.moduleSpecifier);
-      if (specifier) dependencies.push(specifier);
-    }
-    if (
-      ts.isImportEqualsDeclaration(node) &&
-      !node.isTypeOnly &&
-      ts.isExternalModuleReference(node.moduleReference)
-    ) {
-      const specifier = staticString(node.moduleReference.expression);
-      if (specifier) dependencies.push(specifier);
-    }
-    if (
-      ts.isCallExpression(node) &&
-      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-        (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
-    ) {
-      const specifier = staticString(node.arguments[0]);
-      if (specifier) dependencies.push(specifier);
-    }
-    ts.forEachChild(node, collect);
-  }
-  collect(source);
-  for (const specifier of dependencies) {
-    if (!specifier.startsWith('.')) continue;
-    const base = resolve(dirname(file), specifier);
-    const candidates = [
-      base,
-      base.replace(/\.js$/, '.ts'),
-      ...['.ts', '.tsx', '.js', '.mjs', '.cjs'].map((extension) => base + extension),
-      resolve(base, 'index.ts'),
-      resolve(base, 'index.js'),
-    ];
+  for (const { specifier } of moduleDependencies(source)) {
+    if (!specifier?.startsWith('.')) continue;
+    const candidates = moduleCandidates(file, specifier);
     const knownTarget = candidates.find((candidate) => sources.has(candidate));
     if (knownTarget) await visitNetwork(knownTarget);
     else

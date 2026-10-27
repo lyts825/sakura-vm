@@ -1,18 +1,18 @@
 # 源码阅读与维护指南
 
-核对日期：2026-10-23；应用与内置包版本：2.5.0；宿主插件 API：5；公共服务契约：V1。全部主题文档见 [文档索引](README.md)，当前交付状态见 [项目状态](../PROJECT_STATUS.md)。
+核对日期：2026-10-27；应用与内置包版本：2.12.2；宿主插件 API：5；公共服务契约：V1。全部主题文档见 [文档索引](README.md)，当前交付状态见 [项目状态](../PROJECT_STATUS.md)。
 
 ## 从哪里开始读
 
 | 目标 | 入口与阅读顺序 |
 | --- | --- |
-| 启动与退出 | `server/index.ts` → `application.ts` → `application-services.ts`、`service-lifecycle.ts`、`resource-scope.ts` |
+| 启动与退出 | `server/index.ts` → `application.ts` → `application-services.ts`、`application/` → `service-lifecycle.ts`、`resource-scope.ts` |
 | HTTP 与 WebSocket | `application-http.ts`、`application-websocket.ts` → `operation-gateway.ts` → `core-http-handlers.ts`、各插件 `server.ts` |
 | 插件声明和跨插件调用 | `shared/plugin-protocol.ts`、`plugin-schema.ts`、`plugin-resolver.ts` → `server/plugin-manager.ts`、`plugin-runtime.ts`、`service-broker.ts` |
 | VM 生命周期与资源 | `server/machines.ts` → `vm-ports.ts`、`domains/` → `host-runtime/`、`network/`、`storage-runtime.ts` |
 | 项目账号与执行 | `server/project-identity.ts`、`project-run-scope.ts`、`project-preparation.ts` → `native/project-identity/` 与具体任务入口 |
 | 浏览器状态 | `src/main.tsx` → `src/app/App.tsx`、`use-controller-state.ts`、`use-project-selection.ts` → 对应插件 `client.tsx` |
-| 构建、安装与 CLI | `package.json` 的 scripts → `scripts/setup.mjs`、`launch.mjs`、`cli.mjs`、`prepare-server-assets.mjs` |
+| 构建、安装与 CLI | `scripts/build.mjs`、`build-targets.mjs` → `prepare-server-assets.mjs`；安装与运行见 `setup.mjs`、`launch.mjs`、`cli.mjs` |
 
 详细依赖与资源所有权以 [架构说明](architecture.md) 和 [插件设计契约](plugin-design-contract.md) 为准。`shared/contracts/` 是浏览器与服务端共用的传输类型，`server/service-contracts/v1.ts` 是跨服务公开接口；实现类新增方法不会自动扩大公共服务能力。
 
@@ -85,6 +85,7 @@ npm run dev
 | `shared/contracts/api-client.generated.ts`、HTTP 契约 JSON | 操作目录与请求/响应 Schema；`npm run plugins:schema` |
 | `shared/contracts/websocket-client.generated.ts`、WebSocket 契约 JSON | WebSocket 贡献与通道 Schema；`npm run plugins:schema` |
 | `server/public-service-members.ts` 服务描述符 | `server/service-contracts/v1.ts`；`npm run plugins:contracts`，普通检查不会更新发布基线 |
+| `server/application/suite-services.ts` 中的固定计算工厂 | `shared/seventh-kernels.json` 与 `scripts/seventh-kernels.mjs`；生成目标属于套件装配模块 |
 | `server/service-contracts/releases/` 发布基线 | 已提交的版本接口与关联类型；`npm run plugins:contracts:freeze -- --release <版本> --commit <实现提交>` |
 | 繁体本地化资源 | `src/`、`plugins/` 的 TS/TSX 文本、字符串与模板片段，经 OpenCC 转换；`npm run locales:build` |
 | `docs/unfinished-features.md` | 基础、工程、平台静态功能目录的状态及脚本中的待验收范围；`npm run features:audit` |
