@@ -5,13 +5,14 @@
  * Detailed scope (English): Public entry points include TasksPanel. The scope covers Presenting job details and providing cancellation, retry and refresh actions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from './localization';
-import { ClipboardList, Inbox } from 'lucide-react';
+import { ClipboardList, Inbox, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import type { VMView } from '../shared/contracts/vm.ts';
 import type { Request } from './feature-shared';
 import { Feedback, useAction, useRemote } from './feature-shared';
 import './features.css';
+import './tasks-panel.css';
 import { jobPresentation, taskLabels } from './job-presentation';
 import { TaskEvidencePanel } from './TaskEvidencePanel';
 import { usePlugins } from './plugin-context';
@@ -40,13 +41,18 @@ export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms
     remote.data?.jobs.filter(
       (job) => (filter === 'all' || jobPresentation(job).state === filter) && (machine === 'all' || job.vmId === machine),
     ) || [];
+  const hasFilters = filter !== 'all' || machine !== 'all';
+  const statusLabel = { all: '全部状态', queued: '等待资源', cancelling: '正在取消',
+    'cleanup-pending': '清理待确认', ...taskLabels }[filter as keyof typeof taskLabels | 'all' | 'queued' | 'cancelling' | 'cleanup-pending'];
+  const machineLabel = machine === 'all' ? '全部发行版' : vms.find(vm => vm.id === machine)?.name || '已移除的发行版';
+  const clearFilters = () => { setFilter('all'); setMachine('all'); };
   const taskStatus = remote.error
     ? { tone: 'error', label: '暂时离线' }
     : remote.data
       ? { tone: 'running', label: '实时更新' }
       : { tone: 'starting', label: '正在连接' };
   return (
-    <div className="content-panel feature-panel management-page">
+    <div className="content-panel feature-panel management-page tasks-panel">
       <div className="management-header">
         <div>
           <div className="eyebrow">
@@ -87,7 +93,17 @@ export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms
           </select>
         </label>
       </div>
+      {remote.data && <div className="tasks-result-context">
+        <p role="status" aria-live="polite">显示 <strong>{jobs.length}</strong> / {remote.data.jobs.length} 项任务</p>
+        {hasFilters && <>
+          <span className="tasks-filter-scope">{statusLabel} · {machineLabel}</span>
+          <button className="text-button" type="button" onClick={clearFilters}><X size={14} />清除筛选</button>
+        </>}
+      </div>}
       <Feedback error={action.error || remote.error || remote.data?.warnings.join('；')} />
+      {remote.error && <button className="secondary compact tasks-reload" type="button" onClick={remote.reload}>
+        <RefreshCw size={14} />重新读取任务
+      </button>}
       {events.data?.events.length ? (
         <details className="feature-card">
           <summary>需要关注的事件（{events.data.events.length}）</summary>
@@ -104,8 +120,9 @@ export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms
           <span className="empty-icon">
             <Inbox size={24} />
           </span>
-          <h3>暂无任务记录</h3>
-          <p>启动、同步或维护实例后，后台任务会显示在这里。</p>
+          <h3>{hasFilters ? '没有符合筛选条件的任务' : '暂无任务记录'}</h3>
+          <p>{hasFilters ? '试试其他任务状态或发行版，也可以查看全部任务。' : '启动、同步或维护实例后，后台任务会显示在这里。'}</p>
+          {hasFilters && <button className="secondary compact" type="button" onClick={clearFilters}>查看全部任务</button>}
         </div>
       )}
       {!remote.data && !remote.error && (

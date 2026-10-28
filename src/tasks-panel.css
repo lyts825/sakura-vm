@@ -1,0 +1,31 @@
+/* Task filters always explain whether the list is empty or only filtered out. */
+.tasks-panel .tasks-result-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 0 2px 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.tasks-panel .tasks-result-context p {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.tasks-panel .tasks-result-context strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.tasks-panel .tasks-filter-scope {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tasks-panel .tasks-result-context button {
+  min-height: 32px;
+  margin-left: auto;
+  color: var(--accent);
+}
+.tasks-panel .tasks-reload {
+  align-self: flex-start;
+  margin-bottom: 12px;
+}
