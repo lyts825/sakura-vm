@@ -1793,6 +1793,7 @@ export function App() {
         </main>
       </div>
       {palette && hasPalette && (
+        <Suspense fallback={null}>
         <CommandPalette
           vms={vms}
           vm={vm}
@@ -1801,6 +1802,7 @@ export function App() {
           navigate={navigatePalette}
           close={() => setPalette(false)}
         />
+        </Suspense>
       )}
       {auditLoaded && (
         <Suspense fallback={null}>
