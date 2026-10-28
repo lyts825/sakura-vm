@@ -8,11 +8,21 @@ import { formatDateTime } from './localization';
 import { useEffect, useRef, useState } from 'react';
 import type { AlertEvent } from '../server/feature-suite';
 import { saveText } from './export-file';
+import './notification-center.css';
 
 type Event = Pick<
   AlertEvent,
   'id' | 'kind' | 'message' | 'createdAt' | 'acknowledged' | 'jobId' | 'projectId'
 >;
+const eventKinds: Record<Event['kind'], string> = {
+  cpu: 'CPU',
+  memory: '内存',
+  disk: '磁盘',
+  service: '服务',
+  backup: '备份',
+  task: '任务',
+  secret: '私密配置',
+};
 /**
  * 中文：呈现呈现控制面事件与通知详情中的 NotificationCenter 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
  * English: Render the NotificationCenter surface for Presenting controller events and notification details. Bind form input/user actions to the supplied context; the invoked feedback surface displays errors/in-flight state
@@ -66,10 +76,16 @@ export function NotificationCenter({
     }
   }, [events, permission, supported]);
   const visible = events.filter((event) => !unreadOnly || !event.acknowledged);
+  const unreadCount = events.filter((event) => !event.acknowledged).length;
   return (
-    <section className="feature-card" aria-label="通知中心">
-      <h3>通知中心 · {events.filter((event) => !event.acknowledged).length} 条未确认</h3>
-      <div className="feature-actions">
+    <section className="feature-card notification-center" aria-label="通知中心">
+      <div className="notification-heading">
+        <h3>通知中心</h3>
+        <span className={`notification-count ${unreadCount ? 'has-unread' : ''}`}>
+          {unreadCount} 条未确认
+        </span>
+      </div>
+      <div className="feature-actions notification-controls">
         <label className="checkbox-label">
           <input
             type="checkbox"
@@ -108,20 +124,28 @@ export function NotificationCenter({
       </p>
       {permissionError && <p role="alert">{permissionError}</p>}
       {!visible.length && <p className="muted">没有符合条件的告警。</p>}
-      <div className="event-list">
+      <div className="event-list notification-events" role="list" aria-label="告警列表">
         {visible.slice(0, limit).map((event) => (
-          <div className="diagnostic-row" key={event.id}>
-            <p>
-              <b>{event.message}</b>
-              <br />
-              <small>
-                {formatDateTime(new Date(event.createdAt))}
-                {event.projectId ? ` · 项目 ${event.projectId}` : ''}
-                {event.jobId ? ` · 任务 ${event.jobId}` : ''}
-              </small>
-            </p>
+          <div
+            className={`notification-event ${event.acknowledged ? 'acknowledged' : 'unacknowledged'}`}
+            role="listitem"
+            key={event.id}
+          >
+            <div className="notification-event-content">
+              <div className="notification-event-meta">
+                <span className="notification-kind">{eventKinds[event.kind]}</span>
+                <time dateTime={event.createdAt}>{formatDateTime(new Date(event.createdAt))}</time>
+              </div>
+              <p className="notification-message">{event.message}</p>
+              {(event.projectId || event.jobId) && (
+                <div className="notification-context">
+                  {event.projectId && <span>项目 <code>{event.projectId}</code></span>}
+                  {event.jobId && <span>任务 <code>{event.jobId}</code></span>}
+                </div>
+              )}
+            </div>
             {event.acknowledged ? (
-              <span>已确认</span>
+              <span className="notification-acknowledged">已确认</span>
             ) : (
               <button
                 className="secondary compact"
