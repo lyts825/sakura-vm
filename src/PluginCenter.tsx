@@ -365,18 +365,18 @@ export function PluginCenter({ request }: { request: Request }) {
           <span className={`plugin-icon category-${plugin.category}`}>
             <CategoryIcon size={20} />
           </span>
-          <span className={`plugin-state ${state.tone}`}>
-            <state.icon size={12} />
-            {state.label}
-          </span>
-        </div>
-        <div>
-          <div className="plugin-card-title">
-            <h3>{plugin.name}</h3>
-            {plugin.experimental && <span className="plugin-experimental">实验</span>}
+          <div className="plugin-card-identity">
+            <div className="plugin-card-title">
+              <h3>{plugin.name}</h3>
+              {plugin.experimental && <span className="plugin-experimental">实验</span>}
+            </div>
+            <span className={`plugin-state ${state.tone}`}>
+              <state.icon size={12} />
+              {state.label}
+            </span>
           </div>
-          <p className="plugin-description">{plugin.description}</p>
         </div>
+        <p className="plugin-description">{plugin.description}</p>
         <div className="plugin-selection-source">
           {selected && (
             <span>
@@ -398,7 +398,8 @@ export function PluginCenter({ request }: { request: Request }) {
         )}
         <details className="plugin-details">
           <summary aria-label={`${plugin.name}的更多选项`}>
-            更多选项 <span>功能与依赖</span>
+            更多选项 <span className="plugin-details-meta">功能与依赖</span>
+            <ChevronDown size={14} className="plugin-details-chevron" aria-hidden="true" />
           </summary>
           <dl>
             <dt>用途</dt>
@@ -517,15 +518,15 @@ export function PluginCenter({ request }: { request: Request }) {
           <span className="plugin-icon">
             <Boxes size={22} />
           </span>
-          <span className={`plugin-state ${selected ? 'active' : 'idle'}`}>
-            {selected && <Check size={12} />}
-            {selected ? '已选择' : '整合包'}
-          </span>
+          <div className="plugin-card-identity">
+            <h3>{pack.name}</h3>
+            <span className={`plugin-state ${selected ? 'active' : 'idle'}`}>
+              {selected && <Check size={12} />}
+              {selected ? '已选择' : '整合包'}
+            </span>
+          </div>
         </div>
-        <div>
-          <h3>{pack.name}</h3>
-          <p className="plugin-description">{pack.description}</p>
-        </div>
+        <p className="plugin-description">{pack.description}</p>
         <div className="plugin-pack-members">
           {pack.members.slice(0, 5).map((pin) => (
             <span key={`${pin.kind}:${pin.id}`}>
@@ -538,7 +539,8 @@ export function PluginCenter({ request }: { request: Request }) {
         </div>
         <details className="plugin-details">
           <summary aria-label={`${pack.name}的更多选项`}>
-            更多选项 <span>含依赖共 {resolved.length} 个插件</span>
+            更多选项 <span className="plugin-details-meta">含依赖共 {resolved.length} 个插件</span>
+            <ChevronDown size={14} className="plugin-details-chevron" aria-hidden="true" />
           </summary>
           <button className="secondary compact plugin-members-link" onClick={() => inspectPackMembers(pack.id)}>
             查看成员与依赖
@@ -841,17 +843,17 @@ export function PluginCenter({ request }: { request: Request }) {
             <div className="plugin-active-filters" role="group" aria-label="当前筛选条件">
               <span>正在筛选</span>
               {needle && <button className="plugin-filter-chip" title={query.trim()}
-                aria-label="移除关键词筛选" onClick={() => {
+                aria-label={`移除关键词筛选：${query.trim()}`} onClick={() => {
                   setQuery('');
                   searchRef.current?.focus({ preventScroll: true });
                 }}><span>关键词：{query.trim()}</span><X size={12} aria-hidden="true" /></button>}
               {category !== 'all' && <button className="plugin-filter-chip"
-                aria-label="移除用途筛选" onClick={() => {
+                aria-label={`移除用途筛选：${availableGroups.find(group => group.id === category)?.label || category}`} onClick={() => {
                   setCategory('all');
                   searchRef.current?.focus({ preventScroll: true });
                 }}><span>{availableGroups.find(group => group.id === category)?.label}</span><X size={12} aria-hidden="true" /></button>}
               {stateFilter !== 'all' && <button className="plugin-filter-chip"
-                aria-label="移除运行状态筛选" onClick={() => {
+                aria-label={`移除运行状态筛选：${stateLabels[stateFilter]}`} onClick={() => {
                   setStateFilter('all');
                   searchRef.current?.focus({ preventScroll: true });
                 }}><span>{stateLabels[stateFilter]}</span><X size={12} aria-hidden="true" /></button>}
