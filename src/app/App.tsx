@@ -844,8 +844,8 @@ export function App() {
             />
           )}
           {offline && (
-            <div className="error-banner">
-              连接出现问题：{offline}
+            <div className="error-banner" role="alert">
+              <span>连接出现问题：{offline}</span>
               <button onClick={reconnect}>重新连接</button>
             </div>
           )}
@@ -1344,7 +1344,7 @@ export function App() {
                           ))}
                         </div>
                       </div>
-                      {vm.lastError && <div className="machine-error">{vm.lastError}</div>}
+                      {vm.lastError && <div className="machine-error" role="alert">{vm.lastError}</div>}
                       <div
                         className="machine-content"
                         id="machine-content"
@@ -1816,7 +1816,7 @@ export function App() {
         </Suspense>
       )}
       {toast && (
-        <div role="status" className={`toast ${toast.error ? 'error' : ''}`}>
+        <div role={toast.error ? 'alert' : 'status'} aria-atomic="true" className={`toast ${toast.error ? 'error' : ''}`}>
           {toast.error ? <CircleHelp size={18} /> : <Check size={18} />}
           <span>{toast.text}</span>
           <button aria-label="关闭提示" onClick={() => setToast(null)}>

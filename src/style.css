@@ -2310,11 +2310,18 @@ label input {
   gap: var(--spacing-md);
   margin-bottom: 18px;
   border-radius: 10px;
+  flex-wrap: wrap;
+}
+.error-banner > span {
+  flex: 1 1 220px;
+  min-width: 0;
 }
 .error-banner button {
   text-decoration: underline;
   text-underline-offset: 3px;
   flex-shrink: 0;
+  min-height: 36px;
+  padding: 4px 8px;
 }
 .machine-error {
   margin: 14px 18px 0;
@@ -2323,7 +2330,7 @@ label input {
 .toast {
   position: fixed;
   z-index: 100;
-  bottom: 28px;
+  bottom: max(28px, env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -2332,13 +2339,19 @@ label input {
   padding: 15px 18px;
   max-width: min(650px, 92vw);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--ink);
   font-size: 13px;
   box-shadow: var(--shadow-float);
   animation: toast-in 180ms ease-out;
   backdrop-filter: blur(12px);
+}
+.toast > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  max-height: min(30dvh, 180px);
+  overflow-y: auto;
 }
 .toast > svg {
   color: var(--green);
@@ -2348,6 +2361,9 @@ label input {
   color: var(--danger);
 }
 .toast button {
+  flex-shrink: 0;
+  min-width: 36px;
+  min-height: 36px;
   padding: 5px;
   color: var(--muted);
   margin-left: 6px;
@@ -3167,7 +3183,7 @@ label input {
     gap: 12px;
   }
   .toast {
-    bottom: 20px;
+    bottom: max(20px, env(safe-area-inset-bottom));
     font-size: 12px;
     padding: 13px 14px;
     min-width: 260px;
