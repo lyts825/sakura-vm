@@ -4,7 +4,7 @@
  * 详细范围（中文）：公开入口包括 ProjectNavigator；职责覆盖提供项目文件树、键盘导航与文件打开入口，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include ProjectNavigator. The scope covers Providing a project file tree, keyboard navigation and file-opening actions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { FileText, Folder, LoaderCircle, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronRight, FileText, Folder, LoaderCircle, RefreshCw, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { ProjectFile, SearchMatch } from '../server/project-files';
 import { Feedback, type Request } from './feature-shared';
@@ -37,6 +37,7 @@ export function ProjectNavigator({
   const [query, setQuery] = useState(''),
     [content, setContent] = useState(false),
     [expanded, setExpanded] = useState(new Set<string>()),
+    [activeEntry, setActiveEntry] = useState(''),
     [revision, setRevision] = useState(0);
   const treeRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -125,6 +126,10 @@ export function ProjectNavigator({
   const needsQuery = content && !query.trim();
   const showResults = !!data && !busy && !error && !needsQuery;
   const resultCount = content ? data?.matches.length || 0 : data?.files.length || 0;
+  const entryKeys = content
+    ? (data?.matches || []).map((match) => `match:${match.path}:${match.line}`)
+    : files.map((file) => `file:${file.path}`);
+  const tabEntry = entryKeys.includes(activeEntry) ? activeEntry : entryKeys[0];
   const clearSearch = () => {
     setQuery('');
     searchRef.current?.focus();
@@ -153,6 +158,7 @@ export function ProjectNavigator({
    * English: Result: deliver through the described state/resource effects without returning business data
    */
   const onTreeKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number, file: ProjectFile) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     const directory = file.directory;
     if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       event.preventDefault();
@@ -221,6 +227,7 @@ export function ProjectNavigator({
            * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
            */
           (event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === 'Escape' && query) {
               event.preventDefault();
               setQuery('');
@@ -265,9 +272,13 @@ export function ProjectNavigator({
               data-project-path={file.path}
               aria-level={file.path.split('/').length}
               aria-expanded={file.directory ? expanded.has(file.path) : undefined}
+              aria-label={file.path}
+              aria-selected={tabEntry === `file:${file.path}`}
+              tabIndex={tabEntry === `file:${file.path}` ? 0 : -1}
               className="tree-entry"
               key={file.path}
-              style={{ paddingLeft: query ? 8 : 8 + (file.path.split('/').length - 1) * 14 }}
+              style={{ paddingLeft: query ? 8 : 8 + Math.min(file.path.split('/').length - 1, 3) * 12 }}
+              onFocus={() => setActiveEntry(`file:${file.path}`)}
               onKeyDown={(event) => onTreeKeyDown(event, index, file)}
               onClick={() =>
                 file.directory
@@ -280,8 +291,13 @@ export function ProjectNavigator({
               }
               title={file.path}
             >
-              {file.directory ? <Folder size={14} /> : <FileText size={14} />}
-              <span>{query ? file.path : file.path.split('/').at(-1)}</span>
+              {file.directory ? <ChevronRight size={12} className="project-directory-chevron" aria-hidden="true" />
+                : <span className="project-entry-spacer" aria-hidden="true" />}
+              {file.directory ? <Folder size={15} aria-hidden="true" /> : <FileText size={15} aria-hidden="true" />}
+              <span className="project-entry-label">
+                <span className="project-entry-name">{file.path.split('/').at(-1)}</span>
+                {query && file.path.includes('/') && <small className="project-entry-path">{file.path.split('/').slice(0, -1).join('/')}</small>}
+              </span>
             </button>
           ))}
         {showResults && content &&
@@ -291,9 +307,15 @@ export function ProjectNavigator({
               role="option"
               data-project-entry
               data-project-path={match.path}
+              aria-label={`${match.path}，第 ${match.line} 行`}
+              aria-selected={tabEntry === `match:${match.path}:${match.line}`}
+              tabIndex={tabEntry === `match:${match.path}:${match.line}` ? 0 : -1}
               className="search-match"
               key={`${match.path}:${match.line}`}
+              title={`${match.path}:${match.line}`}
+              onFocus={() => setActiveEntry(`match:${match.path}:${match.line}`)}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
                   event.preventDefault();
                   focusTreeEntry(index, event.key);
@@ -301,10 +323,12 @@ export function ProjectNavigator({
               }}
               onClick={() => openFile(match.path, match.line)}
             >
-              <b>
-                {match.path}:{match.line}
-              </b>
-              <small>{match.text}</small>
+              <span className="project-match-heading">
+                <b className="project-entry-name">{match.path.split('/').at(-1)}</b>
+                <span className="project-match-line">第 {match.line} 行</span>
+              </span>
+              <small className="project-entry-path">{match.path.split('/').slice(0, -1).join('/') || '项目根目录'}</small>
+              <small className="project-match-snippet">{match.text}</small>
             </button>
           ))}
       </div>
