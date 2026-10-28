@@ -5,7 +5,7 @@
  * Detailed scope (English): Public entry points include NotificationCenter. The scope covers Presenting controller events and notification details. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from './localization';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { AlertEvent } from '../server/feature-suite';
 import { saveText } from './export-file';
 import './notification-center.css';
@@ -51,6 +51,7 @@ export function NotificationCenter({
   const [unreadOnly, setUnreadOnly] = useState(true);
   const [limit, setLimit] = useState(50);
   const [permissionError, setPermissionError] = useState('');
+  const listId = useId();
   const seen = useRef<Set<string> | null>(null);
   useEffect(/** 中文：当依赖 [events, permission, supported] 变化时登记集合或存储条目，按指定 Schema 校验并解码；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [events, permission, supported] change, register collection/storage entries, validate/decode with the specified schema. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (seen.current === null) {
@@ -77,6 +78,8 @@ export function NotificationCenter({
   }, [events, permission, supported]);
   const visible = events.filter((event) => !unreadOnly || !event.acknowledged);
   const unreadCount = events.filter((event) => !event.acknowledged).length;
+  const shownCount = Math.min(limit, visible.length);
+  const remainingCount = visible.length - shownCount;
   return (
     <section className="feature-card notification-center" aria-label="通知中心">
       <div className="notification-heading">
@@ -90,7 +93,11 @@ export function NotificationCenter({
           <input
             type="checkbox"
             checked={unreadOnly}
-            onChange={(event) => setUnreadOnly(event.target.checked)}
+            aria-controls={listId}
+            onChange={(event) => {
+              setUnreadOnly(event.target.checked);
+              setLimit(50);
+            }}
           />
           仅显示未确认告警
         </label>
@@ -115,16 +122,31 @@ export function NotificationCenter({
         </button>
       </div>
       <p className="subtle-note">
-        {permission === 'granted'
-          ? '浏览器通知已允许；此页面打开时提示新告警。'
-          : permission === 'denied'
-            ? '浏览器通知被禁用，可在站点权限中修改；告警仍保留在此处。'
-            : '告警保存在本机，浏览器通知需手动允许。'}{' '}
+        {permission === 'unsupported'
+          ? '当前浏览器不支持桌面通知；告警仍保留在此处。'
+          : permission === 'granted'
+            ? '浏览器通知已允许；此页面打开时提示新告警。'
+            : permission === 'denied'
+              ? '浏览器通知被禁用，可在站点权限中修改；告警仍保留在此处。'
+              : '告警保存在本机，浏览器通知需手动允许。'}{' '}
         系统保留最近 500 条。
       </p>
       {permissionError && <p role="alert">{permissionError}</p>}
-      {!visible.length && <p className="muted">没有符合条件的告警。</p>}
-      <div className="event-list notification-events" role="list" aria-label="告警列表">
+      {!visible.length && (
+        <div className="notification-empty" role="status">
+          <h4>{events.length ? '未确认告警已处理完' : '暂无告警'}</h4>
+          <p>{events.length ? '没有符合条件的告警。' : '运行告警会显示在这里。'}</p>
+          {unreadOnly && events.length > 0 && (
+            <button className="secondary compact" onClick={() => {
+              setUnreadOnly(false);
+              setLimit(50);
+            }}>
+              查看全部告警
+            </button>
+          )}
+        </div>
+      )}
+      <div id={listId} className="event-list notification-events" role="list" aria-label="告警列表">
         {visible.slice(0, limit).map((event) => (
           <div
             className={`notification-event ${event.acknowledged ? 'acknowledged' : 'unacknowledged'}`}
@@ -159,10 +181,16 @@ export function NotificationCenter({
           </div>
         ))}
       </div>
-      {visible.length > limit && (
-        <button className="secondary compact" onClick={() => setLimit(limit + 50)}>
-          显示更多告警
-        </button>
+      {visible.length > 0 && (
+        <div className="notification-pagination">
+          <span role="status">显示 {shownCount} / {visible.length} 条告警</span>
+          {remainingCount > 0 && (
+            <button className="secondary compact" aria-label="显示更多告警" aria-controls={listId}
+              onClick={() => setLimit((value) => value + 50)}>
+              显示更多告警 <small>剩余 {remainingCount} 条</small>
+            </button>
+          )}
+        </div>
       )}
     </section>
   );

@@ -95,6 +95,43 @@
   color: var(--muted);
   font-size: 12px;
 }
+.notification-center .notification-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 20px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.notification-center .notification-empty p {
+  color: var(--muted);
+  font-size: 12px;
+}
+.notification-center .notification-empty button {
+  margin-top: 3px;
+}
+.notification-center .notification-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.notification-center .notification-pagination button {
+  flex-wrap: wrap;
+  margin-left: auto;
+  min-height: 40px;
+  white-space: normal;
+}
+.notification-center .notification-pagination small {
+  color: var(--muted);
+  font-size: 11px;
+}
 @media (max-width: 600px) {
   .notification-center .notification-event {
     flex-wrap: wrap;
