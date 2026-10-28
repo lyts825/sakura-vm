@@ -1,0 +1,58 @@
+/* Keep terminal controls usable inside both full-width and split workspaces. */
+.terminal-wrap.terminal-panel {
+  container: terminal-panel / inline-size;
+}
+.terminal-panel .terminal-toolbar {
+  height: auto;
+  min-height: 46px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 6px 12px;
+}
+.terminal-panel .terminal-identity {
+  flex: 1 1 12rem;
+}
+.terminal-panel .terminal-tools {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+.terminal-panel .terminal-toolbar button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.terminal-panel .terminal-font-controls {
+  gap: 1px;
+}
+.terminal-panel .terminal-font-controls .terminal-font-reset {
+  width: 43px;
+}
+.terminal-panel .terminal-toolbar button:focus-visible {
+  outline-color: #f3c0d6;
+  outline-offset: 1px;
+}
+@container terminal-panel (max-width: 520px) {
+  .terminal-panel .terminal-toolbar {
+    padding: 9px;
+  }
+  .terminal-panel .terminal-identity {
+    flex-basis: 100%;
+    padding: 0 2px;
+  }
+  .terminal-panel .terminal-tools {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  .terminal-panel .terminal-toolbar button {
+    width: 36px;
+    height: 36px;
+  }
+  .terminal-panel .terminal-font-controls .terminal-font-reset {
+    width: 43px;
+  }
+  .terminal-panel .terminal-tool-divider {
+    margin-inline: 2px;
+  }
+}

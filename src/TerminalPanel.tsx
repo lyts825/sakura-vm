@@ -7,6 +7,7 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
+import './terminal-panel.css';
 import { Minus, Play, Plus, RefreshCw, TerminalSquare, Trash2, Unplug } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { VMView } from '../shared/contracts/vm.ts';
@@ -218,18 +219,21 @@ export function TerminalPanel({
           : connection === '连接已关闭'
             ? 'stopped'
             : 'starting';
+  const terminalTitle = vm.status === 'running'
+    ? `root@${vm.name}: ${networkMode === 'private' ? '私有项目网络' : networkMode === 'host' ? '共享网络' : '项目终端'}`
+    : 'Linux 启动控制台';
   return (
-    <div className="terminal-wrap" data-clipboard-app="terminal" data-clipboard-vm={vm.id}>
+    <div className="terminal-wrap terminal-panel" data-clipboard-app="terminal" data-clipboard-vm={vm.id}>
       <div className="terminal-toolbar">
-        <div>
-          <span className="terminal-dots">
+        <div className="terminal-identity">
+          <span className="terminal-dots" aria-hidden="true">
             <i />
             <i />
             <i />
           </span>
-          <span>{vm.status === 'running' ? `root@${vm.name}: ${networkMode === 'private' ? '私有项目网络' : networkMode === 'host' ? '共享网络' : '项目终端'}` : 'Linux 启动控制台'}</span>
+          <span title={terminalTitle}>{terminalTitle}</span>
         </div>
-        <div>
+        <div className="terminal-tools" role="group" aria-label="终端操作">
           <div className="terminal-font-controls" role="group" aria-label="终端字号">
             <button
               aria-label="缩小终端字号"
