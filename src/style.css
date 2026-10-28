@@ -2002,6 +2002,14 @@ main {
   padding: 0;
   min-width: 0;
 }
+.create-instance-form input[aria-invalid='true'] {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.create-instance-form .field-error {
+  color: var(--danger);
+  line-height: 1.6;
+}
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

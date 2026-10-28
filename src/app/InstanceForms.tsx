@@ -16,7 +16,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ImageInfo } from '../../plugins/images/client';
 import type { VMConfig, VMView } from '../../shared/contracts/vm.ts';
 import { api } from '../controller-session';
@@ -134,14 +134,22 @@ export function CreateModal({
   close: /** 中文：请求关闭当前界面，实际导航或卸载由父级决定；这是 CreateModal 的调用契约 | English: Request surface closure, leaving actual navigation/unmounting to the parent; this is the callable contract of CreateModal | 中文：结果：void；调用者依赖此类型约定 | English: Result: void; callers depend on this type contract */ () => void;
   submit: /** 中文：把已校验的新实例表单交给创建流程，失败由上层显示；这是 CreateModal 的调用契约 | English: Submit the validated new-VM form to creation, with outer failure feedback; this is the callable contract of CreateModal | 中文：输入：c：签名所示 VMConfig 业务值；boot：签名所示 boolean 业务值 | English: Inputs: c: the VMConfig domain value in the signature; boot: the boolean domain value in the signature | 中文：结果：unknown；调用者依赖此类型约定 | English: Result: unknown; callers depend on this type contract */ (c: VMConfig, boot: boolean) => unknown;
 }) {
-  const [config, set] = useState<VMConfig>({
-    name: names.includes('alpine-dev') ? `alpine-${names.length + 1}` : 'alpine-dev',
-    memoryMiB: 512,
-    cpus: 2,
-    diskGiB: 8,
-    accelerator: 'auto',
-    forwards: [],
+  const [config, set] = useState<VMConfig>(() => {
+    let name = 'alpine-dev';
+    let suffix = names.length + 1;
+    while (names.includes(name)) name = `alpine-${suffix++}`;
+    return {
+      name,
+      memoryMiB: 512,
+      cpus: 2,
+      diskGiB: 8,
+      accelerator: 'auto',
+      forwards: [],
+    };
   });
+  const nameHelpId = useId();
+  const nameErrorId = useId();
+  const duplicateName = names.includes(config.name);
   const [boot, setBoot] = useState(true);
   const [poolName, setPoolName] = useState('');
   const [poolPath, setPoolPath] = useState('');
@@ -160,6 +168,7 @@ export function CreateModal({
       <form className="create-instance-form"
         onSubmit={(e) => {
           e.preventDefault();
+          if (busy || !selectedImage?.ready || duplicateName) return;
           submit(config, boot);
         }}
       >
@@ -218,12 +227,15 @@ export function CreateModal({
             required
             autoFocus
             data-initial-focus
+            aria-invalid={duplicateName || undefined}
+            aria-describedby={`${nameHelpId}${duplicateName ? ` ${nameErrorId}` : ''}`}
             pattern="[a-z][a-z0-9-]*"
             maxLength={32}
             value={config.name}
             onChange={(e) => set({ ...config, name: e.target.value })}
           />
-          <small>小写字母、数字和短横线，例如 alpine-dev</small>
+          <small id={nameHelpId}>小写字母、数字和短横线，例如 alpine-dev</small>
+          {duplicateName && <small id={nameErrorId} className="field-error" role="alert">已有同名发行版，请换一个名称。</small>}
         </label>
         <details className="instance-advanced" open>
           <summary>资源与启动设置<span>{config.cpus} vCPU · {memory(config.memoryMiB)}</span></summary>
@@ -307,7 +319,7 @@ export function CreateModal({
           <button type="button" className="secondary" onClick={close}>
             取消
           </button>
-          <button className="primary" disabled={busy || !selectedImage?.ready}>
+          <button className="primary" disabled={busy || !selectedImage?.ready || duplicateName}>
             {busy ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}创建发行版
           </button>
         </div>
