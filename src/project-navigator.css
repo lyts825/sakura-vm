@@ -1,0 +1,93 @@
+/* Scoped file navigation controls, result feedback and empty states. */
+.project-navigator .panel-heading {
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.project-navigator .project-search-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+}
+.project-navigator .project-search-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.project-navigator .project-search-field > svg {
+  flex-shrink: 0;
+}
+.project-navigator .project-search-field input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+}
+.project-navigator .project-search-field input::-webkit-search-cancel-button {
+  display: none;
+}
+.project-navigator .project-search-field button {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 6px;
+}
+.project-navigator .project-search-field button:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.project-navigator .checkbox-label {
+  min-height: 38px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.project-result-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.project-result-summary:empty {
+  display: none;
+}
+.project-navigator .project-tree:empty {
+  padding: 0;
+}
+.project-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 22px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  text-align: center;
+}
+.project-empty > svg {
+  color: var(--accent);
+}
+.project-empty strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.project-empty p {
+  color: var(--muted);
+  font-size: 11px;
+}
+.project-empty button {
+  min-height: 36px;
+  font-size: 12px;
+}

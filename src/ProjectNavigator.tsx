@@ -4,11 +4,12 @@
  * 详细范围（中文）：公开入口包括 ProjectNavigator；职责覆盖提供项目文件树、键盘导航与文件打开入口，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include ProjectNavigator. The scope covers Providing a project file tree, keyboard navigation and file-opening actions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { FileText, Folder, RefreshCw, Search } from 'lucide-react';
+import { FileText, Folder, LoaderCircle, RefreshCw, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { ProjectFile, SearchMatch } from '../server/project-files';
 import { Feedback, type Request } from './feature-shared';
 import { nextSelection } from './keyboard-navigation';
+import './project-navigator.css';
 
 /**
  * 中文：呈现提供项目文件树、键盘导航与文件打开入口中的 ProjectNavigator 界面，组合 RefreshCw、Search，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
@@ -38,6 +39,7 @@ export function ProjectNavigator({
     [expanded, setExpanded] = useState(new Set<string>()),
     [revision, setRevision] = useState(0);
   const treeRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [data, setData] = useState<{
       root: string;
       files: ProjectFile[];
@@ -45,9 +47,11 @@ export function ProjectNavigator({
       truncated: boolean;
     } | null>(null),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(true);
   useEffect(/** 中文：读取 GET /vms/{id}/project-files?q={encodeURIComponent(query)}&content={content ? 1 : 0}，完成提供项目文件树、键盘导航与文件打开入口的数据交互并更新timeout 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform GET /vms/{id}/project-files?q={encodeURIComponent(query)}&content={content ? 1 : 0} for Providing a project file tree, keyboard navigation and file-opening actions and update timeout state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     const abort = new AbortController();
+    setBusy(!(content && !query.trim()));
+    setError('');
     const timer = setTimeout(
       /**
        * 中文：读取 GET /vms/{id}/project-files?q={encodeURIComponent(query)}&content={content ? 1 : 0}，完成提供项目文件树、键盘导航与文件打开入口的数据交互并更新远端数据、忙碌标记、错误反馈；异步失败传给此处的捕获分支或外层动作反馈
@@ -118,6 +122,13 @@ export function ProjectNavigator({
   const files = !content
     ? (data?.files || []).filter((file) => visible(file.path)).sort((a, b) => a.path.localeCompare(b.path))
     : [];
+  const needsQuery = content && !query.trim();
+  const showResults = !!data && !busy && !error && !needsQuery;
+  const resultCount = content ? data?.matches.length || 0 : data?.files.length || 0;
+  const clearSearch = () => {
+    setQuery('');
+    searchRef.current?.focus();
+  };
   /**
    * 中文：在提供项目文件树、键盘导航与文件打开入口流程中把输入焦点移到目标元素；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
    * English: In Providing a project file tree, keyboard navigation and file-opening actions, move input focus to the target. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
@@ -185,17 +196,21 @@ export function ProjectNavigator({
         <button
           className="icon-button"
           aria-label="刷新项目文件树"
+          title="刷新项目文件树"
+          disabled={busy}
           onClick={() => setRevision((current) => current + 1)}
         >
-          <RefreshCw size={14} />
+          <RefreshCw size={14} className={busy ? 'spin' : ''} />
         </button>
       </div>
-      <label>
+      <label className="project-search-field">
         <Search size={14} />
         <input
+          ref={searchRef}
+          type="search"
           aria-label="搜索项目"
           aria-controls="project-tree"
-          placeholder="文件名或内容"
+          placeholder={content ? '搜索文件内容…' : '按文件名查找…'}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={/**
@@ -219,21 +234,29 @@ export function ProjectNavigator({
             }
           }}
         />
+        {query && <button type="button" aria-label="清空项目搜索" title="清空项目搜索" onClick={clearSearch}>
+          <X size={14} aria-hidden="true" />
+        </button>}
       </label>
       <label className="checkbox-label">
         <input type="checkbox" checked={content} onChange={(e) => setContent(e.target.checked)} />
         搜索文件内容
       </label>
       <Feedback error={error} />
-      {busy && <p className="muted">正在搜索…</p>}
+      {error && <button className="secondary compact" onClick={() => setRevision((current) => current + 1)}>重新读取项目文件</button>}
+      <div className="project-result-summary" role="status" aria-live="polite" aria-atomic="true">
+        {busy ? <><LoaderCircle size={14} className="spin" aria-hidden="true" />{query.trim() ? '正在搜索…' : '正在读取项目文件…'}</>
+          : showResults ? <span>{content ? `${resultCount} 处内容匹配` : `共 ${resultCount} 项文件与目录`}</span> : null}
+      </div>
       <div
         ref={treeRef}
         id="project-tree"
         className="project-tree"
         role={content ? 'listbox' : 'tree'}
         aria-label={content ? '项目内容搜索结果' : '项目文件'}
+        aria-busy={busy}
       >
-        {!content &&
+        {showResults && !content &&
           files.map((file, index) => (
             <button
               type="button"
@@ -261,7 +284,7 @@ export function ProjectNavigator({
               <span>{query ? file.path : file.path.split('/').at(-1)}</span>
             </button>
           ))}
-        {content &&
+        {showResults && content &&
           data?.matches.map((match, index) => (
             <button
               type="button"
@@ -285,7 +308,19 @@ export function ProjectNavigator({
             </button>
           ))}
       </div>
-      {data?.truncated && <p className="subtle-note">结果已达上限，请缩小搜索范围。</p>}
+      {!busy && !error && (needsQuery || (showResults && resultCount === 0)) && (
+        <div className="project-empty">
+          {needsQuery || query ? <Search size={24} aria-hidden="true" /> : <Folder size={24} aria-hidden="true" />}
+          <strong>{needsQuery ? '输入关键词，查找文件内容' : query ? '没有找到匹配结果' : '项目目录为空'}</strong>
+          <p>{needsQuery ? '输入文本后开始搜索，也可以返回文件列表。'
+            : query ? '试试其他关键词，或清除搜索后重新查找。' : '添加文件后，刷新列表即可查看。'}</p>
+          {needsQuery ? <button className="text-button" onClick={() => {
+            setContent(false);
+            searchRef.current?.focus();
+          }}>查看文件列表</button> : query ? <button className="text-button" onClick={clearSearch}>清除搜索</button> : null}
+        </div>
+      )}
+      {showResults && data?.truncated && <p className="subtle-note">结果已达上限，请缩小搜索范围。</p>}
       <p className="subtle-note">跳过依赖、构建目录和符号链接。内容搜索限 1 MiB 内的文本文件。</p>
     </aside>
   );
