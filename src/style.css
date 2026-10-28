@@ -2659,7 +2659,7 @@ label input {
   .distro-panel {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: 'search add' 'filters filters' 'list list';
+    grid-template-areas: 'heading heading' 'search add' 'filters filters' 'list list';
     gap: 10px;
     width: 100%;
     padding: 0;
@@ -2668,7 +2668,9 @@ label input {
     box-shadow: none;
   }
   .distro-panel-heading {
-    display: none;
+    display: flex;
+    grid-area: heading;
+    margin: 0 2px;
   }
   .distro-filters {
     grid-area: filters;
@@ -3226,6 +3228,25 @@ label input {
   }
   .has-workspaces .distro-card {
     scroll-snap-align: start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+  .has-workspaces .distro-card-top {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+  }
+  .has-workspaces .distro-card .distro-resources {
+    margin: 0;
+    gap: 4px 8px;
+  }
+  .has-workspaces .distro-card .distro-card-bottom {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .has-workspaces .distro-card-bottom > span:last-child:not(.badge) {
+    display: none;
   }
 }
 @media (max-width: 600px) {
