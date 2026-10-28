@@ -5,7 +5,7 @@
  * Detailed scope (English): Public entry points include TasksPanel. The scope covers Presenting job details and providing cancellation, retry and refresh actions. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from './localization';
-import { ClipboardList, Inbox, RefreshCw, X } from 'lucide-react';
+import { ChevronRight, ClipboardList, Inbox, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import type { VMView } from '../shared/contracts/vm.ts';
@@ -105,7 +105,7 @@ export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms
         <RefreshCw size={14} />重新读取任务
       </button>}
       {events.data?.events.length ? (
-        <details className="feature-card">
+        <details className="feature-card tasks-events">
           <summary>需要关注的事件（{events.data.events.length}）</summary>
           {events.data.events.slice(0, 20).map((event, index) => (
             <p className="subtle-note" key={`${event.at}-${index}`}>
@@ -132,14 +132,22 @@ export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms
           <span />
         </div>
       )}
-      {jobs.map((job) => (
-        <details className="feature-card" key={job.id} open={job.status === 'running'}>
-          <summary>
-            {job.title || '后台操作'} · {jobPresentation(job).label} ·{' '}
-            {vms.find((vm) => vm.id === job.vmId)?.name || '系统'}
+      {jobs.map((job) => {
+        const presentation = jobPresentation(job);
+        const machineName = vms.find(vm => vm.id === job.vmId)?.name || '系统';
+        return (
+        <details className="feature-card task-card" key={job.id} open={job.status === 'running'}>
+          <summary className="task-summary">
+            <ChevronRight className="task-disclosure" size={16} aria-hidden="true" />
+            <span className="task-summary-copy">
+              <strong className="task-summary-title" title={job.title || '后台操作'}>{job.title || '后台操作'}</strong>
+              <span className="task-machine" title={machineName}>{machineName}</span>
+            </span>
+            <span className={`task-state task-state-${presentation.state}`}>{presentation.label}</span>
           </summary>
-          <p className="subtle-note">
-            {formatDateTime(new Date(job.startedAt))} · 耗时{' '}
+          <div className="task-meta">
+            <span>开始于 <time dateTime={job.startedAt}>{formatDateTime(new Date(job.startedAt))}</time></span>
+            <span>耗时{' '}
             {Math.max(
               0,
               Math.round(
@@ -147,13 +155,14 @@ export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms
                   1000,
               ),
             )}{' '}
-            秒
-          </p>
-          <p role="status">{job.phase}</p>
-          {jobPresentation(job).detail && <p className="subtle-note">{jobPresentation(job).detail}</p>}
+            秒</span>
+          </div>
+          <p className="task-phase" role="status">{job.phase}</p>
+          {presentation.detail && <p className="subtle-note">{presentation.detail}</p>}
           {job.status === 'running' && job.admission !== 'queued' && <progress aria-label="任务进度" max={100} value={job.progress} />}
           <Feedback error={job.error} />
-          <pre className="feature-log">
+          <div className="task-log-label">执行日志</div>
+          <pre className="feature-log task-log" tabIndex={0} role="region" aria-label={`${job.title || '后台操作'}的执行日志`}>
             {job.log ||
               (job.logPruned
                 ? `日志已按保留策略清理（${formatDateTime(new Date(job.logPruned.at))}）`
@@ -161,7 +170,7 @@ export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms
                   ? '等待任务输出…'
                   : '任务没有日志输出。')}
           </pre>
-          <div className="feature-actions">
+          <div className="feature-actions task-actions">
             <button className="secondary compact" onClick={() => setEvidenceId(job.id)}>查看证据与处理</button>
             {job.status === 'running' && (
               <button
@@ -178,7 +187,7 @@ export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms
                 取消任务
               </button>
             )}
-            {jobPresentation(job).retryable && job.action && (
+            {presentation.retryable && job.action && (
               <button
                 className="secondary compact"
                 disabled={action.busy}
@@ -206,7 +215,8 @@ export function TasksPanel({ request, vms, onDiagnose }: { request: Request; vms
             onDiagnose={job.vmId && plugins.includes('maintenance') && vms.some(vm => vm.id === job.vmId)
               && onDiagnose ? () => onDiagnose(job.vmId!) : undefined} />}
         </details>
-      ))}
+        );
+      })}
     </div>
   );
 }
