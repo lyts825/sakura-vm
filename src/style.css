@@ -323,6 +323,15 @@ kbd {
   flex-direction: column;
   gap: 6px;
   flex-shrink: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  scroll-padding: 6px;
+}
+.sidebar .nav-item:focus-visible {
+  outline-offset: -3px;
+}
+.sidebar .nav-item {
+  scroll-margin-inline: 6px;
 }
 .nav-group {
   display: flex;

@@ -50,6 +50,7 @@ import { api, controllerSession } from '../controller-session';
 import { ConfigPanel, CreateModal } from './InstanceForms';
 import { readSessionState } from './session-state';
 import { SettingsNavigator } from './SettingsNavigator';
+import { nextSelection } from '../keyboard-navigation';
 import { active, Alpine, Badge, bytes, memory, Modal, states } from './ui';
 import { useControllerState } from './use-controller-state';
 import { useProjectSelection } from './use-project-selection';
@@ -684,7 +685,18 @@ export function App() {
           <small>桜</small>
         </a>
         <div className="side-caption">你的工作空间</div>
-        <nav aria-label="主导航">
+        <nav aria-label="主导航" onKeyDown={event => {
+          if (event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('.nav-item'));
+          const current = buttons.indexOf(event.target as HTMLButtonElement);
+          if (current < 0) return;
+          const next = nextSelection(current, buttons.length, event.key);
+          if (next === null) return;
+          event.preventDefault();
+          event.stopPropagation();
+          buttons[next].focus({ preventScroll: true });
+          buttons[next].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }}>
           {['core', 'extensions'].map(/**
            * 中文功能：按基础与扩展分组过滤已经可见的导航页，空分组不渲染，并展示当前页及实例/插件数量。
            * English: Group already-visible navigation pages into core/extensions, omit empty groups and show current-page plus VM/plugin counts.
