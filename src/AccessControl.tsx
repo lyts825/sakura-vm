@@ -1161,7 +1161,8 @@ export function AccountLogoutButton() {
   if (!principal) return null;
   return <button className="secondary compact" title="退出账户" onClick={/** 中文：提交 operation /access/logout，完成账户、登录、权限与共享会话的配置和访问入口的数据交互；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform operation /access/logout for Account, login, permission and shared-session configuration and access surfaces. Propagate asynchronous failure to this catch path or the outer action feedback */ () =>
     void api('/access/logout', 'POST').finally(() => controllerSession.clearCredential())}>
-    {principal.username} · 退出
+    <span className="account-name" title={principal.username}>{principal.username}</span>
+    <span className="account-logout-label">退出</span>
   </button>;
 }
 

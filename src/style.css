@@ -567,6 +567,20 @@ main:focus {
   flex-basis: 100%;
   overflow-wrap: anywhere;
 }
+.topbar-actions > .secondary:has(.account-name) {
+  display: inline-flex;
+  gap: 8px;
+}
+.account-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-logout-label {
+  flex-shrink: 0;
+  padding-left: 8px;
+  border-left: 1px solid var(--line-strong);
+}
 .topbar b {
   color: var(--ink);
   font-weight: 500;
@@ -1212,6 +1226,8 @@ main {
 
 /* Machine and terminal */
 .machine-panel {
+  container-type: inline-size;
+  container-name: workspace-panel;
   scroll-margin-top: 82px;
   display: flex;
   flex: 1;
@@ -3316,6 +3332,34 @@ label input {
   }
   .search-box kbd {
     display: none;
+  }
+}
+@container workspace-panel (max-width: 480px) {
+  .machine-head {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .machine-title {
+    flex: 1 1 100%;
+  }
+  .machine-title > div {
+    flex: 1;
+  }
+  .machine-title > div > div {
+    flex-wrap: wrap;
+  }
+  .machine-title h2 {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .machine-actions {
+    width: 100%;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .machine-actions button {
+    min-height: 40px;
+    min-width: 40px;
   }
 }
 @media (min-width: 801px) {
