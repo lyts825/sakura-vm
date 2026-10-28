@@ -49,6 +49,7 @@ import { SessionLockButton, SessionLockSettings } from '../SessionLock';
 import { api, controllerSession } from '../controller-session';
 import { ConfigPanel, CreateModal } from './InstanceForms';
 import { readSessionState } from './session-state';
+import { SettingsNavigator } from './SettingsNavigator';
 import { active, Alpine, Badge, bytes, memory, Modal, states } from './ui';
 import { useControllerState } from './use-controller-state';
 import { useProjectSelection } from './use-project-selection';
@@ -317,6 +318,7 @@ export function App() {
   const [focused, setFocused] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'paused' | 'stopped'>('all');
   const searchRef = useRef<HTMLInputElement>(null);
+  const settingsGridRef = useRef<HTMLDivElement>(null);
   const machineRef = useRef<HTMLElement>(null);
   const tabMoreRef = useRef<HTMLDivElement>(null);
   const [moreTabsOpen, setMoreTabsOpen] = useState(false);
@@ -1508,7 +1510,8 @@ export function App() {
                   <p>所有系统和文件都存储在这台电脑上。</p>
                 </div>
               </div>
-              <div className="system-grid">
+              <SettingsNavigator grid={settingsGridRef} />
+              <div className="system-grid" ref={settingsGridRef}>
                 <LocaleSettings />
                 <section className="system-card">
                   <h3>可信更新中心</h3>
