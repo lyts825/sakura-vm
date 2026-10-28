@@ -157,7 +157,7 @@ export function CreateModal({
   const selectedImage = hasImages ? images.data?.find((i) => i.id === imageId) : { ready: true };
   return (
     <Modal title="一个新的 Linux 空间" subtitle="选择资源，剩下的交给 Sakura。" onClose={close}>
-      <form
+      <form className="create-instance-form"
         onSubmit={(e) => {
           e.preventDefault();
           submit(config, boot);
@@ -217,6 +217,7 @@ export function CreateModal({
           <input
             required
             autoFocus
+            data-initial-focus
             pattern="[a-z][a-z0-9-]*"
             maxLength={32}
             value={config.name}
@@ -224,6 +225,8 @@ export function CreateModal({
           />
           <small>小写字母、数字和短横线，例如 alpine-dev</small>
         </label>
+        <details className="instance-advanced" open>
+          <summary>资源与启动设置<span>{config.cpus} vCPU · {memory(config.memoryMiB)}</span></summary>
         <ResourceFields config={config} set={set} />
         <label>
           <span>
@@ -294,6 +297,7 @@ export function CreateModal({
             创建存储池
           </button>
           {poolError && <p role="alert">{poolError}</p>}
+        </details>
         </details>
         <label className="checkbox-label">
           <input type="checkbox" checked={boot} onChange={(e) => setBoot(e.target.checked)} />

@@ -103,14 +103,15 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const subtitleId = useId();
   useEffect(/** 中文：当依赖 [] 变化时打开原生模态对话框，把输入焦点移到目标元素；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [] change, open a native modal dialog, move input focus to the target. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     const dialog = ref.current;
     if (!dialog) return;
     const previous = document.activeElement;
     dialog.showModal();
-    dialog
-      .querySelector<HTMLElement>('input:not([type="hidden"]):not([readonly]), textarea, select')
-      ?.focus();
+    const initial = dialog.querySelector<HTMLElement>('[data-initial-focus]:not(:disabled)') ||
+      dialog.querySelector<HTMLElement>('input:not([type="hidden"]):not([readonly]):not(:disabled), textarea:not(:disabled), select:not(:disabled)');
+    initial?.focus();
     /**
      * 中文：在模态框、状态徽标与资源数值显示的基础界面组件流程中关闭所属连接或存储对象，把输入焦点移到目标元素；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
      * English: In Basic modal, status-badge and resource-value presentation components, close the owned connection/storage object, move input focus to the target. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
@@ -125,8 +126,9 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      className="modal"
+      className="modal app-modal"
       aria-labelledby={titleId}
+      aria-describedby={subtitle ? subtitleId : undefined}
       onCancel={onClose}
       onClick={(e) => {
         if (e.target !== ref.current) return;
@@ -143,13 +145,13 @@ export function Modal({
       <div className="modal-head">
         <div>
           <h2 id={titleId}>{title}</h2>
-          {subtitle && <p>{subtitle}</p>}
+          {subtitle && <p id={subtitleId}>{subtitle}</p>}
         </div>
         <button className="icon-button" aria-label="关闭对话框" onClick={onClose}>
           <X size={20} />
         </button>
       </div>
-      {children}
+      <div className="modal-body">{children}</div>
     </dialog>
   );
 }
