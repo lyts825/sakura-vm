@@ -668,10 +668,11 @@ export function App() {
   };
   const content = (
     <div
-      className={`app-shell ${focusMode ? 'focus-mode' : ''}`}
+      className={`app-shell ${focusMode ? 'focus-mode' : ''} ${vms.length ? 'has-workspaces' : ''}`}
       data-clipboard-app="workbench"
       data-clipboard-vm={selected || undefined}
     >
+      <a className="skip-link" href="#main-content">跳转到主要内容</a>
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="Sakura 首页">
           <img src={sakuraMark} alt="" />
@@ -823,7 +824,7 @@ export function App() {
             </button>
           </div>
         </header>
-        <main>
+        <main id="main-content" tabIndex={-1}>
           {page === 'plugins' && system && <PluginCenter request={api} />}
           {page === 'tasks' && <TasksPanel request={api} vms={vms}
             onDiagnose={id => void navigatePalette({ id, page: 'workspace', tab: 'maintenance' })} />}
@@ -850,7 +851,7 @@ export function App() {
           )}
           {page === 'workspace' && (
             <>
-              <div className="page-heading welcome-banner">
+              <div className={`page-heading welcome-banner ${vms.length ? 'welcome-banner-compact' : ''}`}>
                 <div className="welcome-copy">
                   <div className="eyebrow">
                     <Flower2 size={14} /> A SPACE TO BLOOM
@@ -1051,7 +1052,9 @@ export function App() {
                             ? '没有匹配的发行版'
                             : statusFilter === 'running'
                               ? '暂时没有运行中的空间'
-                              : '暂时没有已停止的空间'}
+                              : statusFilter === 'paused'
+                                ? '暂时没有已暂停的空间'
+                                : '暂时没有已停止的空间'}
                         </h3>
                         <p>试试其他名称，或查看全部发行版。</p>
                         <button
