@@ -20,6 +20,7 @@ import {
   GitBranch,
   HardDrive,
   Layers,
+  LoaderCircle,
   Maximize2,
   MemoryStick,
   Minimize2,
@@ -636,6 +637,7 @@ export function App() {
     .sort((a, b) => Number(!!b.organization?.favorite) - Number(!!a.organization?.favorite));
   const allocated = vms.filter(active).reduce((sum, v) => sum + v.memoryMiB, 0);
   const engineState = offline ? 'error' : system?.nativeHost ? 'running' : 'starting';
+  const pendingOverview = loading || !system;
   /**
    * 中文：在连接控制面状态、实例/项目选择与插件页面的应用外壳流程中moreTabsOpen 状态，分区选择；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
    * English: In The application shell joining controller state, VM/project selection and plugin surfaces, moreTabsOpen state, tab selection. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
@@ -726,7 +728,7 @@ export function App() {
                   >
                     <n.icon size={18} />
                     <span>{n.label}</span>
-                    {n.id === 'workspace' && <small>{vms.length.toString().padStart(2, '0')}</small>}
+                    {n.id === 'workspace' && <small>{pendingOverview ? '—' : vms.length.toString().padStart(2, '0')}</small>}
                     {n.id === 'plugins' && <small>{enabled.length}</small>}
                   </button>
                 ))}
@@ -736,7 +738,7 @@ export function App() {
         </nav>
         <div className="side-divider" />
         <div className="side-caption">
-          发行版 <span>{vms.length}</span>
+          发行版 <span>{pendingOverview ? '—' : vms.length}</span>
         </div>
         <div className="side-distros">
           {vms.map((v) => (
@@ -890,18 +892,18 @@ export function App() {
                 </div>
                 <SakuraArt />
               </div>
-              <div className="stats">
+              <div className="stats" aria-label="工作空间资源概览" aria-busy={loading}>
                 <div className="stat">
                   <span className="stat-label">
                     <Boxes size={16} />
                     我的发行版
                   </span>
                   <div>
-                    <strong>{vms.length.toString().padStart(2, '0')}</strong>
-                    <span className="stat-note">
+                    <strong>{pendingOverview ? '—' : vms.length.toString().padStart(2, '0')}</strong>
+                    {!pendingOverview && <span className="stat-note">
                       <i className="tiny-dot running" />
                       {running} 个正在运行
-                    </span>
+                    </span>}
                   </div>
                 </div>
                 <div className="stat">
@@ -911,10 +913,10 @@ export function App() {
                   </span>
                   <div>
                     <strong>
-                      {formatNumber(allocated >= 1024 ? allocated / 1024 : allocated, {
+                      {pendingOverview ? '—' : formatNumber(allocated >= 1024 ? allocated / 1024 : allocated, {
                         maximumFractionDigits: 1,
                       })}
-                      <small>{allocated >= 1024 ? 'GiB' : 'MiB'}</small>
+                      {!pendingOverview && <small>{allocated >= 1024 ? 'GiB' : 'MiB'}</small>}
                     </strong>
                     <span className="stat-note">运行实例配置总量</span>
                   </div>
@@ -926,8 +928,8 @@ export function App() {
                   </span>
                   <div>
                     <strong>
-                      {bytes(vms.reduce((a, v) => a + v.diskBytes, 0)).split(' ')[0]}
-                      <small>{bytes(vms.reduce((a, v) => a + v.diskBytes, 0)).split(' ')[1]}</small>
+                      {pendingOverview ? '—' : bytes(vms.reduce((a, v) => a + v.diskBytes, 0)).split(' ')[0]}
+                      {!pendingOverview && <small>{bytes(vms.reduce((a, v) => a + v.diskBytes, 0)).split(' ')[1]}</small>}
                     </strong>
                     <span className="stat-note">按实际写入增长</span>
                   </div>
@@ -935,7 +937,7 @@ export function App() {
               </div>
               <div className="workspace-heading">
                 <h2>
-                  我的工作空间 <span>{vms.length}</span>
+                  我的工作空间 <span>{pendingOverview ? '—' : vms.length}</span>
                 </h2>
                 <span>
                   <span className={`tiny-dot ${engineState}`} />{' '}
@@ -946,7 +948,7 @@ export function App() {
                 <section className="distro-panel" aria-label="发行版列表" aria-busy={loading}>
                   <div className="distro-panel-heading">
                     <span>发行版</span>
-                    <span role="status">{loading ? '读取中…' : `${visibleVms.length} / ${vms.length}`}</span>
+                    <span role="status">{pendingOverview ? offline ? '读取失败' : '读取中…' : `${visibleVms.length} / ${vms.length}`}</span>
                   </div>
                   <div className="search-box">
                     <Search size={15} />
@@ -1005,7 +1007,7 @@ export function App() {
                         onClick={() => setStatusFilter(filter.id)}
                       >
                         {filter.label}
-                        <small aria-hidden="true">{filter.count}</small>
+                        <small aria-hidden="true">{pendingOverview ? '—' : filter.count}</small>
                       </button>
                     ))}
                   </div>
@@ -1052,7 +1054,7 @@ export function App() {
                         </div>
                       </button>
                     ))}
-                    {!loading && !vms.length && (
+                    {!pendingOverview && !vms.length && (
                       <div className="empty-list">
                         <Boxes size={26} />
                         <p>从第一个发行版开始</p>
@@ -1464,7 +1466,11 @@ export function App() {
                       </div>
                     </>
                   ) : (
-                    <div className="welcome-empty">
+                    pendingOverview ? <div className="workspace-pending" role="status">
+                      {offline ? <CircleHelp size={32} aria-hidden="true" /> : <LoaderCircle size={32} className="spin" aria-hidden="true" />}
+                      <h2>{offline ? '暂时无法读取工作空间' : '正在连接工作空间'}</h2>
+                      <p>{offline ? '连接恢复后会显示已有发行版，请使用上方的重新连接。' : '正在读取实例与资源信息，请稍候。'}</p>
+                    </div> : <div className="welcome-empty">
                       <div className="welcome-art">
                         <span />
                         <Boxes size={46} />
