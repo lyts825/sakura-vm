@@ -246,6 +246,13 @@ export function PluginCenter({ request }: { request: Request }) {
     setMoreOptionsOpen(false);
     setMemberPack('');
   };
+  /** 中文：清除当前搜索条件但保留整合包成员范围，焦点回到搜索入口。 English: Clear filters without leaving a pack scope and restore search focus. */
+  const clearFilters = () => {
+    setQuery('');
+    setCategory('all');
+    setStateFilter('all');
+    searchRef.current?.focus({ preventScroll: true });
+  };
   const filterSummary = [
     category !== 'all' ? availableGroups.find(group => group.id === category)?.label : '',
     stateFilter !== 'all' ? stateLabels[stateFilter] : '',
@@ -744,9 +751,18 @@ export function PluginCenter({ request }: { request: Request }) {
                 placeholder={view === 'packs' ? '搜索整合包或成员…' : '搜索名称、用途或标识…'}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && query) {
+                    event.stopPropagation();
+                    setQuery('');
+                  }
+                }}
               />
               {query && (
-                <button aria-label="清除搜索" onClick={() => setQuery('')}>
+                <button aria-label="清除搜索" onClick={() => {
+                  setQuery('');
+                  searchRef.current?.focus({ preventScroll: true });
+                }}>
                   <X size={14} />
                 </button>
               )}
@@ -821,6 +837,27 @@ export function PluginCenter({ request }: { request: Request }) {
               </div>
             </div>
           )}
+          {(needle || filterSummary) && (
+            <div className="plugin-active-filters" role="group" aria-label="当前筛选条件">
+              <span>正在筛选</span>
+              {needle && <button className="plugin-filter-chip" title={query.trim()}
+                aria-label="移除关键词筛选" onClick={() => {
+                  setQuery('');
+                  searchRef.current?.focus({ preventScroll: true });
+                }}><span>关键词：{query.trim()}</span><X size={12} aria-hidden="true" /></button>}
+              {category !== 'all' && <button className="plugin-filter-chip"
+                aria-label="移除用途筛选" onClick={() => {
+                  setCategory('all');
+                  searchRef.current?.focus({ preventScroll: true });
+                }}><span>{availableGroups.find(group => group.id === category)?.label}</span><X size={12} aria-hidden="true" /></button>}
+              {stateFilter !== 'all' && <button className="plugin-filter-chip"
+                aria-label="移除运行状态筛选" onClick={() => {
+                  setStateFilter('all');
+                  searchRef.current?.focus({ preventScroll: true });
+                }}><span>{stateLabels[stateFilter]}</span><X size={12} aria-hidden="true" /></button>}
+              <button className="text-button" onClick={clearFilters}>清除全部条件</button>
+            </div>
+          )}
           <div className="plugin-results-heading">
             <p>
               {view === 'packs'
@@ -829,7 +866,7 @@ export function PluginCenter({ request }: { request: Request }) {
                   ? '独立选择与整合包共同决定下次启动的插件。'
                   : '随当前版本提供，按需启用。可选配套需另行选择。'}
             </p>
-            <span role="status">
+            <span role="status" aria-atomic="true">
               {view === 'packs' ? packs.length : plugins.length} 个{view === 'packs' ? '整合包' : '插件'}
             </span>
           </div>
@@ -853,7 +890,7 @@ export function PluginCenter({ request }: { request: Request }) {
               </p>
               <button
                 className="secondary compact"
-                onClick={() => chooseView(view === 'selected' && affected.size === 0 ? 'packs' : view)}
+                onClick={() => view === 'selected' && affected.size === 0 ? chooseView('packs') : clearFilters()}
               >
                 {view === 'selected' && affected.size === 0 ? '浏览整合包' : '清除筛选'}
               </button>
