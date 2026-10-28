@@ -14,6 +14,7 @@ import { pluginNavigation } from './plugin-navigation';
 import { Feedback, useRemote, type Request } from './feature-shared';
 import { nextSelection } from './keyboard-navigation';
 import { usePlugins } from './plugin-context';
+import './command-palette.css';
 
 export type PaletteTarget = { id?: string; page?: string; tab?: string; file?: string };
 export type PaletteAction = {
@@ -61,6 +62,7 @@ export function CommandPalette({
 }) {
   const plugins = usePlugins();
   const dialog = useRef<HTMLDialogElement>(null),
+    searchInput = useRef<HTMLInputElement>(null),
     [query, setQuery] = useState(''),
     [search, setSearch] = useState(''),
     [index, setIndex] = useState(0),
@@ -189,6 +191,22 @@ export function CommandPalette({
   }, []);
   const selectedSlot = Math.min(index, Math.max(0, selectable.length - 1));
   const chosen = selectable[selectedSlot] ?? Math.min(index, Math.max(0, entries.length - 1));
+  // Keep the action order intact while exposing its scope in the result list.
+  const groups = entries.reduce<Array<{ label: string; start: number; entries: PaletteAction[] }>>((result, entry, start) => {
+    const label = entry.key.startsWith('switch:') || entry.key.endsWith(':switch') ? '切换工作空间'
+      : entry.key.startsWith('tab:') ? '当前实例功能'
+      : entry.key.startsWith('page:') ? '全局导航'
+      : entry.key.startsWith('preset:') ? '收藏命令'
+      : entry.key.startsWith('file:') ? '项目文件' : '空间操作';
+    const previous = result.at(-1);
+    if (previous?.label === label) previous.entries.push(entry);
+    else result.push({ label, start, entries: [entry] });
+    return result;
+  }, []);
+  const filesPending = plugins.includes('project-search') && vm?.status === 'running' && !!query.trim() &&
+    (search !== query.trim() || (!files.data && !files.error));
+  const commandsPending = plugins.includes('commands') && vm?.status === 'running' && !commands.data && !commands.error;
+  const filesTruncated = search === query.trim() && (files.data?.truncated || (files.data?.files.filter(item => !item.directory).length || 0) > 30);
   useEffect(/** 中文：当依赖 [chosen] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [chosen] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     document.getElementById(`palette-result-${chosen}`)?.scrollIntoView({ block: 'nearest' });
   }, [chosen]);
@@ -224,6 +242,7 @@ export function CommandPalette({
             <div className="palette-search">
               <Search size={18} />
               <input
+                ref={searchInput}
                 autoFocus
                 role="combobox"
                 aria-label="搜索实例、文件或操作"
@@ -258,10 +277,20 @@ export function CommandPalette({
                   }
                 }}
               />
+              {query && <button className="palette-clear" type="button" aria-label="清空搜索" title="清空搜索"
+                onClick={() => { setQuery(''); searchInput.current?.focus(); }}><X size={16} /></button>}
             </div>
             <Feedback error={commands.error || files.error} />
+            <div className="palette-result-summary" role="status" aria-live="polite">
+              <span>{entries.length} 个结果</span>
+              <span>{filesPending ? '正在搜索项目文件…' : commandsPending ? '正在读取收藏命令…' : filesTruncated ? '文件结果较多，请缩小搜索范围。' : ''}</span>
+            </div>
             <div id="palette-results" role="listbox" aria-label="搜索结果" className="palette-results">
-              {entries.map((entry, i) => (
+              {groups.map(group => <div className="palette-result-group" role="group" aria-label={group.label} key={`${group.label}-${group.start}`}>
+                <div className="palette-group-label" aria-hidden="true">{group.label}<span>{group.entries.length}</span></div>
+                {group.entries.map((entry, offset) => {
+                  const i = group.start + offset;
+                  return (
                 <button
                   type="button"
                   role="option"
@@ -275,9 +304,16 @@ export function CommandPalette({
                   <span>{entry.title}</span>
                   <small>{entry.detail}</small>
                 </button>
-              ))}
-              {!entries.length && <p className="muted">没有匹配结果。</p>}
+                  );
+                })}
+              </div>)}
             </div>
+            {!entries.length && !filesPending && !commandsPending && <div className="palette-empty" role="status">
+              <Search size={26} aria-hidden="true" />
+              <strong>没有匹配结果</strong>
+              <p>试试更短的关键词，或清空搜索查看可用操作。</p>
+              <button className="secondary compact" type="button" onClick={() => { setQuery(''); searchInput.current?.focus(); }}>查看全部操作</button>
+            </div>}
             <p className="subtle-note">
               ↑ ↓ 选择 · Enter 打开 · Esc 关闭 · 文件搜索使用当前运行实例的项目目录
             </p>
