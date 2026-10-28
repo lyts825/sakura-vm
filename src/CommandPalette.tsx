@@ -99,6 +99,9 @@ export function CommandPalette({
     setIndex(0);
     return () => clearTimeout(timer);
   }, [query]);
+  useEffect(() => {
+    if (!preset) searchInput.current?.focus();
+  }, [preset]);
   const needle = query.trim().toLocaleLowerCase(),
     /**
      * 中文：按区域小写匹配名称及别名中是否包含当前搜索词，任一命中即可保留命令。
@@ -190,7 +193,7 @@ export function CommandPalette({
     return result;
   }, []);
   const selectedSlot = Math.min(index, Math.max(0, selectable.length - 1));
-  const chosen = selectable[selectedSlot] ?? Math.min(index, Math.max(0, entries.length - 1));
+  const chosen = selectable[selectedSlot];
   // Keep the action order intact while exposing its scope in the result list.
   const groups = entries.reduce<Array<{ label: string; start: number; entries: PaletteAction[] }>>((result, entry, start) => {
     const label = entry.key.startsWith('switch:') || entry.key.endsWith(':switch') ? '切换工作空间'
@@ -208,7 +211,7 @@ export function CommandPalette({
   const commandsPending = plugins.includes('commands') && vm?.status === 'running' && !commands.data && !commands.error;
   const filesTruncated = search === query.trim() && (files.data?.truncated || (files.data?.files.filter(item => !item.directory).length || 0) > 30);
   useEffect(/** 中文：当依赖 [chosen] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [chosen] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
-    document.getElementById(`palette-result-${chosen}`)?.scrollIntoView({ block: 'nearest' });
+    if (chosen !== undefined) document.getElementById(`palette-result-${chosen}`)?.scrollIntoView({ block: 'nearest' });
   }, [chosen]);
   return (
     <dialog
@@ -229,7 +232,7 @@ export function CommandPalette({
           <X size={18} />
         </button>
       </div>
-      <div className="palette-body">
+      <div className={`palette-body${preset ? ' palette-preset-body' : ''}`}>
         {preset && vm ? (
           <>
             <button className="text-button" onClick={() => setPreset(null)}>
@@ -249,7 +252,8 @@ export function CommandPalette({
                 aria-autocomplete="list"
                 aria-expanded="true"
                 aria-controls="palette-results"
-                aria-activedescendant={entries.length ? `palette-result-${chosen}` : undefined}
+                aria-activedescendant={chosen !== undefined ? `palette-result-${chosen}` : undefined}
+                aria-describedby="palette-keyboard-hint"
                 value={query}
                 placeholder="实例、项目文件、操作、收藏命令…"
                 onChange={(e) => setQuery(e.target.value)}
@@ -261,6 +265,8 @@ export function CommandPalette({
                  * Result: Return a view/decision or complete event handling as described; state/action feedback exposes branches without a returned value.
                  */
                 (e) => {
+                  // IME confirmation and candidate navigation belong to the input method.
+                  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
                   if (e.key === 'Escape') {
                     e.preventDefault();
                     close();
@@ -272,7 +278,7 @@ export function CommandPalette({
                     if (next !== null) setIndex(next);
                   } else if (e.key === 'Enter') {
                     e.preventDefault();
-                    const entry = entries[chosen];
+                    const entry = chosen === undefined ? undefined : entries[chosen];
                     if (!entry?.disabled) entry?.run();
                   }
                 }}
@@ -285,7 +291,7 @@ export function CommandPalette({
               <span>{entries.length} 个结果</span>
               <span>{filesPending ? '正在搜索项目文件…' : commandsPending ? '正在读取收藏命令…' : filesTruncated ? '文件结果较多，请缩小搜索范围。' : ''}</span>
             </div>
-            <div id="palette-results" role="listbox" aria-label="搜索结果" className="palette-results">
+            <div id="palette-results" role="listbox" tabIndex={-1} aria-label="搜索结果" className="palette-results">
               {groups.map(group => <div className="palette-result-group" role="group" aria-label={group.label} key={`${group.label}-${group.start}`}>
                 <div className="palette-group-label" aria-hidden="true">{group.label}<span>{group.entries.length}</span></div>
                 {group.entries.map((entry, offset) => {
@@ -294,6 +300,7 @@ export function CommandPalette({
                 <button
                   type="button"
                   role="option"
+                  tabIndex={-1}
                   aria-selected={i === chosen}
                   id={`palette-result-${i}`}
                   key={entry.key}
@@ -314,9 +321,10 @@ export function CommandPalette({
               <p>试试更短的关键词，或清空搜索查看可用操作。</p>
               <button className="secondary compact" type="button" onClick={() => { setQuery(''); searchInput.current?.focus(); }}>查看全部操作</button>
             </div>}
-            <p className="subtle-note">
-              ↑ ↓ 选择 · Enter 打开 · Esc 关闭 · 文件搜索使用当前运行实例的项目目录
-            </p>
+            <div className="palette-hints">
+              <p id="palette-keyboard-hint"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>Enter</kbd> 打开</span><span><kbd>Esc</kbd> 关闭</span></p>
+              {plugins.includes('project-search') && <p>{vm?.status === 'running' ? '文件搜索范围：当前实例的项目目录' : '启动当前实例后可搜索项目文件'}</p>}
+            </div>
           </>
         )}
       </div>
