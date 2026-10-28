@@ -226,6 +226,9 @@ export function PluginCenter({ request }: { request: Request }) {
       ),
     [status],
   );
+  // 中文：搜索、折叠和忙碌提示复用同一状态的预览；新服务端状态会丢弃缓存。
+  // English: Reuse previews during local UI updates; every new server status invalidates them.
+  const packChangePreviews = useMemo(() => new Map<string, string[]>(), [status]);
   const purposes = useMemo(() => pluginCatalogPurposes(status?.plugins || [], status?.packs || []), [status]);
   const availableGroups = pluginCatalogGroups.filter(group =>
     status?.packs.some(pack => packCatalogGroup(pack.id) === group.id) ||
@@ -491,16 +494,20 @@ export function PluginCenter({ request }: { request: Request }) {
     if (!status) return null;
     const selected = status.selection.packs.includes(pack.id);
     const resolved = packContents.get(pack.id) || [];
-    const next = resolvePlugins(
-      {
-        ...status.selection,
-        packs: selected
-          ? status.selection.packs.filter((id) => id !== pack.id)
-          : [...status.selection.packs, pack.id],
-      },
-      status.plugins,
-      status.packs,
-    );
+    let next = packChangePreviews.get(pack.id);
+    if (!next) {
+      next = resolvePlugins(
+        {
+          ...status.selection,
+          packs: selected
+            ? status.selection.packs.filter((id) => id !== pack.id)
+            : [...status.selection.packs, pack.id],
+        },
+        status.plugins,
+        status.packs,
+      );
+      packChangePreviews.set(pack.id, next);
+    }
     const changed = selected
       ? status.planned.filter((id) => !next.includes(id))
       : next.filter((id) => !status.planned.includes(id));
