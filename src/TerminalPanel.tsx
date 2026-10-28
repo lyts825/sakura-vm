@@ -214,11 +214,15 @@ export function TerminalPanel({
       ? 'stopped'
       : connection === 'SSH 已连接'
         ? 'running'
-        : connection === '连接失败'
+        : connection === '连接失败' || connection === '自动重连未成功，请点击重新连接'
           ? 'error'
-          : connection === '连接已关闭'
+          : connection === '连接已关闭' || connection === '会话已结束'
             ? 'stopped'
             : 'starting';
+  const reconnect = () => {
+    setDisconnected(false);
+    setRetry((value) => value + 1);
+  };
   const terminalTitle = vm.status === 'running'
     ? `root@${vm.name}: ${networkMode === 'private' ? '私有项目网络' : networkMode === 'host' ? '共享网络' : '项目终端'}`
     : 'Linux 启动控制台';
@@ -265,7 +269,7 @@ export function TerminalPanel({
           <button
             aria-label="清空终端"
             title="清空终端"
-            disabled={vm.status === 'stopped'}
+            disabled={vm.status === 'stopped' || disconnected}
             onClick={() => terminal.current?.clear()}
           >
             <Trash2 size={14} />
@@ -274,7 +278,7 @@ export function TerminalPanel({
             aria-label="重新连接终端"
             title="重新连接"
             disabled={vm.status === 'stopped'}
-            onClick={() => { setDisconnected(false); setRetry((v) => v + 1); }}
+            onClick={reconnect}
           >
             <RefreshCw size={14} />
           </button>
@@ -292,11 +296,21 @@ export function TerminalPanel({
             启动并连接
           </button>
         </div>
-      ) : disconnected ? <div className="terminal-offline"><p>项目终端已断开，点击重新连接继续。</p></div> : (
+      ) : disconnected ? (
+        <div className="terminal-offline terminal-disconnected">
+          <Unplug size={34} aria-hidden="true" />
+          <h3>终端已断开</h3>
+          <p>重新连接到 {vm.name}，继续使用项目终端。</p>
+          <button className="terminal-start" aria-label="重新连接项目终端" onClick={reconnect}>
+            <RefreshCw size={14} />
+            重新连接
+          </button>
+        </div>
+      ) : (
         <div ref={ref} className="xterm-container" />
       )}
       <div className="terminal-bottom">
-        <span className={`terminal-session ${connectionTone}`} role="status">
+        <span className={`terminal-session ${connectionTone}`} role="status" aria-live="polite" aria-atomic="true">
           <span className={`tiny-dot ${connectionTone}`} />
           {vm.status === 'stopped' ? '发行版已停止' : disconnected ? '连接已关闭' : connection}
         </span>

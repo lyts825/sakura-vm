@@ -33,6 +33,27 @@
   outline-color: #f3c0d6;
   outline-offset: 1px;
 }
+.terminal-panel .terminal-offline p {
+  max-width: 36em;
+  overflow-wrap: anywhere;
+}
+.terminal-panel .terminal-bottom {
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding-block: 7px;
+}
+.terminal-panel .terminal-session {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.terminal-panel .terminal-session .tiny-dot {
+  flex-shrink: 0;
+}
+.terminal-panel .terminal-bottom > span:last-child {
+  margin-left: auto;
+  white-space: nowrap;
+}
 @container terminal-panel (max-width: 520px) {
   .terminal-panel .terminal-toolbar {
     padding: 9px;
@@ -54,5 +75,8 @@
   }
   .terminal-panel .terminal-tool-divider {
     margin-inline: 2px;
+  }
+  .terminal-panel .terminal-bottom {
+    font-size: 10px;
   }
 }
