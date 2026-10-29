@@ -3,6 +3,15 @@
 .session-lock-settings .settings-field-error { color: var(--danger); }
 .session-lock-settings input[aria-invalid='true'] { border-color: var(--danger); }
 .session-lock-settings button { min-height: 40px; white-space: normal; }
+.clipboard-settings .clipboard-rule-summary { padding: 14px; margin: 10px 0 18px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 12px; }
+.clipboard-settings .clipboard-rule-summary dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.clipboard-settings .clipboard-rule-summary dl > div { min-width: 0; }
+.clipboard-settings .clipboard-rule-summary dt { color: var(--muted); font-size: 11px; }
+.clipboard-settings .clipboard-rule-summary dd { margin: 4px 0 0; font-weight: 500; overflow-wrap: anywhere; }
+.clipboard-settings .clipboard-rule-summary .subtle-note { padding: 8px 0 0; }
+.clipboard-settings summary { min-height: 40px; padding: 10px 0; }
+.clipboard-settings button { min-height: 40px; white-space: normal; }
+.clipboard-settings .clipboard-save-message { margin-top: 12px; color: var(--accent); font-size: 12px; }
 
 .session-lock-settings label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
 .session-lock-settings label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }

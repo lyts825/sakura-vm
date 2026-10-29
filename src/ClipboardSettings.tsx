@@ -5,6 +5,7 @@
  * Detailed scope (English): Public entry points include ClipboardSettings. The scope covers Editing sensitive-clipboard protection preferences in the browser. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { useState, useSyncExternalStore } from 'react';
+import './settings-feedback.css';
 import {
   clipboardAppNames,
   clipboardApps,
@@ -32,6 +33,7 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
   const [scope, setScope] = useState('global'),
     [app, setApp] = useState<ClipboardApp>('terminal'),
     [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const context = { app, vmId: scope === 'global' ? undefined : scope };
   const rule = effectiveClipboardRule(state.policies, context);
   const overridden = scope === 'global' || !!state.policies.instances[scope]?.[app];
@@ -47,8 +49,10 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
     try {
       setClipboardPolicies(next);
       setError('');
+      setMessage('剪贴板策略已更新，立即生效。');
     } catch (error) {
       setError((error as Error).message);
+      setMessage('');
     }
   };
   /**
@@ -66,7 +70,7 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
     save(next);
   };
   return (
-    <div className="system-card">
+    <section className="system-card clipboard-settings" aria-label="剪贴板敏感检测设置">
       <h3>剪贴板敏感检测</h3>
       <label className="checkbox-label">
         <input
@@ -90,10 +94,10 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
         {!state.persistent && <p role="status">浏览器无法保存策略；当前标签页仍生效，关闭后不保留。</p>}
         <label>
           策略范围
-          <select value={scope} onChange={(e) => setScope(e.target.value)}>
+          <select aria-label="策略范围" value={scope} onChange={(e) => { setScope(e.target.value); setMessage(''); setError(''); }}>
             <option value="global">所有实例的默认策略</option>
             {vms.map((vm) => (
-              <option key={vm.id} value={vm.id}>
+              <option key={vm.id} value={vm.id} data-locale-ignore>
                 {vm.name}
               </option>
             ))}
@@ -101,7 +105,7 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
         </label>
         <label>
           应用入口
-          <select value={app} onChange={(e) => setApp(e.target.value as ClipboardApp)}>
+          <select aria-label="应用入口" value={app} onChange={(e) => { setApp(e.target.value as ClipboardApp); setMessage(''); setError(''); }}>
             {clipboardApps.map((value) => (
               <option key={value} value={value}>
                 {clipboardAppNames[value]}
@@ -109,6 +113,16 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
             ))}
           </select>
         </label>
+        <div className="clipboard-rule-summary" aria-label="当前生效的剪贴板策略">
+          <p><strong>{clipboardAppNames[app]}</strong> · {scope === 'global' ? '全局默认策略' : overridden ? '使用实例独立策略' : '继承全局默认策略'}</p>
+          <dl>
+            <div><dt>复制与剪切</dt><dd>{rule.copy ? '允许' : '已阻止'}</dd></div>
+            <div><dt>粘贴</dt><dd>{rule.paste ? '允许' : '已阻止'}</dd></div>
+            <div><dt>敏感文本检测</dt><dd>{enabled || rule.sensitive ? '开启' : '关闭'}</dd></div>
+            <div><dt>策略文本上限</dt><dd>{rule.maxTextBytes / 1024} KiB</dd></div>
+          </dl>
+          {scope !== 'global' && !overridden && <p className="subtle-note">勾选下方“为此实例单独设置”后，可以修改此实例的规则。</p>}
+        </div>
         {scope !== 'global' && (
           <label className="checkbox-label">
             <input
@@ -165,6 +179,7 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
           <label>
             文本上限
             <select
+              aria-label="文本上限"
               value={rule.maxTextBytes}
               onChange={(e) => update({ ...rule, maxTextBytes: Number(e.target.value) })}
             >
@@ -183,7 +198,8 @@ export function ClipboardSettings({ vms = [] }: { vms?: { id: string; name: stri
         <button className="secondary compact" onClick={() => save(defaultClipboardPolicies())}>
           恢复全部剪贴板默认策略
         </button>
+        {message && <p role="status" className="clipboard-save-message">{message}</p>}
       </details>
-    </div>
+    </section>
   );
 }
