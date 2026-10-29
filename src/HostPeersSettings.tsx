@@ -56,11 +56,15 @@ function ResourceCard({ title, status, error, checkedAt }: {
   title: string; status?: PeerStatus; error?: string; checkedAt?: number;
 }) {
   return <div className="feature-card host-peer-resource">
-    <h4>{title}</h4>
-    <p>{error ? `连接失败：${error}` : status ? '可访问' : '等待检查'}</p>
-    {status && <p>{status.platform} / {status.arch} · {status.cpus} 核 ·
-      可用内存 {gib(status.memoryFree)} / {gib(status.memoryTotal)} ·
-      实例 {status.runningVms} 运行 / {status.vmCount} 总数</p>}
+    <div className="peers-section-heading"><h4 data-locale-ignore>{title}</h4><span>{error ? '连接失败' : status ? '可访问' : '等待检查'}</span></div>
+    {error && <p className="peers-resource-error">连接失败：{error}</p>}
+    {error && status && <p className="subtle-note">以下资源来自上次成功观测。</p>}
+    {status && <dl className="peers-metrics">
+      <div><dt>系统</dt><dd>{status.platform} / {status.arch}</dd></div>
+      <div><dt>逻辑处理器</dt><dd>{status.cpus} 核</dd></div>
+      <div><dt>可用 / 总内存</dt><dd>{gib(status.memoryFree)} / {gib(status.memoryTotal)}</dd></div>
+      <div><dt>实例</dt><dd>{status.runningVms} 运行 / {status.vmCount} 总数</dd></div>
+    </dl>}
     {checkedAt && <p className="subtle-note">上次检查：{formatDateTime(new Date(checkedAt))}</p>}
   </div>;
 }
@@ -87,6 +91,14 @@ export function HostPeersSettings({ request }: { request: Request }) {
   const [code, setCode] = useState('');
   const [requirements, setRequirements] = useState({ cpus: 2, memoryMiB: 2048 });
   const [scores, setScores] = useState<ScoreView | null>(null);
+  const [pendingOperation, setPendingOperation] = useState('');
+  const pendingLabels: Record<string, string> = { refresh: '正在检查全部主机…', listener: '正在保存入口配置…',
+    'create-code': '正在生成配对码…', 'revoke-code': '正在撤销配对码…', connect: '正在连接并配对…',
+    'remove-outbound': '正在移除远端主机…', 'revoke-inbound': '正在撤销入站访问…',
+    'allow-import': '正在更新实例包导入授权…', 'allow-policy': '正在更新策略发布授权…',
+    'allow-activate': '正在更新目标启动授权…', 'allow-failover': '正在更新故障接管授权…', score: '正在计算主机评分…' };
+  const cpusValid = Number.isInteger(requirements.cpus) && requirements.cpus >= 1 && requirements.cpus <= 128;
+  const memoryValid = Number.isInteger(requirements.memoryMiB) && requirements.memoryMiB >= 256 && requirements.memoryMiB <= 131072;
   const listener = listenerDraft || remote.data?.listener ||
     { enabled: false, host: '127.0.0.1' as const, port: 7443 };
   /**
@@ -97,6 +109,7 @@ export function HostPeersSettings({ request }: { request: Request }) {
    */
   const apply = (operation: string, data: Record<string, unknown> = {}, message?: string) =>
     void action.run(/** 中文：提交 POST /host-peers，完成配置主机配对、健康评分与迁移复制状态的数据交互并更新scores 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state and update scores state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
+      setPendingOperation(operation);
       await request('/host-peers', 'POST', { operation, ...data }, signal);
       setScores(null);
       remote.reload();
@@ -116,6 +129,7 @@ export function HostPeersSettings({ request }: { request: Request }) {
    * English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state. Propagate asynchronous failure to this catch path or the outer action feedback
    */
   const connect = () => void action.run(/** 中文：提交 POST /host-peers，完成配置主机配对、健康评分与迁移复制状态的数据交互并更新address 状态、fingerprint 状态、code 状态、scores 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state and update address state, fingerprint state, code state, scores state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
+    setPendingOperation('connect');
     await request('/host-peers', 'POST', { operation: 'connect', url: address.trim(),
       fingerprint: fingerprint.trim().toUpperCase(), code: code.trim().toUpperCase() }, signal);
     setAddress(''); setFingerprint(''); setCode('');
@@ -127,80 +141,120 @@ export function HostPeersSettings({ request }: { request: Request }) {
    * English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state. Propagate asynchronous failure to this catch path or the outer action feedback
    */
   const score = () => void action.run(/** 中文：提交 POST /host-peers，完成配置主机配对、健康评分与迁移复制状态的数据交互并更新scores 状态；异步失败传给此处的捕获分支或外层动作反馈 | English: Perform POST /host-peers for Configuring host pairing, health scores and migration/replication state and update scores state. Propagate asynchronous failure to this catch path or the outer action feedback | 中文：输入：signal：本次调用的取消寿命 | English: Inputs: signal: cancellation lifetime for this invocation | 中文：结果：异步完成时兑现 Promise，状态变化通过上述副作用交付；未捕获失败继续拒绝 | English: Result: fulfill the promise at asynchronous completion, delivering changes through the described effects; uncaught failures keep rejecting */ async (signal) => {
+    setPendingOperation('score');
     setScores(await request<ScoreView>('/host-peers', 'POST',
       { operation: 'score', requirements }, signal));
   }, '主机评分已更新');
   return <section className="system-card host-peers-settings host-peers-panel" aria-label="主机配对与多主机状态">
     <div className="panel-heading">
       <div><h3>主机配对与多主机状态</h3><p>通过短码和证书指纹连接另一台 Sakura，集中查看资源与连通性。</p></div>
-      <button className="secondary compact" onClick={() =>
+      <button className="secondary compact" disabled={action.busy} onClick={() =>
         apply('refresh', {}, '主机状态已检查')}>检查全部主机</button>
     </div>
-    <Feedback error={action.error || remote.error} message={action.message} />
+    <Feedback error={action.error} message={action.message} />
+    {action.busy && <p className="peers-operation-status" role="status">{pendingLabels[pendingOperation] || '正在处理主机操作…'}</p>}
+    {!remote.data && !remote.error && <p role="status">正在读取主机配对与资源状态…</p>}
+    <Feedback error={remote.error} />
+    {remote.error && <div className="peers-read-recovery">
+      {remote.data && <p className="subtle-note">以下主机状态来自上次读取，请重新核对。</p>}
+      <button className="secondary compact" disabled={action.busy} onClick={remote.reload}>重新读取主机状态</button>
+    </div>}
     <ResourceCard title={`本机 · ${remote.data?.name || 'Sakura'}`} status={remote.data?.local} />
     {remote.data?.outbound.map((peer) => <ResourceCard key={peer.id}
       title={`${peer.name} · ${peer.url}`} status={peer.observation?.status}
       error={peer.observation?.error} checkedAt={peer.observation?.checkedAt} />)}
-    <div className="feature-card">
+    <section className="feature-card peers-scoring" aria-label="资源评分调度">
       <h4>资源评分调度</h4>
       <p>按最近的 CPU、空闲内存与负载为计划中的实例排序；评分不会迁移或启动实例。</p>
       <div className="shortcut-fields">
         <label>所需逻辑处理器<input type="number" min={1} max={128}
+          aria-label="所需逻辑处理器" aria-invalid={!cpusValid || undefined} aria-describedby={`${fieldId}-cpus`}
           value={requirements.cpus} onChange={(event) => {
             setRequirements({ ...requirements, cpus: Number(event.target.value) }); setScores(null);
-          }} /></label>
+          }} /><small id={`${fieldId}-cpus`} className={!cpusValid ? 'peers-field-error' : undefined}>填写 1～128 的整数。</small></label>
         <label>所需内存（MiB）<input type="number" min={256} max={131072}
+          aria-label="所需内存（MiB）" aria-invalid={!memoryValid || undefined} aria-describedby={`${fieldId}-memory`}
           value={requirements.memoryMiB} onChange={(event) => {
             setRequirements({ ...requirements, memoryMiB: Number(event.target.value) }); setScores(null);
-          }} /></label>
+          }} /><small id={`${fieldId}-memory`} className={!memoryValid ? 'peers-field-error' : undefined}>填写 256～131072 MiB 的整数。</small></label>
       </div>
-      <button className="primary compact" disabled={action.busy || !Number.isInteger(requirements.cpus) ||
-        requirements.cpus < 1 || requirements.cpus > 128 ||
-        !Number.isInteger(requirements.memoryMiB) || requirements.memoryMiB < 256 ||
-        requirements.memoryMiB > 131072} onClick={score}>计算主机评分</button>
-      {scores && <div className="host-peer-scores" aria-label="主机评分结果">
+      <button className="primary compact" disabled={action.busy || !cpusValid || !memoryValid} onClick={score}>{action.busy && pendingOperation === 'score' ? '正在计算评分…' : '计算主机评分'}</button>
+      {scores && <div className="host-peer-scores" role="region" aria-label="主机评分结果">
         <p className="subtle-note">评分时间：{formatDateTime(new Date(scores.scoredAt))}</p>
-        {scores.candidates.map((item) => <div className="host-peer-row" key={item.id}>
-          <span><strong>{item.name}</strong> · {item.source === 'local' ? '本机' : '远端'} ·
-            {item.eligible ? `评分 ${item.score} / 100（内存 ${item.components.memory}、CPU 负载 ${item.components.cpuLoad}、实例密度 ${item.components.instanceDensity}）` :
-              `不可选：${item.reasons.join('；')}`}</span>
-        </div>)}
+        <p className="peers-score-context">本次需求：{scores.requirements.cpus} 核 · {scores.requirements.memoryMiB} MiB；{scores.candidates.filter(item => item.eligible).length} / {scores.candidates.length} 台主机可选。</p>
+        {!scores.candidates.length && <p className="subtle-note">本次没有可评分的主机，请检查主机状态后重新计算。</p>}
+        {scores.candidates.map((item) => <article className="host-peer-row peers-score-card" key={item.id}>
+          <div className="peers-section-heading"><h5 data-locale-ignore>{item.name}</h5><span>{item.source === 'local' ? '本机' : '远端'}</span></div>
+          {item.eligible ? <>
+            <p className="peers-score-value">评分 <strong>{item.score}</strong> / 100</p>
+            <dl className="peers-metrics">
+              <div><dt>内存</dt><dd>{item.components.memory}</dd></div>
+              <div><dt>CPU 负载</dt><dd>{item.components.cpuLoad}</dd></div>
+              <div><dt>实例密度</dt><dd>{item.components.instanceDensity}</dd></div>
+            </dl>
+          </> : <><p className="peers-unavailable">不可选</p><ul>{item.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul></>}
+        </article>)}
       </div>}
-    </div>
-    <div className="feature-card">
+    </section>
+    <section className="feature-card peers-migrations" aria-label="冷迁移队列">
       <h4>冷迁移队列</h4>
       <p>停止来源实例后，在该实例的能力中心选择“跨主机冷迁移”，填入下方目标 ID。先传输并检查目标，再明确确认移除源实例。要处理本机所有实例，可在任意实例的能力中心选择“主机维护排空”；批量移除前须先完成整批复制并逐台验证。</p>
-      {!migrations.data?.enabled && <p className="subtle-note">需要启用平台与快照插件。</p>}
+      {!migrations.data && !migrations.error && <p role="status">正在读取冷迁移队列…</p>}
+      <Feedback error={migrations.error} />
+      {migrations.error && <div className="peers-read-recovery">
+        {migrations.data && <p className="subtle-note">以下迁移记录来自上次读取，请重新核对。</p>}
+        <button className="secondary compact" disabled={action.busy} onClick={migrations.reload}>重新读取迁移队列</button>
+      </div>}
+      {migrations.data && !migrations.data.enabled && <p className="subtle-note">需要启用平台与快照插件。</p>}
       {migrations.data?.enabled && !migrations.data.entries.length &&
         <p className="subtle-note">尚无迁移任务。</p>}
-      {migrations.data?.entries.map((entry) => <div className="host-peer-row" key={entry.transferId}>
-        <span><strong>{entry.targetName}</strong> ·
+      {migrations.data && <p className="peers-queue-count">{migrations.data.entries.length} 项迁移记录</p>}
+      {migrations.data?.entries.map((entry) => <article className="peers-transfer-card" key={entry.transferId}>
+        <div className="peers-section-heading"><h5 data-locale-ignore>{entry.targetName}</h5><span className={`peers-transfer-state peers-transfer-${entry.status}`}>
           {entry.status === 'queued' ? '等待传输' : entry.status === 'transferring' ? '传输中' :
             entry.status === 'copied' ? '目标已导入，源仍保留' :
-              entry.status === 'moved' ? '已移除源实例' : '需要复核'} ·
-          来源 {entry.vmId} · 目标 {entry.remoteVmId || entry.peerId}
-          {entry.error && ` · ${entry.error}`}</span>
-      </div>)}
-    </div>
-    <div className="feature-card">
+              entry.status === 'moved' ? '已移除源实例' : '需要复核'}</span></div>
+        <dl className="peers-identity">
+          <div><dt>来源实例</dt><dd><code>{entry.vmId}</code></dd></div>
+          <div><dt>目标主机</dt><dd><code>{entry.peerId}</code></dd></div>
+          <div><dt>目标实例</dt><dd><code>{entry.remoteVmId || '尚未返回'}</code></dd></div>
+          <div><dt>传输标识</dt><dd><code>{entry.transferId}</code></dd></div>
+        </dl>
+        <p className="peers-transfer-time">更新于 {formatDateTime(new Date(entry.updatedAt))}</p>
+        {entry.error && <p className="peers-resource-error">{entry.error}</p>}
+      </article>)}
+    </section>
+    <section className="feature-card peers-replications" aria-label="跨主机快照复制">
       <h4>跨主机快照复制</h4>
       <p>停止来源实例后，在“快照”页查看快照 ID，再到该实例的能力中心选择“跨主机快照复制”。填写下方目标 ID、快照 ID 和新实例名称。目标会收到选定历史快照的独立实例。</p>
-      {!replications.data?.enabled && <p className="subtle-note">需要启用平台与快照插件。</p>}
+      {!replications.data && !replications.error && <p role="status">正在读取快照复制队列…</p>}
+      <Feedback error={replications.error} />
+      {replications.error && <div className="peers-read-recovery">
+        {replications.data && <p className="subtle-note">以下复制记录来自上次读取，请重新核对。</p>}
+        <button className="secondary compact" disabled={action.busy} onClick={replications.reload}>重新读取复制队列</button>
+      </div>}
+      {replications.data && !replications.data.enabled && <p className="subtle-note">需要启用平台与快照插件。</p>}
       {replications.data?.enabled && !replicationEntries.length &&
         <p className="subtle-note">尚无快照复制任务。</p>}
-      {replicationEntries.map((entry) => <div className="host-peer-row" key={entry.transferId}>
-        <span><strong>{entry.targetName}</strong> ·
+      {replications.data && <p className="peers-queue-count">{replicationEntries.length} 项快照复制记录</p>}
+      {replicationEntries.map((entry) => <article className="peers-transfer-card" key={entry.transferId}>
+        <div className="peers-section-heading"><h5 data-locale-ignore>{entry.targetName}</h5><span className={`peers-transfer-state peers-transfer-${entry.status}`}>
           {entry.status === 'queued' ? '等待传输' : entry.status === 'transferring' ? '传输中' :
-            entry.status === 'replicated' ? '已校验并导入' : '需要复核'} ·
-          来源快照 <code>{entry.snapshotId}</code> ·
-          目标实例 <code>{entry.remoteVmId || '尚未返回'}</code>
-          {entry.sha256 && <> · SHA-256 <code>{entry.sha256}</code></>}
-          {entry.error && ` · ${entry.error}`}</span>
-      </div>)}
-    </div>
+            entry.status === 'replicated' ? '已校验并导入' : '需要复核'}</span></div>
+        <dl className="peers-identity">
+          <div><dt>来源快照</dt><dd><code>{entry.snapshotId}</code></dd></div>
+          <div><dt>目标主机</dt><dd><code>{entry.peerId}</code></dd></div>
+          <div><dt>目标实例</dt><dd><code>{entry.remoteVmId || '尚未返回'}</code></dd></div>
+          <div><dt>传输标识</dt><dd><code>{entry.transferId}</code></dd></div>
+          {entry.sha256 && <div><dt>SHA-256</dt><dd><code>{entry.sha256}</code></dd></div>}
+        </dl>
+        <p className="peers-transfer-time">更新于 {formatDateTime(new Date(entry.updatedAt))}</p>
+        {entry.error && <p className="peers-resource-error">{entry.error}</p>}
+      </article>)}
+    </section>
     <section className="feature-card peers-pairing" aria-label="同伴入口">
       <h4>同伴入口</h4>
-      <p>当前入口：{remote.data?.listener.active ? '正在监听' : '未监听'}。
+      <p>当前入口：{remote.data ? remote.data.listener.active ? '正在监听' : '未监听' : remote.error ? '暂未确认' : '正在读取…'}。
         {remote.data?.listener.error && ` ${remote.data.listener.error}`}</p>
       <div className="shortcut-fields">
         <label className="check"><input type="checkbox" checked={listener.enabled}
@@ -217,9 +271,9 @@ export function HostPeersSettings({ request }: { request: Request }) {
           onChange={(event) => setListenerDraft({ ...listener, port: Number(event.target.value) })} /></label>
       </div>
       <dl className="peers-identity">
-        <div><dt>本机主机 ID</dt><dd><code>{remote.data?.hostId || '读取中'}</code></dd></div>
+        <div><dt>本机主机 ID</dt><dd><code>{remote.data?.hostId || (remote.error ? '暂未确认' : '读取中')}</code></dd></div>
         <div><dt>本机 TLS 指纹（在另一台主机配对时核对）</dt><dd><code className="host-peer-fingerprint">
-          {remote.data?.fingerprint || '读取中'}</code></dd></div>
+          {remote.data?.fingerprint || (remote.error ? '暂未确认' : '读取中')}</code></dd></div>
       </dl>
       <div className="feature-actions">
         <button className="primary compact" disabled={action.busy || listener.port < 1024 ||
@@ -246,12 +300,12 @@ export function HostPeersSettings({ request }: { request: Request }) {
           onChange={(event) => setCode(event.target.value)} /></label>
       </div>
       <button className="primary compact" disabled={action.busy || !address.trim() ||
-        !fingerprint.trim() || code.trim().length !== 10} onClick={connect}>连接并配对</button>
+        !fingerprint.trim() || code.trim().length !== 10} onClick={connect}>{action.busy && pendingOperation === 'connect' ? '正在连接并配对…' : '连接并配对'}</button>
     </section>
     <section className="feature-card peers-outbound" aria-label="已配对主机">
       <div className="peers-section-heading"><h4>已配对主机</h4>{remote.data && <span>{remote.data.outbound.length} 台出站主机</span>}</div>
       <p className="subtle-note">本机访问的远端主机。远端访问本机的权限在下方单独管理。</p>
-      {!remote.data?.outbound.length && <p className="subtle-note">尚未加入远端主机。</p>}
+      {remote.data && !remote.data.outbound.length && <p className="subtle-note">尚未加入远端主机。</p>}
       {remote.data?.outbound.map((peer) => <article className="peers-trust-card" key={peer.id} aria-label={`出站主机 ${peer.name}`}>
         <h5 data-locale-ignore>{peer.name}</h5>
         <p className="peers-endpoint" data-locale-ignore>{peer.url}</p>
@@ -271,7 +325,7 @@ export function HostPeersSettings({ request }: { request: Request }) {
     <section className="feature-card peers-inbound" aria-label="已授权的入站主机">
       <div className="peers-section-heading"><h4>已授权的入站主机</h4>{remote.data && <span>{remote.data.incoming.length} 台入站主机</span>}</div>
       <p className="subtle-note">以下权限控制远端主机对本机的操作。各项授权分别设置；目标启动与故障副本接管同时需要实例包导入权限。</p>
-      {!remote.data?.incoming.length && <p className="subtle-note">尚无入站配对。</p>}
+      {remote.data && !remote.data.incoming.length && <p className="subtle-note">尚无入站配对。</p>}
       {remote.data?.incoming.map((peer) => <article className="peers-trust-card" key={peer.id} aria-label={`入站主机 ${peer.name}`}>
         <h5 data-locale-ignore>{peer.name}</h5>
         <dl className="peers-identity"><div><dt>请求方主机 ID</dt><dd><code>{peer.requesterId}</code></dd></div></dl>

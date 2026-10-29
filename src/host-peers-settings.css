@@ -127,6 +127,104 @@
   height: 16px;
   margin: 0;
 }
+.host-peers-panel .peers-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+.host-peers-panel .peers-metrics > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.host-peers-panel .peers-metrics dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.host-peers-panel .peers-metrics dd {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.host-peers-panel .peers-score-card,
+.host-peers-panel .peers-transfer-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.host-peers-panel .peers-score-card h5,
+.host-peers-panel .peers-transfer-card h5 {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.host-peers-panel .peers-score-card p,
+.host-peers-panel .peers-transfer-card p {
+  margin: 0;
+}
+.host-peers-panel .peers-score-card ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.host-peers-panel .peers-score-value strong {
+  color: var(--accent);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.host-peers-panel .peers-transfer-state {
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.host-peers-panel .peers-section-heading .peers-transfer-copied,
+.host-peers-panel .peers-section-heading .peers-transfer-moved,
+.host-peers-panel .peers-section-heading .peers-transfer-replicated {
+  color: var(--accent);
+}
+.host-peers-panel .peers-resource-error,
+.host-peers-panel .peers-unavailable,
+.host-peers-panel .peers-section-heading .peers-transfer-review,
+.host-peers-panel .peers-field-error {
+  color: var(--danger);
+}
+.host-peers-panel .peers-read-recovery,
+.host-peers-panel .peers-score-context,
+.host-peers-panel .peers-operation-status {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.host-peers-panel .peers-queue-count,
+.host-peers-panel .peers-transfer-time {
+  color: var(--muted);
+  font-size: 11px;
+}
+.host-peers-panel .shortcut-fields small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.host-peers-panel .shortcut-fields .peers-field-error {
+  color: var(--danger);
+}
+.host-peers-panel :is(button, input, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 .host-peers-panel button {
   max-width: 100%;
   min-height: 36px;
