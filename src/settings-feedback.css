@@ -33,11 +33,11 @@
 .webhook-settings .webhook-action-status { padding: 10px 12px; margin: 12px 0; color: var(--accent); background: var(--accent-soft); border-radius: var(--radius-sm); font-size: 12px; }
 .webhook-settings .api-json { max-height: 280px; overscroll-behavior: contain; }
 
-.session-lock-settings label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
+.session-lock-settings label.check { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
 .session-lock-settings label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 
-.log-retention label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
+.log-retention label.check { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
 .log-retention label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 
-.webhook-settings label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
+.webhook-settings label.check { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
 .webhook-settings label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }

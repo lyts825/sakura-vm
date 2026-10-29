@@ -157,8 +157,9 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
   const [operationContext, setOperationContext] = useState('');
   const [pendingOperation, setPendingOperation] = useState<Record<string, unknown> | null>(null);
   const controlsLocked = busy || reading;
-  const pending = (operation: string, id?: string) => busy && pendingOperation?.operation === operation &&
-    (!id || id === pendingOperation.pluginId || id === pendingOperation.id || id === pendingOperation.fingerprint);
+  const pending = (operation: string, id?: string, sourceId?: string) => busy && pendingOperation?.operation === operation &&
+    (!id || id === pendingOperation.pluginId || id === pendingOperation.id || id === pendingOperation.fingerprint) &&
+    (sourceId === undefined || sourceId === pendingOperation.sourceId);
   /**
    * 中文：读取 GET /community-plugins，完成安装、授权和管理社区插件及其独立界面的数据交互并更新服务端视图；异步失败传给此处的捕获分支或外层动作反馈
    * English: Perform GET /community-plugins for Installing, authorizing and managing community plugins and their isolated surfaces and update server view. Propagate asynchronous failure to this catch path or the outer action feedback
@@ -212,8 +213,10 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
     const names: Record<string, string> = { trust: '添加信任', untrust: '撤销信任', 'add-source': '添加目录源',
       'remove-source': '移除目录源', refresh: '刷新目录', install: '安装插件', uninstall: '卸载插件',
       subscribe: '保存事件订阅', unsubscribe: '移除事件订阅', schedule: '保存定时触发', unschedule: '移除定时触发', run: '测试运行' };
-    const plugin = view?.installed.find(item => item.id === operation.pluginId) ||
-      Object.values(view?.catalogs || {}).flat().find(item => item.id === operation.pluginId);
+    const plugin = operation.operation === 'install'
+      ? view?.catalogs[String(operation.sourceId)]?.find(item => item.id === operation.pluginId)
+      : view?.installed.find(item => item.id === operation.pluginId) ||
+        Object.values(view?.catalogs || {}).flat().find(item => item.id === operation.pluginId);
     const target = plugin?.name || view?.sources.find(item => item.id === operation.id)?.name ||
       view?.publishers.find(item => item.fingerprint === operation.fingerprint)?.name || String(operation.name || '社区插件');
     setOperationContext(`${names[String(operation.operation)] || '处理操作'} · ${target}`);
@@ -419,7 +422,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                           )
                         }
                       >
-                        {pending('install', entry.id) ? '正在安装…' : current ? '已安装此版本' : installed ? '更新' : '安装'}
+                        {pending('install', entry.id, source.id) ? '正在安装…' : current ? '已安装此版本' : installed ? '更新' : '安装'}
                       </button>
                     </div>
                   );
