@@ -5,7 +5,7 @@
  * Detailed scope (English): Public entry points include AutomationRuleSettings. The scope covers Editing event rules, filtered actions, approvals and execution previews. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from './localization';
-import { useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import type { AutomationRule, AutomationView } from '../server/automation-rules';
 import {
   webhookAlertKinds, webhookJobStatuses, webhookTypes,
@@ -13,6 +13,7 @@ import {
 } from '../shared/webhooks';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 import './features.css';
+import './automation-rule-settings.css';
 
 type Draft = Pick<AutomationRule, 'name' | 'enabled' | 'previewOnly' | 'filter' | 'action' | 'steps' | 'cooldownSeconds'>;
 type Preview = { rule: AutomationRule; matches: Array<{
@@ -61,6 +62,12 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
   const [vmIds, setVmIds] = useState(''), [projects, setProjects] = useState(''),
     [tags, setTags] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const hintId = useId();
+  const cooldownValid = Number.isInteger(draft.cooldownSeconds) && draft.cooldownSeconds >= 60 && draft.cooldownSeconds <= 86400;
+  const stepSeconds = draft.steps.reduce((sum, step) => sum + step.timeout, 0);
+  const stepsValid = draft.action !== 'runbook' || (draft.steps.length > 0 && stepSeconds <= 600 && draft.steps.every(step =>
+    step.name.trim() && step.command.trim() && Number.isInteger(step.timeout) && step.timeout >= 1 && step.timeout <= 120));
   /**
    * 中文：在事件规则、筛选动作、审批与执行预览的编辑界面流程中编辑草稿，editing 状态，vmIds 状态，projects 状态，tags 状态，preview 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
    * English: In Editing event rules, filtered actions, approvals and execution previews, editing draft, editing state, vmIds state, projects state, tags state, preview state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
@@ -88,6 +95,7 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
     setTags(rule.filter.tags.join(', '));
     setPreview(null);
     action.clear();
+    requestAnimationFrame(() => editorRef.current?.querySelector('input')?.focus());
   };
   /**
    * 中文：在事件规则、筛选动作、审批与执行预览的编辑界面流程中编辑草稿；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
@@ -160,18 +168,22 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
       <button className="secondary compact" onClick={remote.reload}>刷新</button>
     </div>
     <Feedback error={action.error || remote.error || remote.data?.error} message={action.message} />
-    <div className="feature-card">
+    <div className="feature-card automation-rule-editor" ref={editorRef}>
       <h4>{editing ? '编辑规则' : '新建规则'}</h4>
+      <p className="automation-draft-state">当前草稿：{!draft.enabled ? '已停用' : draft.action === 'runbook' || draft.previewOnly ? '仅预览' : '实际执行'}{editing ? ` · 编辑版本 ${editing.version}` : ' · 尚未创建规则'}</p>
+      <fieldset className="automation-draft-fields" disabled={action.busy}>
       <div className="shortcut-fields">
         <label>规则名称<input value={draft.name} maxLength={64}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
-        <label>实例操作<select value={draft.action}
+        <label>实例操作<select aria-label="实例操作" value={draft.action}
           onChange={(e) => setDraft({ ...draft, action: e.target.value as Draft['action'],
             steps: e.target.value === 'runbook' ? draft.steps : [] })}>
           {(['start', 'stop', 'suspend', 'resume', 'runbook'] as const).map((value) =>
             <option key={value} value={value}>{labels[value]}</option>)}</select></label>
-        <label>冷却秒数<input type="number" min={60} max={86400} value={draft.cooldownSeconds}
-          onChange={(e) => setDraft({ ...draft, cooldownSeconds: Number(e.target.value) })} /></label>
+        <label>冷却秒数<input type="number" min={60} max={86400} step={1} value={draft.cooldownSeconds}
+          aria-label="冷却秒数" aria-invalid={!cooldownValid || undefined} aria-describedby={`${hintId}-cooldown`}
+          onChange={(e) => setDraft({ ...draft, cooldownSeconds: Number(e.target.value) })} />
+          <small id={`${hintId}-cooldown`} className={!cooldownValid ? 'automation-field-error' : undefined}>填写 60～86,400 秒的整数，限制同一规则重复执行的频率。</small></label>
         <label>实例 ID（逗号分隔，留空表示全部）<input value={vmIds}
           onChange={(e) => setVmIds(e.target.value)} /></label>
         <label>项目 ID（逗号分隔）<input value={projects}
@@ -179,10 +191,12 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
         <label>实例标签（逗号分隔，必须全部匹配）<input value={tags}
           onChange={(e) => setTags(e.target.value)} /></label>
       </div>
-      {draft.action === 'runbook' && <div className="feature-card">
+      {draft.action === 'runbook' && <div className="feature-card automation-runbook">
         <h4>修复步骤</h4>
         <p className="subtle-note">按顺序在匹配实例的项目目录执行 Shell 命令；任一步骤失败即停止。最多 8 步，总超时 600 秒。</p>
-        {draft.steps.map((step, index) => <div key={index} className="shortcut-fields">
+        <p className={stepSeconds > 600 ? 'automation-field-error' : 'automation-step-count'}>{draft.steps.length} / 8 步 · 累计超时 {stepSeconds} / 600 秒</p>
+        {draft.steps.map((step, index) => <div key={index} className="automation-step">
+          <h5>步骤 {index + 1}</h5><div className="shortcut-fields">
           <label>步骤名称<input value={step.name} maxLength={80}
             onChange={(e) => setDraft({ ...draft, steps: draft.steps.map((item, at) =>
               at === index ? { ...item, name: e.target.value } : item) })} /></label>
@@ -194,7 +208,8 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
               at === index ? { ...item, timeout: Number(e.target.value) } : item) })} /></label>
           <button className="secondary compact" onClick={() => setDraft({ ...draft,
             steps: draft.steps.filter((_, at) => at !== index) })}>移除步骤</button>
-        </div>)}
+        </div></div>)}
+        {!stepsValid && <p className="automation-field-error">请添加完整的步骤名称和命令，每步超时为 1～120 秒的整数，总计不超过 600 秒。</p>}
         <button className="secondary compact" disabled={draft.steps.length >= 8}
           onClick={() => setDraft({ ...draft, steps: [...draft.steps,
             { name: '', command: '', timeout: 30 }] })}>添加步骤</button>
@@ -222,9 +237,11 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
         实际执行实例操作（Runbook 需先保存、预览并单独批准）</label>
       <div className="feature-actions">
         <button className="primary compact" disabled={action.busy || !draft.name.trim() ||
-          !draft.filter.types.length || (draft.action === 'runbook' && !draft.steps.length)} onClick={save}>保存规则</button>
+          !draft.filter.types.length || !cooldownValid || !stepsValid} onClick={save}>保存规则</button>
         {editing && <button className="secondary compact" onClick={clear}>取消编辑</button>}
       </div>
+      {!draft.filter.types.length && <p className="automation-field-error">至少选择一种事件类型后才能保存。</p>}
+      </fieldset>
     </div>
     <div className="feature-card"><h4>已保存规则</h4>
       {!remote.data?.rules.length && <p className="subtle-note">暂无规则。</p>}

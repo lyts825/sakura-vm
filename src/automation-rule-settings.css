@@ -1,0 +1,20 @@
+/* Scoped rule editing and event review surfaces. */
+.automation-rule-settings { min-width: 0; }
+.automation-rule-settings .panel-heading { align-items: flex-start; flex-wrap: wrap; }
+.automation-rule-settings .panel-heading > div { flex: 1 1 240px; min-width: 0; }
+.automation-rule-settings .automation-draft-fields { margin: 0; padding: 0; border: 0; min-width: 0; }
+.automation-rule-settings .automation-draft-state { margin: 12px 0 18px; padding: 10px 12px; background: var(--surface-soft); border-radius: var(--radius-sm); font-size: 12px; }
+.automation-rule-settings .shortcut-fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 14px; }
+.automation-rule-settings .shortcut-fields label { min-width: 0; }
+.automation-rule-settings .shortcut-fields small { font-size: 11px; line-height: 1.6; color: var(--muted); }
+.automation-rule-settings .automation-field-error, .automation-rule-settings small.automation-field-error { color: var(--danger); font-size: 12px; }
+.automation-rule-settings input[aria-invalid='true'] { border-color: var(--danger); }
+.automation-rule-settings label.check { display: flex; flex-direction: row; align-items: center; gap: 9px; min-height: 40px; margin: 4px 0; }
+.automation-rule-settings label.check input[type='checkbox'] { width: 16px; height: 16px; margin: 0; flex: 0 0 auto; accent-color: var(--accent); }
+.automation-rule-settings .automation-runbook { background: var(--surface-soft); }
+.automation-rule-settings .automation-step { padding: 14px 0; border-top: 1px solid var(--line); }
+.automation-rule-settings .automation-step h5 { margin: 0 0 10px; font-size: 12px; }
+.automation-rule-settings .automation-step-count { margin-block: 12px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.automation-rule-settings .feature-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.automation-rule-settings button { min-height: 40px; white-space: normal; }
+@media (max-width: 600px) { .automation-rule-settings button, .automation-rule-settings label.check { min-height: 44px; } }
