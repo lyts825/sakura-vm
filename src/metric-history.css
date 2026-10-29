@@ -1,0 +1,27 @@
+/* Keep sample context visible while the chart and table retain their own scale. */
+.metric-history { min-width: 0; }
+.metric-history-toolbar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px; margin-bottom: 14px; }
+.metric-history-toolbar > label { flex: 1 1 180px; min-width: 0; }
+.metric-history-toolbar select { width: 100%; min-width: 0; }
+.metric-history-summary { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 0; }
+.metric-history-summary dt { color: var(--muted); font-size: 11px; }
+.metric-history-summary dd { margin: 4px 0 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.metric-history-figure { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.metric-history-scale { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin-bottom: 8px; font-size: 11px; color: var(--muted); }
+.metric-history .cpu-history { display: block; min-height: 100px; }
+.metric-history-figure figcaption, .metric-history-table-hint { margin-top: 8px; color: var(--muted); font-size: 11px; }
+.metric-history-range { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; margin-block: 10px; color: var(--muted); font-size: 11px; }
+.metric-history-range time { font-variant-numeric: tabular-nums; }
+.metric-history-empty { padding: 20px 16px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.metric-history-empty strong { font-size: 13px; }
+.metric-history-empty p { margin-top: 8px; color: var(--muted); font-size: 12px; }
+.metric-history .metric-history-table { overscroll-behavior: contain; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.metric-history .metric-history-table:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.metric-history .metric-history-table th { position: sticky; top: 0; background: var(--surface); z-index: 1; white-space: nowrap; }
+.metric-history .metric-history-table td { font-variant-numeric: tabular-nums; }
+.metric-history summary { margin-top: 14px; cursor: pointer; }
+@media (max-width: 600px) {
+  .metric-history select, .metric-history button, .metric-history summary { min-height: 44px; }
+  .metric-history .feature-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .metric-history .feature-actions button { flex: 1 1 160px; }
+}

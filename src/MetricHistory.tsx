@@ -6,10 +6,11 @@
  */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { MetricPoint } from '../server/feature-suite';
 import { formatBytes } from './feature-shared';
 import { saveBlob, saveText } from './export-file';
+import './metric-history.css';
 
 const series = {
   cpu: { name: 'CPU 使用率', /** 中文：从本序列的采样点提取 CPU 百分比、内存/磁盘占比或收发速率；总量或速率缺失时保留 null，由图表表达缺样而非零值。 | English: Extract this series' CPU percentage, memory/disk ratio or receive/transmit rate from a sample. Preserve null for absent totals/rates so charts represent missing samples rather than zero. | 中文：输入：p：签名所示 MetricPoint 业务值 | English: Inputs: p: the MetricPoint domain value in the signature */ value: (p: MetricPoint) => p.cpuPercent, percent: true },
@@ -65,7 +66,9 @@ const series = {
  * English: Inputs: value: input value to validate/transform/save
  */
 const rate = (value?: number | null) =>
-  value === null || value === undefined ? '等待连续采样' : formatBytes(value) + '/s';
+  value === null || value === undefined ? '等待连续采样'
+    : value < 1024 ? formatDecimal(value, 1) + ' B/s'
+      : value < 1024 ** 2 ? formatDecimal(value / 1024, 1) + ' KiB/s' : formatBytes(value) + '/s';
 
 /**
  * 中文：呈现从历史计数计算指标速率并绘制和导出序列中的 MetricHistory 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
@@ -75,12 +78,18 @@ const rate = (value?: number | null) =>
  */
 export function MetricHistory({ history }: { history: MetricPoint[] }) {
   const [kind, setKind] = useState<keyof typeof series>('cpu');
+  const chartDescriptionId = useId();
   const selected = series[kind],
     values = history.map((point) => selected.value(point)),
     maximum = selected.percent ? 100 : Math.max(1, ...values.map((value) => value ?? 0)),
     paths: string[][] = [],
     start = Date.parse(history[0]?.sampledAt || ''),
     duration = Date.parse(history.at(-1)?.sampledAt || '') - start;
+  const validCount = values.filter((value) => value !== null && Number.isFinite(value)).length;
+  const latest = values.at(-1);
+  const latestLabel = latest == null || !Number.isFinite(latest)
+    ? selected.percent ? '暂无有效值' : '等待连续采样'
+    : selected.percent ? `${formatDecimal(latest, 1)}%` : rate(latest);
   values.forEach(/**
    * 中文功能：将有限采样值转换为图形坐标；空值、非有限值或超过两分钟的采样间隙切断折线，数值夹在展示范围内。
    * English: Convert finite samples to plot coordinates; null/nonfinite samples or gaps above two minutes split the line, and values are clamped to the display range.
@@ -133,7 +142,8 @@ export function MetricHistory({ history }: { history: MetricPoint[] }) {
       ),
     );
   return (
-    <div>
+    <section className="metric-history" aria-label="历史资源指标">
+      <div className="metric-history-toolbar">
       <label>
         趋势指标
         <select value={kind} onChange={(event) => setKind(event.target.value as keyof typeof series)}>
@@ -144,9 +154,20 @@ export function MetricHistory({ history }: { history: MetricPoint[] }) {
           ))}
         </select>
       </label>
-      <svg className="cpu-history" viewBox="0 0 600 100" role="img" aria-label={selected.name + '历史趋势'}>
+      <dl className="metric-history-summary" aria-live="polite">
+        <div><dt>最近样本</dt><dd>{history.length ? latestLabel : '尚无采样'}</dd></div>
+        <div><dt>当前指标有效样本</dt><dd>{validCount} / {history.length}</dd></div>
+      </dl>
+      </div>
+      {!history.length ? <div className="metric-history-empty" role="status">
+        <strong>暂无历史采样</strong><p>取得资源样本后，趋势与明细会显示在这里。</p>
+      </div> : !validCount ? <div className="metric-history-empty" role="status">
+        <strong>当前指标暂无有效样本</strong><p>已收到 {history.length} 次采样；缺失值保留为空，不作为零值绘制。</p>
+      </div> : <figure className="metric-history-figure">
+      <div className="metric-history-scale"><span>{selected.name}</span><span>上限 {selected.percent ? '100%' : rate(maximum)}</span></div>
+      <svg className="cpu-history" viewBox="0 0 600 100" role="img" aria-label={selected.name + '历史趋势'} aria-describedby={chartDescriptionId}>
         <title>
-          {selected.name}，纵轴上限 {selected.percent ? '100%' : formatBytes(maximum) + '/s'}
+          {selected.name}，纵轴上限 {selected.percent ? '100%' : rate(maximum)}
         </title>
         <path d="M0 95H600 M0 50H600 M0 5H600" stroke="var(--line)" fill="none" />
         {paths
@@ -171,8 +192,14 @@ export function MetricHistory({ history }: { history: MetricPoint[] }) {
             ),
           )}
       </svg>
+      <figcaption id={chartDescriptionId}>缺失值或超过两分钟的采样间隙会断开折线。</figcaption>
+      </figure>}
+      {history.length > 0 && <p className="metric-history-range">
+        <span>起始 <time dateTime={history[0].sampledAt}>{formatDateTime(new Date(history[0].sampledAt))}</time></span>
+        <span>最新 <time dateTime={history.at(-1)!.sampledAt}>{formatDateTime(new Date(history.at(-1)!.sampledAt))}</time></span>
+      </p>}
       <p className="subtle-note">
-        {history.length} 次采样 · 纵轴上限 {selected.percent ? '100%' : formatBytes(maximum) + '/s'}。
+        {history.length} 次采样 · 纵轴上限 {selected.percent ? '100%' : rate(maximum)}。
         自动采样每 30 秒一次，持久保留最近 720 次。网络汇总除 lo
         外的接口；首次采样、重启或采样间断超过两分钟时速率未知。
       </p>
@@ -188,18 +215,19 @@ export function MetricHistory({ history }: { history: MetricPoint[] }) {
           导出指标 JSON
         </button>
       </div>
-      <details>
-        <summary>查看采样明细</summary>
-        <div className="metric-history-table">
+      {history.length > 0 && <details>
+        <summary>查看采样明细（{history.length}）</summary>
+        <p className="metric-history-table-hint">最新样本在前。表格可横向滚动，聚焦后可使用方向键。</p>
+        <div className="metric-history-table" role="region" aria-label="历史采样明细，可滚动" tabIndex={0}>
           <table>
             <thead>
               <tr>
-                <th>时间</th>
-                <th>CPU</th>
-                <th>内存使用</th>
-                <th>磁盘使用</th>
-                <th>接收</th>
-                <th>发送</th>
+                <th scope="col">时间</th>
+                <th scope="col">CPU</th>
+                <th scope="col">内存使用</th>
+                <th scope="col">磁盘使用</th>
+                <th scope="col">接收</th>
+                <th scope="col">发送</th>
               </tr>
             </thead>
             <tbody>
@@ -219,7 +247,7 @@ export function MetricHistory({ history }: { history: MetricPoint[] }) {
             </tbody>
           </table>
         </div>
-      </details>
-    </div>
+      </details>}
+    </section>
   );
 }
