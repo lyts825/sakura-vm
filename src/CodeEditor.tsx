@@ -4,13 +4,14 @@
  * 详细范围（中文）：公开入口包括 CodeEditor；职责覆盖复用 CodeMirror 实例并同步文本、语言模式与光标位置，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include CodeEditor. The scope covers Reusing a CodeMirror instance while synchronizing text, language mode and cursor position. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { basicSetup, EditorView } from 'codemirror';
 import { EditorState, Compartment, type Extension } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { openSearchPanel } from '@codemirror/search';
 import { StreamLanguage } from '@codemirror/language';
 import type { LspPosition } from '../shared/language-service';
+import './code-editor.css';
 
 /**
  * 中文：按文件扩展名懒加载 CodeMirror 语言支持，未知类型使用空扩展；不用大包一次加载所有语法。
@@ -82,6 +83,8 @@ export function CodeEditor({
   // 编辑器实例只创建一次，事件处理通过 ref 读取最新回调，避免每次 React 渲染重建编辑器和撤销历史。
   callbacks.current = { change, save, positionChange };
   const mode = useRef(new Compartment());
+  const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  const fileName = path.split('/').pop() || path;
   useEffect(/** 中文：当依赖 [] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     const editor = new EditorView({
       parent: parent.current!,
@@ -111,6 +114,9 @@ export function CodeEditor({
             if (update.selectionSet || update.docChanged) {
               const head = update.state.selection.main.head;
               const selectedLine = update.state.doc.lineAt(head);
+              const column = head - selectedLine.from + 1;
+              setCursor((current) => current.line === selectedLine.number && current.column === column
+                ? current : { line: selectedLine.number, column });
               callbacks.current.positionChange?.({ line: selectedLine.number - 1, character: head - selectedLine.from });
             }
           }),
@@ -154,11 +160,21 @@ export function CodeEditor({
   }, [line]);
   return (
     <div className="code-editor">
-      <div className="feature-actions">
-        <button className="text-button" onClick={() => view.current && openSearchPanel(view.current)}>
+      <div className="code-editor-heading">
+        <div className="code-editor-file" data-locale-ignore>
+          <strong>{fileName}</strong>
+          <code title={path}>{path}</code>
+        </div>
+        <span className="code-editor-position">第 {cursor.line} 行 · 第 {cursor.column} 列</span>
+      </div>
+      <div className="feature-actions code-editor-toolbar">
+        <button type="button" className="text-button" onClick={() => view.current && openSearchPanel(view.current)}>
           查找 / 替换
         </button>
-        <span className="muted">Ctrl / ⌘ + F 查找 · Ctrl / ⌘ + S 保存</span>
+        <span className="code-editor-shortcuts muted">
+          <span><kbd>Ctrl / ⌘ + F</kbd> 查找</span>
+          <span><kbd>Ctrl / ⌘ + S</kbd> 保存</span>
+        </span>
       </div>
       <div ref={parent} />
     </div>
