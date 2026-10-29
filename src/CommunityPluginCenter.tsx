@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAction, type Request } from './feature-shared';
 import { PluginBoundary } from './plugin-boundary';
 import { pluginGeneration } from './plugin-generation';
+import './community-plugin-center.css';
 
 type Entry = {
   id: string;
@@ -54,6 +55,20 @@ const validView = (value: unknown): value is View => {
     typeof candidate.catalogs === 'object'
   );
 };
+
+/** 完整保留供核对的插件身份，默认收起长摘要。 Keep complete verification identities in a native disclosure. */
+function PluginVerification({ entry, source }: { entry: Entry; source?: string }) {
+  return <details className="community-verification">
+    <summary aria-label={`${entry.name}的验证信息`}>查看验证信息</summary>
+    <dl>
+      <div><dt>插件标识</dt><dd><code>{entry.id}</code></dd></div>
+      <div><dt>版本</dt><dd>{entry.version}</dd></div>
+      {source && <div><dt>安装来源</dt><dd>{source}</dd></div>}
+      <div><dt>发布者指纹</dt><dd><code>{entry.publisher}</code></dd></div>
+      <div><dt>SHA-256</dt><dd><code>{entry.sha256}</code></dd></div>
+    </dl>
+  </details>;
+}
 
 /**
  * 中文：呈现安装、授权和管理社区插件及其独立界面中的 CommunityExtensionPanel 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
@@ -198,7 +213,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
     }
   };
   return (
-    <section className="community-plugins" aria-label="第三方插件市场">
+    <section className="community-plugins community-market" aria-label="第三方插件市场">
       <h2>第三方插件市场</h2>
       <p className="muted">
         添加信任的 Ed25519 发布者和 HTTPS 目录源。安装前核对签名与文件摘要；运行时插件只能处理 JSON
@@ -262,13 +277,20 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
       {view && (
         <>
           <h3>信任的发布者</h3>
+          <p className="community-section-count">{view.publishers.length} 位发布者</p>
           {view.publishers.length === 0 ? (
             <p className="muted">尚无受信任发布者。</p>
           ) : (
-            <ul>
+            <ul className="community-publishers">
               {view.publishers.map((item) => (
                 <li key={item.fingerprint}>
-                  {item.name} · <code>{item.fingerprint.slice(0, 16)}…</code>{' '}
+                  <div className="community-publisher-identity">
+                    <strong>{item.name}</strong>
+                    <details className="community-verification">
+                      <summary aria-label={`${item.name}的完整指纹`}>查看完整指纹</summary>
+                      <code>{item.fingerprint}</code>
+                    </details>
+                  </div>
                   <button
                     className="secondary compact"
                     disabled={busy}
@@ -283,13 +305,15 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
             </ul>
           )}
           <h3>目录与可安装插件</h3>
+          <p className="community-section-count">{view.sources.length} 个目录源 · {view.sources.reduce((total, source) => total + (view.catalogs[source.id]?.length || 0), 0)} 项目录条目</p>
           {view.sources.length === 0 ? (
             <p className="muted">尚无目录源。</p>
           ) : (
             view.sources.map((source) => (
               <div className="community-plugin-source" key={source.id}>
-                <div>
-                  <strong>{source.name}</strong> <code>{source.url}</code>
+                <div className="community-source-heading">
+                  <strong>{source.name}</strong>
+                  <code>{source.url}</code>
                 </div>
                 <div className="community-plugin-actions">
                   <button
@@ -307,6 +331,9 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                     移除目录源
                   </button>
                 </div>
+                {!view.catalogs[source.id]?.length && <p className="community-catalog-empty">
+                  {Object.hasOwn(view.catalogs, source.id) ? '此目录暂无可安装插件。' : '目录尚未读取，请刷新目录查看插件。'}
+                </p>}
                 {(view.catalogs[source.id] || []).map(/**
                  * 中文功能：关联目录项的已安装版本与发布者信任状态，渲染摘要和安装/更新入口；忙碌、未信任或相同版本摘要时禁用操作。
                  * English: Associate catalog entries with installed versions/publisher trust, render digest and install/update actions, and disable them while busy, untrusted or already matching version/digest.
@@ -321,7 +348,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                   const trusted = view.publishers.some((item) => item.fingerprint === entry.publisher);
                   return (
                     <div className="community-plugin-entry" key={entry.id}>
-                      <div>
+                      <div className="community-entry-copy">
                         <strong>{entry.name}</strong>{' '}
                         <code>
                           {entry.id}@{entry.version}
@@ -331,6 +358,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                           {trusted ? '签名发布者已受信任' : '发布者尚未受信任'} · SHA-256{' '}
                           {entry.sha256.slice(0, 16)}…
                         </small>
+                        <PluginVerification entry={entry} />
                       </div>
                       <button
                         className="secondary compact"
@@ -355,6 +383,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
             ))
           )}
           <h3>已安装的隔离插件</h3>
+          <p className="community-section-count">{view.installed.length} 个已安装插件</p>
           {view.installed.length === 0 ? (
             <p className="muted">尚无已安装插件。</p>
           ) : (
@@ -364,9 +393,9 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                 <textarea rows={4} value={input} onChange={(event) => setInput(event.target.value)} />
               </label>
               {view.installed.map((item) => (
-                <div key={item.id}>
+                <div key={item.id} className="community-installed-card">
                 <div className="community-plugin-entry">
-                  <span>
+                  <div className="community-installed-identity">
                     <strong>{item.name}</strong>{' '}
                     <code>
                       {item.id}@{item.version}
@@ -375,7 +404,8 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                     {['draining', 'cleanup-pending'].includes(view.runtime?.instances.find(instance =>
                       instance.identity === 'community:' + item.id)?.phase || '') &&
                       <small role="status"> · 清理待恢复，请重试卸载</small>}
-                  </span>
+                    <PluginVerification entry={item} source={view.sources.find(source => source.id === item.sourceId)?.name || item.sourceId} />
+                  </div>
                   <div className="community-plugin-actions">
                     {(/**
                      * 中文功能：读取当前插件的订阅与定时配置，渲染暂停、恢复、移除和间隔调整操作，默认间隔为 60 分钟。
