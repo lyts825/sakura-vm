@@ -4,9 +4,10 @@
  * 详细范围（中文）：公开入口包括 GraphQLExplorer；职责覆盖提交 GraphQL 查询与变量并显示结果或查询错误，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include GraphQLExplorer. The scope covers Submitting GraphQL queries and variables and presenting results or query errors. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 import { saveBlob } from './export-file';
+import './request-explorers.css';
 
 const example = `query Overview($limit: Int!) {
   apiVersion
@@ -32,8 +33,9 @@ export function GraphQLExplorer({ request }: { request: Request }) {
     [variables, setVariables] = useState('{ "limit": 5 }'),
     [operation, setOperation] = useState('');
   const [result, setResult] = useState('');
+  const executeRef = useRef<HTMLButtonElement>(null);
   return (
-    <section className="system-card api-explorer" aria-label="GraphQL 查询面板">
+    <section className="system-card api-explorer request-explorer graphql-explorer" aria-label="GraphQL 查询面板">
       <h3>GraphQL 查询</h3>
       <p className="subtle-note">
         按需读取主机、实例、任务元数据和插件状态。任务输出、结果和私密配置不在此接口中。支持变量、别名、片段和自省；当前
@@ -43,9 +45,18 @@ export function GraphQLExplorer({ request }: { request: Request }) {
         列表先筛选后分页，limit 为 1–100，offset 为
         0–10000。每次读取当前已启用插件的任务；输入和结果仅保留在本次面板中。
       </p>
-      <fieldset disabled={action.busy}>
-        <label>
-          GraphQL 查询文本
+      <fieldset className="graphql-editor" disabled={action.busy} onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229 || event.altKey) return;
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter'
+          && (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement)) {
+          event.preventDefault();
+          if (!action.busy && query.trim()) executeRef.current?.click();
+        }
+      }}>
+        <legend>请求编辑</legend>
+        <div className="graphql-editor-grid">
+        <label className="graphql-query-field">
+          <span className="graphql-field-heading">GraphQL 查询文本 <small>{query.length.toLocaleString('zh-CN')} / 16,384 字符</small></span>
           <textarea
             aria-label="GraphQL 查询文本"
             rows={10}
@@ -59,6 +70,7 @@ export function GraphQLExplorer({ request }: { request: Request }) {
             spellCheck={false}
           />
         </label>
+        <div className="graphql-options">
         <label>
           查询变量（JSON 对象）
           <textarea
@@ -73,6 +85,7 @@ export function GraphQLExplorer({ request }: { request: Request }) {
             }}
             spellCheck={false}
           />
+          <small>使用 JSON 对象；不需要变量时填写 {'{}'}。</small>
         </label>
         <label>
           操作名称（多查询时必填）
@@ -87,8 +100,12 @@ export function GraphQLExplorer({ request }: { request: Request }) {
             }}
           />
         </label>
+        </div>
+        </div>
+        <p className="explorer-context">Ctrl / ⌘ + Enter 执行查询；中文输入法候选确认时不会提交。</p>
         <div className="button-row">
           <button
+            ref={executeRef}
             className="secondary compact"
             disabled={!query.trim()}
             onClick={() =>
@@ -116,7 +133,7 @@ export function GraphQLExplorer({ request }: { request: Request }) {
               })
             }
           >
-            执行 GraphQL 查询
+            {action.busy ? '正在执行查询…' : '执行 GraphQL 查询'}
           </button>
           <button
             className="text-button"
@@ -142,11 +159,12 @@ export function GraphQLExplorer({ request }: { request: Request }) {
         </div>
       </fieldset>
       <Feedback error={action.error || info.error} />
-      {action.busy && <p role="status">正在读取查询结果…</p>}
-      {result && (
+      <section className="explorer-response" aria-label="GraphQL 查询响应" aria-busy={action.busy}>
+      <h4>查询响应</h4>
+      {action.busy ? <p role="status">正在读取查询结果…</p> : result ? (
         <>
-          <p className="subtle-note">结果包含 errors 时，请按错误路径检查对应字段。</p>
-          <pre className="feature-log" aria-label="GraphQL 查询结果">
+          <p className="explorer-context">已收到 {result.length.toLocaleString('zh-CN')} 个字符。结果包含 errors 时，请按错误路径检查对应字段。</p>
+          <pre className="api-json" aria-label="GraphQL 查询结果" tabIndex={0}>
             {result.slice(0, 100000)}
             {result.length > 100000 ? '\n显示已截断，可下载完整结果。' : ''}
           </pre>
@@ -159,7 +177,10 @@ export function GraphQLExplorer({ request }: { request: Request }) {
             下载查询结果
           </button>
         </>
-      )}
+      ) : <p className="explorer-empty">{action.error ? '请求未完成，请检查上方错误并重试。' : '尚未执行查询。填写查询文本后，响应将在这里显示。'}</p>}
+      </section>
+      {!info.data && !info.error && <p className="explorer-context" role="status">正在读取 GraphQL Schema…</p>}
+      {info.error && <button className="text-button" disabled={action.busy} onClick={info.reload}>重新读取 GraphQL Schema</button>}
       {info.data && (
         <details>
           <summary>Schema v{info.data.version} · 查询限制与字段</summary>
@@ -167,7 +188,7 @@ export function GraphQLExplorer({ request }: { request: Request }) {
             查询文本最多 {info.data.limits.queryBytes} 字节，深度 {info.data.limits.depth}，展开成本{' '}
             {info.data.limits.cost}；较大的自省查询也受到限制。
           </p>
-          <pre>{info.data.sdl}</pre>
+          <pre className="api-json" aria-label="GraphQL Schema" tabIndex={0}>{info.data.sdl}</pre>
           <p className="subtle-note">
             JavaScript SDK：client.call('core.graphql.query', {'{'} body: {'{'} query, variables {'}'} {'}'} )
           </p>

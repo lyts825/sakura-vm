@@ -102,6 +102,55 @@
 .request-explorer input[type='search']::-webkit-search-cancel-button {
   display: none;
 }
+.graphql-explorer .graphql-editor {
+  margin-top: 18px;
+}
+.graphql-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.graphql-explorer .graphql-editor label,
+.graphql-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+.graphql-options {
+  gap: 16px;
+}
+.graphql-field-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
+.graphql-explorer .graphql-editor small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.graphql-explorer .graphql-editor textarea {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: var(--canvas);
+  font: 12px/1.7 var(--font-mono, monospace);
+  tab-size: 2;
+}
+.graphql-query-field textarea {
+  min-height: 260px;
+}
+@media (max-width: 760px) {
+  .graphql-editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 600px) {
   .request-explorer .button-row > button,
   .request-explorer > button,
