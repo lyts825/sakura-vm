@@ -4,10 +4,11 @@
  * 详细范围（中文）：公开入口包括 FeatureRolloutSettings；职责覆盖配置功能灰度规则并预览匹配结果，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include FeatureRolloutSettings. The scope covers Configuring feature rollout rules and previewing matching targets. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { RolloutPolicy } from '../server/feature-rollouts';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 import './features.css';
+import './feature-rollout-settings.css';
 
 type Draft = Pick<RolloutPolicy, 'pluginId' | 'enabled' | 'percentage' | 'cohortVersion'>;
 type Decision = { pluginId: string; allowed: boolean; bucket: number | null;
@@ -51,6 +52,12 @@ export function FeatureRolloutSettings({ request }: { request: Request }) {
     pluginId, enabled: saved.enabled, percentage: saved.percentage,
     cohortVersion: saved.cohortVersion,
   } : initial(pluginId);
+  const hintId = useId();
+  const percentageValid = Number.isInteger(current.percentage) && current.percentage >= 0 && current.percentage <= 100;
+  const valid = !!current.cohortVersion.trim() && percentageValid;
+  const baseline = saved || initial(pluginId);
+  const dirty = current.enabled !== baseline.enabled || current.percentage !== baseline.percentage || current.cohortVersion !== baseline.cohortVersion;
+  const change = (value: Partial<Draft>) => { setDraft({ ...current, ...value }); setPreview(null); action.clear(); };
   /**
    * 中文：在配置功能灰度规则并预览匹配结果流程中编辑草稿，preview 状态；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
    * English: In Configuring feature rollout rules and previewing matching targets, editing draft, preview state. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
@@ -101,10 +108,13 @@ export function FeatureRolloutSettings({ request }: { request: Request }) {
   return <section className="system-card feature-rollout-settings" aria-label="插件功能灰度">
     <div className="panel-heading">
       <div><h3>插件功能灰度</h3><p>按当前主机的稳定分桶决定插件是否启动；策略在下次服务启动时生效。</p></div>
-      <button className="secondary compact" onClick={remote.reload}>刷新</button>
+      <button className="secondary compact" disabled={action.busy} onClick={remote.reload}>刷新</button>
     </div>
     <Feedback error={action.error || remote.error} message={action.message} />
-    <div className="feature-card">
+    <div className="feature-card rollout-editor">
+      <h4>编辑灰度策略</h4>
+      <p className="rollout-draft-state">{dirty ? '草稿有未保存的修改' : saved ? '与已保存策略一致' : '尚未设置独立策略'}{saved ? ` · 已保存版本 ${saved.revision}` : ''}</p>
+      <fieldset className="rollout-fields" disabled={action.busy || !remote.data?.plugins.length}>
       <div className="shortcut-fields">
         <div className="feature-rollout-field"><label htmlFor="rollout-plugin">插件</label>
           <select id="rollout-plugin" value={pluginId}
@@ -113,17 +123,17 @@ export function FeatureRolloutSettings({ request }: { request: Request }) {
               {item.name} ({item.id})</option>)}
           </select>
         </div>
-        <label>灰度版本<input value={current.cohortVersion} maxLength={64}
-          onChange={(event) => { setDraft({ ...current, cohortVersion: event.target.value });
-            setPreview(null); }} /></label>
-        <label>放行比例（0–100%）<input type="number" min={0} max={100}
-          value={current.percentage} onChange={(event) => {
-            setDraft({ ...current, percentage: Number(event.target.value) }); setPreview(null);
-          }} /></label>
+        <label>灰度版本<input value={current.cohortVersion} maxLength={64} aria-label="灰度版本"
+          aria-invalid={!current.cohortVersion.trim() || undefined} aria-describedby={`${hintId}-cohort`}
+          onChange={(event) => change({ cohortVersion: event.target.value })} />
+          <small id={`${hintId}-cohort`}>必填，最多 64 个字符。修改后会重新计算主机分桶。</small></label>
+        <label>放行比例（0–100%）<input type="number" min={0} max={100} step={1}
+          aria-label="放行比例（0–100%）" aria-invalid={!percentageValid || undefined} aria-describedby={`${hintId}-percentage`}
+          value={current.percentage} onChange={(event) => change({ percentage: Number(event.target.value) })} />
+          <small id={`${hintId}-percentage`} className={!percentageValid ? 'rollout-field-error' : undefined}>填写 0～100 的整数，0% 表示下次启动时跳过。</small></label>
       </div>
       <label className="check"><input type="checkbox" checked={current.enabled}
-        onChange={(event) => { setDraft({ ...current, enabled: event.target.checked });
-          setPreview(null); }} />启用该插件的灰度策略</label>
+        onChange={(event) => change({ enabled: event.target.checked })} />启用该插件的灰度策略</label>
       <p className="subtle-note">关闭开关或设置 0% 会在下次启动时跳过插件；没有策略时按插件中心的选择启动。</p>
       <p>当前服务：{plugin && remote.data?.active.includes(pluginId) ? '已激活' :
         remote.data?.selected.includes(pluginId) ? '未激活' : '未在插件中心选择'}；
@@ -133,15 +143,15 @@ export function FeatureRolloutSettings({ request }: { request: Request }) {
       {preview && <p>当前草稿预览：{preview.allowed ? '将命中' : '将跳过'}；
         分桶值 {preview.bucket} / 10000。</p>}
       <div className="feature-actions">
-        <button className="secondary compact" disabled={action.busy || !pluginId ||
-          !current.cohortVersion.trim() || current.percentage < 0 || current.percentage > 100}
+        <button className="secondary compact" disabled={action.busy || !plugin || !valid}
           onClick={inspect}>预览当前主机</button>
-        <button className="primary compact" disabled={action.busy || !pluginId ||
-          !current.cohortVersion.trim() || current.percentage < 0 || current.percentage > 100}
+        <button className="primary compact" disabled={action.busy || !plugin || !valid}
           onClick={save}>保存灰度策略</button>
         {saved && <button className="secondary compact" disabled={action.busy}
           onClick={remove}>删除策略</button>}
+        {dirty && <button className="text-button" onClick={() => choose(pluginId)}>撤销草稿修改</button>}
       </div>
+      </fieldset>
     </div>
   </section>;
 }

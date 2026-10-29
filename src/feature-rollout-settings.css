@@ -1,0 +1,16 @@
+/* Separate the editable rollout policy from observed startup state. */
+.feature-rollout-settings { min-width: 0; }
+.feature-rollout-settings .panel-heading { align-items: flex-start; flex-wrap: wrap; }
+.feature-rollout-settings .panel-heading > div { flex: 1 1 240px; min-width: 0; }
+.feature-rollout-settings .rollout-fields { padding: 0; margin: 0; border: 0; min-width: 0; }
+.feature-rollout-settings .rollout-draft-state { margin-block: 12px 18px; padding: 10px 12px; background: var(--surface-soft); border-radius: var(--radius-sm); font-size: 12px; }
+.feature-rollout-settings .shortcut-fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 14px; }
+.feature-rollout-settings .shortcut-fields label { min-width: 0; }
+.feature-rollout-settings .shortcut-fields small { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.feature-rollout-settings small.rollout-field-error { color: var(--danger); }
+.feature-rollout-settings input[aria-invalid='true'] { border-color: var(--danger); }
+.feature-rollout-settings label.check { display: flex; flex-direction: row; align-items: center; gap: 9px; min-height: 44px; margin-block: 12px; }
+.feature-rollout-settings label.check input[type='checkbox'] { width: 16px; height: 16px; margin: 0; flex: 0 0 auto; accent-color: var(--accent); }
+.feature-rollout-settings .feature-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.feature-rollout-settings button { min-height: 40px; white-space: normal; }
+@media (max-width: 600px) { .feature-rollout-settings button { min-height: 44px; } }
