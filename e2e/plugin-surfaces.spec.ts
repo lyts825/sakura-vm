@@ -3739,7 +3739,7 @@ test('custom shortcuts reject conflicts, persist project overrides and leave tex
   await editor.getByLabel('命令面板快捷键', { exact: true }).fill('Mod+Shift+K');
   await editor.getByLabel('切换主题快捷键', { exact: true }).fill('Mod+Shift+M');
   await editor.getByRole('button', { name: '保存快捷键', exact: true }).click();
-  await expect(editor.getByRole('status')).toHaveText('快捷键已保存');
+  await expect(editor.getByRole('status').filter({ hasText: '快捷键已保存' })).toHaveText('快捷键已保存');
   await page.keyboard.press('Control+Shift+M');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
   await editor.getByLabel('快捷键配置范围').selectOption('project');
@@ -4287,7 +4287,7 @@ test('regional preferences translate UI labels and format values without changin
   await expect(page.getByRole('heading', { name: '語言與區域' })).toBeVisible();
   await expect(page.getByText('1.234.567,89').first()).toBeVisible();
   await page.getByRole('combobox', { name: '時間區域' }).fill('America/Los_Angeles');
-  await expect(page.getByRole('region', { name: '語言與區域設定' }).locator('.subtle-note').first())
+  await expect(page.getByRole('region', { name: '語言與區域設定' }).locator('.locale-preview'))
     .toContainText('2025/12/31');
   await page.getByRole('combobox', { name: '介面語言' }).selectOption('zh-CN');
   await page.getByRole('button', { name: '儲存語言與區域' }).click();
