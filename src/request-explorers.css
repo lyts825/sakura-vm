@@ -1,0 +1,120 @@
+/* Request editors and bounded responses share spacing and keyboard affordances. */
+.request-explorer {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.request-explorer .button-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 12px;
+}
+.request-explorer .explorer-search-summary,
+.request-explorer .explorer-operation-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 12px;
+}
+.request-explorer .explorer-search-summary {
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+.request-explorer .explorer-operation-heading {
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.request-explorer .explorer-operation-heading code {
+  flex: 1 1 180px;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.explorer-method {
+  border-radius: 5px;
+  padding: 2px 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.request-explorer .explorer-parameters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 12px;
+  margin-block: 16px;
+}
+.request-explorer legend {
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.request-explorer .explorer-parameters label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.request-explorer .explorer-context {
+  margin-block: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.request-explorer .explorer-empty {
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+.request-explorer .explorer-response {
+  min-width: 0;
+  margin-block: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.request-explorer .explorer-response h4 {
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.request-explorer pre {
+  max-height: min(420px, 55vh);
+  max-width: 100%;
+  min-width: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  font: 12px/1.6 var(--font-mono, monospace);
+}
+.request-explorer pre:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.request-explorer input[type='search']::-webkit-search-cancel-button {
+  display: none;
+}
+@media (max-width: 600px) {
+  .request-explorer .button-row > button,
+  .request-explorer > button,
+  .request-explorer .text-button,
+  .request-explorer summary {
+    min-height: 44px;
+  }
+  .request-explorer .button-row > button {
+    flex: 1 1 160px;
+    white-space: normal;
+  }
+  .request-explorer input,
+  .request-explorer select {
+    min-height: 44px;
+  }
+}
