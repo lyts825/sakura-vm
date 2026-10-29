@@ -1,0 +1,143 @@
+.merge-editor {
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.merge-editor summary {
+  padding: 10px 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.merge-editor summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.merge-editor .merge-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+  padding: 12px 14px;
+  margin: 8px 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.merge-editor .merge-summary p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.merge-editor .merge-summary > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.merge-editor .merge-summary.ready {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.merge-editor .merge-conflict {
+  min-width: 0;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+}
+
+.merge-editor .merge-conflict.resolved {
+  border-left: 3px solid var(--green);
+}
+
+.merge-editor .merge-conflict legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.merge-editor .merge-conflict-state {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.merge-editor .merge-conflict-versions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.merge-editor textarea {
+  min-width: 0;
+  padding: 10px;
+  line-height: 1.6;
+  resize: vertical;
+  tab-size: 4;
+}
+
+.merge-editor textarea[readonly] {
+  background: var(--surface-soft);
+}
+
+.merge-editor label {
+  margin-bottom: 12px;
+}
+
+.merge-editor .feature-actions {
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  gap: 8px;
+}
+
+.merge-editor .feature-actions button {
+  min-height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.merge-editor .feature-actions button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.merge-editor .merge-deletion-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.merge-editor .merge-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+}
+
+@container (max-width: 560px) {
+  .merge-editor .merge-columns,
+  .merge-editor .merge-conflict-versions {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-editor .feature-actions button,
+  .merge-editor .merge-footer button {
+    min-height: 40px;
+  }
+
+  .merge-editor .merge-conflict {
+    padding: 10px;
+  }
+}

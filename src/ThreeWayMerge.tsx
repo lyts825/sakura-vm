@@ -6,6 +6,7 @@
  */
 import { useMemo, useState } from 'react';
 import { threeWayMerge, resolvedMerge } from '../shared/three-way-merge';
+import './three-way-merge.css';
 
 /**
  * 中文：呈现收集冲突选择并输出完整合并文本中的 ThreeWayMerge 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
@@ -68,63 +69,95 @@ export function ThreeWayMerge({
   const pending = parsed.parts.filter(
     (part, index) => part.kind === 'conflict' && !Object.hasOwn(choices, index),
   ).length;
+  const conflicts = parsed.parts.flatMap((part, index) => part.kind === 'conflict' ? [{ part, index }] : []);
   return (
     <section className="merge-editor" aria-label="三方合并编辑器">
-      <div className="merge-columns">
-        {[
-          ['共同版本', base],
-          [oursLabel, ours],
-          [theirsLabel, theirs],
-        ].map(([name, text]) => (
-          <label key={name}>
-            {name}
-            <textarea readOnly rows={8} value={text} />
-          </label>
-        ))}
-      </div>
+      <details className="merge-source-overview">
+        <summary>查看完整三方版本</summary>
+        <div className="merge-columns">
+          {[
+            ['共同版本', base],
+            [oursLabel, ours],
+            [theirsLabel, theirs],
+          ].map(([name, text]) => (
+            <label key={name}>
+              {name}
+              <textarea readOnly rows={8} value={text} />
+            </label>
+          ))}
+        </div>
+      </details>
       {parsed.error ? (
         <p role="alert">{parsed.error}</p>
       ) : (
         <>
-          <p role="status">{pending ? `还有 ${pending} 处冲突需要处理` : '冲突已处理，可应用合并结果'}</p>
-          {parsed.parts.map(
-            (part, index) =>
-              part.kind === 'conflict' && (
-                <fieldset key={index}>
-                  <legend>共同版本第 {part.line} 行附近</legend>
-                  <div className="feature-actions">
-                    <button onClick={() => setChoices({ ...choices, [index]: part.ours })}>采用草稿</button>
-                    <button onClick={() => setChoices({ ...choices, [index]: part.theirs })}>
-                      采用外部修改
-                    </button>
-                    <button onClick={() => setChoices({ ...choices, [index]: part.ours + part.theirs })}>
-                      保留双方
-                    </button>
-                  </div>
-                  <label>
-                    冲突 {index + 1} 的合并内容
-                    <textarea
-                      rows={5}
-                      value={choices[index] ?? ''}
-                      placeholder="选择版本或手动填写，包括删除此段"
-                      onChange={(event) => setChoices({ ...choices, [index]: event.target.value })}
-                    />
-                  </label>
-                </fieldset>
-              ),
+          <div className={'merge-summary' + (pending ? '' : ' ready')}>
+            <p role="status">{pending ? `还有 ${pending} 处冲突需要处理` : '冲突已处理，可应用合并结果'}</p>
+            <span>已处理 {conflicts.length - pending} / {conflicts.length} 处</span>
+          </div>
+          {conflicts.map(({ part, index }, ordinal) => (
+            <fieldset key={index} className={'merge-conflict' + (Object.hasOwn(choices, index) ? ' resolved' : '')}>
+              <legend>冲突 {ordinal + 1} · 共同版本第 {part.line} 行附近</legend>
+              <span className="merge-conflict-state">{Object.hasOwn(choices, index) ? '已处理' : '待处理'}</span>
+              <div className="merge-conflict-versions">
+                <label>
+                  {oursLabel}
+                  <textarea readOnly rows={4} value={part.ours} aria-label={`冲突 ${ordinal + 1}：${oursLabel}`} />
+                </label>
+                <label>
+                  {theirsLabel}
+                  <textarea readOnly rows={4} value={part.theirs} aria-label={`冲突 ${ordinal + 1}：${theirsLabel}`} />
+                </label>
+              </div>
+              <div className="feature-actions">
+                <button type="button" aria-pressed={choices[index] === part.ours} onClick={() => setChoices({ ...choices, [index]: part.ours })}>
+                  采用草稿
+                </button>
+                <button type="button" aria-pressed={choices[index] === part.theirs} onClick={() => setChoices({ ...choices, [index]: part.theirs })}>
+                  采用外部修改
+                </button>
+                <button type="button" aria-pressed={choices[index] === part.ours + part.theirs} onClick={() => setChoices({ ...choices, [index]: part.ours + part.theirs })}>
+                  保留双方
+                </button>
+                <button type="button" aria-pressed={choices[index] === ''} onClick={() => setChoices({ ...choices, [index]: '' })}>
+                  删除此段
+                </button>
+              </div>
+              <label>
+                冲突 {ordinal + 1} 的合并内容
+                <textarea
+                  rows={5}
+                  value={choices[index] ?? ''}
+                  placeholder="选择版本或手动填写，包括删除此段"
+                  onChange={(event) => setChoices({ ...choices, [index]: event.target.value })}
+                />
+              </label>
+              {Object.hasOwn(choices, index) && choices[index] === '' && <p className="merge-deletion-note">此段将从合并结果中删除。</p>}
+            </fieldset>
+          ))}
+          {!pending && (
+            <details className="merge-result-preview">
+              <summary>检查完整合并结果</summary>
+              <textarea aria-label="完整合并结果" readOnly rows={8} value={resolvedMerge(parsed.parts, choices)} />
+            </details>
           )}
+        </>
+      )}
+      <div className="merge-footer">
+        {!parsed.error && (
           <button
+            type="button"
             className="primary compact"
             disabled={pending > 0}
             onClick={() => apply(resolvedMerge(parsed.parts, choices))}
           >
             应用合并结果
           </button>
-        </>
-      )}
-      <button className="secondary compact" onClick={cancel}>
-        取消合并
-      </button>
+        )}
+        <button type="button" className="secondary compact" onClick={cancel}>
+          取消合并
+        </button>
+      </div>
     </section>
   );
 }
