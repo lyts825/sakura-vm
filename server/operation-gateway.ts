@@ -10,7 +10,7 @@ import type { ResourceIdentity } from '../shared/contracts/host-runtime.ts';
 import { operationDirectory, operationEntries, validateOperationEntries, type OperationEntry } from './operation-catalog.ts';
 import { withResourceContext } from './host-runtime/context.ts';
 import { captureOperationCheck, withOperationCheck } from './operation-context.ts';
-import { matchOperationPath } from './plugins/registry.ts';
+import { createOperationPathIndex } from './operation-paths.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import { withPluginAuthority } from './plugin-authority.ts';
 import { guardOperationResponse, withOperationResponse } from './operation-response.ts';
@@ -160,6 +160,7 @@ export async function validateOperationInput(input: any) {
 
 /** HTTP 与 WebSocket 共用的操作准入边界，缺少声明、处理器或授权时拒绝执行。 */
 export class OperationGateway {
+  private readonly matchPaths: ReturnType<typeof createOperationPathIndex<OperationEntry>>;
   private handlers = new Map<string, HttpOperationHandler>();
   private sealed = false;
   /**
@@ -173,6 +174,8 @@ export class OperationGateway {
    */
   constructor(private options: GatewayOptions, private entries = operationEntries) {
     validateOperationEntries(entries);
+    this.matchPaths = createOperationPathIndex(entries, entry => entry.declaration.path,
+      pattern => pattern.match(/\{/g)?.length || 0);
   }
   /** 发布前把确切的操作声明与处理器绑定，目录封存后禁止增加或替换处理器。 */
   /**
@@ -279,8 +282,8 @@ export class OperationGateway {
    * 入口 / Entry: OperationGateway.resolve.
    * 功能：在注册并封存 HTTP 操作处理器中，执行此领域的具体处理步骤并返回其结果；本入口产生 `match` 供上层消费（`OperationGateway`）。
    * Purpose: Executes the domain-specific processing steps and returns their outcome in `OperationGateway`; this entry produces `match` for its caller. Module context: Registers/seals HTTP handlers and applies input validation, preflight, authorization and business dispatch.
-   * 处理：通过 `this.entries.flatMap().sort`, `this.entries.flatMap`, `matches.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
-   * Processing: Coordinates its dependencies through `this.entries.flatMap().sort`, `this.entries.flatMap`, `matches.find`; the branches below determine continuation, return or refusal.
+   * 处理：通过 `this.matchPaths`, `matches.find` 协调依赖；下列分支决定是否继续、返回或拒绝。
+   * Processing: Coordinates its dependencies through `this.matchPaths`, `matches.find`; the branches below determine continuation, return or refusal.
    * 输入 / Inputs: method: string; path: string
    * 输出 / Returns: `match`.
    * 副作用 / Effects: 此函数体没有直接状态赋值；所委派调用的 I/O 见其提供者契约 / no direct state assignment in this body; delegated I/O follows the provider contract.
@@ -288,11 +291,7 @@ export class OperationGateway {
    */
   resolve(method: string, path: string) {
     // 固定路径优先于变量路径；固定路径的方法不匹配时也不能退回更宽泛的变量接口。
-    const matches = this.entries.flatMap(entry => {
-      const parameters = matchOperationPath(entry.declaration.path, path);
-      return parameters ? [{ entry, parameters }] : [];
-    }).sort((a, b) => (a.entry.declaration.path.match(/\{/g)?.length || 0) -
-      (b.entry.declaration.path.match(/\{/g)?.length || 0));
+    const matches = this.matchPaths(path);
     if (!matches.length) throw new AppError('接口未声明', 404, 'OPERATION_NOT_FOUND');
     const specific = matches[0].entry.declaration.path;
     const match = matches.find(item => item.entry.declaration.path === specific && item.entry.declaration.method === method);
