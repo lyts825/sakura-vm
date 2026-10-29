@@ -21,9 +21,23 @@
 .log-retention .retention-summary dd { margin: 3px 0 0; font-size: 16px; font-variant-numeric: tabular-nums; }
 .log-retention .button-row { flex-wrap: wrap; }
 .log-retention button { min-height: 40px; white-space: normal; }
+.webhook-settings .webhook-section-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding-top: 18px; margin: 18px 0 12px; border-top: 1px solid var(--line); }
+.webhook-settings .webhook-section-heading > span { color: var(--muted); font-size: 11px; font-weight: 400; }
+.webhook-settings .webhook-empty { padding: 16px; background: var(--surface-soft); border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); color: var(--muted); font-size: 12px; }
+.webhook-settings .webhook-subscription h4 { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; overflow-wrap: anywhere; }
+.webhook-settings .webhook-subscription h4 > span:first-child { flex: 1; min-width: 0; }
+.webhook-settings .webhook-enabled-state { flex-shrink: 0; padding: 2px 7px; background: var(--surface-soft); border-radius: var(--radius-pill); font-size: 11px; color: var(--muted); }
+.webhook-settings .webhook-endpoint, .webhook-settings .webhook-delivery { overflow-wrap: anywhere; }
+.webhook-settings .button-row { flex-wrap: wrap; }
+.webhook-settings button, .webhook-settings summary { min-height: 40px; white-space: normal; }
+.webhook-settings .webhook-action-status { padding: 10px 12px; margin: 12px 0; color: var(--accent); background: var(--accent-soft); border-radius: var(--radius-sm); font-size: 12px; }
+.webhook-settings .api-json { max-height: 280px; overscroll-behavior: contain; }
 
 .session-lock-settings label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
 .session-lock-settings label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 
 .log-retention label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
 .log-retention label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+
+.webhook-settings label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
+.webhook-settings label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }

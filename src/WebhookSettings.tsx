@@ -5,7 +5,8 @@
  * Detailed scope (English): Public entry points include WebhookSettings. The scope covers Editing subscription filters and presenting delivery and test feedback. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
 import { formatDateTime } from './localization';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import './settings-feedback.css';
 import {
   webhookTypes,
   webhookJobStatuses,
@@ -77,6 +78,7 @@ const split = (value: string) => [
 export function WebhookSettings({ request }: { request: Request }) {
   const remote = useRemote<WebhookView>(request, '/webhooks', true, 5000);
   const action = useAction();
+  const formRef = useRef<HTMLFormElement>(null);
   const [draft, setDraft] = useState<Draft>(fresh);
   const [editing, setEditing] = useState<{ id: string; version: number }>();
   const [tags, setTags] = useState(''),
@@ -126,6 +128,7 @@ export function WebhookSettings({ request }: { request: Request }) {
     setProjects(projectIds.join(', '));
     setSecret('');
     action.clear();
+    requestAnimationFrame(() => formRef.current?.querySelector('input')?.focus());
   };
   /**
    * 中文：提交 POST /webhooks，完成编辑订阅过滤并展示投递和测试反馈的数据交互；异步失败传给此处的捕获分支或外层动作反馈
@@ -144,6 +147,9 @@ export function WebhookSettings({ request }: { request: Request }) {
   return (
     <section className="system-card webhook-settings" aria-label="事件与告警通知设置">
       <h3>事件与告警通知</h3>
+      {!remote.data && !remote.error && <p role="status">正在读取接收端与投递记录…</p>}
+      {remote.error && <button className="secondary compact" disabled={action.busy} onClick={remote.reload}>重新读取通知设置</button>}
+      {action.busy && <p className="webhook-action-status" role="status">正在处理通知设置，请等待操作完成。</p>}
       <p className="subtle-note">
         订阅保存后接收新事件。可按实例、项目和标签路由到 HTTPS
         接收端；空条件匹配全部，多个标签须全部命中。告警来源需要启用自动化调度和实例告警策略。
@@ -153,8 +159,10 @@ export function WebhookSettings({ request }: { request: Request }) {
         次；接收端需按投递标识去重并校验时间戳和 HMAC 签名。锁定控制面后，已启用的投递继续运行。
       </p>
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
+          if (action.busy || !remote.data || !draft.types.length) return;
           void run(
             {
               action: 'save',
@@ -304,6 +312,8 @@ export function WebhookSettings({ request }: { request: Request }) {
         </div>
       )}
       <Feedback error={action.error || remote.error || remote.data?.error} message={action.message} />
+      <h4 className="webhook-section-heading">已保存接收端{remote.data && <span>{remote.data.subscriptions.length} 个</span>}</h4>
+      {remote.data && !remote.data.subscriptions.length && <p className="webhook-empty">还没有接收端。填写上方表单后，可以保存第一个订阅。</p>}
       {remote.data?.subscriptions.map((subscription) => (
         <article
           className="webhook-subscription"
@@ -311,9 +321,9 @@ export function WebhookSettings({ request }: { request: Request }) {
           aria-label={`接收端 ${subscription.name}`}
         >
           <h4>
-            {subscription.name} · {subscription.enabled ? '已启用' : '已停用'}
+            <span data-locale-ignore>{subscription.name}</span><span className="webhook-enabled-state">{subscription.enabled ? '已启用' : '已停用'}</span>
           </h4>
-          <p className="subtle-note">{subscription.url}</p>
+          <p className="subtle-note webhook-endpoint" data-locale-ignore>{subscription.url}</p>
           <p className="subtle-note">
             {subscription.types.map((type) => labels[type]).join('、')} · 标签：
             {subscription.tags.join('、') || '全部'} · 版本 {subscription.version}
@@ -361,12 +371,12 @@ export function WebhookSettings({ request }: { request: Request }) {
           </div>
         </article>
       ))}
-      <h4>投递记录</h4>
+      <h4 className="webhook-section-heading">投递记录{remote.data && <span>显示 {Math.min(50, remote.data.deliveries.length)} / {remote.data.deliveries.length} 项</span>}</h4>
       <p className="subtle-note">
         更改、停用或移除订阅会取消其积压投递；已经送达的内容无法撤回。新配置只匹配之后发生的事件。最多保留 500
         项待投递和最近 200 项已结束记录，来源检查范围为最近 24 小时。
       </p>
-      {!remote.data?.deliveries.length && <p className="subtle-note">暂无投递记录。</p>}
+      {remote.data && !remote.data.deliveries.length && <p className="webhook-empty">暂无投递记录。</p>}
       {remote.data?.deliveries.slice(0, 50).map((delivery) => (
         <details className="webhook-delivery" key={delivery.id}>
           <summary>
@@ -383,7 +393,7 @@ export function WebhookSettings({ request }: { request: Request }) {
             )}
           </p>
           {delivery.error && <p className="subtle-note">{delivery.error}</p>}
-          <pre className="api-json">{JSON.stringify(delivery.event, null, 2)}</pre>
+          <pre className="api-json" tabIndex={0} role="region" aria-label={`投递事件 ${delivery.id}`}>{JSON.stringify(delivery.event, null, 2)}</pre>
           {delivery.status === 'failed' && (
             <button
               className="secondary compact"
