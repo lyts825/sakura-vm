@@ -1184,7 +1184,7 @@ test('clipboard policy remains enforced in memory when browser persistence is un
   const panel = page.locator('.clipboard-policies');
   await panel.locator('summary').click();
   await panel.getByLabel('允许从宿主粘贴', { exact: true }).uncheck();
-  await expect(panel.getByRole('status')).toContainText('当前标签页仍生效');
+  await expect(panel.getByRole('status').filter({ hasText: '浏览器无法保存策略' })).toContainText('当前标签页仍生效');
   await page.getByRole('button', { name: '工作空间', exact: true }).click();
   expect(
     await page.locator('.terminal-wrap').evaluate((element) => {
@@ -1445,7 +1445,8 @@ test('real noVNC obeys clipboard policy and records, decodes, exports and persis
     const recording = page.getByRole('region', { name: '桌面录制', exact: true });
     await recording.getByLabel('录制名称').fill('desktop-fixture');
     await recording.getByRole('button', { name: '开始录制', exact: true }).click();
-    await expect(recording.getByRole('status').filter({ hasText: '正在录制' })).toContainText('0:01');
+    await expect(recording.getByRole('status').filter({ hasText: '正在录制' })).toBeVisible();
+    await expect(recording.locator('.recording-metrics > div').filter({ hasText: '已录时长' }).locator('dd')).toHaveText('0:01');
     await recording.getByRole('button', { name: '暂停录制', exact: true }).click();
     await expect(recording.getByRole('status').filter({ hasText: '已暂停' })).toBeVisible();
     await recording.getByRole('button', { name: '继续录制', exact: true }).click();
@@ -4782,6 +4783,7 @@ test('file conflict editor combines independent changes and saves against the la
   await page.getByRole('tab', { name: '文件', exact: true }).click();
   await page.getByRole('button', { name: '保存文件', exact: true }).click();
   await page.getByRole('button', { name: '三方合并', exact: true }).click();
+  await page.getByText('查看完整三方版本', { exact: true }).click();
   await expect(page.getByRole('textbox', { name: '共同版本', exact: true })).toHaveValue('one\ntwo\nthree\n');
   await page.getByRole('button', { name: '应用合并结果' }).click();
   await page.getByRole('button', { name: '获取文件锁' }).click();
@@ -5054,9 +5056,10 @@ test('sync conflict editor reviews a shared base and submits manual text with it
   await page.getByRole('button', { name: '预览双向同步' }).click();
   await page.getByRole('button', { name: '手动三方合并' }).click();
   const editor = page.getByRole('region', { name: '三方合并编辑器' });
-  await expect(editor.getByRole('textbox', { name: '共同版本' })).toHaveValue('one\n');
-  await expect(editor.getByRole('textbox', { name: 'Windows 内容' })).toHaveValue('ONE\n');
-  await expect(editor.getByRole('textbox', { name: 'Linux 内容' })).toHaveValue('UNO\n');
+  await editor.getByText('查看完整三方版本', { exact: true }).click();
+  await expect(editor.getByRole('textbox', { name: '共同版本', exact: true })).toHaveValue('one\n');
+  await expect(editor.getByRole('textbox', { name: 'Windows 内容', exact: true })).toHaveValue('ONE\n');
+  await expect(editor.getByRole('textbox', { name: 'Linux 内容', exact: true })).toHaveValue('UNO\n');
   await editor.getByRole('textbox', { name: /冲突 1 的合并内容/ }).fill('ONE + UNO\n');
   await editor.getByRole('button', { name: '应用合并结果' }).click();
   await expect(page.getByLabel('解决冲突 notes.txt')).toHaveValue('manual');
@@ -5330,7 +5333,7 @@ test('clipboard protection blocks sensitive selections and editor payloads local
     return { cutBlocked, preserved, ordinaryAllowed, formats: Array.from(payload.clipboardData!.types) };
   }, sensitive);
   expect(result).toEqual({ cutBlocked: true, preserved: sensitive, ordinaryAllowed: true, formats: [] });
-  await expect(page.getByRole('status').filter({ hasText: '剪贴板传递已阻止' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: '剪贴板传递已阻止' })).toBeVisible();
   await expect(page.getByText(sensitive, { exact: true })).not.toBeVisible();
   await page.getByLabel('阻止复制疑似密钥和令牌').uncheck();
   const allowed = await page.evaluate((text) => {

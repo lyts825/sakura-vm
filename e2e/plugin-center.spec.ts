@@ -356,7 +356,7 @@ test('community catalog requires a trusted publisher before installation and can
   await expect(market.getByRole('button', { name: '暂停定时' })).toBeVisible();
   await market.getByRole('button', { name: '暂停定时' }).click();
   await expect(market.getByRole('button', { name: '恢复定时' })).toBeVisible();
-  const panel = market.getByRole('region', { name: '示例扩展' });
+  const panel = market.getByRole('region', { name: '示例扩展', exact: true });
   await panel.getByRole('textbox', { name: '输入文本' }).fill('hello');
   await panel.getByRole('button', { name: '运行扩展操作' }).click();
   await expect(panel.getByLabel('示例扩展 结果')).toContainText('hello');
