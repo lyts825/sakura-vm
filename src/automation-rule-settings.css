@@ -18,3 +18,20 @@
 .automation-rule-settings .feature-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .automation-rule-settings button { min-height: 40px; white-space: normal; }
 @media (max-width: 600px) { .automation-rule-settings button, .automation-rule-settings label.check { min-height: 44px; } }
+.automation-rule-settings .automation-section-heading, .automation-rule-settings .automation-rule-identity { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.automation-rule-settings .automation-section-heading > span { font-size: 11px; color: var(--muted); font-weight: 400; }
+.automation-rule-settings .automation-saved-rule { display: block; padding: 16px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.automation-rule-settings .automation-saved-rule:last-child { border-bottom: 0; }
+.automation-rule-settings .automation-saved-rule p, .automation-rule-settings .automation-preview-context { margin-block: 8px 12px; color: var(--muted); font-size: 12px; }
+.automation-rule-settings .automation-rule-mode { padding: 3px 8px; background: var(--surface-soft); border-radius: var(--radius-pill); font-size: 11px; }
+.automation-rule-settings .automation-empty { margin-top: 12px; padding: 16px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); color: var(--muted); font-size: 12px; }
+.automation-rule-settings .automation-event { padding: 14px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; font-size: 12px; }
+.automation-rule-settings .automation-event:last-child { border-bottom: 0; }
+.automation-rule-settings .automation-event p + p { margin-top: 6px; }
+.automation-rule-settings .automation-event-outcome { color: var(--muted); }
+.automation-rule-settings .automation-review-step { margin: 12px 0; }
+.automation-rule-settings .automation-review-step pre { max-height: 180px; overflow: auto; overscroll-behavior: contain; padding: 12px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 12px; }
+.automation-rule-settings .automation-review-step pre:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.automation-rule-settings .automation-operation-state { padding: 10px 12px; margin-block: 12px; background: var(--accent-soft); border-radius: var(--radius-sm); font-size: 12px; }
+.automation-rule-settings .automation-history-list { max-height: 360px; overflow: auto; overscroll-behavior: contain; margin-top: 12px; padding-inline: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.automation-rule-settings .automation-history-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

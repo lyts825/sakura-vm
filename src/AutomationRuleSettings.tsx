@@ -165,9 +165,12 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
   return <section className="system-card automation-rule-settings" aria-label="事件自动化规则">
     <div className="panel-heading">
       <div><h3>事件自动化规则</h3><p>根据任务和告警事件执行实例操作或修复 Runbook。新规则默认只预览。</p></div>
-      <button className="secondary compact" onClick={remote.reload}>刷新</button>
+      <button className="secondary compact" disabled={action.busy} onClick={remote.reload}>刷新</button>
     </div>
     <Feedback error={action.error || remote.error || remote.data?.error} message={action.message} />
+    {!remote.data && !remote.error && <p role="status">正在读取自动化规则与执行记录…</p>}
+    {remote.error && remote.data && <p className="subtle-note">规则列表与执行记录可能不是最新，请刷新后核对。</p>}
+    {action.busy && <p className="automation-operation-state" role="status">正在处理规则操作，请等待完成…</p>}
     <div className="feature-card automation-rule-editor" ref={editorRef}>
       <h4>{editing ? '编辑规则' : '新建规则'}</h4>
       <p className="automation-draft-state">当前草稿：{!draft.enabled ? '已停用' : draft.action === 'runbook' || draft.previewOnly ? '仅预览' : '实际执行'}{editing ? ` · 编辑版本 ${editing.version}` : ' · 尚未创建规则'}</p>
@@ -243,39 +246,46 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
       {!draft.filter.types.length && <p className="automation-field-error">至少选择一种事件类型后才能保存。</p>}
       </fieldset>
     </div>
-    <div className="feature-card"><h4>已保存规则</h4>
-      {!remote.data?.rules.length && <p className="subtle-note">暂无规则。</p>}
-      {remote.data?.rules.map((rule) => <div key={rule.id} className="automation-rule-row">
-        <strong>{rule.name}</strong> · {labels[rule.action]} · {rule.enabled ?
-          rule.previewOnly ? '预览中' : '实际执行' : '已停用'}
+    <div className="feature-card"><h4 className="automation-section-heading">已保存规则 <span>{remote.data ? `${remote.data.rules.length} 条` : '尚未读取'}</span></h4>
+      {remote.data && !remote.data.rules.length && <p className="automation-empty">暂无规则。填写上方草稿，保存后可预览最近事件。</p>}
+      {remote.data?.rules.map((rule) => <div key={rule.id} className="automation-rule-row automation-saved-rule">
+        <div className="automation-rule-identity"><strong data-locale-ignore>{rule.name}</strong><span className="automation-rule-mode">{rule.enabled ?
+          rule.previewOnly ? '预览中' : '实际执行' : '已停用'}</span></div>
+        <p>{labels[rule.action]} · 冷却 {rule.cooldownSeconds} 秒 · 版本 {rule.version}</p>
+        <div className="feature-actions">
         <button className="secondary compact" disabled={action.busy} onClick={() => edit(rule)}>编辑</button>
         <button className="secondary compact" disabled={action.busy} onClick={() => inspect(rule)}>预览最近事件</button>
         <button className="secondary compact" disabled={action.busy} onClick={() => remove(rule)}>删除</button>
-      </div>)}
+        </div></div>)}
     </div>
-    {preview && <div className="feature-card"><h4>事件预览：{preview.rule.name}</h4>
+    {preview && <div className="feature-card automation-preview"><h4>事件预览：<span data-locale-ignore>{preview.rule.name}</span></h4>
+      <p className="automation-preview-context">基于已保存版本 {preview.rule.version} · {preview.matches.length} 个匹配事件</p>
       {preview.rule.action === 'runbook' && <div>
         <p>以下命令将在匹配实例的项目目录中顺序运行：</p>
-        {preview.rule.steps.map((step, index) => <p key={index}>
-          {index + 1}. {step.name} · {step.timeout} 秒 · <code>{step.command}</code>
-        </p>)}
+        {preview.rule.steps.map((step, index) => <div key={index} className="automation-review-step">
+          <p>{index + 1}. <span data-locale-ignore>{step.name}</span> · {step.timeout} 秒</p>
+          <pre tabIndex={0} role="region" aria-label={`预览步骤 ${index + 1} 的命令`} data-locale-ignore>{step.command}</pre>
+        </div>)}
         {preview.rule.previewOnly && preview.approval && <button className="primary compact"
           disabled={action.busy} onClick={approve}>批准并启用自动修复</button>}
       </div>}
-      {!preview.matches.length && <p>最近没有匹配事件。</p>}
+      {!preview.matches.length && <p className="automation-empty">最近没有匹配事件。</p>}
       {preview.matches.map(({ event, action: operation, targetVmId, wouldExecute }) =>
-        <p key={event.id}>{event.occurredAt} · {labels[event.type]} · {targetVmId || '无实例'} ·
-          {labels[operation]} · {wouldExecute ? '当前为执行模式，仍需通过冷却及实例检查' : '仅预览'}</p>)}
+        <div key={event.id} className="automation-event"><p>{formatDateTime(new Date(event.occurredAt))} · {labels[event.type]} · {labels[operation]}</p>
+          <p>目标实例：<span data-locale-ignore>{targetVmId || '无实例'}</span></p>
+          <p className="automation-event-outcome">{wouldExecute ? '当前为执行模式，仍需通过冷却及实例检查' : '仅预览'}</p></div>)}
     </div>}
-    <div className="feature-card"><h4>最近执行</h4>
-      {!remote.data?.executions.length && <p className="subtle-note">尚无匹配事件。</p>}
-      {remote.data?.executions.slice(0, 30).map((item) => <p key={item.id}>
-        {formatDateTime(new Date(item.startedAt))} · {labels[item.action]} ·
-        {item.vmId || '无实例'} · {labels[item.status] || item.status}
-        {item.reason ? ` · ${item.reason}` : ''}
-        {item.steps?.length ? ` · 步骤：${item.steps.map((step) =>
-          `${step.name}(${step.code === -1 ? '跳过' : step.code})`).join('、')}` : ''}
-      </p>)}
+    <div className="feature-card"><h4 className="automation-section-heading">最近执行 <span>{remote.data ? `显示 ${Math.min(30, remote.data.executions.length)} / ${remote.data.executions.length} 条` : '尚未读取'}</span></h4>
+      {remote.data && !remote.data.executions.length && <p className="automation-empty">尚无匹配事件。</p>}
+      {!!remote.data?.executions.length && <div className="automation-history-list" tabIndex={0} role="region" aria-label="最近执行记录，可滚动">
+      {remote.data?.executions.slice(0, 30).map((item) => <div className="automation-event" key={item.id}>
+        <p>{formatDateTime(new Date(item.startedAt))} · {labels[item.action]} · <strong>{labels[item.status] || item.status}</strong></p>
+        <p>目标实例：<span data-locale-ignore>{item.vmId || '无实例'}</span></p>
+        {item.reason && <p>{item.reason}</p>}
+        {item.steps?.length ? <p>步骤：<span data-locale-ignore>{item.steps.map((step) =>
+          `${step.name}(${step.code === -1 ? '跳过' : step.code})`).join('、')}</span></p> : null}
+      </div>)}
+      </div>}
     </div>
   </section>;
 }
