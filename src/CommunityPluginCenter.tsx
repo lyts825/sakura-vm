@@ -4,7 +4,7 @@
  * 详细范围（中文）：公开入口包括 CommunityPluginCenter；职责覆盖安装、授权和管理社区插件及其独立界面，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include CommunityPluginCenter. The scope covers Installing, authorizing and managing community plugins and their isolated surfaces. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { useAction, type Request } from './feature-shared';
 import { PluginBoundary } from './plugin-boundary';
 import { pluginGeneration } from './plugin-generation';
@@ -128,7 +128,7 @@ function CommunityExtensionPanel({ pluginId, panel, request }: {
       {busy ? '处理中…' : '运行扩展操作'}
     </button>
     {error && <p role="alert">{error}</p>}
-    {result && <pre className="feature-log" aria-label={panel.title + ' 结果'}>{result}</pre>}
+    {result && <pre className="feature-log" tabIndex={0} role="region" aria-label={panel.title + ' 结果'}>{result}</pre>}
   </section>;
 }
 
@@ -139,6 +139,7 @@ function CommunityExtensionPanel({ pluginId, panel, request }: {
  * English: Inputs: { request } provides context fields request (transport capability bound to identity/authority scope)
  */
 export function CommunityPluginCenter({ request }: { request: Request }) {
+  const marketId = useId();
   const [view, setView] = useState<View | null>(null);
   const [publisherName, setPublisherName] = useState('');
   const [publicKey, setPublicKey] = useState('');
@@ -146,10 +147,18 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
   const [sourceUrl, setSourceUrl] = useState('');
   const [input, setInput] = useState('{}');
   const [result, setResult] = useState('');
+  const [resultOwner, setResultOwner] = useState('');
   const [scheduleMinutes, setScheduleMinutes] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [reading, setReading] = useState(true);
+  const [readError, setReadError] = useState('');
+  const [operationContext, setOperationContext] = useState('');
+  const [pendingOperation, setPendingOperation] = useState<Record<string, unknown> | null>(null);
+  const controlsLocked = busy || reading;
+  const pending = (operation: string, id?: string) => busy && pendingOperation?.operation === operation &&
+    (!id || id === pendingOperation.pluginId || id === pendingOperation.id || id === pendingOperation.fingerprint);
   /**
    * 中文：读取 GET /community-plugins，完成安装、授权和管理社区插件及其独立界面的数据交互并更新服务端视图；异步失败传给此处的捕获分支或外层动作反馈
    * English: Perform GET /community-plugins for Installing, authorizing and managing community plugins and their isolated surfaces and update server view. Propagate asynchronous failure to this catch path or the outer action feedback
@@ -162,17 +171,23 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
    */
   const load = useCallback(
     async (signal?: AbortSignal) => {
-      const data = await request<View>('/community-plugins', 'GET', undefined, signal);
-      if (!validView(data)) throw new Error('第三方插件目录响应无效');
-      pluginGeneration.update(data.runtime);
-      if (!signal?.aborted) setView(data);
+      setReading(true);
+      setReadError('');
+      try {
+        const data = await request<View>('/community-plugins', 'GET', undefined, signal);
+        if (!validView(data)) throw new Error('第三方插件目录响应无效');
+        pluginGeneration.update(data.runtime);
+        if (!signal?.aborted) setView(data);
+      } finally {
+        if (!signal?.aborted) setReading(false);
+      }
     },
     [request],
   );
   useEffect(/** 中文：当依赖 [load] 变化时同步该依赖对应的本地派生状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [load] change, synchronize local derived state for these dependencies. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     const abort = new AbortController();
     void load(abort.signal).catch((e) => {
-      if (!abort.signal.aborted) setError((e as Error).message);
+      if (!abort.signal.aborted) setReadError((e as Error).message);
     });
     /**
      * 中文：在安装、授权和管理社区插件及其独立界面流程中取消捕获的异步寿命；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
@@ -193,39 +208,64 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
    * English: Design: finally releases this pass's in-flight/resource markers after either success or failure, permitting future calls; resource release and business success are assessed separately
    */
   const act = async (operation: Record<string, unknown>, success: string) => {
-    if (busy) return;
+    if (controlsLocked) return;
+    const names: Record<string, string> = { trust: '添加信任', untrust: '撤销信任', 'add-source': '添加目录源',
+      'remove-source': '移除目录源', refresh: '刷新目录', install: '安装插件', uninstall: '卸载插件',
+      subscribe: '保存事件订阅', unsubscribe: '移除事件订阅', schedule: '保存定时触发', unschedule: '移除定时触发', run: '测试运行' };
+    const plugin = view?.installed.find(item => item.id === operation.pluginId) ||
+      Object.values(view?.catalogs || {}).flat().find(item => item.id === operation.pluginId);
+    const target = plugin?.name || view?.sources.find(item => item.id === operation.id)?.name ||
+      view?.publishers.find(item => item.fingerprint === operation.fingerprint)?.name || String(operation.name || '社区插件');
+    setOperationContext(`${names[String(operation.operation)] || '处理操作'} · ${target}`);
+    setPendingOperation(operation);
     setBusy(true);
     setError('');
     setNotice('');
     try {
       const response = await request<unknown>('/community-plugins', 'POST', operation);
-      if (operation.operation === 'run') setResult(JSON.stringify(response, null, 2));
+      if (operation.operation === 'run') {
+        setResult(JSON.stringify(response, null, 2));
+        setResultOwner(target);
+      }
       else {
         if (!validView(response)) throw new Error('第三方插件目录响应无效');
         pluginGeneration.update(response.runtime);
         setView(response);
+        setReadError('');
       }
       setNotice(success);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      setPendingOperation(null);
     }
   };
   return (
     <section className="community-plugins community-market" aria-label="第三方插件市场">
-      <h2>第三方插件市场</h2>
+      <div className="community-market-heading">
+        <h2>第三方插件市场</h2>
+        <button className="secondary compact" disabled={reading || busy}
+          onClick={() => void load().catch(e => setReadError((e as Error).message))}>
+          {reading ? '正在读取…' : '重新读取市场'}
+        </button>
+      </div>
       <p className="muted">
         添加信任的 Ed25519 发布者和 HTTPS 目录源。安装前核对签名与文件摘要；运行时插件只能处理 JSON
         数据，无法访问宿主服务。可订阅脱敏任务和告警事件，自动运行插件并查看结果。
       </p>
+      {reading && <p role="status" className="community-read-status">{view ? '正在重新读取市场状态…' : '正在读取社区插件市场…'}</p>}
+      {readError && <p role="alert" className="machine-error">市场读取失败：{readError}{view && '。以下为上次读取的状态，请重试核对。'}</p>}
+      {busy && <p role="status" className="community-operation-status">正在处理：{operationContext}</p>}
       {error && (
         <p role="alert" className="machine-error">
+          {operationContext && <span className="community-operation-context">{operationContext}</span>}
           {error}
         </p>
       )}
       {notice && (
         <p role="status" className="feature-success">
+          {operationContext && <span className="community-operation-context">{operationContext}</span>}
           {notice}
         </p>
       )}
@@ -242,12 +282,12 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
           </label>
           <button
             className="secondary compact"
-            disabled={busy || !publisherName.trim() || !publicKey.trim()}
+            disabled={controlsLocked || !publisherName.trim() || !publicKey.trim()}
             onClick={() =>
               void act({ operation: 'trust', name: publisherName, publicKey }, '发布者已加入信任列表')
             }
           >
-            添加信任
+            {pending('trust') ? '正在添加信任…' : '添加信任'}
           </button>
         </div>
         <div>
@@ -262,7 +302,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
           </label>
           <button
             className="secondary compact"
-            disabled={busy || !sourceName.trim() || !sourceUrl.trim()}
+            disabled={controlsLocked || !sourceName.trim() || !sourceUrl.trim()}
             onClick={() =>
               void act(
                 { operation: 'add-source', name: sourceName, url: sourceUrl },
@@ -270,7 +310,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
               )
             }
           >
-            添加目录源
+            {pending('add-source') ? '正在添加目录源…' : '添加目录源'}
           </button>
         </div>
       </div>
@@ -293,12 +333,12 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                   </div>
                   <button
                     className="secondary compact"
-                    disabled={busy}
+                    disabled={controlsLocked}
                     onClick={() =>
                       void act({ operation: 'untrust', fingerprint: item.fingerprint }, '已撤销发布者信任')
                     }
                   >
-                    撤销信任
+                    {pending('untrust', item.fingerprint) ? '正在撤销信任…' : '撤销信任'}
                   </button>
                 </li>
               ))}
@@ -318,17 +358,17 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                 <div className="community-plugin-actions">
                   <button
                     className="secondary compact"
-                    disabled={busy}
+                    disabled={controlsLocked}
                     onClick={() => void act({ operation: 'refresh', id: source.id }, '插件目录已刷新')}
                   >
-                    刷新目录
+                    {pending('refresh', source.id) ? '正在刷新目录…' : '刷新目录'}
                   </button>
                   <button
                     className="secondary compact"
-                    disabled={busy}
+                    disabled={controlsLocked}
                     onClick={() => void act({ operation: 'remove-source', id: source.id }, '目录源已移除')}
                   >
-                    移除目录源
+                    {pending('remove-source', source.id) ? '正在移除目录源…' : '移除目录源'}
                   </button>
                 </div>
                 {!view.catalogs[source.id]?.length && <p className="community-catalog-empty">
@@ -346,6 +386,9 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                 (entry) => {
                   const installed = view.installed.find((item) => item.id === entry.id);
                   const trusted = view.publishers.some((item) => item.fingerprint === entry.publisher);
+                  const current = installed?.version === entry.version && installed.sha256 === entry.sha256;
+                  const installNote = !trusted ? '先添加对应发布者的信任，再安装此插件。' : current ? '已安装相同版本，文件摘要一致。' : '';
+                  const installNoteId = `${marketId}-${source.id}-${entry.id}-install-note`;
                   return (
                     <div className="community-plugin-entry" key={entry.id}>
                       <div className="community-entry-copy">
@@ -359,14 +402,16 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                           {entry.sha256.slice(0, 16)}…
                         </small>
                         <PluginVerification entry={entry} />
+                        {installNote && <p id={installNoteId} className="community-install-note">{installNote}</p>}
                       </div>
                       <button
                         className="secondary compact"
                         disabled={
-                          busy ||
+                          controlsLocked ||
                           !trusted ||
-                          (installed?.version === entry.version && installed.sha256 === entry.sha256)
+                          current
                         }
+                        aria-describedby={installNote ? installNoteId : undefined}
                         onClick={() =>
                           void act(
                             { operation: 'install', sourceId: source.id, pluginId: entry.id },
@@ -374,7 +419,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                           )
                         }
                       >
-                        {installed ? '更新' : '安装'}
+                        {pending('install', entry.id) ? '正在安装…' : current ? '已安装此版本' : installed ? '更新' : '安装'}
                       </button>
                     </div>
                   );
@@ -419,16 +464,16 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                       const schedule = view.schedules?.find((value) => value.pluginId === item.id);
                       const minutes = scheduleMinutes[item.id] ?? schedule?.intervalMinutes ?? 60;
                       return <>
-                        <button className="secondary compact" disabled={busy}
+                        <button className="secondary compact" disabled={controlsLocked}
                           onClick={() => void act({ operation: 'subscribe', pluginId: item.id,
                             types: subscription?.types || ['job.finished', 'alert.raised'],
                             enabled: !subscription?.enabled },
                           subscription?.enabled ? '自动触发已暂停' : '自动触发已启用')}>
-                          {subscription?.enabled ? '暂停自动触发' : subscription ? '恢复自动触发' : '订阅任务与告警'}
+                          {pending('subscribe', item.id) ? '正在保存订阅…' : subscription?.enabled ? '暂停自动触发' : subscription ? '恢复自动触发' : '订阅任务与告警'}
                         </button>
-                        {subscription && <button className="secondary compact" disabled={busy}
+                        {subscription && <button className="secondary compact" disabled={controlsLocked}
                           onClick={() => void act({ operation: 'unsubscribe', pluginId: item.id },
-                            '事件订阅已移除')}>移除订阅</button>}
+                            '事件订阅已移除')}>{pending('unsubscribe', item.id) ? '正在移除订阅…' : '移除订阅'}</button>}
                         <label>定时周期（分钟）
                           <input type="number" min={1} max={1440} value={minutes}
                             style={{ width: 96 }}
@@ -436,20 +481,20 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                               [item.id]: Number(event.target.value) }))} />
                         </label>
                         <button className="secondary compact"
-                          disabled={busy || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440}
+                          disabled={controlsLocked || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440}
                           onClick={() => void act({ operation: 'schedule', pluginId: item.id,
                             intervalMinutes: minutes, enabled: !schedule?.enabled },
                           schedule?.enabled ? '定时触发已暂停' : '定时触发已启用')}>
-                          {schedule?.enabled ? '暂停定时' : schedule ? '恢复定时' : '启用定时'}
+                          {pending('schedule', item.id) ? '正在保存定时…' : schedule?.enabled ? '暂停定时' : schedule ? '恢复定时' : '启用定时'}
                         </button>
-                        {schedule && <button className="secondary compact" disabled={busy}
+                        {schedule && <button className="secondary compact" disabled={controlsLocked}
                           onClick={() => void act({ operation: 'unschedule', pluginId: item.id },
-                            '定时触发已移除')}>移除定时</button>}
+                            '定时触发已移除')}>{pending('unschedule', item.id) ? '正在移除定时…' : '移除定时'}</button>}
                       </>;
                     })()}
                     <button
                       className="secondary compact"
-                      disabled={busy}
+                      disabled={controlsLocked}
                       onClick={/** 中文：在安装、授权和管理社区插件及其独立界面流程中错误反馈，按指定 Schema 校验并解码；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Installing, authorizing and managing community plugins and their isolated surfaces, error feedback, validate/decode with the specified schema. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
                         try {
                           void act(
@@ -457,18 +502,20 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                             '插件运行完成',
                           );
                         } catch {
+                          setOperationContext(`测试运行 · ${item.name}`);
+                          setNotice('');
                           setError('测试输入需要有效的 JSON');
                         }
                       }}
                     >
-                      测试运行
+                      {pending('run', item.id) ? '正在运行…' : '测试运行'}
                     </button>
                     <button
                       className="secondary compact"
-                      disabled={busy}
+                      disabled={controlsLocked}
                       onClick={() => void act({ operation: 'uninstall', pluginId: item.id }, '插件已卸载')}
                     >
-                      卸载
+                      {pending('uninstall', item.id) ? '正在卸载…' : '卸载'}
                     </button>
                   </div>
                 </div>
@@ -479,14 +526,17 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                 </div>
               ))}
               {result && (
-                <pre className="feature-log" aria-label="隔离插件运行结果">
+                <div className="community-run-result">
+                <h4>运行结果：{resultOwner}</h4>
+                <pre className="feature-log" tabIndex={0} role="region" aria-label="隔离插件运行结果">
                   {result}
                 </pre>
+                </div>
               )}
               <h4>自动触发记录</h4>
-              <button className="secondary compact" disabled={busy}
-                onClick={() => void load().catch((e) => setError((e as Error).message))}>
-                刷新触发记录
+              <button className="secondary compact" disabled={busy || reading}
+                onClick={() => void load().catch((e) => setReadError((e as Error).message))}>
+                {reading ? '正在读取触发记录…' : '刷新触发记录'}
               </button>
               {(view.deliveries?.length || 0) > 0 ? <>
                 <ul>
@@ -495,7 +545,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                     {delivery.event.occurredAt}
                     {delivery.error && <small role="alert"> · {delivery.error}</small>}
                     {delivery.resultPreview && <details><summary>查看结果</summary>
-                      <pre className="feature-log">{delivery.resultPreview}</pre></details>}
+                      <pre className="feature-log" tabIndex={0} role="region" aria-label={`${delivery.pluginId} 自动触发结果`}>{delivery.resultPreview}</pre></details>}
                   </li>)}
                 </ul>
               </> : <p className="muted">尚无自动触发记录。</p>}

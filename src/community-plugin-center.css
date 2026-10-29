@@ -2,6 +2,52 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.community-market .community-market-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.community-market .community-market-heading h2 {
+  margin: 0;
+}
+.community-market .community-read-status,
+.community-market .community-operation-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+.community-market .community-operation-status {
+  color: var(--accent);
+}
+.community-market .community-operation-context {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.community-market .community-install-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+.community-market .feature-log {
+  max-height: min(320px, 45dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.community-market .feature-log:focus-visible {
+  outline-color: var(--accent);
+  outline-offset: 3px;
+}
+.community-market .community-run-result h4 {
+  margin: 16px 0 8px;
+  font-size: 13px;
+}
 .community-market .community-section-count {
   margin: -4px 0 12px;
   color: var(--muted);
