@@ -1864,8 +1864,11 @@ test('single-app window preserves literal args, retries original cleanup and lab
     args: ['  literal space  ', '$(not code)', '雪'],
     resolution: '1024x768', clipboard: { copy: true, paste: false } });
   await expect(panel.getByText('复制开启 · 粘贴关闭')).toBeVisible();
-  await expect(panel.getByText('私有网络 · 数据目录 /home/skapp0123456789abcdef01234567')).toBeVisible();
-  await expect(panel.getByText('项目账号 project-fixture（UID 20005） · 应用账号 skapp0123456789abcdef01234567（UID 15002）')).toBeVisible();
+  const sessionDetails = panel.locator('.single-app-session-details');
+  await expect(sessionDetails.locator('div').filter({ hasText: /^网络/ }).locator('dd')).toHaveText('私有网络');
+  await expect(sessionDetails.locator('div').filter({ hasText: /^数据目录/ }).locator('dd')).toHaveText('/home/skapp0123456789abcdef01234567');
+  await expect(sessionDetails.locator('div').filter({ hasText: /^项目账号/ }).locator('dd')).toHaveText('project-fixture（UID 20005）');
+  await expect(sessionDetails.locator('div').filter({ hasText: /^应用账号/ }).locator('dd')).toHaveText('skapp0123456789abcdef01234567（UID 15002）');
   await page.evaluate(() => {
     const owned = window as Window & { _singleAppOriginalOpen?: typeof window.open };
     owned._singleAppOriginalOpen = window.open;
@@ -1894,9 +1897,10 @@ test('single-app window preserves literal args, retries original cleanup and lab
   await expect(panel.getByRole('button', { name: '重试停止' })).toBeEnabled();
   expect(sessions[0].id).toBe('a45e91ec-c630-414e-befc-b66e53c76730');
   await panel.getByRole('button', { name: '重试停止' }).click();
-  await expect(panel.getByText('1024x768 · 运行中')).toHaveCount(0);
+  await expect(panel.locator('.single-app-session-state').filter({ hasText: '运行中' })).toHaveCount(0);
   await expect.poll(() => stops).toBe(2);
-  await expect(panel.getByText('网络归属未核实 · 数据目录 /home/skapplegacy-fixture')).toBeVisible();
+  await expect(sessionDetails.locator('div').filter({ hasText: /^网络/ }).locator('dd')).toHaveText('网络归属未核实');
+  await expect(sessionDetails.locator('div').filter({ hasText: /^数据目录/ }).locator('dd')).toHaveText('/home/skapplegacy-fixture');
   await expect(panel.getByText('旧窗口缺少原运行归属，请管理员核对')).toBeVisible();
   await expect(panel.getByRole('button', { name: '归属待核对' })).toBeDisabled();
   await expect(panel.getByRole('button', { name: '打开', exact: true })).toBeDisabled();
@@ -3024,9 +3028,9 @@ test('plugin rollout previews a host cohort, persists a policy and explains next
     await panel.getByLabel('插件', { exact: true }).selectOption('metrics');
     await panel.getByLabel(/放行比例/).fill('0');
     await panel.getByRole('button', { name: '预览当前主机' }).click();
-    await expect(panel.getByText(/当前草稿预览：将跳过/)).toBeVisible();
+    await expect(panel.getByRole('region', { name: '当前草稿预览', exact: true })).toContainText('将跳过');
     await panel.getByRole('button', { name: '保存灰度策略' }).click();
-    await expect(panel.getByText(/已保存策略的下次启动分桶：未命中/)).toBeVisible();
+    await expect(panel.locator('.rollout-state-grid')).toContainText('下次启动分桶：未命中');
     expect(rollouts.decision('metrics').allowed).toBe(false);
     await panel.getByRole('button', { name: '刷新' }).click();
     await expect(panel.getByLabel(/放行比例/)).toHaveValue('0');
@@ -3133,7 +3137,8 @@ test('host pairing connects over pinned TLS and shows remote resources and revoc
     await panel.getByLabel('远端一次性配对码').fill(pairing.pairing!.value);
     await panel.getByRole('button', { name: '连接并配对' }).click();
     await expect(panel.locator('.host-peer-resource')).toHaveCount(2);
-    await expect(panel.locator('.host-peer-resource').last()).toContainText('实例 2 运行 / 3 总数');
+    await expect(panel.locator('.host-peer-resource').last().locator('.peers-metrics > div')
+      .filter({ hasText: /^实例/ }).locator('dd')).toHaveText('2 运行 / 3 总数');
     await panel.getByRole('button', { name: '计算主机评分' }).click();
     const ranking = panel.getByLabel('主机评分结果');
     await expect(ranking.locator('.host-peer-row').first()).toContainText('Remote');
@@ -4645,16 +4650,16 @@ test('media devices preview host audio and save a typed USB camera rule', async 
   await page.getByRole('button', { name: '系统设置' }).click();
   await page.getByRole('button', { name: '管理音视频设备' }).click();
   const panel = page.getByRole('region', { name: '音视频设备' });
-  await expect(panel).toContainText('DirectSound：可启动');
+  await expect(panel.locator('.media-current-summary > div').filter({ hasText: /^DirectSound/ }).locator('dd')).toHaveText('可启动');
   await panel.getByRole('button', { name: '预览音频配置' }).click();
   await expect(panel.getByRole('region', { name: '音频配置预览' }))
     .toContainText('hda-duplex,audiodev=sakura-audio');
   await panel.getByRole('button', { name: '应用音频配置' }).click();
-  await expect(panel).toContainText('当前声卡：hda-duplex');
+  await expect(panel.locator('.media-current-summary > div').filter({ hasText: /^当前声卡/ }).locator('dd')).toHaveText('hda-duplex');
   await panel.getByLabel('媒体 USB 厂商 ID').fill('1234');
   await panel.getByLabel('媒体 USB 产品 ID').fill('5678');
   await panel.getByRole('button', { name: '保存媒体转发规则' }).click();
-  await expect(panel).toContainText('camera · 1234:5678');
+  await expect(panel).toContainText('摄像头 · 1234:5678');
   expect(requests.map((item) => item.operation)).toEqual([
     'preview-audio', 'apply-audio', 'save-usb']);
   expect(requests[2]).toMatchObject({ kind: 'camera', vendorId: 0x1234,
