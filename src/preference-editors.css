@@ -7,3 +7,12 @@
 .shortcut-settings .shortcut-field input { font-family: var(--font-mono, monospace); }
 .shortcut-settings .button-row { flex-wrap: wrap; }
 .shortcut-settings .button-row button { white-space: normal; min-height: 40px; }
+.locale-settings .locale-preview { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); margin: 16px 0; }
+.locale-settings .locale-preview h4 { margin-bottom: 10px; font-size: 12px; }
+.locale-settings .locale-preview dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 14px; font-size: 12px; }
+.locale-settings .locale-preview dt { color: var(--muted); }
+.locale-settings .locale-preview dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.locale-settings input[aria-invalid='true'] { border-color: var(--danger); }
+.locale-settings .locale-zone-error { color: var(--danger); }
+.locale-settings .locale-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 12px 0; }
+.locale-settings .locale-actions button { white-space: normal; min-height: 40px; }

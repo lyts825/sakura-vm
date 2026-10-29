@@ -4,7 +4,8 @@
  * 详细范围（中文）：公开入口包括 LocaleSettings；职责覆盖编辑语言、时区和数字格式偏好，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include LocaleSettings. The scope covers Editing language, time-zone and numeric-format preferences. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import './preference-editors.css';
 import {
   formatDateTime, formatNumber, readLocalePreferences, saveLocalePreferences,
   timeZoneOptions, validTimeZone, type LocalePreferences,
@@ -20,6 +21,9 @@ export function LocaleSettings() {
   const [draft, setDraft] = useState<LocalePreferences>(readLocalePreferences);
   const [error, setError] = useState('');
   const saved = readLocalePreferences();
+  const zoneHintId = useId();
+  const zoneValid = validTimeZone(draft.timeZone);
+  const dirty = JSON.stringify(saved) !== JSON.stringify(draft);
   /**
    * 中文：在编辑语言、时区和数字格式偏好流程中编辑草稿，错误反馈；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
    * English: In Editing language, time-zone and numeric-format preferences, editing draft, error feedback. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation
@@ -32,7 +36,7 @@ export function LocaleSettings() {
   const preview = validTimeZone(draft.timeZone)
     ? new Date().toLocaleString(draft.language, { timeZone: draft.timeZone }) : '时区无效';
   const previewNumber = new Intl.NumberFormat(draft.numberLocale, { minimumFractionDigits: 2 }).format(1234567.89);
-  return <section className="system-card" aria-label="语言与区域设置">
+  return <section className="system-card locale-settings" aria-label="语言与区域设置">
     <h3>语言与区域</h3>
     <p>界面可切换简体或繁体中文；日期时间与数值按所选区域展示。</p>
     <div className="feature-grid">
@@ -45,7 +49,9 @@ export function LocaleSettings() {
       </label>
       <label>时间区域
         <input aria-label="时间区域" list="sakura-time-zones" value={draft.timeZone}
+          aria-invalid={!zoneValid || undefined} aria-describedby={zoneHintId}
           onChange={(event) => update({ timeZone: event.target.value })} />
+        <small id={zoneHintId} className={!zoneValid ? 'locale-zone-error' : undefined}>{zoneValid ? '可输入或从列表选择，例如 Asia/Shanghai。' : '请输入有效时区，例如 Asia/Shanghai 或 UTC。'}</small>
         <datalist id="sakura-time-zones">{timeZoneOptions().map((zone) => <option key={zone} value={zone} />)}</datalist>
       </label>
       <label>数字格式
@@ -57,13 +63,20 @@ export function LocaleSettings() {
         </select>
       </label>
     </div>
-    <p className="subtle-note">预览：{preview} · {previewNumber}</p>
+    <div className="locale-preview" aria-label="保存前格式预览">
+      <h4>保存前预览</h4>
+      <dl><dt>日期时间</dt><dd>{preview}</dd><dt>数字</dt><dd>{previewNumber}</dd></dl>
+    </div>
     {error && <p role="alert" className="error-banner">{error}</p>}
-    <button className="primary compact" disabled={!validTimeZone(draft.timeZone) || JSON.stringify(saved) === JSON.stringify(draft)}
+    <p className="subtle-note" role="status">{dirty ? '有未保存的更改，保存后将刷新页面。' : '当前设置已保存。'}</p>
+    <div className="locale-actions">
+    <button className="primary compact" disabled={!zoneValid || !dirty}
       onClick={/** 中文：在编辑语言、时区和数字格式偏好流程中错误反馈，触发所属资源重新读取；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致 | English: In Editing language, time-zone and numeric-format preferences, error feedback, trigger rereading of the owned resource. Current parameters/closures bind the affected objects, retaining state/resource ownership for this invocation | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
         try { saveLocalePreferences(draft); window.location.reload(); }
         catch (failure) { setError((failure as Error).message); }
       }}>保存语言与区域</button>
+    <button className="text-button" disabled={!dirty} onClick={() => { setDraft(readLocalePreferences()); setError(''); }}>撤销本次修改</button>
+    </div>
     <p className="subtle-note">当前：{formatDateTime(new Date())} · {formatNumber(1234567.89, { minimumFractionDigits: 2 })}</p>
   </section>;
 }
