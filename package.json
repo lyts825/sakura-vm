@@ -1,6 +1,6 @@
 {
   "name": "sakura-vm",
-  "version": "2.12.7",
+  "version": "2.12.8",
   "private": true,
   "type": "module",
   "description": "A WSL-inspired local Linux workspace, powered by PosixLoom and QEMU",

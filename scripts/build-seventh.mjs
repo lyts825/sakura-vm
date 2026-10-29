@@ -14,7 +14,7 @@ for(const file of ['seventh-worker.mjs','seventh-engineering-worker.py','seventh
 }
 await cp(join(root,'shared/seventh-catalog.json'),join(output,'seventh-catalog.json'));
 await mkdir(join(output,'docs'),{recursive:true});
-for(const name of ['seventh-tool-images.md','seventh-plugin-packs.md','seventh-plugin-members.md','release-2.12.0.md','release-2.12.1.md','release-2.12.2.md','release-2.12.3.md','release-2.12.4.md','release-2.12.5.md','release-2.12.6.md','release-2.12.7.md'])await cp(join(root,'docs',name),join(output,'docs',name));
+for(const name of ['seventh-tool-images.md','seventh-plugin-packs.md','seventh-plugin-members.md','release-2.12.0.md','release-2.12.1.md','release-2.12.2.md','release-2.12.3.md','release-2.12.4.md','release-2.12.5.md','release-2.12.6.md','release-2.12.7.md','release-2.12.8.md'])await cp(join(root,'docs',name),join(output,'docs',name));
 await mkdir(join(output,'native/seventh-creation-sandbox'),{recursive:true});
 for(const name of ['README.md','requirements.txt'])await cp(join(root,'native/seventh-creation-sandbox',name),join(output,'native/seventh-creation-sandbox',name));
 const native=process.platform==='win32'&&process.arch==='x64'?await copySeventhNative(resolve(process.env.SAKURA_SEVENTH_NATIVE_ASSETS??join(root,'.tools/seventh-creation')),join(output,'assets/seventh-creation'),{worker:join(root,'server/seventh-creation-native-worker.py'),source:join(root,'native/seventh-creation-sandbox/Program.cs')}):null;

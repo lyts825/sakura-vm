@@ -153,6 +153,7 @@ for (const file of [
   'release-2.12.5.md',
   'release-2.12.6.md',
   'release-2.12.7.md',
+  'release-2.12.8.md',
 ])
   await cp(join(root, 'docs', file), join(output, '.sakura-server', 'docs', file));
 await checkSeventhDistribution(output);
