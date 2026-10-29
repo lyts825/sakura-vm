@@ -370,6 +370,9 @@ export function ConfigPanel({
   });
   const running = active(vm);
   const hasNetwork = usePlugin('network');
+  const portsErrorId = useId();
+  const duplicateHosts = new Set(config.forwards.filter((port, index, ports) => ports.some((other, otherIndex) => otherIndex !== index && other.host === port.host)).map(port => port.host));
+  const portConflict = hasNetwork && duplicateHosts.size > 0;
   return (
     <div className="content-panel config-panel" aria-label="发行版资源配置">
       <div className="panel-heading">
@@ -393,7 +396,7 @@ export function ConfigPanel({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (busy || running || vm.sandbox) return;
+          if (busy || running || vm.sandbox || portConflict) return;
           save(config);
         }}
       >
@@ -409,12 +412,18 @@ export function ConfigPanel({
                 type="button"
                 className="text-button"
                 disabled={busy || running || config.forwards.length >= 12}
-                onClick={() => set({ ...config, forwards: [...config.forwards, { host: 8080, guest: 80 }] })}
+                onClick={() => {
+                  let host = 8080;
+                  while (config.forwards.some(port => port.host === host)) host++;
+                  set({ ...config, forwards: [...config.forwards, { host, guest: 80 }] });
+                }}
               >
                 <Plus size={14} />
                 添加
               </button>
             </div>
+            <p className="config-port-count">{config.forwards.length} / 12 条规则 · Windows 端口不能重复</p>
+            {portConflict && <p id={portsErrorId} className="config-port-error" role="alert">Windows 端口重复，请为每条规则设置不同的本机端口。</p>}
             {config.forwards.length === 0 && (
               <p className="muted small-text">
                 尚无转发规则。添加后，可从 Windows 的 localhost 访问 Linux 服务。
@@ -430,6 +439,9 @@ export function ConfigPanel({
                     max={65535}
                     required
                     value={p.host}
+                    aria-label={`Windows 端口 ${i + 1}`}
+                    aria-invalid={duplicateHosts.has(p.host) || undefined}
+                    aria-describedby={duplicateHosts.has(p.host) ? portsErrorId : undefined}
                     disabled={busy || running}
                     onChange={(e) =>
                       set({
@@ -450,6 +462,7 @@ export function ConfigPanel({
                     max={65535}
                     required
                     value={p.guest}
+                    aria-label={`Linux 端口 ${i + 1}`}
                     disabled={busy || running}
                     onChange={(e) =>
                       set({
@@ -464,7 +477,7 @@ export function ConfigPanel({
                 <button
                   type="button"
                   className="icon-button"
-                  aria-label="删除端口规则"
+                  aria-label={`删除端口规则 ${i + 1}：${p.host} → ${p.guest}`}
                   disabled={busy || running}
                   onClick={() => set({ ...config, forwards: config.forwards.filter((_, j) => j !== i) })}
                 >
@@ -475,7 +488,7 @@ export function ConfigPanel({
           </>
         )}
         <div className="config-actions">
-          <button className="primary compact" disabled={busy || running || !!vm.sandbox}>
+          <button className="primary compact" disabled={busy || running || !!vm.sandbox || portConflict}>
             {busy ? <LoaderCircle size={14} className="spin" /> : <Save size={14} />}
             {busy ? '正在处理…' : '保存配置'}
           </button>

@@ -6,6 +6,11 @@
 .config-panel .config-edit-state { margin-bottom: 20px; font-size: 12px; color: var(--muted); }
 .config-panel .config-actions { flex-wrap: wrap; gap: 12px; padding-top: 18px; border-top: 1px solid var(--line); }
 .config-panel .config-actions > button { min-height: 40px; }
+.config-panel .config-port-count { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+.config-panel .config-port-error { color: var(--danger); background: var(--danger-soft); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 14px; }
+.config-panel input[aria-invalid='true'] { border-color: var(--danger); }
+.config-panel .port-row { padding: 12px 0 0; border-top: 1px solid var(--line); }
+.config-panel .port-row .icon-button { flex-shrink: 0; min-width: 36px; min-height: 36px; }
 @media (max-width: 600px) {
   .config-panel .config-summary { gap: 12px; }
   .config-panel .config-summary > span { flex-basis: 100%; }
