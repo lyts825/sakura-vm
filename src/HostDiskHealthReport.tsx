@@ -4,8 +4,9 @@
  * 详细范围（中文）：公开入口包括 HostDiskHealthReport；职责覆盖显示主机磁盘指标、告警与健康报告，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include HostDiskHealthReport. The scope covers Presenting host disk metrics, warnings and health reports. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { formatDecimal } from './localization';
+import { formatDateTime, formatDecimal } from './localization';
 import type { hostDiskHealth } from '../server/host-disk-health';
+import './host-disk-health.css';
 
 /**
  * 中文：呈现显示主机磁盘指标、告警与健康报告中的 HostDiskHealthReport 界面，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
@@ -27,44 +28,54 @@ export function HostDiskHealthReport({ report }: { report: Awaited<ReturnType<ty
    * English: Inputs: value: input value to validate/transform/save; unit: the invocation value for this handler (default '')
    */
   const reading = (value: number | null | undefined, unit = '') => (value == null ? '未知' : value + unit);
+  const severities = { critical: '异常', warning: '提示', unknown: '未知' };
+  const checkedAt = report.checkedAt && Number.isFinite(Date.parse(report.checkedAt)) ? report.checkedAt : null;
   return (
-    <div className="feature-card" aria-label="主机磁盘健康报告">
-      <h4>{states[report.status]}</h4>
-      <p>
-        可用空间：{formatDecimal((report.capacity.availableBytes / 1024 ** 3), 1)} GiB ·{' '}
-        {report.capacity.freePercent === null ? '比例未知' : formatDecimal(report.capacity.freePercent, 1) + '%'}
-      </p>
-      <p className="subtle-note">
-        数据目录：{report.directory} · 卷状态：{report.volume?.health || '未知'}
-      </p>
-      <ul>
+    <section className={`feature-card host-disk-report host-disk-report-${report.status}`} aria-label="主机磁盘健康报告">
+      <header className="host-disk-heading">
+        <div><p className="host-disk-caption">报告结论</p><h4>{states[report.status] || states.unknown}</h4></div>
+        <span className="host-disk-count">{report.disks.length} 个磁盘 · {report.findings.length} 条检查提示</span>
+      </header>
+      <p className="host-disk-checked">{checkedAt ? <>检查时间 <time dateTime={checkedAt}>{formatDateTime(new Date(checkedAt))}</time></> : '未提供检查时间'}</p>
+      <dl className="host-disk-overview">
+        <div><dt>可用空间</dt><dd>{formatDecimal((report.capacity.availableBytes / 1024 ** 3), 1)} GiB</dd></div>
+        <div><dt>可用比例</dt><dd>{report.capacity.freePercent === null ? '比例未知' : formatDecimal(report.capacity.freePercent, 1) + '%'}</dd></div>
+        <div><dt>卷状态</dt><dd data-locale-ignore>{report.volume?.health || '未知'}</dd></div>
+      </dl>
+      <div className="host-disk-directory"><span>数据目录</span><code data-locale-ignore>{report.directory}</code></div>
+      <h5 className="host-disk-section-title">检查提示</h5>
+      {report.findings.length ? <div className="host-disk-findings" role="region" aria-label="磁盘检查提示，可滚动" tabIndex={0}><ul>
         {report.findings.map((item, index) => (
-          <li key={index}>
-            {item.disk === undefined ? '' : `磁盘 ${item.disk}：`}
-            {item.message}
+          <li key={index} className={`host-disk-finding host-disk-finding-${item.severity}`}>
+            <span className="host-disk-severity">{severities[item.severity]}</span>
+            <p>{item.disk !== undefined && <strong>磁盘 {item.disk}：</strong>}{item.message}</p>
           </li>
         ))}
-      </ul>
-      {report.disks.map((disk) => (
-        <section className="feature-card" key={disk.number}>
-          <h4>
-            磁盘 {disk.number} · {disk.name}
-          </h4>
-          <p>
-            {disk.bus} · 系统状态：{disk.health} · {disk.operational.join('、')}
-          </p>
-          <div className="feature-grid">
-            <p>当前温度：{reading(disk.counters?.temperatureC, ' °C')}</p>
-            <p>已消耗寿命：{reading(disk.counters?.wearPercent, '%')}</p>
-            <p>通电时间：{reading(disk.counters?.powerOnHours, ' 小时')}</p>
-            <p>不可纠正读错误：{reading(disk.counters?.readErrorsUncorrected)}</p>
-            <p>不可纠正写错误：{reading(disk.counters?.writeErrorsUncorrected)}</p>
-          </div>
+      </ul></div> : <p className="host-disk-empty">本次报告没有检查提示。</p>}
+      <h5 className="host-disk-section-title">设备指标</h5>
+      {!report.disks.length && <p className="host-disk-empty">未取得磁盘明细。当前报告未提供可展示的物理设备信息。</p>}
+      {report.disks.map((disk) => {
+        const metrics = [
+          { label: '当前温度', value: disk.counters?.temperatureC, unit: ' °C' },
+          { label: '已消耗寿命', value: disk.counters?.wearPercent, unit: '%' },
+          { label: '通电时间', value: disk.counters?.powerOnHours, unit: ' 小时' },
+          { label: '不可纠正读错误', value: disk.counters?.readErrorsUncorrected },
+          { label: '不可纠正写错误', value: disk.counters?.writeErrorsUncorrected },
+        ];
+        return <section className="host-disk-device" key={disk.number} aria-label={`磁盘 ${disk.number} 设备指标`}>
+          <h4><span>磁盘 {disk.number}</span><span data-locale-ignore>{disk.name || '名称未知'}</span></h4>
+          <p className="host-disk-device-meta">总线 <span data-locale-ignore>{disk.bus || '未知'}</span> · 系统状态 <span data-locale-ignore>{disk.health || '未知'}</span></p>
+          <p className="host-disk-device-meta">运行状态 <span data-locale-ignore>{disk.operational.length ? disk.operational.join('、') : '未知'}</span></p>
+          <dl className="host-disk-metrics">
+            {metrics.map((metric) => <div key={metric.label} className={metric.value == null ? 'is-unknown' : ''}>
+              <dt>{metric.label}：</dt><dd>{reading(metric.value, metric.unit)}</dd>
+            </div>)}
+          </dl>
         </section>
-      ))}
+      })}
       <p className="subtle-note">
         结果来自 Windows 存储提供程序，空字段表示设备未提供或当前权限无法读取。错误计数是设备历史值。
       </p>
-    </div>
+    </section>
   );
 }

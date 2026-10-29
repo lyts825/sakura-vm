@@ -1,0 +1,32 @@
+/* Report colors reflect supplied status and severity; missing counters stay explicit. */
+.host-disk-report { min-width: 0; border-top: 3px solid var(--line-strong); overflow-wrap: anywhere; }
+.host-disk-report-critical { border-top-color: var(--danger, #b54457); }
+.host-disk-report-warning { border-top-color: var(--warning, #a56e24); }
+.host-disk-heading { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+.host-disk-caption, .host-disk-count, .host-disk-checked { color: var(--muted); font-size: 11px; }
+.host-disk-heading h4 { margin-top: 4px; font-size: 15px; }
+.host-disk-report .host-disk-checked { margin-block: 12px; font-variant-numeric: tabular-nums; }
+.host-disk-overview, .host-disk-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 12px; margin: 14px 0; }
+.host-disk-overview > div { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.host-disk-report dt { font-size: 11px; color: var(--muted); }
+.host-disk-report dd { margin: 5px 0 0; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.host-disk-directory { display: flex; flex-direction: column; gap: 5px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.host-disk-directory > span { color: var(--muted); font-size: 11px; }
+.host-disk-directory code { min-width: 0; white-space: normal; overflow-wrap: anywhere; font-size: 12px; user-select: text; }
+.host-disk-section-title { margin: 18px 0 10px; font-size: 12px; }
+.host-disk-findings { max-height: 320px; overflow: auto; overscroll-behavior: contain; border-radius: var(--radius-sm); }
+.host-disk-findings:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.host-disk-findings ul { margin: 0; padding: 0; list-style: none; }
+.host-disk-finding { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-bottom: 1px solid var(--line); }
+.host-disk-finding:last-child { border-bottom: 0; }
+.host-disk-severity { flex-shrink: 0; padding: 2px 6px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: 11px; }
+.host-disk-finding-critical .host-disk-severity { color: var(--danger, #b54457); border-color: currentColor; }
+.host-disk-finding-warning .host-disk-severity { color: var(--warning, #a56e24); border-color: currentColor; }
+.host-disk-finding p { min-width: 0; font-size: 12px; }
+.host-disk-empty { padding: 14px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); color: var(--muted); background: var(--surface-soft); font-size: 12px; }
+.host-disk-device { margin-block: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.host-disk-device h4 { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; }
+.host-disk-device h4 > span:first-child { color: var(--muted); font-size: 11px; font-weight: 400; }
+.host-disk-report .host-disk-device-meta { margin-top: 8px; color: var(--muted); font-size: 11px; }
+.host-disk-metrics > div { min-width: 0; padding-top: 10px; border-top: 1px solid var(--line); }
+.host-disk-metrics .is-unknown dd { color: var(--muted); font-weight: 400; }
