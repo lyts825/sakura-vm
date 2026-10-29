@@ -11,6 +11,19 @@ export type LocalePreferences = {
 };
 const storageKey = 'sakura-locale';
 const ignored = 'pre, code, script, style, textarea, [contenteditable], [data-locale-ignore], .cm-editor, .xterm';
+const defaultFormatOptions = Object.freeze({});
+const timeZoneValidity = new Map<string, boolean>();
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+const numberFormats = new Map<string, Intl.NumberFormat>();
+
+/** 中文：只缓存固定字符串键，最多保留 32 项；构造失败不写入。 English: Cache fixed string keys with at most 32 entries; failed construction is never stored. */
+function cached<T>(cache: Map<string, T>, key: string, create: () => T): T {
+  if (cache.has(key)) return cache.get(key)!;
+  const value = create();
+  if (cache.size >= 32) cache.delete(cache.keys().next().value!);
+  cache.set(key, value);
+  return value;
+}
 
 /**
  * 中文：读取浏览器解析出的 IANA 时区，Intl 不可用或失败时回退 UTC。
@@ -28,8 +41,11 @@ function browserTimeZone() {
  */
 export function validTimeZone(value: string) {
   if (value.length > 64 || !/^[A-Za-z0-9_+\-/]+$/.test(value)) return false;
-  try { new Intl.DateTimeFormat('en-US', { timeZone: value }); return true; }
-  catch { return false; }
+  const validate = () => {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: value }); return true; }
+    catch { return false; }
+  };
+  return typeof value === 'string' ? cached(timeZoneValidity, value, validate) : validate();
 }
 /**
  * 中文：从存储恢复受支持语言、时区和数字区域，各字段独立回退；存储或 JSON 故障使用浏览器时区和默认中文。
@@ -38,17 +54,16 @@ export function validTimeZone(value: string) {
  * English: Result: an object containing language, timeZone, numberLocale for caller state reads/operations
  */
 export function readLocalePreferences(): LocalePreferences {
-  const fallback: LocalePreferences = { language: 'zh-CN', timeZone: browserTimeZone(), numberLocale: 'zh-CN' };
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
     return {
       language: saved.language === 'zh-TW' ? 'zh-TW' : 'zh-CN',
       timeZone: typeof saved.timeZone === 'string' && validTimeZone(saved.timeZone)
-        ? saved.timeZone : fallback.timeZone,
+        ? saved.timeZone : browserTimeZone(),
       numberLocale: saved.numberLocale === 'en-US' || saved.numberLocale === 'de-DE'
         ? saved.numberLocale : 'zh-CN',
     };
-  } catch { return fallback; }
+  } catch { return { language: 'zh-CN', timeZone: browserTimeZone(), numberLocale: 'zh-CN' }; }
 }
 /**
  * 中文：验证全部区域偏好后一次持久化；不支持语言、格式或时区抛错供设置页显示。
@@ -72,9 +87,17 @@ export function saveLocalePreferences(value: LocalePreferences) {
  * 中文：输入：value：待校验、转换或保存的输入值；options：本次连接、传输或显示配置（缺省 {}）
  * English: Inputs: value: input value to validate/transform/save; options: connection/transport/presentation configuration (default {})
  */
-export function formatDateTime(value: Date | string | number, options: Intl.DateTimeFormatOptions = {}) {
+export function formatDateTime(value: Date | string | number, options: Intl.DateTimeFormatOptions = defaultFormatOptions) {
   const preferences = readLocalePreferences();
-  return new Date(value).toLocaleString(preferences.language, { ...options, timeZone: preferences.timeZone });
+  const date = new Date(value);
+  // 中文：仅复用未传选项的格式；显式选项及无效日期沿用原生路径，保留 getter、默认值和错误语义。
+  // English: Reuse only omitted options; explicit options and invalid dates retain native getter/default/error semantics.
+  if (options !== defaultFormatOptions || Number.isNaN(date.getTime()))
+    return date.toLocaleString(preferences.language, { ...options, timeZone: preferences.timeZone });
+  return cached(dateFormats, `${preferences.language}:${preferences.timeZone}`, () => new Intl.DateTimeFormat(
+    preferences.language, { timeZone: preferences.timeZone, year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: 'numeric', second: 'numeric' },
+  )).format(date.getTime());
 }
 /**
  * 中文：按当前数字区域及调用者精度/单位选项格式化数值。
@@ -82,16 +105,27 @@ export function formatDateTime(value: Date | string | number, options: Intl.Date
  * 中文：输入：value：待校验、转换或保存的输入值；options：本次连接、传输或显示配置（缺省 {}）
  * English: Inputs: value: input value to validate/transform/save; options: connection/transport/presentation configuration (default {})
  */
-export function formatNumber(value: number, options: Intl.NumberFormatOptions = {}) {
-  return new Intl.NumberFormat(readLocalePreferences().numberLocale, options).format(value);
+export function formatNumber(value: number, options: Intl.NumberFormatOptions = defaultFormatOptions) {
+  const locale = readLocalePreferences().numberLocale;
+  const formatter = options === defaultFormatOptions
+    ? cached(numberFormats, locale, () => new Intl.NumberFormat(locale))
+    : new Intl.NumberFormat(locale, options);
+  return formatter.format(value);
 }
 /**
- * 中文：固定小数位数后委托统一数字格式函数，保留区域的小数点与分组规则。
- * English: Fix fractional digits through the shared formatter, retaining locale decimal/grouping rules.
+ * 中文：复用固定小数位数的区域格式；其他精度值交给原生转换，保留小数点与分组规则。
+ * English: Reuse fixed-precision regional formats and retain native coercion for other precision values, preserving decimal/grouping rules.
  * 中文：输入：value：待校验、转换或保存的输入值；digits：签名所示 number 业务值
  * English: Inputs: value: input value to validate/transform/save; digits: the number domain value in the signature
  */
 export function formatDecimal(value: number, digits: number) {
+  // 中文：缓存调用方不能修改的固定精度选项；其余值继续由 Intl 按原规则转换或拒绝。
+  // English: Cache private fixed-precision options; Intl continues coercing or rejecting all other values.
+  if (Number.isInteger(digits) && digits >= 0 && digits <= 20) {
+    const locale = readLocalePreferences().numberLocale;
+    return cached(numberFormats, `${locale}:${digits}`, () => new Intl.NumberFormat(locale,
+      { minimumFractionDigits: digits, maximumFractionDigits: digits })).format(value);
+  }
   return formatNumber(value, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 /**
