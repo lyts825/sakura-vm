@@ -4,7 +4,8 @@
  * 详细范围（中文）：公开入口包括 ShortcutSettings；职责覆盖编辑并保存通过冲突校验的快捷键，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include ShortcutSettings. The scope covers Editing and saving shortcuts after conflict validation. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { readLocalePreferences } from './localization';
 import './preference-editors.css';
 import {
   effectiveShortcuts,
@@ -44,7 +45,14 @@ export function ShortcutSettings({
   const [message, setMessage] = useState('');
   const [query, setQuery] = useState('');
   const search = useRef<HTMLInputElement>(null);
-  const matches = shortcutCommands.filter(command => command.name.includes(query.trim()));
+  const [translatedNames, setTranslatedNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (readLocalePreferences().language !== 'zh-TW') return;
+    let current = true;
+    void import('./locales/zh-TW.json').then(pack => { if (current) setTranslatedNames(pack.default); }).catch(() => {});
+    return () => { current = false; };
+  }, []);
+  const matches = shortcutCommands.filter(command => command.name.includes(query.trim()) || translatedNames[command.name]?.includes(query.trim()));
   useLayoutEffect(/** 中文：当依赖 [preferences, project, context] 变化时编辑草稿，错误反馈；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [preferences, project, context] change, editing draft, error feedback. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setDraft({ ...(project ? preferences.projects[context!] || {} : effectiveShortcuts(preferences)) });
     setError('');
