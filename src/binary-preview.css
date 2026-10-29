@@ -1,0 +1,168 @@
+.file-preview-modal.modal {
+  padding: 0;
+  overflow: hidden;
+}
+
+.file-preview-modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.file-preview-modal .modal-head {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  margin: 0;
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.file-preview-modal .binary-preview-heading {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.file-preview-modal .binary-preview-eyebrow {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.file-preview-modal .binary-preview-heading h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.file-preview-modal .binary-preview-path {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  max-height: 5.5em;
+  overflow: auto;
+}
+
+.file-preview-modal .binary-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.file-preview-modal .binary-preview-meta > span {
+  padding: 2px 7px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.file-preview-modal button {
+  min-height: 36px;
+  flex-shrink: 0;
+}
+
+.file-preview-modal .binary-preview-content {
+  min-width: 0;
+  min-height: 0;
+  padding: 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.file-preview-modal .binary-preview-state {
+  display: grid;
+  justify-items: start;
+  align-content: center;
+  gap: 12px;
+  min-height: 160px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  overflow-wrap: anywhere;
+}
+
+.file-preview-modal .binary-preview-state h4,
+.file-preview-modal .binary-preview-state p {
+  margin: 0;
+}
+
+.file-preview-modal .binary-preview-state h4 {
+  font-size: 14px;
+}
+
+.file-preview-modal .binary-preview-state p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.file-preview-modal .binary-preview-error {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.file-preview-modal .binary-preview-error h4 {
+  color: var(--danger);
+  margin-bottom: 6px;
+}
+
+.file-preview-modal .binary-preview-table,
+.file-preview-modal .feature-log {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.file-preview-modal .binary-preview-table:focus-visible,
+.file-preview-modal .feature-log:focus-visible,
+.file-preview-modal .binary-preview-path:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.file-preview-modal .binary-preview-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.file-preview-modal .binary-preview-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-soft);
+}
+
+.file-preview-modal .binary-preview-table td,
+.file-preview-modal .binary-preview-table th {
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.file-preview-modal .binary-preview-table tr:nth-child(even) {
+  background: var(--surface-soft);
+}
+
+@media (max-width: 520px) {
+  .file-preview-modal .modal-head,
+  .file-preview-modal .binary-preview-content {
+    padding: 16px;
+  }
+
+  .file-preview-modal .modal-head > button {
+    margin-left: auto;
+  }
+
+  .file-preview-modal button {
+    min-height: 40px;
+  }
+
+  .file-preview-modal .binary-preview-state {
+    padding: 16px;
+  }
+}

@@ -7,6 +7,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Preview } from '../server/file-preview';
 import { useRemote, type Request } from './feature-shared';
+import { formatNumber } from './localization';
+import './binary-preview.css';
+
+const previewKinds: Record<string, string> = {
+  image: '图片', pdf: 'PDF', table: '表格', archive: '压缩包', hex: '十六进制',
+};
 
 /**
  * 中文：呈现按文件类型展示二进制预览和不可用反馈中的 BinaryPreview 界面，订阅 /vms/{id}/file-preview?path={encodeURIComponent(path)}，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
@@ -43,6 +49,7 @@ export function BinaryPreview({
     0,
   );
   const [url, setUrl] = useState('');
+  const [mediaError, setMediaError] = useState('');
   useEffect(/** 中文：当依赖 [] 变化时打开原生模态对话框；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [] change, open a native modal dialog. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     const previous = document.activeElement;
     dialog.current?.showModal();
@@ -59,13 +66,24 @@ export function BinaryPreview({
   }, []);
   useEffect(/** 中文：当依赖 [preview.data] 变化时创建二进制内容临时 URL，url 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [preview.data] change, create temporary binary-content URLs, url state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     setUrl('');
+    setMediaError('');
     if (typeof preview.data?.base64 !== 'string' || typeof preview.data.mime !== 'string') return;
-    const bytes = Uint8Array.from(atob(preview.data.base64), (character) => character.charCodeAt(0));
-    const value = URL.createObjectURL(new Blob([bytes], { type: preview.data.mime }));
-    setUrl(value);
-    return () => URL.revokeObjectURL(value);
+    try {
+      const bytes = Uint8Array.from(atob(preview.data.base64), (character) => character.charCodeAt(0));
+      const value = URL.createObjectURL(new Blob([bytes], { type: preview.data.mime }));
+      setUrl(value);
+      return () => URL.revokeObjectURL(value);
+    } catch {
+      setMediaError('文件内容无法解码，请返回文件列表重新打开。');
+    }
   }, [preview.data]);
   const data = preview.data as any;
+  const fileName = data?.name || path.split('/').pop() || '文件预览';
+  const emptyMessage = data?.size === 0 ? '文件为空'
+    : data?.kind === 'table' && !data.rows.length ? '表格暂无数据'
+      : data?.kind === 'archive' && !data.entries.length ? '压缩包中没有文件'
+        : data?.kind === 'hex' && !data.hex.length ? '没有可预览的字节' : '';
+  const unsupported = data && !Object.hasOwn(previewKinds, data.kind);
   return (
     <dialog
       ref={dialog}
@@ -77,28 +95,47 @@ export function BinaryPreview({
       }}
     >
       <div className="modal-head">
-        <h3>{data?.name || '文件预览'}</h3>
-        <button onClick={close}>关闭预览</button>
+        <div className="binary-preview-heading">
+          <span className="binary-preview-eyebrow">文件预览</span>
+          <h3 data-locale-ignore>{fileName}</h3>
+          <code className="binary-preview-path" title={path} tabIndex={0} aria-label="文件路径" data-locale-ignore>{path}</code>
+          {data && <div className="binary-preview-meta">
+            <span>{previewKinds[data.kind] || '未知类型'}</span>
+            <span>{formatNumber(data.size)} 字节</span>
+            {data.truncated && <span>部分内容</span>}
+          </div>}
+        </div>
+        <button type="button" onClick={close}>关闭预览</button>
       </div>
-      <div className="content-panel">
-        {preview.error && <p role="alert">{preview.error}</p>}
-        {!data && !preview.error && <p role="status">正在读取文件…</p>}
-        {data?.kind === 'image' && url && <img className="binary-preview-image" src={url} alt={data.name} />}
-        {data?.kind === 'pdf' && url && (
+      <div className="content-panel binary-preview-content" aria-busy={!data && !preview.error}>
+        {(preview.error || mediaError) && <div className="binary-preview-state binary-preview-error">
+          <div role="alert"><h4>无法预览此文件</h4><p>{preview.error || mediaError}</p></div>
+          {preview.error && <button type="button" onClick={preview.reload}>重新读取</button>}
+        </div>}
+        {!data && !preview.error && <div className="binary-preview-state" role="status">
+          <h4>正在读取文件…</h4><p>预览内容将在读取完成后显示。</p>
+        </div>}
+        {data && !preview.error && !mediaError && (emptyMessage || unsupported) && <div className="binary-preview-state" role="status">
+          <h4>{emptyMessage || '暂不支持此类型的预览'}</h4>
+          <p>{emptyMessage ? '此文件没有可显示的预览内容。' : '可以关闭预览，返回文件列表下载后查看。'}</p>
+        </div>}
+        {!emptyMessage && !mediaError && data?.kind === 'image' && url && <img className="binary-preview-image" src={url} alt={data.name}
+          onError={() => setMediaError('图片无法显示，文件可能已损坏或格式不受支持。')} />}
+        {!emptyMessage && !mediaError && data?.kind === 'pdf' && url && (
           <object data={url} type="application/pdf" aria-label={data.name} className="binary-preview-pdf">
             <a href={url} download={data.name}>
               保存 PDF 后查看
             </a>
           </object>
         )}
-        {data?.kind === 'table' && (
-          <div className="binary-preview-table">
+        {!emptyMessage && data?.kind === 'table' && (
+          <div className="binary-preview-table" role="region" aria-label="表格预览内容" tabIndex={0}>
             <table>
               <tbody>
                 {data.rows.map((row: string[], index: number) => (
                   <tr key={index}>
                     {row.map((cell, column) => (
-                      <td key={column}>{cell}</td>
+                      <td key={column} data-locale-ignore>{cell}</td>
                     ))}
                   </tr>
                 ))}
@@ -106,19 +143,19 @@ export function BinaryPreview({
             </table>
           </div>
         )}
-        {data?.kind === 'archive' && (
-          <div className="binary-preview-table">
+        {!emptyMessage && data?.kind === 'archive' && (
+          <div className="binary-preview-table" role="region" aria-label="压缩包成员列表" tabIndex={0}>
             <table>
               <thead>
                 <tr>
-                  <th>成员</th>
-                  <th>大小（字节）</th>
+                  <th scope="col">成员</th>
+                  <th scope="col">大小（字节）</th>
                 </tr>
               </thead>
               <tbody>
                 {data.entries.map((entry: any, index: number) => (
                   <tr key={index}>
-                    <td>{entry.name}</td>
+                    <td data-locale-ignore>{entry.name}</td>
                     <td>{entry.bytes}</td>
                   </tr>
                 ))}
@@ -126,8 +163,8 @@ export function BinaryPreview({
             </table>
           </div>
         )}
-        {data?.kind === 'hex' && (
-          <pre className="feature-log">
+        {!emptyMessage && data?.kind === 'hex' && (
+          <pre className="feature-log" role="region" aria-label="十六进制预览内容" tabIndex={0}>
             {(data.hex.match(/.{1,32}/g) || [])
               .map(
                 (line: string, index: number) =>
