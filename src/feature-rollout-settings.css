@@ -14,3 +14,11 @@
 .feature-rollout-settings .feature-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .feature-rollout-settings button { min-height: 40px; white-space: normal; }
 @media (max-width: 600px) { .feature-rollout-settings button { min-height: 44px; } }
+.feature-rollout-settings .rollout-state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; margin-block: 16px; }
+.feature-rollout-settings .rollout-state-grid > section, .feature-rollout-settings .rollout-preview { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.feature-rollout-settings .rollout-state-grid h5, .feature-rollout-settings .rollout-preview h5 { margin-bottom: 10px; font-size: 12px; }
+.feature-rollout-settings .rollout-state-grid p, .feature-rollout-settings .rollout-preview p { margin-top: 6px; font-size: 13px; }
+.feature-rollout-settings p.rollout-state-note { color: var(--muted); font-size: 11px; line-height: 1.7; }
+.feature-rollout-settings .rollout-preview { margin-bottom: 16px; border-color: var(--accent-line); }
+.feature-rollout-settings .rollout-operation-state { padding: 10px 12px; background: var(--accent-soft); border-radius: var(--radius-sm); font-size: 12px; }
+.feature-rollout-settings .rollout-empty { padding: 16px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); color: var(--muted); font-size: 12px; }

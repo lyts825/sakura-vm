@@ -111,9 +111,13 @@ export function FeatureRolloutSettings({ request }: { request: Request }) {
       <button className="secondary compact" disabled={action.busy} onClick={remote.reload}>刷新</button>
     </div>
     <Feedback error={action.error || remote.error} message={action.message} />
+    {!remote.data && !remote.error && <p role="status">正在读取插件灰度与当前启动状态…</p>}
+    {remote.error && remote.data && <p className="subtle-note">以下启动状态与策略来自上次读取，请刷新后核对。</p>}
+    {remote.data && !remote.data.plugins.length && <p className="rollout-empty">当前没有可配置灰度的插件。</p>}
+    {action.busy && <p className="rollout-operation-state" role="status">正在处理灰度策略，请等待完成…</p>}
     <div className="feature-card rollout-editor">
       <h4>编辑灰度策略</h4>
-      <p className="rollout-draft-state">{dirty ? '草稿有未保存的修改' : saved ? '与已保存策略一致' : '尚未设置独立策略'}{saved ? ` · 已保存版本 ${saved.revision}` : ''}</p>
+      <p className="rollout-draft-state">{!remote.data ? '尚未读取已保存策略' : !plugin ? '暂无可编辑的插件策略' : dirty ? '草稿有未保存的修改' : saved ? '与已保存策略一致' : '尚未设置独立策略'}{saved ? ` · 已保存版本 ${saved.revision}` : ''}</p>
       <fieldset className="rollout-fields" disabled={action.busy || !remote.data?.plugins.length}>
       <div className="shortcut-fields">
         <div className="feature-rollout-field"><label htmlFor="rollout-plugin">插件</label>
@@ -135,13 +139,19 @@ export function FeatureRolloutSettings({ request }: { request: Request }) {
       <label className="check"><input type="checkbox" checked={current.enabled}
         onChange={(event) => change({ enabled: event.target.checked })} />启用该插件的灰度策略</label>
       <p className="subtle-note">关闭开关或设置 0% 会在下次启动时跳过插件；没有策略时按插件中心的选择启动。</p>
-      <p>当前服务：{plugin && remote.data?.active.includes(pluginId) ? '已激活' :
-        remote.data?.selected.includes(pluginId) ? '未激活' : '未在插件中心选择'}；
-        已保存策略的下次启动分桶：{plugin?.allowed ? '命中' : '未命中'}。
-        {plugin?.bucket !== null && plugin?.bucket !== undefined &&
-          ` 分桶值 ${plugin.bucket} / 10000。`}</p>
-      {preview && <p>当前草稿预览：{preview.allowed ? '将命中' : '将跳过'}；
-        分桶值 {preview.bucket} / 10000。</p>}
+      {plugin && remote.data && <div className="rollout-state-grid">
+        <section><h5>当前运行状态</h5><p>当前服务：{remote.data.active.includes(pluginId) ? '已激活' :
+          remote.data.selected.includes(pluginId) ? '未激活' : '未在插件中心选择'}</p>
+          <p className="rollout-state-note">保存灰度策略不会改变当前运行中的插件。</p></section>
+        <section><h5>已保存策略</h5><p>下次启动分桶：{plugin.allowed ? '命中' : '未命中'}</p>
+          <p className="rollout-state-note">{plugin.bucket == null ? '未设置独立策略，无需分桶。' : `分桶值 ${plugin.bucket} / 10000。`}</p>
+          <p className="rollout-state-note">实际启动仍取决于插件中心的选择。</p></section>
+      </div>}
+      {preview && <section className="rollout-preview" aria-label="当前草稿预览">
+        <h5>当前草稿预览</h5><p>{preview.allowed ? '将命中' : '将跳过'}</p>
+        <p>{preview.bucket == null ? '无需分桶。' : `分桶值 ${preview.bucket} / 10000。`}</p>
+        <p className="rollout-state-note">预览不保存策略，也不会启动或停止插件。</p>
+      </section>}
       <div className="feature-actions">
         <button className="secondary compact" disabled={action.busy || !plugin || !valid}
           onClick={inspect}>预览当前主机</button>
