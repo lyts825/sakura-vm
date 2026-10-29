@@ -6,7 +6,8 @@
  */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
+import './settings-feedback.css';
 import type { LogRetentionPolicy, LogRetentionPreview, LogRetentionView } from '../shared/log-retention';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 
@@ -29,6 +30,7 @@ export function LogRetentionSettings({ request }: { request: Request }) {
   const [policy, setPolicy] = useState<LogRetentionPolicy>({ enabled: false, days: 30, maxMiB: 64 });
   const [preview, setPreview] = useState<LogRetentionPreview | null>(null);
   const [saved, setSaved] = useState<LogRetentionView | null>(null);
+  const fieldHint = useId();
   useEffect(/** 中文：当依赖 [remote.data] 变化时策略草稿，saved 状态，preview 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data] change, policy draft, saved state, preview state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (remote.data) {
       setPolicy(remote.data.policy);
@@ -56,9 +58,13 @@ export function LogRetentionSettings({ request }: { request: Request }) {
     Number.isInteger(policy.maxMiB) &&
     policy.maxMiB >= 1 &&
     policy.maxMiB <= 1024;
+  const daysValid = Number.isInteger(policy.days) && policy.days >= 1 && policy.days <= 3650;
+  const capacityValid = Number.isInteger(policy.maxMiB) && policy.maxMiB >= 1 && policy.maxMiB <= 1024;
   return (
     <section className="system-card log-retention" aria-label="任务日志保留设置">
       <h3>任务日志保留</h3>
+      {!remote.data && !remote.error && !saved && <p role="status">正在读取日志策略与占用…</p>}
+      {remote.error && saved && <p className="subtle-note">读取失败，编辑内容已保留；占用摘要仍来自上次确认，请重新读取后核对。</p>}
       <p className="subtle-note">
         按完成时间清理已启用插件的任务日志正文，先删除到期日志，再按从旧到新满足总容量。启用后每分钟检查一次；清理后无法恢复原日志。
       </p>
@@ -83,8 +89,11 @@ export function LogRetentionSettings({ request }: { request: Request }) {
               max={3650}
               step={1}
               value={policy.days || ''}
+              aria-label="日志保留天数"
+              aria-invalid={!daysValid || undefined} aria-describedby={`${fieldHint}-days`}
               onChange={(e) => change({ days: Number(e.target.value) })}
             />
+            <small id={`${fieldHint}-days`} className={!daysValid ? 'retention-field-error' : undefined}>保留 1～3650 天，填写整数。</small>
           </label>
           <label>
             任务日志容量（MiB）
@@ -94,8 +103,11 @@ export function LogRetentionSettings({ request }: { request: Request }) {
               max={1024}
               step={1}
               value={policy.maxMiB || ''}
+              aria-label="任务日志容量（MiB）"
+              aria-invalid={!capacityValid || undefined} aria-describedby={`${fieldHint}-capacity`}
               onChange={(e) => change({ maxMiB: Number(e.target.value) })}
             />
+            <small id={`${fieldHint}-capacity`} className={!capacityValid ? 'retention-field-error' : undefined}>容量范围为 1～1024 MiB，填写整数。</small>
           </label>
         </div>
         <div className="button-row">
@@ -166,18 +178,19 @@ export function LogRetentionSettings({ request }: { request: Request }) {
       </fieldset>
       <Feedback error={action.error || remote.error || saved?.warning} message={action.message} />
       {preview && (
-        <p role="status">
+        <div className="retention-preview" role="status">
+          <h4>清理范围预览</h4><p>
           预览：将清理 {preview.removeLogs} 份日志（{bytes(preview.removeBytes)}），其中 {preview.expiredLogs}{' '}
           份到期、{preview.capacityLogs} 份超过容量。保留 {bytes(preview.remainingBytes)}；保护{' '}
           {preview.protectedLogs} 份运行中或时间异常的日志。
-        </p>
+        </p></div>
       )}
+      {saved && !preview && <p className="retention-next-step">{action.busy ? '正在处理，请等待当前操作完成。' : '先预览本次清理范围，再保存策略。修改字段后需要重新预览。'}</p>}
       {saved && (
-        <p className="subtle-note">
-          当前覆盖 {saved.summary.stores} 个任务存储，已结束日志 {bytes(saved.summary.completedBytes)}
-          ，受保护日志 {bytes(saved.summary.protectedBytes)}。
-          {saved.policy.enabled ? '自动清理已启用。' : '自动清理未启用。'}
-        </p>
+        <div className="retention-summary">
+          <p>当前覆盖 {saved.summary.stores} 个任务存储 · {saved.policy.enabled ? '自动清理已启用' : '自动清理未启用'}</p>
+          <dl><div><dt>已结束日志</dt><dd>{bytes(saved.summary.completedBytes)}</dd></div><div><dt>受保护日志</dt><dd>{bytes(saved.summary.protectedBytes)}</dd></div></dl>
+        </div>
       )}
       {saved?.lastRun && (
         <p className="subtle-note">

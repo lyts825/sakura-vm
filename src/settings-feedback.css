@@ -12,6 +12,18 @@
 .clipboard-settings summary { min-height: 40px; padding: 10px 0; }
 .clipboard-settings button { min-height: 40px; white-space: normal; }
 .clipboard-settings .clipboard-save-message { margin-top: 12px; color: var(--accent); font-size: 12px; }
+.log-retention .retention-field-error { color: var(--danger); }
+.log-retention input[aria-invalid='true'] { border-color: var(--danger); }
+.log-retention .retention-preview, .log-retention .retention-summary { margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); font-size: 12px; line-height: 1.7; }
+.log-retention .retention-preview h4 { margin-bottom: 8px; }
+.log-retention .retention-summary dl { display: flex; flex-wrap: wrap; gap: 16px 24px; margin-top: 12px; }
+.log-retention .retention-summary dt, .log-retention .retention-next-step { color: var(--muted); font-size: 12px; }
+.log-retention .retention-summary dd { margin: 3px 0 0; font-size: 16px; font-variant-numeric: tabular-nums; }
+.log-retention .button-row { flex-wrap: wrap; }
+.log-retention button { min-height: 40px; white-space: normal; }
 
 .session-lock-settings label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
 .session-lock-settings label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+
+.log-retention label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
+.log-retention label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
