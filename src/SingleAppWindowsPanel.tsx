@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import type { VMView } from '../shared/contracts/vm.ts';
 import { Feedback, useRemote, type Request } from './feature-shared';
 import { connectSingleAppPopup, createSingleAppPopup } from './single-app-window';
+import './single-app-windows.css';
 
 type AppSession = {
   id: string;
@@ -174,6 +175,11 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
       </div>
       <span>试验功能</span>
     </div>
+    <dl className="single-app-launch-context">
+      <div><dt>目标实例</dt><dd data-locale-ignore>{vm.name}</dd></div>
+      <div><dt>待启动程序</dt><dd><code>{program.trim() || '—'}</code></dd></div>
+      <div><dt>窗口尺寸</dt><dd>{resolution.replace('x', ' × ')}</dd></div>
+    </dl>
     <form className="desktop-single-app-form" onSubmit={(event) => {
       event.preventDefault();
       void start();
@@ -204,29 +210,48 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
         启动应用
       </button>
     </form>
-    <Feedback error={error || list.error} />
+    {busy ? <p className="single-app-launch-hint" role="status">正在处理窗口请求，请等待当前操作完成。</p>
+      : vm.status !== 'running' ? <p className="single-app-launch-hint">实例未运行，启动实例后才能打开应用窗口。</p>
+        : unsavedRelaxation && <p className="single-app-launch-hint">放宽此程序的剪贴板权限前，请先保存新规则。</p>}
+    <Feedback error={error} />
+    <div className="single-app-list-heading">
+      <h4>窗口记录{list.data && <span>{list.data.sessions.length} 个</span>}</h4>
+      {list.error && vm.status === 'running' && <button type="button" className="secondary compact" disabled={busy}
+        onClick={list.reload}>重新读取窗口记录</button>}
+    </div>
+    <Feedback error={list.error} />
+    {vm.status === 'running' && !list.data && !list.error && <p className="single-app-empty" role="status">正在读取窗口记录…</p>}
+    {list.data && !list.data.sessions.length && <div className="single-app-empty">
+      <strong>暂无应用窗口</strong><p>填写上方程序和参数后，启动第一个窗口。</p>
+    </div>}
     {!!list.data?.sessions.length && <div className="desktop-single-app-sessions">
-      {list.data.sessions.map((session) => <div key={session.id}>
-        <span><b>{session.program}</b><small>{session.resolution} · {session.cleanupPending || session.status === 'cleanup-pending'
+      {list.data.sessions.map((session) => <article key={session.id} className="single-app-session"
+        data-state={session.cleanupPending ? 'cleanup-pending' : session.status}>
+        <header><h5 data-locale-ignore>{session.program}</h5><span className="single-app-session-state">{session.cleanupPending || session.status === 'cleanup-pending'
           ? '清理未确认，请重试停止' : session.status === 'running' ? '运行中'
             : session.status === 'preparing' ? '准备中' : session.status === 'review-required' ? '原归属待核对'
-              : session.status === 'relaunch-required' ? '规则已收紧，需停止并重开' : '已退出'} ·
-          复制{session.clipboard?.copy === false ? '关闭' : '开启'} ·
-          粘贴{session.clipboard?.paste === false ? '关闭' : '开启'}</small>
-        <small>{session.networkIsolation === 'private' ? '私有网络'
-          : session.networkIsolation === 'host' ? '共享网络' : '网络归属未核实'} ·
-          数据目录 {session.dataDirectory}</small>
-        {session.projectOwner && session.applicationOwner && <small>
-          项目账号 {session.projectOwner.user}（UID {session.projectOwner.uid}） ·
-          应用账号 {session.applicationOwner.user}（UID {session.applicationOwner.uid}）</small>}
-        {session.lastError && <small>{session.lastError}</small>}</span>
+              : session.status === 'relaunch-required' ? '规则已收紧，需停止并重开' : '已退出'}</span></header>
+        <dl className="single-app-session-details">
+          <div><dt>尺寸</dt><dd>{session.resolution}</dd></div>
+          <div><dt>剪贴板</dt><dd>复制{session.clipboard?.copy === false ? '关闭' : '开启'} · 粘贴{session.clipboard?.paste === false ? '关闭' : '开启'}</dd></div>
+          <div><dt>网络</dt><dd>{session.networkIsolation === 'private' ? '私有网络'
+            : session.networkIsolation === 'host' ? '共享网络' : '网络归属未核实'}</dd></div>
+          <div className="single-app-directory"><dt>数据目录</dt><dd><code>{session.dataDirectory}</code></dd></div>
+          {session.projectOwner && session.applicationOwner && <>
+            <div><dt>项目账号</dt><dd><span data-locale-ignore>{session.projectOwner.user}</span>（UID {session.projectOwner.uid}）</dd></div>
+            <div><dt>应用账号</dt><dd><span data-locale-ignore>{session.applicationOwner.user}</span>（UID {session.applicationOwner.uid}）</dd></div>
+          </>}
+        </dl>
+        {session.lastError && <p className="single-app-session-error" data-locale-ignore>{session.lastError}</p>}
+        <footer><code className="single-app-session-id" title={session.id}>{session.id}</code><div className="feature-actions">
         <button className="secondary compact" disabled={session.status !== 'running' || session.cleanupPending}
           onClick={() => void open(session)}><ExternalLink size={13} /> 打开</button>
         <button className="secondary compact" disabled={busy || session.status === 'review-required'}
           onClick={() => void stop(session)}><Square size={13} />
           {session.status === 'review-required' ? '归属待核对'
             : session.cleanupPending || session.status === 'cleanup-pending' ? '重试停止' : '停止'}</button>
-      </div>)}
+        </div></footer>
+      </article>)}
     </div>}
   </section>;
 }

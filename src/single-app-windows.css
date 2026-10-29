@@ -1,0 +1,181 @@
+.desktop-single-app {
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.desktop-single-app .desktop-single-app-head {
+  flex-wrap: wrap;
+}
+
+.desktop-single-app .single-app-launch-context {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.desktop-single-app dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.desktop-single-app dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.desktop-single-app .desktop-single-app-form label {
+  min-width: 0;
+}
+
+.desktop-single-app .desktop-single-app-form small {
+  flex-basis: 100%;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.desktop-single-app .single-app-launch-hint {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent-line);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.desktop-single-app .single-app-list-heading,
+.desktop-single-app .single-app-session header,
+.desktop-single-app .single-app-session footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.desktop-single-app .single-app-list-heading {
+  margin-top: 20px;
+}
+
+.desktop-single-app .single-app-list-heading h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.desktop-single-app .single-app-list-heading h4 span {
+  margin-left: 8px;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 11px;
+}
+
+.desktop-single-app .single-app-empty {
+  margin-top: 12px;
+  padding: 18px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.desktop-single-app .single-app-empty p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.desktop-single-app .single-app-session {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.desktop-single-app .single-app-session h5 {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.desktop-single-app .single-app-session-state {
+  padding: 3px 8px;
+  border-radius: 5px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 11px;
+}
+
+.desktop-single-app .single-app-session[data-state='running'] .single-app-session-state {
+  color: var(--green);
+  background: var(--green-soft);
+}
+
+.desktop-single-app .single-app-session:is([data-state='cleanup-pending'], [data-state='review-required'], [data-state='relaunch-required']) .single-app-session-state {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.desktop-single-app .single-app-session-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 14px 0;
+}
+
+.desktop-single-app .single-app-directory {
+  grid-column: 1 / -1;
+}
+
+.desktop-single-app .single-app-session-error {
+  margin: 10px 0;
+  padding: 10px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.desktop-single-app .single-app-session footer {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.desktop-single-app .single-app-session-id {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.desktop-single-app .feature-actions {
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.desktop-single-app button {
+  min-height: 36px;
+}
+
+@container (max-width: 520px) {
+  .desktop-single-app .single-app-launch-context,
+  .desktop-single-app .single-app-session-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop-single-app .single-app-launch-context > div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .desktop-single-app .desktop-single-app-form label {
+    flex-basis: 100%;
+  }
+
+  .desktop-single-app button {
+    min-height: 40px;
+  }
+}
