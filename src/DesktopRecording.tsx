@@ -6,7 +6,7 @@
  */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { DesktopRecorder, type RecordingProgress } from './desktop-recorder';
 import {
   clearRecordings,
@@ -18,6 +18,7 @@ import {
 } from './recording-library';
 import { Feedback, useAction } from './feature-shared';
 import { registerEditorGuard } from './file-editor-state';
+import './desktop-recording.css';
 
 /**
  * 中文：把毫秒显示成分钟和两位秒数，供录制进度与库列表共用。
@@ -187,9 +188,9 @@ export function RecordingLibrary({
         {entries.map((entry) => (
           <li key={entry.id}>
             <div>
-              <strong>{entry.name}</strong>
+              <strong data-locale-ignore>{entry.name}</strong>
               <p>
-                {entry.vmName} · {formatDateTime(new Date(entry.createdAt))} · {duration(entry.milliseconds)}{' '}
+                <span data-locale-ignore>{entry.vmName}</span> · {formatDateTime(new Date(entry.createdAt))} · {duration(entry.milliseconds)}{' '}
                 · {size(entry.bytes)}
               </p>
             </div>
@@ -204,7 +205,7 @@ export function RecordingLibrary({
                   })
                 }
               >
-                回放 {entry.name}
+                回放 <span data-locale-ignore>{entry.name}</span>
               </button>
               <button
                 className="secondary compact"
@@ -216,7 +217,7 @@ export function RecordingLibrary({
                   })
                 }
               >
-                下载 {entry.name}
+                下载 <span data-locale-ignore>{entry.name}</span>
               </button>
               <button
                 className="text-button danger-text"
@@ -233,7 +234,7 @@ export function RecordingLibrary({
                   }, '录制已删除');
                 }}
               >
-                删除 {entry.name}
+                删除 <span data-locale-ignore>{entry.name}</span>
               </button>
             </div>
           </li>
@@ -241,7 +242,7 @@ export function RecordingLibrary({
       </ul>
       {selected && (
         <div>
-          <h4>{selected.entry.name}</h4>
+          <h4 data-locale-ignore>{selected.entry.name}</h4>
           <Player blob={selected.blob} milliseconds={selected.entry.milliseconds} />
           <button className="secondary compact" onClick={() => setSelected(undefined)}>
             关闭回放
@@ -285,6 +286,7 @@ export function DesktopRecording({
     alive = useRef(true);
   dirty.current = !!progress || (!!result && !result.saved);
   const action = useAction();
+  const connectionHintId = useId();
   useEffect(/** 中文：当依赖 [] 变化时登记浏览器或资源事件监听；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [] change, register browser/resource event listeners. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：保留本次资源的后续调用或清理函数，由所有者在对应寿命结束时使用 | English: Result: a follow-up/cleanup function retaining this pass's resources for its owner to use at the matching lifetime boundary */ () => {
     alive.current = true;
     const remove = registerEditorGuard(
@@ -390,11 +392,26 @@ export function DesktopRecording({
       setError((error as Error).message);
     }
   };
+  const status = progress?.status === 'paused' ? '已暂停'
+    : progress?.status === 'stopping' ? '正在完成视频'
+      : progress ? '正在录制'
+        : result ? (result.saved ? '已保存到录制库' : '录制已结束，尚未保存')
+          : error ? '录制遇到问题' : connected ? '准备就绪' : '桌面未连接';
   return (
     <section className="desktop-recording" aria-label="桌面录制">
       <h3>桌面录制与回放</h3>
       <p>录制当前 Linux 桌面画面，无音频。最高 1080p、15 帧/秒；30 分钟或接近 128 MiB 时自动结束。</p>
       <Feedback error={error || action.error} message={action.message || message} />
+      <div className={'recording-summary ' + (progress?.status || (result ? 'finished' : 'idle'))}>
+        <span className="recording-status" role="status"><span aria-hidden="true" />{status}</span>
+        <dl className="recording-metrics">
+          <div><dt>已录时长</dt><dd>{duration(progress?.milliseconds ?? result?.entry.milliseconds ?? 0)}</dd></div>
+          <div><dt>文件大小</dt><dd>{size(progress?.bytes ?? result?.entry.bytes ?? 0)}</dd></div>
+        </dl>
+        {progress?.status === 'paused' && <p>暂停期间不计入录制时长，继续后接着录制。</p>}
+        {progress?.status === 'stopping' && <p>正在整理视频数据，完成后可下载或保存到录制库。</p>}
+      </div>
+      {!connected && <p id={connectionHintId} className="recording-connection-hint">连接 Linux 桌面后即可开始录制。</p>}
       <label>
         录制名称
         <input
@@ -404,10 +421,11 @@ export function DesktopRecording({
           onChange={(event) => setName(event.target.value)}
         />
       </label>
-      <div className="feature-actions">
+      <div className="feature-actions recording-actions">
         <button
-          className="primary compact"
+          className={(progress ? 'secondary' : 'primary') + ' compact'}
           disabled={!connected || !!progress || action.busy}
+          aria-describedby={!connected ? connectionHintId : undefined}
           onClick={start}
         >
           开始录制
@@ -415,7 +433,7 @@ export function DesktopRecording({
         {progress && (
           <>
             <button
-              className="secondary compact"
+              className={(progress.status === 'paused' ? 'primary' : 'secondary') + ' compact'}
               disabled={progress.status === 'stopping'}
               onClick={() =>
                 progress.status === 'paused' ? recorder.current?.resume() : recorder.current?.pause()
@@ -424,26 +442,18 @@ export function DesktopRecording({
               {progress.status === 'paused' ? '继续录制' : '暂停录制'}
             </button>
             <button
-              className="secondary compact"
+              className="secondary compact recording-stop"
               disabled={progress.status === 'stopping'}
               onClick={() => recorder.current?.stop()}
             >
               停止录制
             </button>
-            <span role="status">
-              {progress.status === 'paused'
-                ? '已暂停'
-                : progress.status === 'stopping'
-                  ? '正在完成视频'
-                  : '正在录制'}{' '}
-              · {duration(progress.milliseconds)} · {size(progress.bytes)}
-            </span>
           </>
         )}
       </div>
       {result && (
         <div className="recording-current">
-          <h4>本次录制 · {result.entry.name}</h4>
+          <h4>本次录制 · <span data-locale-ignore>{result.entry.name}</span></h4>
           <p>
             {duration(result.entry.milliseconds)} · {result.entry.width} × {result.entry.height} ·{' '}
             {size(result.entry.bytes)}

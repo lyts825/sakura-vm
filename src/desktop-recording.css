@@ -1,0 +1,132 @@
+.desktop-recording {
+  min-width: 0;
+  border-color: var(--line);
+  container-type: inline-size;
+}
+
+.desktop-recording .recording-summary {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.desktop-recording .recording-summary.recording {
+  border-color: var(--accent);
+}
+
+.desktop-recording .recording-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.desktop-recording .recording-status > span {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.desktop-recording .recording .recording-status > span {
+  background: var(--danger);
+}
+
+.desktop-recording .paused .recording-status > span {
+  background: var(--warning);
+}
+
+.desktop-recording .finished .recording-status > span {
+  background: var(--green);
+}
+
+.desktop-recording .recording-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 14px 0 0;
+}
+
+.desktop-recording .recording-metrics dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.desktop-recording .recording-metrics dd {
+  margin: 2px 0 0;
+  font-size: clamp(18px, 2vw, 24px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.desktop-recording .recording-summary p {
+  margin: 12px 0 0;
+  color: var(--muted);
+}
+
+.desktop-recording .recording-connection-hint {
+  padding: 10px 12px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.desktop-recording .feature-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.desktop-recording .feature-actions button {
+  min-height: 36px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.desktop-recording .recording-stop {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.desktop-recording .recording-current {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+
+.desktop-recording .recording-current h4 {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.desktop-recording .recording-library {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.desktop-recording .recording-library li {
+  border-color: var(--line);
+}
+
+@container (max-width: 420px) {
+  .desktop-recording .recording-summary,
+  .desktop-recording .recording-current {
+    padding: 12px;
+  }
+
+  .desktop-recording .feature-actions button {
+    min-height: 40px;
+  }
+
+  .desktop-recording .recording-actions > button {
+    flex: 1 1 110px;
+  }
+}
