@@ -9,6 +9,18 @@ import { APP_VERSION } from '../shared/version.ts';
 import { z } from 'zod';
 
 /**
+ * 中文：普通空 strict 对象没有可发布参数；特殊结构或元数据仍由 Zod 转换并校验。
+ * English: Plain empty strict objects have no parameters; Zod still converts and validates special shapes or metadata.
+ */
+function emptyParameterSchema(schema: z.ZodObject) {
+  const shape = schema.shape;
+  return schema instanceof z.ZodObject && schema.def.catchall instanceof z.ZodNever &&
+    !schema.def.checks?.length && !schema._zod.parent && !schema._zod.toJSONSchema &&
+    !z.globalRegistry.get(schema) && Object.getPrototypeOf(shape) === Object.prototype &&
+    Reflect.ownKeys(shape).length === 0;
+}
+
+/**
  * 入口 / Entry: apiDocument.
  * 功能：从已声明操作及当前启用插件生成 OpenAPI 请求、响应和权限文档。
  * Purpose: Generates OpenAPI request/response/authority documentation from declared operations and enabled plugins.
@@ -61,6 +73,7 @@ export function apiDocument(active: Iterable<string>, port: number, catalogVersi
       schema: { type: 'string' },
     }));
     for (const [location, schema] of [['query', entry.requestContract!.query], ['header', entry.requestContract!.headers]] as const) {
+      if (emptyParameterSchema(schema)) continue;
       const json = z.toJSONSchema(schema, { io: 'input' });
       for (const [name, value] of Object.entries(json.properties || {})) parameters.push({ name, in: location,
         required: (json.required || []).includes(name), schema: value as Record<string, unknown> });
