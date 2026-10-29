@@ -28,7 +28,7 @@ import {
   X,
 } from 'lucide-react';
 import { emptySelection, type PluginManifest, type PluginStatus } from '../shared/plugin-protocol.ts';
-import { resolvePlugins } from '../shared/plugin-selection';
+import { createPluginSelectionResolver } from '../shared/plugin-resolver';
 import type { Request } from './feature-shared';
 import { pageLabels, sectionLabels, tabLabels } from './plugin-navigation';
 import './plugins.css';
@@ -216,15 +216,21 @@ export function PluginCenter({ request }: { request: Request }) {
       }
     }
   };
+  // 中文：每份服务端状态只校验一次独立目录快照；新状态重建解析器，不保留历史目录。
+  // English: Validate one private catalog snapshot per server status; rebuild without retaining earlier catalogs.
+  const resolveCatalog = useMemo(
+    () => status ? createPluginSelectionResolver(status.plugins, status.packs) : null,
+    [status],
+  );
   const packContents = useMemo(
     () =>
       new Map(
         status?.packs.map((pack) => [
           pack.id,
-          resolvePlugins({ ...emptySelection(), packs: [pack.id] }, status.plugins, status.packs),
+          resolveCatalog!({ ...emptySelection(), packs: [pack.id] }),
         ]),
       ),
-    [status],
+    [status, resolveCatalog],
   );
   // 中文：搜索、折叠和忙碌提示复用同一状态的预览；新服务端状态会丢弃缓存。
   // English: Reuse previews during local UI updates; every new server status invalidates them.
@@ -496,15 +502,13 @@ export function PluginCenter({ request }: { request: Request }) {
     const resolved = packContents.get(pack.id) || [];
     let next = packChangePreviews.get(pack.id);
     if (!next) {
-      next = resolvePlugins(
+      next = resolveCatalog!(
         {
           ...status.selection,
           packs: selected
             ? status.selection.packs.filter((id) => id !== pack.id)
             : [...status.selection.packs, pack.id],
         },
-        status.plugins,
-        status.packs,
       );
       packChangePreviews.set(pack.id, next);
     }

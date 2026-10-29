@@ -1,8 +1,8 @@
 /**
  * 模块职责（中文）：校验插件目录并解析插件/插件包选择，检测版本、依赖、路由重叠和循环并迁移旧配置。
  * Module responsibility (English): Validating catalogs and expanding dependencies, packs and legacy selection migrations.
- * 详细范围（中文）：公开入口包括 validateCatalog, resolveSelection, migrateSelection, selectionReasons；职责覆盖校验目录并展开依赖、插件包和旧配置迁移，字段与行为边界由本文件类型、校验分支及清理流程共同定义
- * Detailed scope (English): Public entry points include validateCatalog, resolveSelection, migrateSelection, selectionReasons. The scope covers Validating catalogs and expanding dependencies, packs and legacy selection migrations. Types, validation branches and cleanup paths define its data/behavior boundaries
+ * 详细范围（中文）：公开入口包括 validateCatalog, resolveSelection, createPluginSelectionResolver, migrateSelection, selectionReasons；职责覆盖校验目录并展开依赖、插件包和旧配置迁移，字段与行为边界由本文件类型、校验分支及清理流程共同定义
+ * Detailed scope (English): Public entry points include validateCatalog, resolveSelection, createPluginSelectionResolver, migrateSelection, selectionReasons. The scope covers validating catalogs and expanding dependencies, packs and legacy selection migrations. Types, validation branches and cleanup paths define its data/behavior boundaries.
  */
 import {
   pluginManifestSchema,
@@ -297,6 +297,30 @@ export function resolveSelection(selection: PluginSelection, plugins: PluginMani
   validateCatalog(plugins, packs);
   const byId = new Map(plugins.map((item) => [item.id, item]));
   const packById = new Map(packs.map((item) => [item.id, item]));
+  return resolveCatalogSelection(selection, byId, packById);
+}
+
+/**
+ * 中文：复制并校验一次目录，在同一快照内解析多项选择。闭包不暴露目录，原始输入后续变化不会绕过校验；调用者在目录状态变化时重建。
+ * English: Copy and validate one catalog snapshot for repeated selection resolution. The closure keeps the catalog private, so later input mutations cannot bypass validation; callers rebuild when catalog state changes.
+ */
+export function createPluginSelectionResolver(plugins: PluginManifest[], packs: PluginPack[]) {
+  const snapshot = structuredClone({ plugins, packs });
+  validateCatalog(snapshot.plugins, snapshot.packs);
+  const byId = new Map(snapshot.plugins.map((item) => [item.id, item]));
+  const packById = new Map(snapshot.packs.map((item) => [item.id, item]));
+  return (selection: PluginSelection) => {
+    pluginSelectionSchema.parse(selection);
+    return resolveCatalogSelection(selection, byId, packById);
+  };
+}
+
+/** 中文：只展开已校验目录，保持依赖、嵌套包及确定性顺序。 English: Expand only a validated catalog, preserving dependencies, nested packs and deterministic order. */
+function resolveCatalogSelection(
+  selection: PluginSelection,
+  byId: ReadonlyMap<string, PluginManifest>,
+  packById: ReadonlyMap<string, PluginPack>,
+) {
   const visited = new Set<string>(),
     visitedPacks = new Set<string>(),
     order: string[] = [];
