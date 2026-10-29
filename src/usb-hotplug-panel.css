@@ -1,0 +1,151 @@
+.usb-hotplug-panel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  container-type: inline-size;
+}
+.usb-hotplug-panel .usb-panel-heading,
+.usb-hotplug-panel .usb-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.usb-hotplug-panel .usb-panel-heading {
+  justify-content: space-between;
+}
+.usb-hotplug-panel h4,
+.usb-hotplug-panel h5 {
+  margin: 0;
+  line-height: 1.5;
+}
+.usb-hotplug-panel h5 {
+  font-size: 13px;
+}
+.usb-hotplug-panel .usb-readiness,
+.usb-hotplug-panel .usb-operation-status,
+.usb-hotplug-panel .usb-empty {
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+.usb-hotplug-panel .usb-operation-status {
+  color: var(--accent);
+}
+.usb-hotplug-panel .usb-panel-section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.usb-hotplug-panel .usb-panel-section > .usb-empty {
+  margin-top: 12px;
+}
+.usb-hotplug-panel .usb-id-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+.usb-hotplug-panel label,
+.usb-hotplug-panel input {
+  min-width: 0;
+}
+.usb-hotplug-panel .usb-id-fields input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.usb-hotplug-panel button {
+  min-height: 36px;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.usb-hotplug-panel .feature-log,
+.usb-hotplug-panel .usb-events {
+  max-height: min(320px, 45dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.usb-hotplug-panel .feature-log:focus-visible,
+.usb-hotplug-panel .usb-events:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+.usb-hotplug-panel .usb-count,
+.usb-hotplug-panel time {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.usb-hotplug-panel .usb-device-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.usb-hotplug-panel .usb-device-item {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.usb-hotplug-panel .usb-device-id {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.usb-hotplug-panel dl {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+.usb-hotplug-panel dt {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+.usb-hotplug-panel dd {
+  margin: 0;
+}
+.usb-hotplug-panel code {
+  font-size: 11px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.usb-hotplug-panel .usb-events {
+  margin-top: 14px;
+  padding-right: 5px;
+}
+.usb-hotplug-panel .usb-events ol {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.usb-hotplug-panel .usb-events li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.usb-hotplug-panel .usb-events li:first-child {
+  padding-top: 0;
+}
+.usb-hotplug-panel .usb-events li:last-child {
+  border-bottom: 0;
+}
+@container (max-width: 540px) {
+  .usb-hotplug-panel .usb-panel-section,
+  .usb-hotplug-panel .usb-device-item {
+    padding: 12px;
+  }
+  .usb-hotplug-panel .usb-id-fields {
+    grid-template-columns: 1fr;
+  }
+  .usb-hotplug-panel button {
+    min-height: 40px;
+  }
+}
