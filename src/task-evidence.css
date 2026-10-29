@@ -89,6 +89,21 @@
   color: var(--muted);
   font-size: 11px;
 }
+.task-evidence .evidence-source-note {
+  color: var(--muted);
+}
+.task-evidence .evidence-source-retry {
+  margin: 4px 0 8px;
+}
+.task-evidence .evidence-empty,
+.task-evidence .evidence-action-status {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.task-evidence .evidence-action-status {
+  color: var(--accent);
+}
 .task-evidence .evidence-record {
   margin-top: 12px;
   padding: 14px;
