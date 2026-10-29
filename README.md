@@ -2,19 +2,17 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
-应用与内置包版本：**2.12.10**。查阅 [文档索引](docs/README.md)、[源码阅读与维护指南](docs/development-guide.md) 和 [项目状态](PROJECT_STATUS.md)。
+应用与内置包版本：**2.12.10**；宿主插件 API：**5**。
 
-本版复用默认日期和数字格式器，并减少 API 文档生成中的空结构转换。变更、性能对比和验收状态见 [2.12.10 版本说明](docs/release-2.12.10.md)。完整目录保持 486 个插件、46 个包，区域偏好、插件选择和请求权限保持兼容。
+Sakura 使用 [QEMU](https://www.qemu.org/) 运行 Linux 内核，由 [PosixLoom](https://github.com/lyts825/posixloom) 负责命令编排、会话与 Windows 进程树管理。它不依赖已有的 WSL 发行版，当前也不作为 WSL 的替代实现。
 
-2.12.0 增加第七批 20 个插件包、285 个内部插件。包及内部成员、实际工具、页面、HTTP、CLI、容量和恢复见[二十包使用指南](docs/seventh-plugin-packs.md)，镜像准备见[固定工具镜像](docs/seventh-tool-images.md)。交付状态和验收见[项目状态](PROJECT_STATUS.md)。
-
-2.8.0 新增 10 个完整插件包、101 个插件，覆盖浏览器验收、软件供应审查、数据库变更、事件队列、模型评测、媒体处理、本地化、跨包流程、事件复盘和交互式实验。各包提供工作台、严格 HTTP 契约、纯 Node CLI 和离线交接。使用入口见下表；变更、验收范围与限制见 [2.8.0 版本说明](docs/release-2.8.0.md)。
-
-[环境镜像工坊](docs/foundry-workbench.md)、[应用运行与运维](docs/app-runtime-pack.md)、[数据与实验工作台](docs/data-lab.md)和[项目交付工作台](docs/delivery-workbench.md)继续可用。新增包沿用宿主 API 5，旧服务契约保持兼容。
-
-[环境变更预览](docs/environment-plan.md)、[流水线依赖与局部重跑](docs/pipeline-graph.md)、[安全清理中心](docs/cleanup-center.md)和[任务证据与处理](docs/task-evidence.md)继续可用。[AI 修复会话](docs/repair-sessions.md)为可选插件；[可信更新中心](docs/self-update.md)管理应用发行包，与项目交付签名分别管理信任。
-
-**真正运行 Linux 内核。** [PosixLoom](https://github.com/lyts825/posixloom) 负责命令编排、会话与 Windows 进程树管理，[QEMU](https://www.qemu.org/) 负责虚拟化。当前不是 WSL 的替代实现，也不依赖现有的 WSL 发行版。
+| 要做什么 | 从这里开始 |
+| --- | --- |
+| 安装和运行 | [快速启动](#快速启动)、[命令行](#命令行) |
+| 选择功能 | [基础版与插件](#基础版与插件)、[文档索引](docs/README.md) |
+| 阅读或修改源码 | [源码阅读与维护指南](docs/development-guide.md)、[架构与依赖边界](docs/architecture.md) |
+| 查看当前进度与待办 | [项目状态](PROJECT_STATUS.md) |
+| 查看版本变化与历史验收 | [更新记录](CHANGELOG.md) |
 
 ## 基础版与插件
 
@@ -106,6 +104,10 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 以下能力由插件提供，界面入口、API 与后台服务随插件激活。具体插件标识见 [插件清单](docs/plugin-architecture.md#插件划分)。
 
+环境与任务操作的使用说明见 [环境变更预览](docs/environment-plan.md)、[流水线依赖与局部重跑](docs/pipeline-graph.md)、[安全清理中心](docs/cleanup-center.md)和[任务证据与处理](docs/task-evidence.md)。[AI 修复会话](docs/repair-sessions.md)可独立选择。
+
+[可信更新中心](docs/self-update.md)管理应用发行包，与项目交付签名分别管理信任。
+
 - **沙箱工作台**：独立 Linux 环境，默认隔离网络，固定 CPU/内存/磁盘配额，限时命令、取消与整机终止，到期停止或自动销毁，执行记录保留；支持独立启用及 CLI/API 操作。入口、策略与验证见 [沙箱说明](docs/sandbox.md)。
 
   执行记录独立保存命令、目录、退出码及各阶段耗时，可导出 JSON；执行前可指定最多 8 个产物文件，总量不超过 8 MiB，保存成功后可在沙箱销毁后下载。
@@ -138,7 +140,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 共享及私有项目支持 [首次 Git 检出](docs/project-repository.md)：固定系统代理预取对象，项目账号在原网络内核对 bundle、保留默认分支并检出。只读 Git 凭据在已应用网络档案中单独配置；已有仓库不自动更新，非空目录保留原内容并拒绝首次检出。
 
-新增管理功能的操作、配置示例和验证方式见 [工作空间管理](docs/workspace-management.md)。单次 [SSH Agent 转发](docs/ssh-agent-forward.md) 和 [GPG Agent 转发](docs/gpg-agent-forward.md) 使用项目账号与独立入口，每次明确提交命令，结束后确认资源和账号票据清理。
+管理功能的操作、配置示例和验证方式见 [工作空间管理](docs/workspace-management.md)。单次 [SSH Agent 转发](docs/ssh-agent-forward.md) 和 [GPG Agent 转发](docs/gpg-agent-forward.md) 使用项目账号与独立入口，每次明确提交命令，结束后确认资源和账号票据清理。
 
 [项目终端](docs/project-terminals.md) 使用项目 UID/GID、独立 home 与完整运行票据。命名会话支持断线恢复和只读分享；普通连接退出或明确停止会关闭自己的全部后代，清理失败保留原运行供重试。
 
@@ -156,7 +158,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 ## 完整插件包
 
-新增三个完整插件包，可在插件中心分别启用并重启服务：
+以下三个插件包可在插件中心分别选择，重启服务后生效：
 
 | 插件包 | 完整流程 | 使用说明 |
 | --- | --- | --- |
@@ -164,7 +166,9 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 | `app-runtime`（9 个业务插件，另含命令面板） | 导入制品、准备目标、配置与数据、部署和健康切换、持续观察、冷备与恢复 | [应用运行与运维](docs/app-runtime-pack.md) |
 | `data-lab`（10 个插件） | 文件或只读数据库捕获、封存版本、SQL 与质量检查、Notebook、参数实验、Study 交接 | [数据与实验工作台](docs/data-lab.md) |
 
-三个包互不要求安装对方。`delivery` 可选用工坊镜像，应用包可显式接收经过当前信任检查的交付版本。新包提供同一鉴权下的界面、HTTP 和纯 Node CLI：`npm run foundry -- help`、`npm run app-runtime -- help`、`npm run data -- help`。首次启用只登记能力；实际创建实例、准备依赖或运行内容需要提交对应操作。
+三个包互不要求安装对方。[项目交付工作台](docs/delivery-workbench.md)（`delivery`）可选用工坊镜像，应用包可显式接收经过当前信任检查的交付版本。三个包提供同一鉴权下的界面、HTTP 和纯 Node CLI：`npm run foundry -- help`、`npm run app-runtime -- help`、`npm run data -- help`。首次启用只登记能力；实际创建实例、准备依赖或运行内容需要提交对应操作。
+
+第七批 20 个插件包包含 285 个内部插件。成员、工具、页面、HTTP、CLI、容量和恢复见 [二十包使用指南](docs/seventh-plugin-packs.md)，镜像准备见 [固定工具镜像](docs/seventh-tool-images.md)。全部整合包按用途列在[基础版与插件](#基础版与插件)。
 
 ## Linux 图形桌面（实验性）
 
@@ -201,7 +205,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 - 终端、桌面、文件、快照、配置标签支持左右方向键切换，以及 Home / End 跳转；同一发行版内切换这些标签会保持终端会话与历史输出。
 - 窄屏自动使用顶部导航和横向发行版列表，系统的减少动态效果偏好也会生效。
 
-新增工作流、传输限制、项目配置和迁移说明见 [开发工作区与数据互通](docs/development-workspaces.md)。
+工作流、传输限制、项目配置和迁移说明见 [开发工作区与数据互通](docs/development-workspaces.md)。
 
 ## 命令行
 

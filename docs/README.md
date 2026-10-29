@@ -1,22 +1,26 @@
 # 文档索引
 
-核对日期：2026-10-29；当前检出应用与内置包版本：**2.12.10**；宿主插件 API：**5**；既有公共服务契约保持兼容，Notebook 和 Files 提供显式的 **V2**。
+核对日期：2026-10-29。应用与内置包版本：**2.12.10**；宿主插件 API：**5**。
+
+既有公共服务契约保持兼容，Notebook 和 Files 提供显式的 V2。
 
 | 使用场景 | 从这里开始 |
 | --- | --- |
 | 安装与日常使用 | [项目 README](../README.md) 的快速启动、插件选择与使用范围 |
 | 阅读或修改源码 | [源码阅读与维护指南](development-guide.md) → [架构说明](architecture.md) |
 | 开发插件或调整公开接口 | [插件设计契约](plugin-design-contract.md) → [插件协议](plugin-protocol.md) → [HTTP](http-request-contracts.md) / [WebSocket](websocket-contracts.md) 契约 |
-| 核对版本、验收或阻塞 | [项目状态](../PROJECT_STATUS.md)、Git 标签与 `server/service-contracts/releases/` |
+| 核对当前进度或阻塞 | [项目状态](../PROJECT_STATUS.md) |
+| 查阅版本变化与历史验收 | [更新记录](../CHANGELOG.md)、Git 标签与 `server/service-contracts/releases/` |
 | 查找尚未完成的能力 | [未完成功能清单](unfinished-features.md) 与对应功能文档 |
 
-主题文档按下方导航查阅，保留现有文件路径，避免旧链接失效。历史记录保留当时的版本与验证边界；当前接口以源码、生成契约和设计契约为准。
+主题文档按下方分类查阅。当前接口以源码、生成契约和设计契约为准；历史记录保留当时的版本与验证边界。
 
 当前目录共有 486 个插件、46 个整合包。插件中心默认展示按用途分类的整合包；常用组合和全部八组分类见 [README](../README.md#基础版与插件)，依赖与启停规则见[插件架构](plugin-architecture.md)。默认插件选择仍为空。
 
-本轮区域格式与 API 文档性能优化见 [2.12.10 版本说明](release-2.12.10.md)。此前插件中心与后端路由性能优化见 [2.12.9 版本说明](release-2.12.9.md)。此前自动化、灰度、主机协作与设备设置等 10 轮界面优化见 [2.12.8 版本说明](release-2.12.8.md)。此前锁定、剪贴板、日志、通知、监控报告与社区插件优化见 [2.12.7 版本说明](release-2.12.7.md)。此前资源、偏好、API 调试、任务证据与文件预览优化见 [2.12.6 版本说明](release-2.12.6.md)。此前设置、项目文件、任务与通知优化见 [2.12.5 版本说明](release-2.12.5.md)。前一轮工作空间、插件、命令面板和终端优化见 [2.12.4 版本说明](release-2.12.4.md)。此前工作空间优化见 [2.12.3 版本说明](release-2.12.3.md)，架构维护见 [2.12.2 版本说明](release-2.12.2.md)，插件中心整理见 [2.12.1 版本说明](release-2.12.1.md)。
+## 更新记录
 
-第七批 20 包、285 个内部插件已在 2.12.0 完成实现与验收。运行入口见[二十包使用指南](seventh-plugin-packs.md)、[完整成员目录](seventh-plugin-members.md)和[固定工具镜像](seventh-tool-images.md)。既有安全修复及兼容边界见 [2.8.1 版本说明](release-2.8.1.md)。
+- [版本更新与历史验收](../CHANGELOG.md)
+- [项目整理与文档维护 · 2026-10-29](maintenance-2026-10-29.md)
 
 ## 架构、契约与开发维护
 
@@ -58,6 +62,7 @@
 - [接口集成验证](integration-lab.md)
 - [可靠性演练](resilience-lab.md)
 - [项目知识与文档](knowledge-studio.md)
+- [第七批二十包使用指南](seventh-plugin-packs.md)、[完整成员目录](seventh-plugin-members.md)与[固定工具镜像](seventh-tool-images.md)
 - [浏览器验收](browser-lab.md)
 - [软件供应审查](supply-audit.md)
 - [数据库变更演练](database-evolution.md)
