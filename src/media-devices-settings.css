@@ -1,0 +1,174 @@
+.media-devices-settings {
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.media-devices-settings .media-target-context,
+.media-devices-settings .media-preview-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.media-devices-settings .media-target-context {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+
+.media-devices-settings .media-target-context > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.media-devices-settings .media-target-context > span:last-child {
+  margin-left: auto;
+}
+
+.media-devices-settings .media-current-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.media-devices-settings .media-current-summary dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.media-devices-settings .media-current-summary dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.media-devices-settings .feature-card {
+  min-width: 0;
+  padding: 16px;
+  border-radius: 10px;
+  margin-top: 16px;
+}
+
+.media-devices-settings .feature-card > h4 {
+  margin-top: 0;
+}
+
+.media-devices-settings .media-control-hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.media-devices-settings .media-read-state,
+.media-devices-settings .media-action-state {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  font-size: 12px;
+}
+
+.media-devices-settings .media-preview-heading {
+  justify-content: space-between;
+}
+
+.media-devices-settings .media-preview-heading h5 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.media-devices-settings .media-preview-heading > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.media-devices-settings .media-preview-state {
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent-line);
+  background: var(--surface-soft);
+  font-size: 12px;
+}
+
+.media-devices-settings .media-preview-reasons {
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.media-devices-settings .feature-log {
+  max-height: 280px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  white-space: pre;
+}
+
+.media-devices-settings .feature-log:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.media-devices-settings .shortcut-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.media-devices-settings .shortcut-fields label,
+.media-devices-settings .shortcut-fields input,
+.media-devices-settings .shortcut-fields select {
+  width: 100%;
+  min-width: 0;
+}
+
+.media-devices-settings .host-peer-row {
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.media-devices-settings .media-rule-context {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.media-devices-settings .media-rule-context strong {
+  font-size: 12px;
+}
+
+.media-devices-settings .media-rule-context small,
+.media-devices-settings .media-device-id {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.media-devices-settings button {
+  min-height: 36px;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 520px) {
+  .media-devices-settings .media-current-summary,
+  .media-devices-settings .shortcut-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .media-devices-settings .feature-card {
+    padding: 12px;
+  }
+
+  .media-devices-settings button {
+    min-height: 40px;
+  }
+}
