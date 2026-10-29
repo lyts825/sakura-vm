@@ -6,10 +6,11 @@
  */
 import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { PeerStatus } from '../server/host-peers';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 import './features.css';
+import './host-peers-settings.css';
 
 type Listener = { enabled: boolean; host: '127.0.0.1' | '0.0.0.0'; port: number;
   active: boolean; error?: string };
@@ -73,6 +74,7 @@ function ResourceCard({ title, status, error, checkedAt }: {
  * English: Result: React nodes for current state; branches without display conditions may return an empty node
  */
 export function HostPeersSettings({ request }: { request: Request }) {
+  const fieldId = useId();
   const remote = useRemote<HostPeersView>(request, '/host-peers', true, 5000);
   const migrations = useRemote<MigrationView>(request, '/cold-migrations', true, 15000);
   const replications = useRemote<ReplicationView>(request, '/snapshot-replications', true, 15000);
@@ -128,7 +130,7 @@ export function HostPeersSettings({ request }: { request: Request }) {
     setScores(await request<ScoreView>('/host-peers', 'POST',
       { operation: 'score', requirements }, signal));
   }, '主机评分已更新');
-  return <section className="system-card host-peers-settings" aria-label="主机配对与多主机状态">
+  return <section className="system-card host-peers-settings host-peers-panel" aria-label="主机配对与多主机状态">
     <div className="panel-heading">
       <div><h3>主机配对与多主机状态</h3><p>通过短码和证书指纹连接另一台 Sakura，集中查看资源与连通性。</p></div>
       <button className="secondary compact" onClick={() =>
@@ -196,7 +198,7 @@ export function HostPeersSettings({ request }: { request: Request }) {
           {entry.error && ` · ${entry.error}`}</span>
       </div>)}
     </div>
-    <div className="feature-card">
+    <section className="feature-card peers-pairing" aria-label="同伴入口">
       <h4>同伴入口</h4>
       <p>当前入口：{remote.data?.listener.active ? '正在监听' : '未监听'}。
         {remote.data?.listener.error && ` ${remote.data.listener.error}`}</p>
@@ -204,8 +206,8 @@ export function HostPeersSettings({ request }: { request: Request }) {
         <label className="check"><input type="checkbox" checked={listener.enabled}
           onChange={(event) => setListenerDraft({ ...listener, enabled: event.target.checked })} />
           启用同伴入口</label>
-        <div className="host-peer-field"><label htmlFor="peer-host">监听地址</label>
-          <select id="peer-host" value={listener.host}
+        <div className="host-peer-field"><label htmlFor={`${fieldId}-host`}>监听地址</label>
+          <select id={`${fieldId}-host`} value={listener.host}
             onChange={(event) => setListenerDraft({ ...listener,
               host: event.target.value as Listener['host'] })}>
             <option value="127.0.0.1">仅本机 / SSH 隧道</option>
@@ -214,8 +216,11 @@ export function HostPeersSettings({ request }: { request: Request }) {
         <label>监听端口<input type="number" min={1024} max={65535} value={listener.port}
           onChange={(event) => setListenerDraft({ ...listener, port: Number(event.target.value) })} /></label>
       </div>
-      <p>本机 TLS 指纹（在另一台主机配对时核对）：<code className="host-peer-fingerprint">
-        {remote.data?.fingerprint || '读取中'}</code></p>
+      <dl className="peers-identity">
+        <div><dt>本机主机 ID</dt><dd><code>{remote.data?.hostId || '读取中'}</code></dd></div>
+        <div><dt>本机 TLS 指纹（在另一台主机配对时核对）</dt><dd><code className="host-peer-fingerprint">
+          {remote.data?.fingerprint || '读取中'}</code></dd></div>
+      </dl>
       <div className="feature-actions">
         <button className="primary compact" disabled={action.busy || listener.port < 1024 ||
           listener.port > 65535} onClick={saveListener}>保存入口配置</button>
@@ -224,11 +229,13 @@ export function HostPeersSettings({ request }: { request: Request }) {
         {remote.data?.pairing && <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('revoke-code')}>撤销配对码</button>}
       </div>
-      {remote.data?.pairing && <p>配对码：<strong>{remote.data.pairing.value}</strong> ·
-        有效至 {formatDateTime(new Date(remote.data.pairing.expiresAt))}</p>}
+      {remote.data?.pairing && <div className="peers-pairing-code">
+        <span>一次性配对码</span><strong data-locale-ignore>{remote.data.pairing.value}</strong>
+        <span>有效至 <time dateTime={new Date(remote.data.pairing.expiresAt).toISOString()}>{formatDateTime(new Date(remote.data.pairing.expiresAt))}</time></span>
+      </div>}
       <p className="subtle-note">入口配置在重启服务后生效。局域网访问请使用这台主机的 IP、所设端口、上方指纹和一次性配对码。</p>
-    </div>
-    <div className="feature-card">
+    </section>
+    <section className="feature-card peers-connect" aria-label="加入远端主机">
       <h4>加入远端主机</h4>
       <div className="shortcut-fields">
         <label>HTTPS 地址（含端口）<input value={address} placeholder="https://192.168.1.10:7443/"
@@ -240,46 +247,63 @@ export function HostPeersSettings({ request }: { request: Request }) {
       </div>
       <button className="primary compact" disabled={action.busy || !address.trim() ||
         !fingerprint.trim() || code.trim().length !== 10} onClick={connect}>连接并配对</button>
-    </div>
-    <div className="feature-card"><h4>已配对主机</h4>
+    </section>
+    <section className="feature-card peers-outbound" aria-label="已配对主机">
+      <div className="peers-section-heading"><h4>已配对主机</h4>{remote.data && <span>{remote.data.outbound.length} 台出站主机</span>}</div>
+      <p className="subtle-note">本机访问的远端主机。远端访问本机的权限在下方单独管理。</p>
       {!remote.data?.outbound.length && <p className="subtle-note">尚未加入远端主机。</p>}
-      {remote.data?.outbound.map((peer) => <div className="host-peer-row" key={peer.id}>
-        <span><strong>{peer.name}</strong> · {peer.url} · 迁移目标 ID / 快照复制目标 ID <code>{peer.id}</code></span>
+      {remote.data?.outbound.map((peer) => <article className="peers-trust-card" key={peer.id} aria-label={`出站主机 ${peer.name}`}>
+        <h5 data-locale-ignore>{peer.name}</h5>
+        <p className="peers-endpoint" data-locale-ignore>{peer.url}</p>
+        <dl className="peers-identity"><div><dt>迁移目标 ID / 快照复制目标 ID</dt><dd><code>{peer.id}</code></dd></div></dl>
+        <details className="peers-trust-details">
+          <summary>查看信任身份</summary>
+          <dl className="peers-identity">
+            <div><dt>远端主机 ID</dt><dd><code>{peer.remoteId}</code></dd></div>
+            <div><dt>已固定的 TLS 指纹</dt><dd><code>{peer.fingerprint}</code></dd></div>
+            <div><dt>配对时间</dt><dd><time dateTime={new Date(peer.createdAt).toISOString()}>{formatDateTime(new Date(peer.createdAt))}</time></dd></div>
+          </dl>
+        </details>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('remove-outbound', { id: peer.id }, '远端主机已移除')}>移除</button>
-      </div>)}
-    </div>
-    <div className="feature-card"><h4>已授权的入站主机</h4>
+      </article>)}
+    </section>
+    <section className="feature-card peers-inbound" aria-label="已授权的入站主机">
+      <div className="peers-section-heading"><h4>已授权的入站主机</h4>{remote.data && <span>{remote.data.incoming.length} 台入站主机</span>}</div>
+      <p className="subtle-note">以下权限控制远端主机对本机的操作。各项授权分别设置；目标启动与故障副本接管同时需要实例包导入权限。</p>
       {!remote.data?.incoming.length && <p className="subtle-note">尚无入站配对。</p>}
-      {remote.data?.incoming.map((peer) => <div className="host-peer-row" key={peer.id}>
-        <span><strong>{peer.name}</strong> · {peer.requesterId} ·
-          实例包导入：{peer.allowImport ? '已允许' : '未允许'} ·
-          策略发布：{peer.allowPolicy ? '已允许' : '未允许'} ·
-          目标启动：{peer.allowActivate ? '已允许' : '未允许'} ·
-          故障副本接管：{peer.allowFailover ? '已允许' : '未允许'}</span>
+      {remote.data?.incoming.map((peer) => <article className="peers-trust-card" key={peer.id} aria-label={`入站主机 ${peer.name}`}>
+        <h5 data-locale-ignore>{peer.name}</h5>
+        <dl className="peers-identity"><div><dt>请求方主机 ID</dt><dd><code>{peer.requesterId}</code></dd></div></dl>
+        <div className="peers-permissions">
+        <div className="peers-permission"><p>实例包导入<span>{peer.allowImport ? '已允许' : '未允许'}</span></p>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('allow-import', { id: peer.id, enabled: !peer.allowImport },
             peer.allowImport ? '实例包导入权限已关闭' : '实例包导入权限已开启')}>
           {peer.allowImport ? '关闭导入' : '允许导入'}
-        </button>
+        </button></div>
+        <div className="peers-permission"><p>策略发布<span>{peer.allowPolicy ? '已允许' : '未允许'}</span></p>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('allow-policy', { id: peer.id, enabled: !peer.allowPolicy },
             peer.allowPolicy ? '策略发布权限已关闭' : '策略发布权限已开启')}>
           {peer.allowPolicy ? '关闭策略发布' : '允许策略发布'}
-        </button>
+        </button></div>
+        <div className="peers-permission"><p>目标启动<span>{peer.allowActivate ? '已允许' : '未允许'}</span></p>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('allow-activate', { id: peer.id, enabled: !peer.allowActivate },
             peer.allowActivate ? '目标启动权限已关闭' : '目标启动权限已开启')}>
           {peer.allowActivate ? '关闭目标启动' : '允许目标启动'}
-        </button>
+        </button></div>
+        <div className="peers-permission"><p>故障副本接管<span>{peer.allowFailover ? '已允许' : '未允许'}</span></p>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('allow-failover', { id: peer.id, enabled: !peer.allowFailover },
             peer.allowFailover ? '故障副本接管权限已关闭' : '故障副本接管权限已开启')}>
           {peer.allowFailover ? '关闭故障接管' : '允许故障接管'}
-        </button>
+        </button></div>
+        </div>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('revoke-inbound', { id: peer.id }, '读取权限已撤销')}>撤销访问</button>
-      </div>)}
-    </div>
+      </article>)}
+    </section>
   </section>;
 }
