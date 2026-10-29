@@ -1,0 +1,9 @@
+/* 偏好编辑器的局部层次。 Local hierarchy for preference editors. */
+.shortcut-settings .shortcut-search { margin: 20px 0; padding: 12px; background: var(--surface-soft); border-radius: var(--radius-sm); }
+.shortcut-settings .shortcut-search label { margin-bottom: 8px; }
+.shortcut-settings .shortcut-search p { color: var(--muted); font-size: 12px; }
+.shortcut-settings .shortcut-search button { margin-top: 8px; min-height: 36px; }
+.shortcut-settings .shortcut-field { border-top: 1px solid var(--line); padding-top: 12px; }
+.shortcut-settings .shortcut-field input { font-family: var(--font-mono, monospace); }
+.shortcut-settings .button-row { flex-wrap: wrap; }
+.shortcut-settings .button-row button { white-space: normal; min-height: 40px; }

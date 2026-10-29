@@ -4,7 +4,8 @@
  * 详细范围（中文）：公开入口包括 ShortcutSettings；职责覆盖编辑并保存通过冲突校验的快捷键，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include ShortcutSettings. The scope covers Editing and saving shortcuts after conflict validation. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+import './preference-editors.css';
 import {
   effectiveShortcuts,
   saveShortcuts,
@@ -41,10 +42,14 @@ export function ShortcutSettings({
   const [draft, setDraft] = useState<ShortcutMap>({});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [query, setQuery] = useState('');
+  const search = useRef<HTMLInputElement>(null);
+  const matches = shortcutCommands.filter(command => command.name.includes(query.trim()));
   useLayoutEffect(/** 中文：当依赖 [preferences, project, context] 变化时编辑草稿，错误反馈；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [preferences, project, context] change, editing draft, error feedback. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     setDraft({ ...(project ? preferences.projects[context!] || {} : effectiveShortcuts(preferences)) });
     setError('');
   }, [preferences, project, context]);
+  useLayoutEffect(() => setMessage(''), [project, context]);
   const inherited = effectiveShortcuts(preferences);
   /**
    * 中文：在编辑并保存通过冲突校验的快捷键流程中错误反馈，完成提示；操作对象由当前参数或闭包绑定，保持所属调用的状态和资源一致
@@ -89,8 +94,16 @@ export function ShortcutSettings({
           </option>
         </select>
       </label>
+      <div className="shortcut-search">
+        <label>查找快捷键操作<input ref={search} type="search" value={query} placeholder="输入操作名称…" onChange={event => setQuery(event.target.value)} onKeyDown={event => {
+          if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.stopPropagation(); setQuery(''); }
+        }} /></label>
+        <p role="status">显示 {matches.length} / {shortcutCommands.length} 项操作</p>
+        {query && <button className="text-button" onClick={() => { setQuery(''); search.current?.focus(); }}>清空快捷键搜索</button>}
+      </div>
+      {!matches.length && <p className="subtle-note">没有匹配的操作，试试更短的名称。</p>}
       <div className="shortcut-fields">
-        {shortcutCommands.map(/**
+        {matches.map(/**
          * 中文功能：渲染每条快捷键的全局或项目覆盖值；项目未覆盖时显示继承值且禁用编辑，切换覆盖时复制继承值或删除覆盖键。
          * English: Render each global/project-override shortcut; show inherited values with editing disabled when unoverridden, and copy inheritance or delete the override when toggled.
          * 输入 / Inputs: command.
@@ -108,8 +121,9 @@ export function ShortcutSettings({
                   value={project && !override ? inherited[command.id] : draft[command.id] || ''}
                   disabled={project && !override}
                   placeholder="未设置"
-                  onChange={(event) => setDraft({ ...draft, [command.id]: event.target.value })}
+                  onChange={(event) => { setDraft({ ...draft, [command.id]: event.target.value }); setMessage(''); setError(''); }}
                 />
+                <small>{project && !override ? '继承全局设置' : (draft[command.id] || '') ? project ? '项目自定义' : '全局设置' : '已停用'}</small>
               </label>
               {project && (
                 <label className="checkbox-row">
@@ -122,6 +136,8 @@ export function ShortcutSettings({
                       if (event.target.checked) next[command.id] = inherited[command.id];
                       else delete next[command.id];
                       setDraft(next);
+                      setMessage('');
+                      setError('');
                     }}
                   />
                   项目覆盖
