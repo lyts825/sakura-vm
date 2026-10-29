@@ -1,0 +1,8 @@
+/* 设置反馈保持局部作用域。 Keep feedback styles scoped to their setting cards. */
+.session-lock-settings .lock-settings-state { padding: 10px 12px; margin: 14px 0; background: var(--surface-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 12px; }
+.session-lock-settings .settings-field-error { color: var(--danger); }
+.session-lock-settings input[aria-invalid='true'] { border-color: var(--danger); }
+.session-lock-settings button { min-height: 40px; white-space: normal; }
+
+.session-lock-settings label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 8px 0; }
+.session-lock-settings label.check input[type='checkbox'] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }

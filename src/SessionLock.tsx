@@ -4,13 +4,14 @@
  * 详细范围（中文）：公开入口包括 SessionBoundary, SessionLockButton, SessionLockSettings；职责覆盖协调锁定、解锁和闲置检测界面，字段与行为边界由本文件类型、校验分支及清理流程共同定义
  * Detailed scope (English): Public entry points include SessionBoundary, SessionLockButton, SessionLockSettings. The scope covers Coordinating locking, unlocking and idle-detection surfaces. Types, validation branches and cleanup paths define its data/behavior boundaries
  */
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useId, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { LockKeyhole } from 'lucide-react';
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import type { SessionLockView } from '../shared/session-lock';
 import { api, controllerSession } from './controller-session';
 import { apiResponseError } from '../shared/errors';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
+import './settings-feedback.css';
 
 /**
  * 中文：通过外部存储订阅控制面锁定/到期快照，锁屏界面随服务端和本地闲置变化更新。
@@ -291,6 +292,10 @@ export function SessionLockSettings({ request }: { request: Request }) {
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const hintId = useId();
+  const idleValid = Number.isInteger(idleMinutes) && idleMinutes >= 1 && idleMinutes <= 240;
+  const passwordShort = !!newPassword && newPassword.length < 12;
+  const passwordsDiffer = !!newPassword && !!confirmation && newPassword !== confirmation;
   useEffect(/** 中文：当依赖 [remote.data] 变化时启用标记，idleMinutes 状态；effect 返回的清理只结束旧依赖这一轮所持资源，随后新依赖重新建立 | English: When dependencies [remote.data] change, enabled marker, idleMinutes state. Returned cleanup ends only the resources owned by the old dependency pass before the next establishes new ownership | 中文：结果：通过上述状态或资源副作用交付，不返回业务数据 | English: Result: deliver through the described state/resource effects without returning business data */ () => {
     if (remote.data) {
       setEnabled(remote.data.enabled);
@@ -308,6 +313,7 @@ export function SessionLockSettings({ request }: { request: Request }) {
   return (
     <section className="system-card session-lock-settings" aria-label="会话自动锁定设置">
       <h3>会话自动锁定</h3>
+      <p className="lock-settings-state" role="status">{remote.data ? `已保存状态：${remote.data.enabled ? '已启用自动锁定' : '未启用自动锁定'}` : remote.error ? '暂时无法读取锁定设置' : '正在读取锁定设置…'}</p>
       <p className="subtle-note">
         本机所有标签页、CLI 和 SDK
         共用锁定状态。空闲后断开终端与桌面连接，重启服务后也需要解锁。锁定期间实例和已提交任务继续运行。
@@ -327,7 +333,7 @@ export function SessionLockSettings({ request }: { request: Request }) {
          */
         (event) => {
           event.preventDefault();
-          if (!valid) return;
+          if (!valid || action.busy || !remote.data) return;
           const input = { enabled, idleMinutes, password, ...(newPassword ? { newPassword } : {}) };
           setPassword('');
           setNewPassword('');
@@ -355,9 +361,13 @@ export function SessionLockSettings({ request }: { request: Request }) {
                 max={240}
                 step={1}
                 value={idleMinutes || ''}
+                aria-label="空闲分钟数"
+                aria-invalid={!idleValid || undefined}
+                aria-describedby={`${hintId}-idle`}
                 onChange={(event) => setIdleMinutes(Number(event.target.value))}
                 required
               />
+              <small id={`${hintId}-idle`} className={!idleValid ? 'settings-field-error' : undefined}>请输入 1～240 的整数，单位为分钟。</small>
             </label>
             {remote.data?.configured && (
               <label>
@@ -380,8 +390,12 @@ export function SessionLockSettings({ request }: { request: Request }) {
                 minLength={12}
                 maxLength={256}
                 value={newPassword}
+                aria-label={remote.data?.configured ? '新解锁密码（留空保留）' : '设置解锁密码'}
+                aria-invalid={passwordShort || undefined}
+                aria-describedby={`${hintId}-password`}
                 onChange={(event) => setNewPassword(event.target.value)}
               />
+              <small id={`${hintId}-password`} className={passwordShort ? 'settings-field-error' : undefined}>{passwordShort ? '新密码不足 12 个字符。' : '新密码至少 12 个字符，最多 256 个字符。'}</small>
             </label>
             <label>
               确认新解锁密码
@@ -390,16 +404,21 @@ export function SessionLockSettings({ request }: { request: Request }) {
                 autoComplete="new-password"
                 maxLength={256}
                 value={confirmation}
+                aria-label="确认新解锁密码"
+                aria-invalid={passwordsDiffer || undefined}
+                aria-describedby={`${hintId}-confirmation`}
                 onChange={(event) => setConfirmation(event.target.value)}
               />
+              <small id={`${hintId}-confirmation`} className={passwordsDiffer ? 'settings-field-error' : undefined}>{passwordsDiffer ? '两次输入的新密码不一致。' : '更换密码时，请再次输入相同的新密码。'}</small>
             </label>
           </div>
           <button className="secondary compact" type="submit" disabled={!valid}>
-            保存锁定策略
+            {action.busy ? '正在保存锁定策略…' : '保存锁定策略'}
           </button>
         </fieldset>
       </form>
       <Feedback error={remote.error || action.error} message={action.message} />
+      {remote.error && <button className="secondary compact" disabled={action.busy} onClick={remote.reload}>重新读取锁定设置</button>}
     </section>
   );
 }
