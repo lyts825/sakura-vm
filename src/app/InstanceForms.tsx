@@ -23,6 +23,7 @@ import { api } from '../controller-session';
 import { useRemote } from '../feature-shared';
 import { usePlugin } from '../plugin-context';
 import { active, memory, Modal } from './ui';
+import './instance-config.css';
 
 /**
  * 中文：呈现创建实例与编辑资源配置的表单中的 ResourceFields 界面，组合 Cpu、MemoryStick，将表单输入和用户动作绑定到当前传入上下文；错误与在途状态由本组件调用的反馈入口显示
@@ -370,7 +371,7 @@ export function ConfigPanel({
   const running = active(vm);
   const hasNetwork = usePlugin('network');
   return (
-    <div className="content-panel config-panel">
+    <div className="content-panel config-panel" aria-label="发行版资源配置">
       <div className="panel-heading">
         <div>
           <h3>为你的工作，分配刚好的资源</h3>
@@ -383,13 +384,20 @@ export function ConfigPanel({
           </p>
         </div>
       </div>
+      <div className="config-summary" aria-label="当前配置草稿">
+        <span><Cpu size={16} aria-hidden="true" /><strong>{config.cpus}</strong> vCPU</span>
+        <span><MemoryStick size={16} aria-hidden="true" /><strong>{memory(config.memoryMiB)}</strong> 内存</span>
+        <span><HardDrive size={16} aria-hidden="true" /><strong>{config.diskGiB} GiB</strong> 磁盘</span>
+      </div>
+      <p className="config-edit-state" role="status">{busy ? '正在处理配置，请稍候…' : vm.sandbox ? '沙箱配置已锁定' : running ? '运行期间配置只读' : '可编辑 · 保存后于下次启动生效'}</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (busy || running || vm.sandbox) return;
           save(config);
         }}
       >
-        <ResourceFields config={config} set={set} disabled={running || !!vm.sandbox} />
+        <ResourceFields config={config} set={set} disabled={busy || running || !!vm.sandbox} />
         {hasNetwork && !vm.sandbox && (
           <>
             <div className="panel-heading port-heading">
@@ -400,7 +408,7 @@ export function ConfigPanel({
               <button
                 type="button"
                 className="text-button"
-                disabled={running || config.forwards.length >= 12}
+                disabled={busy || running || config.forwards.length >= 12}
                 onClick={() => set({ ...config, forwards: [...config.forwards, { host: 8080, guest: 80 }] })}
               >
                 <Plus size={14} />
@@ -422,7 +430,7 @@ export function ConfigPanel({
                     max={65535}
                     required
                     value={p.host}
-                    disabled={running}
+                    disabled={busy || running}
                     onChange={(e) =>
                       set({
                         ...config,
@@ -442,7 +450,7 @@ export function ConfigPanel({
                     max={65535}
                     required
                     value={p.guest}
-                    disabled={running}
+                    disabled={busy || running}
                     onChange={(e) =>
                       set({
                         ...config,
@@ -457,7 +465,7 @@ export function ConfigPanel({
                   type="button"
                   className="icon-button"
                   aria-label="删除端口规则"
-                  disabled={running}
+                  disabled={busy || running}
                   onClick={() => set({ ...config, forwards: config.forwards.filter((_, j) => j !== i) })}
                 >
                   <X size={16} />
@@ -468,8 +476,8 @@ export function ConfigPanel({
         )}
         <div className="config-actions">
           <button className="primary compact" disabled={busy || running || !!vm.sandbox}>
-            <Save size={14} />
-            保存配置
+            {busy ? <LoaderCircle size={14} className="spin" /> : <Save size={14} />}
+            {busy ? '正在处理…' : '保存配置'}
           </button>
           <button
             type="button"

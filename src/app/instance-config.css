@@ -1,0 +1,13 @@
+/* 配置摘要和操作始终围绕当前草稿。 Keep resource context close to the draft. */
+.content-panel.config-panel { max-height: none; overflow: visible; }
+.config-panel .config-summary { display: flex; flex-wrap: wrap; gap: 10px 24px; padding: 16px; margin: 18px 0 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.config-panel .config-summary > span { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.config-panel .config-summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.config-panel .config-edit-state { margin-bottom: 20px; font-size: 12px; color: var(--muted); }
+.config-panel .config-actions { flex-wrap: wrap; gap: 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+.config-panel .config-actions > button { min-height: 40px; }
+@media (max-width: 600px) {
+  .config-panel .config-summary { gap: 12px; }
+  .config-panel .config-summary > span { flex-basis: 100%; }
+  .config-panel .panel-heading h3 { line-height: 1.5; }
+}
