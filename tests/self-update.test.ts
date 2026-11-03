@@ -5,7 +5,7 @@
  * Reading guide: Start with cases/fixtures, then follow named helpers, controlled interfaces and complex callbacks. Test substitutes and models do not attest real resource isolation.
  * 重点情景 / Key scenarios: release hash validation, isolated canary, activation, rollback and failed-start recovery; witness launcher follows activation and rollback, preserves CLI arguments and refuses tampering.
  */
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -20,6 +20,9 @@ import { fileURLToPath } from 'node:url';
 import { releaseFiles, writeReleaseManifest, verifyReleaseManifest } from '../scripts/release-manifest.mjs';
 // @ts-ignore JavaScript release modules intentionally have no generated declaration file.
 import { activateUpdate, pointer, portAvailable, rollbackUpdate, stageUpdate } from '../scripts/self-update.mjs';
+// @ts-ignore The fixture shares the production managed transport.
+import { networkRuntime } from '../scripts/network-client.mjs';
+after(() => networkRuntime.close());
 
 const repository = fileURLToPath(new URL('..', import.meta.url));
 const fakeServer = `import { createServer } from 'node:http';

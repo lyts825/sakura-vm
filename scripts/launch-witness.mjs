@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pointer, versionPath } from './self-update.mjs';
 import { verifyReleaseManifest } from './release-manifest.mjs';
+import { networkRuntime } from './network-client.mjs';
 
 const installation = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -56,4 +57,4 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  void main().catch((error) => { console.error(error.message); process.exitCode = 1; });
+  void main().finally(() => networkRuntime.close()).catch((error) => { console.error(error.message); process.exitCode = 1; });

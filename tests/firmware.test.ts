@@ -34,13 +34,16 @@ after(() => rm(root, { recursive: true, force: true }));
  * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
  */
 test('UEFI support requires both regular OVMF files and preserves each instance NVRAM', async () => {
-  assert.equal((await firmwareSupport()).available, false);
-  await assert.rejects(requireUefiSupport(), /OVMF/);
   const share = join(root, 'qemu', 'share');
   await mkdir(share, { recursive: true });
   const code = join(share, 'edk2-x86_64-code.fd');
   const template = join(share, 'edk2-i386-vars.fd');
+  // An invalid owned code file prevents the host's system OVMF fallback.
+  await writeFile(code, Buffer.alloc(0));
+  assert.equal((await firmwareSupport()).available, false);
+  await assert.rejects(requireUefiSupport(), /OVMF/);
   await writeFile(code, Buffer.alloc(65536, 1));
+  assert.equal((await firmwareSupport()).available, false);
   await writeFile(template, Buffer.alloc(65536, 2));
   assert.equal((await firmwareSupport()).available, true);
   const id = randomUUID();

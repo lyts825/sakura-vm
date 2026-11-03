@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** 自更新预检、暂存、激活与回滚，校验发行摘要并用隔离数据目录进行候选健康检查，再替换活动版本指针。
  * Preflight, stage, activate and roll back verified releases; run isolated candidate health before replacing the active pointer. */
-import { networkFor } from './network-client.mjs';
+import { networkFor, networkRuntime } from './network-client.mjs';
 const updateNetwork = networkFor('tool:self-update');
 const { fetch, createServer } = updateNetwork;
 import { spawn } from 'node:child_process';
@@ -259,4 +259,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     else if (action === 'rollback') console.log(JSON.stringify(await rollbackUpdate(), null, 2));
     else throw new Error('用法：node scripts/self-update.mjs <status|check 包目录|stage 包目录|activate versions/编号|rollback>');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
+  finally { await networkRuntime.close(); }
 }

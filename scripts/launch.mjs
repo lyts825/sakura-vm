@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** 主服务启动器，先检查端口并启动活动版本；健康检查失败时切回已有 previous 指针并重新启动。
  * Launch the active service after checking port ownership; failed candidate health restores the recorded previous pointer and relaunches it. */
-import { networkFor } from './network-client.mjs';
+import { networkFor, networkRuntime } from './network-client.mjs';
 const { createServer } = networkFor('tool:launch');
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
@@ -12,6 +12,7 @@ import { verifyReleaseManifest } from './release-manifest.mjs';
 
 const installation = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const port = Number(process.env.SAKURA_PORT || 7337);
+let stopping = false;
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('端口无效');
 
 /** 先独占绑定再关闭目标端口，拒绝把其他本机服务的健康响应当作本次启动成功。
@@ -35,6 +36,14 @@ async function launch(version) {
       SAKURA_PORT: String(port), SAKURA_INSTALLATION_ROOT: installation },
   });
   child.on('error', (error) => { child.launchError = error; });
+  // Own termination from spawn onward, including the startup health window.
+  const interrupt = () => { stopping = true; child.kill('SIGINT'); };
+  const terminate = () => { stopping = true; child.kill('SIGTERM'); };
+  process.on('SIGINT', interrupt);
+  process.on('SIGTERM', terminate);
+  const detach = () => { process.off('SIGINT', interrupt); process.off('SIGTERM', terminate); };
+  child.once('exit', detach);
+  child.once('error', detach);
   try { await waitForHealth(child, port); }
   catch (error) {
     if (child.exitCode === null && child.signalCode === null) child.kill();
@@ -52,15 +61,14 @@ async function main() {
   let child;
   try { child = await launch(current.active); }
   catch (error) {
-    if (!current.previous) throw error;
+    if (stopping || !current.previous) throw error;
     console.error(`新版本启动失败，自动回滚：${error.message}`);
     await setPointer(installation, current.previous, null);
     child = await launch(current.previous);
   }
-  for (const signal of ['SIGINT', 'SIGTERM'])
-    process.on(signal, () => { if (child.exitCode === null && child.signalCode === null) child.kill(signal); });
-  process.exitCode = await new Promise((done) => child.once('exit', (code) => done(code ?? 1)));
+  process.exitCode = child.exitCode ?? (child.signalCode ? 1 :
+    await new Promise((done) => child.once('exit', (code) => done(code ?? 1))));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  void main().catch((error) => { console.error(error); process.exitCode = 1; });
+  void main().finally(() => networkRuntime.close()).catch((error) => { console.error(error); process.exitCode = 1; });

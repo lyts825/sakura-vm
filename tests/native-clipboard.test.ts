@@ -1197,7 +1197,7 @@ test('service close cancels an in-progress controlled launch and preserves persi
  * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
  * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
  */
-test('controlled launch architecture preflight checks PE signature, executable flags and matching optional header', async (t) => {
+test('controlled launch architecture preflight checks PE signature, executable flags and matching optional header', { skip: process.platform !== 'win32' }, async (t) => {
   const f = await fixture(t);
   for (const bits of [32, 64] as const) {
     const header = Buffer.alloc(512);
@@ -1235,7 +1235,7 @@ test('controlled launch architecture preflight checks PE signature, executable f
  * 设计思路：按源码中的等待顺序推进受控步骤，测试可在各异步边界安排响应、取消或状态变化。
  * Design: Advance controlled steps in the source await order, allowing responses, cancellation or state changes to be arranged at asynchronous boundaries.
  */
-test('CLR preflight selects the actual startup width for fixed and AnyCPU executables', async (t) => {
+test('CLR preflight selects the actual startup width for fixed and AnyCPU executables', { skip: process.platform !== 'win32' }, async (t) => {
   const f = await fixture(t);
   /**
    * 中文功能：计算或提供本组用例需要的受控结果，供调用者继续执行或进行断言。

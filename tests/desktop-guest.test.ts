@@ -17,7 +17,7 @@ import { desktopCommands, desktopProjectPrepare, desktopProjectImePrepare, imeIn
 const shell =
   process.platform === 'win32'
     ? join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'sh.exe')
-    : '/bin/sh';
+    : '/bin/bash'; // Fixture command doubles use hyphenated Bash function names.
 const options = { skip: !existsSync(shell) };
 
 /**
