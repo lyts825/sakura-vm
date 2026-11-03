@@ -29,6 +29,10 @@ jobs:
       - name: Use canonical Windows temporary paths
         if: runner.os == 'Windows'
         run: node -e "const fs=require('node:fs');const p=fs.realpathSync(process.env.RUNNER_TEMP);fs.appendFileSync(process.env.GITHUB_ENV,'TEMP='+p+'\nTMP='+p+'\n');"
+      - name: Install pinned Windows native compilers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/setup-windows-toolchains.ps1
       - run: npm ci
       - run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils
         if: runner.os == 'Linux'
@@ -60,6 +64,10 @@ jobs:
       - name: Use canonical Windows temporary paths
         if: runner.os == 'Windows'
         run: node -e "const fs=require('node:fs');const p=fs.realpathSync(process.env.RUNNER_TEMP);fs.appendFileSync(process.env.GITHUB_ENV,'TEMP='+p+'\nTMP='+p+'\n');"
+      - name: Install pinned Windows native compilers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/setup-windows-toolchains.ps1
       - run: npm ci
       - run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils
         if: runner.os == 'Linux'
