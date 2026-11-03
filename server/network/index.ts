@@ -476,7 +476,7 @@ export class NetworkScope {
      */
     const server = this.createHttpServer({ maxHeaderSize: 8192 }, (request, response) => {
       if (!authorized(request)) {
-        response.writeHead(407);
+        response.writeHead(407, { 'Proxy-Authenticate': 'Basic realm="Sakura"' });
         response.end();
         return;
       }
@@ -540,7 +540,11 @@ export class NetworkScope {
     server.on('connect', (request, socket, head) => {
       socket.on('error', () => {});
       if (!authorized(request)) {
-        socket.end('HTTP/1.1 407 Proxy Authentication Required\r\n\r\n');
+        socket.end(
+          'HTTP/1.1 407 Proxy Authentication Required\r\n' +
+            'Proxy-Authenticate: Basic realm="Sakura"\r\n' +
+            'Content-Length: 0\r\nConnection: close\r\n\r\n',
+        );
         return;
       }
       let destination: Destination;
