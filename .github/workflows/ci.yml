@@ -25,7 +25,7 @@ jobs:
           cache: npm
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ runner.os == 'Windows' && '3.12.10' || '3.12' }}
       - name: Use canonical Windows temporary paths
         if: runner.os == 'Windows'
         run: node -e "const fs=require('node:fs');const p=fs.realpathSync(process.env.RUNNER_TEMP);fs.appendFileSync(process.env.GITHUB_ENV,'TEMP='+p+'\nTMP='+p+'\n');"
@@ -37,6 +37,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils
         if: runner.os == 'Linux'
       - run: npm run setup
+      - name: Prepare pinned Windows creation runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/setup-windows-creation.ps1
       - run: npx playwright install --with-deps chromium
       - run: npm run verify
   # 中文：真实 VM 阶段使用受控 TCG 后端，结果作为 CI 材料留存。
@@ -60,7 +64,7 @@ jobs:
           cache: npm
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ runner.os == 'Windows' && '3.12.10' || '3.12' }}
       - name: Use canonical Windows temporary paths
         if: runner.os == 'Windows'
         run: node -e "const fs=require('node:fs');const p=fs.realpathSync(process.env.RUNNER_TEMP);fs.appendFileSync(process.env.GITHUB_ENV,'TEMP='+p+'\nTMP='+p+'\n');"
@@ -72,6 +76,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils
         if: runner.os == 'Linux'
       - run: npm run setup
+      - name: Prepare pinned Windows creation runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/setup-windows-creation.ps1
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - run: npm run verify:vm
