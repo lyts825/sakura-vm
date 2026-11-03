@@ -329,6 +329,7 @@ test('unload aborts active requests, blocks capabilities and retains failed serv
    */
   activate: async (host) => {
     context = host;
+    host.provide(metricsContract.snapshots, { readSnapshot: async () => { throw new Error('unused snapshot fixture'); }, verifySnapshot: async () => { throw new Error('unused snapshot fixture'); } });
     host.provide(metricsContract.metrics, { /**
      * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
      * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.
@@ -493,6 +494,7 @@ test('plugin job retry cannot bypass unresolved cleanup with a forged view', asy
    */
   activate: async (host) => {
     context = host; jobs = host.capabilities.jobs.create('retry', { persistent: false });
+    host.provide(metricsContract.snapshots, { readSnapshot: async () => { throw new Error('unused snapshot fixture'); }, verifySnapshot: async () => { throw new Error('unused snapshot fixture'); } });
     host.provide(metricsContract.metrics, { /**
      * 中文功能：完成本组用例中的受控步骤；效果通过调用记录、状态或断言观察。
      * English: Perform a controlled step in this suite; its effects are observed through call records, state or assertions.

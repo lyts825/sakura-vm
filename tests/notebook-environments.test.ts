@@ -1420,14 +1420,14 @@ test('root helpers parse as isolated Python and wheel file regex accepts wheels 
     projectNotebookScopeCommand(f.project, 'start', intent, { ...input, runId: intent.runId, command: '/fixed/native/controller' })];
   for (const command of commands) {
     const source = command.startsWith('# SAKURA_PROJECT_SERVICE') ? command.split('/usr/bin/python3 -I -S -c ')[1].slice(1, -1).replaceAll("'\\''", "'") : decodeSource(command);
-    const parsed = spawnSync('python', ['-I', '-S', '-c', 'import ast,sys;ast.parse(sys.stdin.read())'], { input: source, encoding: 'utf8', windowsHide: true });
+    const parsed = spawnSync('python', ['-X', 'utf8', '-I', '-S', '-c', 'import ast,sys;ast.parse(sys.stdin.read())'], { input: source, encoding: 'utf8', windowsHide: true });
     assert.equal(parsed.status, 0, parsed.stderr);
   }
   const downloaded = decodeSource(commands[0]), check = `import ast,json,re,sys\nroot=ast.parse(sys.stdin.read())\n` +
     `patterns=list({node.args[0].value for node in ast.walk(root) if isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute) and node.func.attr=='fullmatch' and isinstance(node.args[0],ast.Constant) and node.args[0].value.endswith('whl')})\n` +
     `assert len(patterns)==1\nassert re.fullmatch(patterns[0],'pip-25.0-py3-none-any.whl')\n` +
     `assert not re.fullmatch(patterns[0],'../pip.whl')\nassert not re.fullmatch(patterns[0],'evil.py')\n`;
-  const regex = spawnSync('python', ['-I', '-S', '-c', check], { input: downloaded, encoding: 'utf8', windowsHide: true });
+  const regex = spawnSync('python', ['-X', 'utf8', '-I', '-S', '-c', check], { input: downloaded, encoding: 'utf8', windowsHide: true });
   assert.equal(regex.status, 0, regex.stderr);
   const code = notebookInstallExecution(f.identity, lease); assert.ok(code.includes('runpy')); assert.ok(code.includes('--without-pip'));
   const tools = notebookToolsScript('ubuntu', lease.bootId); assert.ok(tools.includes('cd /')); assert.equal(tools.includes(f.project.directory), false);
@@ -1530,7 +1530,7 @@ for change in [None,'inode','extra','reappeared']:
  assert not model.fds
 print('1 original wheelhouse accepted; 7 ownership/content substitutions refused; 1 exact retirement and 3 late replacements checked')
 `;
-  const result = spawnSync('python', ['-I', '-S', '-c', program], { input: JSON.stringify({ verify: source, cleanup }), encoding: 'utf8', windowsHide: true });
+  const result = spawnSync('python', ['-X', 'utf8', '-I', '-S', '-c', program], { input: JSON.stringify({ verify: source, cleanup }), encoding: 'utf8', windowsHide: true });
   assert.equal(result.status, 0, result.stderr); assert.ok(result.stdout.includes('7 ownership/content substitutions refused'));
   assert.ok(result.stdout.includes('1 exact retirement and 3 late replacements checked'));
 });

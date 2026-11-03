@@ -1065,7 +1065,7 @@ test('generated Python broker, read-only proof and root socket adapter compile w
   const sources = [unquote(reverseTunnelBrokerCommand(8765, owner.token, 10).split('/usr/bin/python3 -I -S -u -c ')[1]),
     unquote(reverseTunnelListenerCommand(owner.identity, owner.run).split('/usr/bin/python3 -I -S -c ')[1]),
     unquote(shell.split('/usr/bin/python3 -I -S -u -c ')[1])];
-  for (const source of sources) { const result = spawnSync('python', ['-I', '-S', '-c', 'import sys;compile(sys.stdin.read(),"reverse-generated","exec")'],
+  for (const source of sources) { const result = spawnSync('python', ['-X', 'utf8', '-I', '-S', '-c', 'import sys;compile(sys.stdin.read(),"reverse-generated","exec")'],
     { input: source, encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); }
 });
 
@@ -1093,7 +1093,7 @@ test('actual host Python broker authenticates its preface and preserves binary E
   const quoted = reverseTunnelBrokerCommand(port, token, 10).split('/usr/bin/python3 -I -S -u -c ')[1];
   const source = quoted.slice(1, -1).replaceAll("'\\''", "'").replace('server.settimeout(.5)', 'server.settimeout(.5)\nprint(server.getsockname()[1],flush=True)');
   const file = join(dirname(f.model.file), 'host-broker-model.py'); await writeFile(file, source);
-  const child = spawn('python', ['-I', '-S', '-u', file], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn('python', ['-X', 'utf8', '-I', '-S', '-u', file], { stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { child.kill(); await new Promise<void>(resolve => backend.close(() => resolve())); });
   const first = (await once(child.stdout!, 'data'))[0].toString(), brokerPort = Number(first.trim()); assert.ok(Number.isInteger(brokerPort));
   const socket = connect({ host: '127.0.0.1', port: brokerPort, allowHalfOpen: true }); socket.on('error', () => {}); await once(socket, 'connect');
@@ -1164,7 +1164,7 @@ test('dedicated reverse scope preserves shared exports and persists full transpo
   const watchdog = embedded(source).watchdogScript as string;
   assert.deepEqual(embedded(watchdog).transport, request.transport, 'standalone TTL stop must retain the complete clean_input transport');
   const python = spawnSync('python', ['--version'], { encoding: 'utf8' });
-  if (python.status === 0) { const result = spawnSync('python', ['-I', '-S', '-c',
+  if (python.status === 0) { const result = spawnSync('python', ['-X', 'utf8', '-I', '-S', '-c',
     'import sys,json;values=json.load(sys.stdin);[compile(value,"reverse-generated","exec") for value in values]'],
     { input: JSON.stringify([source, watchdog]), encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); }
 });

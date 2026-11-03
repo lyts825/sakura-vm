@@ -265,7 +265,7 @@ for bad_exit in (0,-9):
 assert checks==14;print('fixed nft fixture pure refusals passed:14; no nft transaction executed')
 `;
   const python = process.env.SAKURA_TEST_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
-  assert.equal(execFileSync(python, ['-I', '-S', '-c', model], { input: JSON.stringify({ program, controller }), encoding: 'utf8', timeout: 10000, windowsHide: true }).trim(),
+  assert.equal(execFileSync(python, ['-X', 'utf8', '-I', '-S', '-c', model], { input: JSON.stringify({ program, controller }), encoding: 'utf8', timeout: 10000, windowsHide: true }).trim(),
     'fixed nft fixture pure refusals passed:14; no nft transaction executed');
 });
 
@@ -314,7 +314,7 @@ for value in [{key:value for key,value in row().items() if key!='flags'},row(fla
 print('fixed FD model passed:8')
 `;
   const python = process.env.SAKURA_TEST_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
-  assert.equal(execFileSync(python, ['-I', '-S', '-c', classifier + model], { encoding: 'utf8', timeout: 10000, windowsHide: true }).trim(), 'fixed FD model passed:8');
+  assert.equal(execFileSync(python, ['-X', 'utf8', '-I', '-S', '-c', classifier + model], { encoding: 'utf8', timeout: 10000, windowsHide: true }).trim(), 'fixed FD model passed:8');
 });
 
 /**

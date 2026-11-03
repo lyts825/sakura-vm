@@ -227,7 +227,7 @@ test('managed prefetch plans keep each task cleanup outside the published cache'
 test('atomic publication refuses an unsupported host before touching any cache path', () => {
   if (process.platform !== 'win32') return;
   const result = spawnSync(process.env.SAKURA_TEST_PYTHON || 'python',
-    ['-I', '-B', '-c', pipCachePublication, join(root, 'absent-stage'), join(root, 'unchanged-cache')],
+    ['-X', 'utf8', '-I', '-B', '-c', pipCachePublication, join(root, 'absent-stage'), join(root, 'unchanged-cache')],
     { encoding: 'utf8', windowsHide: true });
   assert.equal(result.status, 2, result.error?.message || result.stderr);
   assert.match(result.stderr, /缓存原子发布失败/);

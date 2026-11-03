@@ -366,7 +366,7 @@ test('readonly resource replies are strict and cleanup retries the exact immutab
  * 检查边界 / Checked boundaries: `assert.equal(result.status, 0, result.stderr || result.error?.message)`; `assert.ok(result.stdout.includes('passed'), result.stdout)`.
  */
 function python(body: string) {
-  const result = spawnSync('python', ['-I', '-S', '-c',
+  const result = spawnSync('python', ['-X', 'utf8', '-I', '-S', '-c',
     'import json,sys,types,copy,stat,struct,time,io,os\n' +
     'sys.modules["fcntl"]=types.SimpleNamespace(LOCK_EX=2,LOCK_UN=8,flock=lambda *a:None)\n' +
     'for i,name in enumerate(["O_NOFOLLOW","O_CLOEXEC","O_NONBLOCK","O_DIRECTORY"]):\n if not hasattr(os,name):setattr(os,name,1<<(20+i))\n' +
