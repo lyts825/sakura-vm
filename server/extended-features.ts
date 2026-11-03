@@ -181,8 +181,8 @@ export class ExtendedFeatures {
   ) {
     this.domains = new EngineeringDomainServices(machines, workspaces, dependencies);
   }
-  
-  
+
+
 
   /**
    * 入口 / Entry: ExtendedFeatures.file.

@@ -440,10 +440,10 @@ export class FeatureSuite {
     this.domains = new AutomationDomainServices(machines, (id, operation, name) =>
       this.package(id, { operation, name }), dependencies);
   }
-  
-  
-  
-  
+
+
+
+
   /**
    * 入口 / Entry: FeatureSuite.enableBackground.
    * 功能：在汇集自动化功能、指标告警和实例动作中，执行此领域的具体处理步骤并返回其结果；本入口产生 `cleanupReceipt(() => { if (this.powerAbort === controller) this.backgroundEnabled = false; controller.abort(); })` 供上层消费（`FeatureSuite`）。

@@ -486,8 +486,8 @@ export class NextFeatures {
     }));
   }
 
-  
-  
+
+
 
   /**
    * 入口 / Entry: NextFeatures.init.
@@ -500,27 +500,27 @@ export class NextFeatures {
    */
   init() { return this.domains.init(); }
 
-  
-  
 
-  
-  
 
-  
 
-  
 
-  
 
-  
-  
-  
 
-  
 
-  
 
-  
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   /**
    * 入口 / Entry: NextFeatures.notebookLink.
@@ -539,18 +539,18 @@ export class NextFeatures {
     return this.notebookEnvironments.link(id);
   }
 
-  
 
-  
 
-  
-  
-  
-  
-  
-  
-  
-  
+
+
+
+
+
+
+
+
+
+
 
   /**
    * 入口 / Entry: NextFeatures.browserIdeLink.

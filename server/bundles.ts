@@ -196,7 +196,7 @@ export class Bundles {
     private signatures?: SignedBundlesV1,
     private dependencies: HostServiceResolver = noHostServices,
   ) {}
-  
+
   /**
    * 入口 / Entry: Bundles.project.
    * 功能：在导入、导出和克隆实例包中，执行此领域的具体处理步骤并返回其结果；本入口产生 `projectSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'project.json'), 'utf8')))` / `undefined` 供上层消费（`Bundles`）。
