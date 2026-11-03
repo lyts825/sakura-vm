@@ -2,7 +2,7 @@
 
 一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
-应用与内置包版本：**2.12.10**；宿主插件 API：**5**。
+应用与内置包版本：**2.12.11**；宿主插件 API：**5**。
 
 Sakura 使用 [QEMU](https://www.qemu.org/) 运行 Linux 内核，由 [PosixLoom](https://github.com/lyts825/posixloom) 负责命令编排、会话与 Windows 进程树管理。它不依赖已有的 WSL 发行版，当前也不作为 WSL 的替代实现。
 

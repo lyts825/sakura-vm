@@ -127,7 +127,8 @@ async function visitNetwork(file: string) {
   let source = sources.get(file);
   if (!source) {
     const code = await readFile(file, 'utf8').catch((error) => {
-      if (error.code === 'ENOENT' || error.code === 'EISDIR') return undefined;
+      // Linux reports ENOTDIR when a candidate appends /index.ts to an asset file.
+      if (error.code === 'ENOENT' || error.code === 'EISDIR' || error.code === 'ENOTDIR') return undefined;
       throw error;
     });
     if (code === undefined) return;
